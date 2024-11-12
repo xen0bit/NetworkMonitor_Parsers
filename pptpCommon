@@ -1,0 +1,487 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Point-to-Point Tunneling Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2637
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+// [http://www.networkdictionary.com/protocols/pptp.php]
+// [RFC 2637        Point-to-Point Tunneling Protocol (PPTP)]
+Protocol PPTP = FormatString( "%s %s",
+							  PPTPMessageTypeTable(PPTPMessageType),
+							  Property.ControlMessageType ? ", " + PPTPControlMessageTypeTable( Property.ControlMessageType ):""
+							 )
+{
+	UINT16  PPTPTotalLength;
+	UINT16  PPTPMessageType = FormatString("%s, %d(0x%02X)", PPTPMessageTypeTable( this ), this, this);
+	UINT32 MagicCookie;
+	switch(PPTPMessageType)
+	{
+		case 2: // Management Message
+			AsciiString( ( FrameLength - offset > PPTPTotalLength - 8) ? PPTPTotalLength - 8 : FrameLength - offset) ManagementData = FormatString("%d UINT8(s)",( FrameLength - offset > PPTPTotalLength - 8) ? PPTPTotalLength - 8 : FrameLength - offset);
+		case 1: // Control Message
+			_struct ControlMessage
+			{
+				[ControlMessageType]
+				UINT16  ControlMessageType = FormatString("%s, %d(0x%02X)", PPTPControlMessageTypeTable( this ), this, this);
+				UINT16  Reserved0;
+				switch( ControlMessageType )
+				{
+					case 1:
+						PPTPStartControlConnRequest    PPTPStartControlConnRequestData; // 2.1.  Start-Control-Connection-Request
+					case 2:
+						PPTPStartControlConnReply    PPTPStartControlConnReplyData; // 2.2.  Start-Control-Connection-Reply
+					case 3:
+						PPTPStopControlConnRequest    PPTPStopControlConnRequestData; // 2.3.  Stop-Control-Connection-Request
+					case 4:
+						PPTPStopControlConnReply    PPTPStopControlConnReplyData; // 2.4.  Stop-Control-Connection-Reply
+					case 5:
+						PPTPEchoRequest    PPTPEchoRequestData; // 2.5.  Echo-Request
+					case 6:
+						PPTPEchoReply    PPTPEchoReplyData; // 2.6.  Echo-Reply
+					case 7:
+						PPTPOutgoingCallRequest    PPTPOutgoingCallRequestData; // 2.7.  Outgoing-Call-Request
+					case 8:
+						PPTPOutgoingCallReply    PPTPOutgoingCallReplyData; // 2.8.  Outgoing-Call-Reply
+					case 9:
+						PPTPIncomingCallRequest    PPTPIncomingCallRequestData; // 2.9.  Incoming-Call-Request
+					case 10:
+						PPTPIncomingCallReply    PPTPIncomingCallReplyData; // 2.10.  Incoming-Call-Reply
+					case 11:
+						PPTPIncomingCallConnected    PPTPIncomingCallConnectedData; // 2.11.  Incoming-Call-Connected
+					case 12:
+						PPTPCallClearRequest    PPTPCallClearRequestData; // 2.12.  Call-Clear-Request
+					case 13:
+						// [RFC 2637    Page 31    2.13.  Call-Disconnect-Notify]
+						struct PPTPCallDisconnectNotify
+						{
+							UINT16  CallID;
+							UINT8  ResultCode = PPTPCallDisconnectNotifyTable( this );
+							UINT8  ErrorCode = PPTPErrorCodeTable( this );
+							UINT16  CauseCode;
+							UINT16  Reserved1;
+							AsciiString(PPTPTotalLength-20) CallStatistics;
+						};
+					case 14:
+						PPTPWANErrorNotify    PPTPWANErrorNotifyData; // 2.14.  WAN-Error-Notify
+					case 15:
+						PPTPSetLinkInfo    PPTPSetLinkInfoData; // 2.15.  Set-Link-Info
+					default: 
+						switch
+						{
+							case FrameLength > FrameOffset:
+								_struct UnhandledType
+								{
+									ReportParserError(ParserErrorProtocolClassPublic, "PPTP", "PPTP Control Message Type Error") PPTPControlMessageTypeError;
+									BLOB( FrameLength - FrameOffset ) UnknownData;
+								}
+						}
+				}
+			};
+		default:
+			_struct UnhandledType
+			{
+				ReportParserError(ParserErrorProtocolClassPublic, "PPTP", "PPTP Message Type Error") PPTPMessageTypeError;
+				BLOB( FrameLength - FrameOffset ) UnknownData;
+			}
+	}
+}
+// [RFC 2637    Page 7    1.4.  Message Format and Protocol Extensibility]
+Table PPTPMessageTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:"Control Message";
+		case  2:"Management Message";
+		default:"Undefined";
+	}
+}
+
+
+// [RFC 2637    Page 8    1.4.  Message Format and Protocol Extensibility]
+Table PPTPControlMessageTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:"Start Control Connection Request";
+		case  2:"Start Control Connection Reply";
+		case  3:"Stop Control Connection Request";
+		case  4:"Stop Control Connection Reply";
+		case  5:"Echo Request";
+		case  6:"Echo Reply";
+		case  7:"Outgoing Call Request";
+		case  8:"Outgoing Call Reply";
+		case  9:"Incoming Call Request";
+		case 10:"Incoming Call Reply";
+		case 11:"Incoming Call Connected";
+		case 12:"Call Clear Request";
+		case 13:"Call Disconnect Notify";
+		case 14:"WAN Error Notify";
+		case 15:"Set Link Info";
+		default:"Undefined";
+	}
+}
+
+// [RFC 2637    Page 12    2.2.  Start-Control-Connection-Reply]
+Table PPTPResultCodeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Successful, %d(%#x)", value, value );
+		case  2:FormatString("General error, %d(%#x)", value, value );
+		case  3:FormatString("Command channel already exists, %d(%#x)", value, value );
+		case  4:FormatString("Requester is not authorized to establish a command channel, %d(%#x)", value, value );
+		case  5:FormatString("The protocol version of the requester is not supported, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 35    2.16.  General Error Codes]
+Table PPTPErrorCodeTable( value )
+{
+	switch( value )
+	{
+		case  0:FormatString("None, %d(%#x)", value, value );
+		case  1:FormatString("Not Connected, %d(%#x)", value, value );
+		case  2:FormatString("Bad Format, %d(%#x)", value, value );
+		case  3:FormatString("Bad Value, %d(%#x)", value, value );
+		case  4:FormatString("No Resource, %d(%#x)", value, value );
+		case  5:FormatString("Bad Call ID, %d(%#x)", value, value );
+		case  6:FormatString("PAC Error, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+// [RFC 2637    Page 32    2.13.  Call-Disconnect-Notify]
+Table PPTPCallDisconnectNotifyTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Lost Carrier, %d(%#x)", value, value );
+		case  2:FormatString("General Error, %d(%#x)", value, value );
+		case  3:FormatString("Admin Shutdown, %d(%#x)", value, value );
+		case  4:FormatString("Request, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+
+
+// [RFC 2637    Page 10    2.1.  Start-Control-Connection-Request]
+struct PPTPStartControlConnRequest
+{
+	//UINT16  Reserved0;
+	UINT16  ProtocolVersion;
+	UINT16  Reserved1;
+	
+	UINT32 FramingCapabilities // [RFC 2637    Page 11    2.1.  Start-Control-Connection-Request]
+	{
+		UINT32 Reserved:30 = FormatString("(%s)",this.ToBitString);
+		UINT32 SFS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do synchronous framing supported" 
+						   : "Can not do synchronous framing supported"  );
+		UINT32 AFS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do asynchronous framing supported" 
+						   : "Can not do asynchronous framing supported"  );
+	};
+
+	UINT32 BearerCapabilities // [RFC 2637    Page 11    2.1.  Start-Control-Connection-Request]
+	{
+		UINT32 Reserved:30 = FormatString("(%s)",this.ToBitString);
+		UINT32 DAS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do digital access supported" 
+						   : "Can not do digital access supported"  );
+		UINT32 AAS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do analog access supported" 
+						   :	"Can not do analog access supported"  );
+	};
+	UINT16  MaximumChannels;
+	UINT16  FirmwareRevision;
+	AsciiString(64) HostName;
+	AsciiString(64) VendorName;
+}
+
+
+// [RFC 2637    Page 12    2.2.  Start-Control-Connection-Reply]
+struct PPTPStartControlConnReply
+{
+	//UINT16  Reserved0;
+	UINT16  ProtocolVersion;
+	UINT8  ResultCode = PPTPResultCodeTable( this );
+	UINT8  ErrorCode = PPTPErrorCodeTable( this );
+
+	UINT32 FramingCapabilities // [RFC 2637    Page 11    2.1.  Start-Control-Connection-Request]
+	{
+		UINT32 Reserved:30 = FormatString("(%s)",this.ToBitString);
+		UINT32 SFS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do synchronous framing supported" 
+						   : "Can not do synchronous framing supported"  );
+		UINT32 AFS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do asynchronous framing supported" 
+						   : "Can not do asynchronous framing supported"  );
+	};
+
+	UINT32 BearerCapabilities // [RFC 2637    Page 11    2.1.  Start-Control-Connection-Request]
+	{
+		UINT32 Reserved:30 = FormatString("(%s)",this.ToBitString);
+		UINT32 DAS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do digital access supported" 
+						   : "Can not do digital access supported"  );
+		UINT32 AAS:1 = FormatString("     (%s) %s",this.ToBitString, this? "Can do analog access supported" 
+						   : "Can not do analog access supported"  );
+	};
+	
+	UINT16  MaximumChannels;
+	UINT16  FirmwareRevision;
+	AsciiString(64) HostName;
+	AsciiString(64) VendorName;
+}
+
+
+// [RFC 2637    Page 15    2.3.  Stop-Control-Connection-Request]
+Table PPTPReasonTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("None, %d(%#x)", value, value );
+		case  2:FormatString("Stop Protocol, %d(%#x)", value, value );
+		case  3:FormatString("Stop Local Shutdown, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 14    2.3.  Stop-Control-Connection-Request]
+struct PPTPStopControlConnRequest
+{
+	//UINT16  Reserved0;
+	UINT8   Reason = PPTPReasonTable( this );
+	UINT8   Reserved1;
+	UINT16  Reserved2;
+};
+
+
+// [RFC 2637    Page 15    2.4.  Stop-Control-Connection-Reply]
+struct PPTPStopControlConnReply
+{
+	//UINT16  Reserved0;
+	UINT8   ResultCode = PPTPResultCodeTable( this );
+	UINT8   PPTPErrorCode = PPTPErrorCodeTable( this );
+	UINT16  Reserved1;
+};
+
+
+// [RFC 2637    Page 16    2.5.  Echo-Request]
+struct PPTPEchoRequest
+{
+	//UINT16  Reserved0;
+	UINT32 Identifier = FormatString("%d.%d.%d.%d",this[3],this[2],this[1],this[0]);
+};
+
+
+// [RFC 2637    Page 17    2.6.  Echo-Reply]
+struct PPTPEchoReply
+{
+	//UINT16  Reserved0;
+	UINT32  Identifier =  FormatString("%d.%d.%d.%d",this[3],this[2],this[1],this[0]);
+	UINT8   ResultCode = PPTPResultCodeTable( this );
+	UINT8   ErrorCode = PPTPErrorCodeTable( this );
+	UINT16  Reserved1;
+};
+
+
+// [RFC 2637    Page 20    2.7.  Outgoing-Call-Request]
+Table PPTPBearerTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Analog channel, %d(%#x)", value, value );
+		case  2:FormatString("Digital channel, %d(%#x)", value, value );
+		case  3:FormatString("Any type of channel, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 20    2.7.  Outgoing-Call-Request]
+Table PPTPFramingTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Asynchronous framing, %d(%#x)", value, value );
+		case  2:FormatString("Synchronous framing, %d(%#x)", value, value );
+		case  3:FormatString("Any type of framing, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 19    2.7.  Outgoing-Call-Request]
+struct PPTPOutgoingCallRequest
+{
+	//UINT16  Reserved0;
+	UINT16  CallID;
+	UINT16  CallSerialNumber;
+	UINT32  MinimumBPS;
+	UINT32  MaximumBPS;
+	UINT32  BearerType = PPTPBearerTypeTable( this );
+	UINT32  FramingType = PPTPFramingTypeTable( this );
+	UINT16  PacketRecvWindowSize;
+	UINT16  PacketProcDelay;
+	UINT16  PhoneNumberLen;
+	UINT16  Reserved1;
+	AsciiString(64) PhoneNumber;
+	AsciiString(64) Subaddress;
+}
+
+
+// [RFC 2637    Page 23    2.8.  Outgoing-Call-Reply]
+Table PPTPOutgoingCallReplyResultCodeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Connected, %d(%#x)", value, value );
+		case  2:FormatString("General Error, %d(%#x)", value, value );
+		case  3:FormatString("No Carrier, %d(%#x)", value, value );
+		case  4:FormatString("Busy, %d(%#x)", value, value );
+		case  5:FormatString("No Dial Tone, %d(%#x)", value, value );
+		case  6:FormatString("Time out, %d(%#x)", value, value );
+		case  7:FormatString("Do Not Accept, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 22    2.8.  Outgoing-Call-Reply]
+struct PPTPOutgoingCallReply
+{
+	//UINT16  Reserved0;
+	UINT16  CallID;
+	UINT16  PeerCallID;
+	UINT8   ResultCode = PPTPOutgoingCallReplyResultCodeTable( this );
+	UINT8   ErrorCode = PPTPErrorCodeTable( this );
+	UINT16  CauseCode;
+	UINT32  ConnectSpeed;
+	UINT16  PacketRecvWindowSize;
+	UINT16  PacketProcDelay;
+	UINT32  PhysicalChannelID;
+}
+
+
+// [RFC 2637    Page 26    2.9.  Incoming-Call-Request]
+Table PPTPIncomingCallRequestBearerType( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Analog channel, %d(%#x)", value, value );
+		case  2:FormatString("Digital channel, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+}
+
+
+// [RFC 2637    Page 24    2.9.  Incoming-Call-Request]
+struct PPTPIncomingCallRequest
+{
+	//UINT16  Reserved0;
+	UINT16  CallID;
+	UINT16  CallSerialNumber;
+	UINT32  CallBearerType = PPTPIncomingCallRequestBearerType( this );
+	UINT32  PhysicalChannelID;
+	UINT16  DialedNumberLength;
+	UINT16  DialingNumberLength;
+	AsciiString(64) DialedNumber;
+	AsciiString(64) DialingNumber;
+	AsciiString(64) Subaddress;
+}
+
+
+// [RFC 2637    Page 28    2.10.  Incoming-Call-Reply]
+Table PPTPIncomingCallReplyResultCodeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Connect, %d(%#x)", value, value );
+		case  2:FormatString("General Error, %d(%#x)", value, value );
+		case  3:FormatString("Do Not Accept, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+
+}
+
+
+// [RFC 2637    Page 27    2.10.  Incoming-Call-Reply]
+struct PPTPIncomingCallReply
+{
+	//UINT16  Reserved0;
+	UINT16  CallID;
+	UINT16  PeerCallID;
+	UINT8   ResultCode = PPTPIncomingCallReplyResultCodeTable( this );
+	UINT8   ErrorCode = PPTPErrorCodeTable( this );
+	UINT16  PacketRecvWindowSize;
+	UINT16  PacketTransmitDelay;
+	UINT16  Reserved1;
+}
+
+
+// [RFC 2637    Page 30    2.11.  Incoming-Call-Connected]
+Table PPTPIncomingCallConnectedFramingTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Asynchronous framing, %d(%#x)", value, value );
+		case  2:FormatString("Synchronous framing, %d(%#x)", value, value );
+		default:FormatString("Undefined, %d(%#x)", value, value );
+	}
+
+}
+
+
+// [RFC 2637    Page 28    2.11.  Incoming-Call-Connected]
+struct PPTPIncomingCallConnected
+{
+	//UINT16  Reserved0;
+	//UINT16  CallID;
+	UINT16  PeerCallID;
+	UINT16  Reserved1;
+	UINT32  ConnectSpeed;
+	UINT16  PacketRecvWindowSize;
+	UINT16  PacketTransmitDelay;
+	UINT32  FramingType = PPTPIncomingCallConnectedFramingTypeTable( this );
+}
+
+
+// [RFC 2637    Page 30    2.12.  Call-Clear-Request]
+struct PPTPCallClearRequest
+{
+	//UINT16  Reserved0;
+	UINT16  CallID;
+	UINT16  Reserved1;
+}
+
+// [RFC 2637    Page 32   2.14.  WAN-Error-Notify]
+struct PPTPWANErrorNotify
+{
+	//UINT16  Reserved0;
+	UINT16  PeerCallID;
+	UINT16  Reserved1;
+	UINT32  CRCErrors;
+	UINT32  FramingErrors;
+	UINT32  HardwareOverruns;
+	UINT32  BufferOverruns;
+	UINT32  TimeoutErrors;
+	UINT32  AlignmentErrors;
+}
+
+
+// [RFC 2637    Page 34   2.15.  Set-Link-Info]
+struct PPTPSetLinkInfo
+{
+	//UINT16  Reserved0;
+	UINT16  PeerCallID;
+	UINT16  Reserved1;
+	UINT32  SendACCM;
+	UINT32  ReceiveACCM;
+}

@@ -1,0 +1,846 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Pragmatic General Multicast Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3208
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DefaultTimeOut = PGMConversationTimeout]
+Protocol PGM = FormatString("Packet Type=%s, SrcPort = %s, DstPort = %s, TSDULength = %d",
+							PGMTypeTable(Flags.Type),
+							PortNameTable(SourcePort),
+							PortNameTable(DestinationPort),
+							TSDULength)
+{
+	[Pair = Port, SourcePort]
+	UINT16 SourcePort = FormatString("%s, %d(%#x)", PortNameTable(this), this, this);
+	[Pair = Port, DestinationPort]
+	[BuildConversation(
+		Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+		(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+			 SourcePort < DestinationPort) ? MakeByteArray(Property.SourceNetworkAddress, SourcePort,
+			 								 			   Property.DestinationNetworkAddress, DestinationPort)
+			 							   : MakeByteArray(Property.DestinationNetworkAddress, DestinationPort,
+			 							   				   Property.SourceNetworkAddress, SourcePort) ),
+		Post.Conversation.ConversationDescription = FormatString("(%d - %d) ConvID = %d", SourcePort, DestinationPort, ConvID)
+	]
+	UINT16 DestinationPort = FormatString("%s, %d(%#x)", PortNameTable(this), this, this);
+	UINT8 Flags
+	{
+		UINT8 Version:2  = FormatString(" (%s) %s",this.ToBitString, FormatString("Version %d", this)+" ");
+		UINT8 Reserved:2 = FormatString("(%s)",this.ToBitString);
+		[PGMType]
+		UINT8 Type:4 = FormatString("    (%s) %s",this.ToBitString, PGMTypeTable(this));
+	};
+	UINT8 Options
+	{
+		[PGMOptionExtentionsExist]
+		UINT8 E:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Option Extensions Exist"
+						 : " Option Extensions NOT Exist");
+		UINT8 N:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Options are network-significant"
+						 : " Options are NOT network-significant");
+		UINT8 Reserved:4 = FormatString("(%s) %s",this.ToBitString, "("+this.ToBitString+")");
+		UINT8 T:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Packet is a parity packet for a transmission group of variable sized packets"
+						 : " Packet is NOT a parity packet for a transmission group of variable sized packets");
+		UINT8 P:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Packet is a parity packet"
+						 : " Packet is NOT a parity packet");
+	};
+	UINT16 Checksum;
+	//A RECOMMENDED identifier is the low-order 48 bits of the MD5 [9] signature of the DNS name of the source
+	//AsciiString(6) GlobalSourceID;
+	INT48 GlobalSourceID;
+	//Transport Service Data Unit Length
+	UINT16 TSDULength;
+	
+	switch
+	{
+		case PGMType == 0x00:PGMSourcePathMessage SourcePathMessage;
+		case PGMType == 0x01:PGMPollRequest PollRequest;
+		case PGMType == 0x02:PGMPollResponse PollResponse;
+		case PGMType == 0x04:PGMDataPacket ODataPacket;
+		case PGMType == 0x05:PGMDataPacket RDataPacket;
+		case PGMType == 0x08:PGMNCKAndNCF NegativeAcknowledgment;
+		case PGMType == 0x09:PGMNCKAndNCF NullNegativeAcknowledgment;
+		case PGMType == 0x0A:PGMNCKAndNCF NAKConfirmation;
+		case PGMType == 0x0C && PGMOptionExtentionsExist == 1: PGMSPMRequest SPMRequest;
+		default: AsciiString(TSDULength) PGMData;
+	}
+}//End of Protocol PGM
+//RFC 3208 page 32
+Table PGMTypeTable(type)
+{
+	switch
+	{
+		case type == 0x0:"Source Path Message";
+		case type == 0x1:"Poll Request";
+		case type == 0x2:"Poll Response";
+		case type == 0x4:"Original Data Packet";
+		case type == 0x5:"RData Packet";
+		case type == 0x8:"Negative Acknowledgment";
+		case type == 0x9:"Null Negative Acknowledgment";
+		case type == 0xA:"NAK confirmation";
+		case type == 0xC:"SPM Request";
+		case type >= 0x0 && type <= 0x3:"SPM(Source Path Message)-like packets";
+		case type >= 0x4 && type <= 0x7:"DATA-like packets";
+		case type >= 0x8 && type <= 0xB:"NAK(Negative Acknowledgment)-like packets";
+		case type >= 0xC && type <= 0xF:"SPMR(SPM Request)-like packets";
+		default:"Undefined type";
+	}
+}
+
+Table PGMOptionTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x00:"Option's Length";
+		case 0x01:"Fragmentation";
+		case 0x02:"List of NAK entries";
+		case 0x03:"Late Joining";
+		case 0x04:"NAK Back-Off Interval";
+		case 0x05:"NAK Back-Off Range";
+		case 0x07:"Redirect";
+		case 0x08:"Forward Error Correction Parameters";
+		case 0x09:"Forward Error Correction Group Number";
+		case 0x0A:"Forward Error Correction Group Size";
+		case 0x0B:"Neighbor Unreachable";
+		case 0x0C:"Path NLA";
+		case 0x0D:"Synchronization";
+		case 0x0E:"Session Fin";
+		case 0x0F:"Session Reset";
+		case 0x10:"Congestion Report";
+		case 0x11:"Congestion Report Request";
+		case 0x7F:"Option invalidated";
+		default:  "Unhandled PGM Option";
+	}
+}
+
+Table PGMOptionOPXTable(opx)
+{
+	switch(opx)
+	{
+		case 0x00:"Ignore the option";
+		case 0x01:"Invalidate the option by changing the type to OPT_INVALID(0x7F)";
+		case 0x02:"Discard the packet";
+		case 0x03:"Unsupported Option Extensibility bits";
+		default  :"Unhandled Option Extensibility bits";
+	}
+}
+
+struct PGMGeneralOption = OptionType.ToString
+{
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString,PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength;
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Specific:7 = FormatString("(%s)",this.ToBitString);
+	};
+	switch
+	{
+		case OptionLength > 4:AsciiString(OptionLength - 4) OptionValue;
+	}
+};
+
+struct PGMOptLength = FormatString("Length of all the Options is %d", TotalLengthOfAllOptions)
+{
+	//0x00
+	UINT8 OptionType = PGMOptionTypeTable(Type);
+	UINT8 OptionLength; //4
+	UINT16 TotalLengthOfAllOptions;
+};
+
+struct PGMOptFragmentation = FormatString("FirstSeq: %u, Offset: %u, Length: %u",
+										  FirstSequenceNumber, Offset, Length)
+{
+	//0x01
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //12
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 FirstSequenceNumber;
+	UINT32 Offset;
+	UINT32 Length;
+};
+
+struct PGMOptNAKList
+{
+	//0x02
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString,  PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength;
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 RequestedSequenceNumber[(OptionLength - 4)/4];
+};
+
+struct PGMOptJoin = FormatString("MinSeq is %u", MinimumSequenceNumber)
+{
+	//0x03
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength;
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 MinimumSequenceNumber;
+};
+
+struct PGMOptNAKBackOffInterval = FormatString("Interval: %u microseconds, Seq: %u", NAKBackOffInterval, NAKBackOffIntervalSQN)
+{
+	//0x04
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //12
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+		
+	};
+	UINT32 NAKBackOffInterval;
+	UINT32 NAKBackOffIntervalSQN;
+};
+
+struct PGMOptNAKBackOffRange = FormatString("(%u ~ %u)", MinimumNAKBackOffInterval, MaximumNAKBackOffInterval)
+{
+	//0x05
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //12
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						: " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString,  PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ?  " OP_ENCODED_NULL Set"
+						: " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 MaximumNAKBackOffInterval;
+	UINT32 MinimumNAKBackOffInterval;
+};
+
+struct PGMOptRedirect = FormatString("DLR's NLA is %s%s%s", Ipv4DLRNLA.ToString,Ipv6DLRNLA.ToString,DLRNLA.ToString)
+{
+	//0x07
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength;
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT16 NLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved1;
+	[DLRNLA]
+	switch(NLAAFI)
+	{
+		case  1:Ipv4Address Ipv4DLRNLA;
+		case  2:Ipv6Address Ipv6DLRNLA;
+		default:AsciiString(OptionLength - 20) DLRNLA;
+	}
+};
+
+struct PGMOptParityPRM = FormatString("Transmission Group Size is %u", TransmissionGroupSize)
+{
+	//0x08
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //8
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString,PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:5 = FormatString("  (%s) %s",this.ToBitString, "("+this.ToBitString+")");
+		UINT16 P:1 = FormatString("       (%s) %s",this.ToBitString, this ? " The source is providing pro-active parity packets"
+						  : " The source is NOT providing pro-active parity packets");
+		UINT16 O:1 = FormatString("       (%s) %s",this.ToBitString, this ? " The source is providing on-demand parity packets"
+						  : " The source is NOT providing on-demand parity packets");
+	};
+	UINT32 TransmissionGroupSize;
+};
+
+struct PGMOptParityGRP = FormatString("Parity Group Number is %u", ParityGroupNumber)
+{
+	//0x09
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //8
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 ParityGroupNumber;
+};
+
+struct PGMOptCurrentTGSize = FormatString("Actual Transmission Group Size is %u", ActualTransmissionGroupSize)
+{
+	//0x0A
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //8
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT32 ActualTransmissionGroupSize;
+};
+
+struct PGMOptNeighborUnreachable
+{
+	//0x0B
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //4
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+};
+
+struct PGMOptPathNLA = FormatString("Path NLA is %s", PathNLA.ToString)
+{
+	//0x0C
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //8
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+	//#?
+	Ipv4Address PathNLA;
+};
+
+struct PGMOptSynchronization
+{
+	//0x0D
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //4
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+};
+
+struct PGMOptSessionFin
+{
+	//0x0E
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //4
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:7 = FormatString("  (%s)",this.ToBitString);
+	};
+};
+
+Table PGMOptionRSTErrCodeTable(code)
+{
+	switch(code)
+	{
+		case 0x00:"Unknown reset reason";
+		default  :FormatString("Application dependent ErrCode 0x%02X", code);
+	}
+}
+
+struct PGMOptSessionReset
+{
+	//0x0F
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //4
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString(" (%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("        (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("      (%s) %s",this.ToBitString, PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("        (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 N:1 = FormatString("        (%s) %s",this.ToBitString, this ? " NAKs for previous ODATA will go unanswered from the source"
+						  : " NAKs for previous ODATA will NOT go unanswered from the source");
+		UINT16 ErrorCode:6 = FormatString("(%s) %s",this.ToBitString, PGMOptionRSTErrCodeTable(this));
+	};
+};
+
+struct PGMOptCongestionReport
+{
+	//0x10
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength;
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString,  PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:4 = FormatString("  (%s) %s",this.ToBitString, "("+this.ToBitString+")");
+		UINT16 L:1 = FormatString("       (%s) %s",this.ToBitString, this ? " NE Worst Link is being reported"
+						  : " NE Worst Link is NOT being reported");
+		UINT16 P:1 = FormatString("       (%s) %s",this.ToBitString, this ? " NE Worst Path is being reported"
+						  : " NE Worst Path is NOT being reported");
+		UINT16 R:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Rcvr Worst Path is being reported"
+						  : " Rcvr Worst Path is NOT being reported");
+	};
+	UINT32 CongestionReportReferenceSQN;
+	UINT16 NEWorstLink;
+	UINT16 NEWorstPath;
+	UINT16 RcvrWorstPath;
+	UINT16 Reserved1;
+	UINT16 NLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved2;
+	switch(NLAAFI)
+	{
+		case  1:Ipv4Address Ipv4WorstReceiverNLA;
+		case  2:Ipv6Address Ipv6WorstReceiverNLA;
+		default:AsciiString(OptionLength - 20) WorstReceiverNLA;
+	}
+};
+
+struct PGMOptCongestionReportRequest
+{
+	//0x11
+	UINT8 OptionType = PGMOptionTypeTable(Type)
+	{
+		UINT8 E:1 = FormatString("   (%s) %s",this.ToBitString, this ? " Last Option in Option List"
+						 : " NOT Last Option in Option List");
+		UINT8 Type:7 = FormatString("(%s) %s",this.ToBitString, PGMOptionTypeTable(this));
+	};
+	UINT8 OptionLength; //4
+	UINT16 Flags
+	{
+		UINT16 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT16 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED Set"
+						  : " OP_ENCODED NOT Set");
+		UINT16 OPX:2 = FormatString("     (%s) %s",this.ToBitString,  PGMOptionOPXTable(this));
+		UINT16 U:1 = FormatString("       (%s) %s",this.ToBitString, this ? " OP_ENCODED_NULL Set"
+						  : " OP_ENCODED_NULL NOT Set");
+		UINT16 Unused:4 = FormatString("  (%s)",this.ToBitString);
+		UINT16 L:1 = FormatString("       (%s) %s",this.ToBitString, this ? " NE Worst Link is being reported"
+						  : " NE Worst Link is NOT being reported");
+		UINT16 P:1 = FormatString("       (%s) %s",this.ToBitString, this ? " NE Worst Path is being reported"
+						  : " NE Worst Path is NOT being reported");
+		UINT16 R:1 = FormatString("       (%s) %s",this.ToBitString, this ? " Rcvr Worst Path is being reported"
+						  : " Rcvr Worst Path is NOT being reported");
+	};
+};
+
+
+
+//NLA - the network-layer address
+//AFI - Address Family Indicator
+struct PGMSourcePathMessage
+{
+	UINT32 SPMSequenceNumber;
+	UINT32 TrailingEdgeSequenceNumber;
+	UINT32 LeadingEdgeSequenceNumber;
+	UINT16 NLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved;
+	//#?Path NLA;
+	 switch(NLAAFI)
+	{
+		case  1:Ipv4Address Ipv4PathNLA;
+		case  2:Ipv6Address Ipv6PathNLA;
+		default:UINT32 PathNLA;
+	}
+	//Options..
+	switch(PGMOptionExtentionsExist)
+	{
+		case 1:
+			[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+			PGMOptLength OptLength;
+	}
+	While Extensions[PGMOptionExtentionsExist == 1 && offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+}
+
+struct PGMDataPacket
+{
+	UINT32 DataPacketSequenceNumber;
+	UINT32 TrailingEdgeSequenceNumber;
+	//Options;
+	switch(PGMOptionExtentionsExist)
+	{
+		case 1:
+			[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+			PGMOptLength OptLength;
+	}
+	While Extensions[PGMOptionExtentionsExist == 1 && offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+	//DATA;
+	switch
+	{
+		case offset < frameLength:Asciistring(frameLength - offset) PGMData;
+	}
+}
+
+struct PGMNCKAndNCF
+{
+	UINT32 RequestedSequenceNumber;
+	UINT16 SourceNLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved;
+	//#?Source NLA...
+	switch(SourceNLAAFI)
+	{
+		case  1:Ipv4Address Ipv4SourceNLA;
+		case  2:Ipv6Address Ipv6SourceNLA;
+		default:UINT32 SourceNLA;
+	}
+	UINT16 GroupNLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved1;
+	//#?Multicast Group NLA....
+	switch(GroupNLAAFI)
+	{
+		case  1:Ipv4Address Ipv4GroupNLA;
+		case  2:Ipv6Address Ipv6GroupNLA;
+		default:UINT32 GroupNLA;
+	}
+	//Options..
+	switch(PGMOptionExtentionsExist)
+	{
+		case 1:
+			[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+			PGMOptLength OptLength;
+	}
+	While Extensions[PGMOptionExtentionsExist == 1 && offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+}
+
+struct PGMSPMRequest
+{
+	//Options..
+	[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+	PGMOptLength OptLength;
+	
+	While Extensions[offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+}
+
+struct PGMPollRequest
+{
+	UINT32 POLLSequenceNumber;
+	UINT16 POLLRound;
+	UINT16 POLLSubtype;
+	UINT16 NLAAFI = FormatString("%s, %d(0x%X)", AddressFamilyTable(this), this, this);
+	UINT16 Reserved;
+	//#?Path NLA....
+	switch(NLAAFI)
+	{
+		case  1:Ipv4Address Ipv4PathNLA;
+		case  2:Ipv6Address Ipv6PathNLA;
+		default:UINT32 PathNLA;
+	}
+	//microseconds
+	UINT32 POLLBackoffInterval;
+	UINT32 RandomString;
+	UINT32 MatchingBitMask;
+	//Options..
+	switch(PGMOptionExtentionsExist)
+	{
+		case 1:
+			[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+			PGMOptLength OptLength;
+	}
+	While Extensions[PGMOptionExtentionsExist == 1 && offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+}
+
+struct PGMPollResponse
+{
+	UINT32 POLLSequenceNumber;
+	UINT16 POLLRound;
+	UINT16 Reserved;
+	//Options..
+	switch(PGMOptionExtentionsExist)
+	{
+		case 1:
+			[OptEndOffset = offset + UINT16(frameData, offset + 2)]
+			PGMOptLength OptLength;
+	}
+	While Extensions[PGMOptionExtentionsExist == 1 && offset < OptEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ) & 0x7F)
+		{
+			case 0x01:PGMOptFragmentation OptFragmentation;
+			case 0x02:PGMOptNAKList OptNAKList;
+			case 0x03:PGMOptJoin OptJoin;
+			case 0x04:PGMOptNAKBackOffInterval OptNAKBackOffInterval;
+			case 0x05:PGMOptNAKBackOffRange OptNAKBackOffRange;
+			case 0x07:PGMOptRedirect OptRedirect;
+			case 0x08:PGMOptParityPRM OptParityPRM;
+			case 0x09:PGMOptParityGRP OptParityGRP;
+			case 0x0A:PGMOptCurrentTGSize OptCurrentTGSize;
+			case 0x0B:PGMOptNeighborUnreachable OptNeighborUnreachable;
+			case 0x0C:PGMOptPathNLA OptPathNLA;
+			case 0x0D:PGMOptSynchronization OptSynchronization;
+			case 0x0E:PGMOptSessionFin OptSessionFin;
+			case 0x0F:PGMOptSessionReset OptSessionReset;
+			case 0x10:PGMOptCongestionReport OptCongestionReport;
+			case 0x11:PGMOptCongestionReportRequest OptCongestionReportRequest;
+			default  :PGMGeneralOption GeneralOption;
+		}
+	}
+}

@@ -1,0 +1,3751 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Plug and Play Remote (PNPR) Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PNPR]: Plug and Play Remote (PNPR) Protocol Specification (5.0.4)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 6/26/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol PNPR = FormatString( "%s %s%s%s%s%s", 
+	Property.PNPRMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.PNPRSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.PNPRSummary : "" )
+{
+	[Property.PNPRSummary = ""]
+	[Property.PNPRMethodName = PNPRMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 2:
+			_Struct PNPRGetVersion
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Version=%u ReturnValue=%u", Version, ReturnValue )]
+									Struct
+									{
+										PNPRVersion ( TRUE ) Version;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct PNPRGetGlobalState
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Flags=%u", Flags )]
+									Struct
+									{
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "State=%s ReturnValue=%u", State.ToString, ReturnValue )]
+									Struct
+									{
+										switch( Property.MSRPCByteOrder )
+										{
+											Case LittleEndian:
+											Struct {
+												UINT32 State = FormatString( "%08X", this )
+												{
+													UINT32 CanDoUI:1 = FormatString("          (%s) %s", this.ToBitString, this ? "CM can display the UI" : "CM cannot display the UI");
+													UINT32 Reserved1:1 = FormatString("         (%s)", this.ToBitString);
+													UINT32 ServicesAvailable:1 = FormatString("(%s) %s", this.ToBitString, this ? "CM APIs are available" : "CM APIs are not available");
+													UINT32 ShuttingDown:1 = FormatString("     (%s) %s", this.ToBitString, this ? "CM is shutting down" : "CM is not shutting down");
+													UINT32 DetectionPending:1 = FormatString(" (%s) %s", this.ToBitString, this ? "State detection is pending" : "State detection is not pending");
+													UINT32 Reserved2:27 = FormatString("         (%s)", this.ToBitString);
+												}
+											}
+											Default:
+											Struct {
+												UINT32 State  = FormatString( "%08X", this )
+												{
+													UINT32 Reserved2:27 = FormatString("         (%s)", this.ToBitString);
+													UINT32 DetectionPending:1 = FormatString(" (%s) %s", this.ToBitString, this ? "State detection is pending" : "State detection is not pending");
+													UINT32 ShuttingDown:1 = FormatString("     (%s) %s", this.ToBitString, this ? "CM is shutting down" : "CM is not shutting down");
+													UINT32 ServicesAvailable:1 = FormatString("(%s) %s", this.ToBitString, this ? "CM APIs are available" : "CM APIs are not available");
+													UINT32 Reserved1:1 = FormatString("         (%s)", this.ToBitString);
+													UINT32 CanDoUI:1 = FormatString("          (%s) %s", this.ToBitString, this ? "CM can display the UI" : "CM cannot display the UI");
+												}
+											}
+										}
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct PNPRValidateDeviceInstance
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Flags  = PNPRLocateDevNodeFlagsTable( this, TRUE );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct PNPRGetRootDeviceInstance
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Length=%u", Length )]
+									Struct
+									{
+										UINT32 Length;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ReturnValue=%u", DeviceID.ToString, ReturnValue )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct PNPRGetRelatedDeviceInstance
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Relationship=%u DeviceID=%s Length=%u Flags=%u", Relationship, DeviceID.ToString, Length, Flags )]
+									Struct
+									{
+										UINT32 Relationship = PNPRRelationshipTable( this, TRUE );
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "RelatedDeviceID=%s Length=%u ReturnValue=%u", RelatedDeviceID.ToString, Length, ReturnValue )]
+									Struct
+									{
+										NdrWideString RelatedDeviceID;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );	
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct PNPREnumerateSubKeys
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Branch=%u Index=%u Length=%u Flags=%u", Branch, Index, Length, Flags )]
+									Struct
+									{
+										UINT32 Branch = PNPRBranchTable( this, TRUE );
+										UINT32 Index;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Buffer=%s RequiredLen=%u ReturnValue=%u", Buffer.ToString, RequiredLen, ReturnValue )]
+									Struct
+									{
+										NdrWideString Buffer;
+										Align4 Pad;
+										UINT32 RequiredLen;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct PNPRGetDeviceList
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Filter=%s Length=%u Flags=%u", Filter.ToString, Length, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr Filter;
+										Align4 Pad;
+										UINT32 Length;
+										PNPRDeviceIDListFlagValues Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Length=%u ReturnValue=%u", Length, ReturnValue )]
+									Struct
+									{
+										NdrConformantVarying BufferConformant;
+										[DataFieldFrameLength = FrameOffset + BufferConformant.ActualCount * 2]
+										PNPRMULTISZ	Buffer;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct PNPRGetDeviceListSize
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Filter=%s Flags=%u", Filter.ToString, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr Filter;
+										Align4 pad;
+										PNPRDeviceIDListFlagValues Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Len=%u ReturnValue=%u", Length, ReturnValue )]
+									Struct
+									{
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct PNPRGetDepth
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Depth=%u ReturnValue=%u", Depth, ReturnValue )]
+									Struct
+									{
+										UINT32 Depth;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct PNPRGetDeviceRegProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Property=%u RegDataType=%u TransferLen=%u Length=%u Flags=%u", DeviceID.ToString, RegProperty, RegDataType, TransferLen, Length, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 RegProperty = PNPRDRPRegistryPropertyValueTable( this, TRUE );
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										UINT32 TransferLen;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "RegDataType=%u TransferLen=%u Length=%u ReturnValue=%u", RegDataType, TransferLen, Length, ReturnValue )]
+									Struct
+									{
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										PNPRParseConformantArray (TRUE, RegDataType) Buffer;
+										ALIGN4 Pad;
+										UINT32 TransferLen;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct PNPRSetDeviceRegProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Property=%u DataType=%u Length=%u Flags=%u", DeviceID.ToString, RegProperty, DataType, Length, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 RegProperty = PNPRDRPRegistryPropertyValueTable( this, TRUE );
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										PNPRParseConformantArray(False, RegDataType) Buffer;
+										Align4 pad2;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct PNPRGetClassInstance
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Length=%u", DeviceID.ToString, Length )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Length;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassInstance=%s ReturnValue=%u", ClassInstance.ToString, ReturnValue )]
+									Struct
+									{
+										NdrWideString ClassInstance;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct PNPRCreateKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "SubKey=%s SamDesired=%u Flags=%u", SubKey.ToString, SamDesired, Flags )]
+									Struct
+									{
+										NdrWideString SubKey;
+										Align4 Pad;
+										UINT32 SamDesired;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct PNPRDeleteRegistryKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ParentKey=%s ChildKey=%s Flags=%u", DeviceID.ToString, ParentKey.ToString, ChildKey.ToString, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										NdrWideString ParentKey;
+										NdrWideString ChildKey;
+										Align4 Pad;
+										UINT32 Flags = PNPRDeleteRegistryKeyFlagsTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct PNPRGetClassCount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Flags=%u", Flags )]
+									Struct
+									{
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassCount=%u ReturnValue=%u", ClassCount, ReturnValue )]
+									Struct
+									{
+										UINT32 ClassCount;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct PNPRGetClassName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassGuid=%s Length=%u Flags=%u", ClassGuid.ToString, Length, Flags )]
+									Struct
+									{
+										NdrWideString ClassGuid;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Buffer=%s Length=%u ReturnValue=%u", Buffer.ToString, Length, ReturnValue )]
+									Struct
+									{
+										NdrWideString Buffer;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct PNPRDeleteClassKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassGuid=%s Flags=%u", ClassGuid.ToString, Flags )]
+									Struct
+									{
+										NdrWideString ClassGuid;
+										Align4 Pad;
+										UINT32 Flags = PNPRDeleteClassKeyFlagsTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 21:
+			_Struct PNPRGetInterfaceDeviceAlias
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "InterfaceDevice=%s Length=%u TransferLen=%u Flags=%u", InterfaceDevice.ToString, Length, TransferLen, Flags )]
+									Struct
+									{
+										NdrWideString InterfaceDevice;
+										GUID ( TRUE ) AliasInterfaceGUID;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 TransferLen;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "AliasInterfaceDevice=%s Length=%u TransferLen=%u ReturnValue=%u", AliasInterfaceDevice.ToString, Length, TransferLen, ReturnValue )]
+									Struct
+									{
+										NdrWideString AliasInterfaceDevice;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 TransferLen;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 22:
+			_Struct PNPRGetInterfaceDeviceList
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Length=%u Flags=%u", DeviceID.ToString, Length, Flags )]
+									Struct
+									{
+										GUID ( TRUE ) InterfaceGuid;
+										NdrWIDESTRINGPtr DeviceID;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Flags = PNPRGetInterfaceDeviceListSizeFlagsTable( this, TRUE);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Length=%u ReturnValue=%u", Length, ReturnValue )]
+									Struct
+									{
+										NdrConformantVarying BufferConformant;
+										[DataFieldFrameLength = FrameOffset + BufferConformant.ActualCount * 2]
+										PNPRMULTISZ	Buffer;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct PNPRGetInterfaceDeviceListSize
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										GUID ( TRUE ) InterfaceGuid;
+										NdrWIDESTRINGPtr DeviceID;
+										Align4 Pad;
+										UINT32 Flags = PNPRGetInterfaceDeviceListSizeFlagsTable( this, TRUE );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Len=%u ReturnValue=%u", Len, ReturnValue )]
+									Struct
+									{
+										UINT32 Len;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct PNPRegisterDeviceClassAssociation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Reference=%s Length=%u TransferLen=%u Flags=%u", DeviceID.ToString, Reference.ToString, Length, TransferLength, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										GUID ( TRUE ) InterfaceGUID;
+										NdrWIDESTRINGPtr Reference;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 TransferLength;
+										UINT32 Flags = "Not Used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "SymLink=%s Length=%u TransferLen=%u ReturnValue=%u", SymLink.ToString, Length, TransferLen, ReturnValue )]
+									Struct
+									{
+										NdrWideString SymLink;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 TransferLen;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct PNPRUnregisterDeviceClassAssociation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "InterfaceDevice=%s Flags=%u", InterfaceDevice.ToString, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr InterfaceDevice;
+										Align4 Pad;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct PNPRGetClassRegProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassGuid=%s Property=%u RegDataType=%u TransferLen=%u Length=%u Flags=%u", ClassGuid.ToString, RegProperty, RegDataType, TransferLen, Length, Flags )]
+									Struct
+									{
+										NdrWideString ClassGuid;
+										Align4 Pad;
+										UINT32 RegProperty = PNPRCRPRegistryPropertyValueTable( this, TRUE );
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										UINT32 TransferLen;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "RegDataType=%u TransferLen=%u Length=%u ReturnValue=%u", RegDataType, TransferLen, Length, ReturnValue )]
+									Struct
+									{
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										PNPRParseConformantArray (TRUE, RegDataType) Buffer;
+										Align4 pad;
+										UINT32 TransferLen;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct PNPRSetClassRegProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ClassGuid=%s Property=%u DataType=%u Length=%u Flags=%u", ClassGuid.ToString, RegProperty, DataType, Length, Flags )]
+									Struct
+									{
+										NdrWideString ClassGuid;
+										Align4 Pad1;
+										UINT32 RegProperty = PNPRCRPRegistryPropertyValueTable( this, TRUE );
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this, TRUE );
+										PNPRParseConformantArray (FALSE, DataType) Buffer;
+										Align4 pad2;
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct PNPRCreateDevInst
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ParentDeviceID=%s Length=%u Flags=%u", DeviceID.ToString, ParentDeviceID.ToString, Length, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										NdrWideString ParentDeviceID;
+										Align4 Pad;
+										UINT32 Length;
+										Switch( Property.MSRPCByteOrder )
+										{
+											Case LittleEndian:
+											Struct {
+												UINT32 Flags = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Install later")
+												{
+													UINT32 Reserved1:1 = FormatString("    (%s)", this.ToBitString);
+													UINT32 Phantom:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Create a phantom device instance" : "Do not create a phantom device instance");
+													UINT32 GenerateID:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Create a unique instance value" : "Do not create a unique instance value");
+													UINT32 DoNotInstall:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Create a device instance without installing it" : "Do not create a device instance without installing it");
+													UINT32 Reserved:28 = FormatString("     (%s)", this.ToBitString);
+												}
+											}
+											Default:
+											Struct {
+												UINT32 Flags = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Install later")
+												{
+													UINT32 Reserved:28 = FormatString("     (%s)", this.ToBitString);
+													UINT32 DoNotInstall:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Create a device instance without installing it" : "Do not create a device instance without installing it");
+													UINT32 GenerateID:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Create a unique instance value" : "Do not create a unique instance value");
+													UINT32 Phantom:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Create a phantom device instance" : "Do not create a phantom device instance");
+													UINT32 Reserved1:1 = FormatString("    (%s)", this.ToBitString);
+												}
+											}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ReturnValue=%u", DeviceID.ToString, ReturnValue )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 29:
+			_Struct PNPRDeviceInstanceAction
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "MajorAction=%u MinorAction=%u DeviceInstance1=%s DeviceInstance2=%s", MajorAction, MinorAction, DeviceInstance1.ToString, DeviceInstance2.ToString )]
+									Struct
+									{
+										UINT32 MajorAction = PNPRDeviceInstanceActionMajorActionTable( this );
+										switch(MajorAction)
+										{
+											case 0x00000003:
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+												Struct {
+													UINT32 MinorAction = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Instantiates a device and starts it")
+													{
+														UINT32 Download:1 = FormatString("     (%s) %s", this.ToBitString, "No-op;valid flag, but no action performed");
+														UINT32 WriteLogConfs:1 = FormatString("(%s) %s", this.ToBitString, "No-op;valid flag, but no action performed");
+														UINT32 DevInstReset:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Instantiates a device without starting it" : "Do not instantiates a device without starting it");
+														UINT32 Reserved:29 = FormatString("     (%s)", this.ToBitString);
+													}
+												}
+												Default:
+												Struct {
+													UINT32 MinorAction = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Instantiates a device and starts it")
+													{
+														UINT32 Reserved:29 = FormatString("     (%s)", this.ToBitString);
+														UINT32 DevInstReset:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Instantiates a device without starting it" : "Do not instantiates a device without starting it");
+														UINT32 WriteLogConfs:1 = FormatString("(%s) %s", this.ToBitString, "No-op;valid flag, but no action performed");
+														UINT32 Download:1 = FormatString("     (%s) %s", this.ToBitString, "No-op;valid flag, but no action performed");
+													}
+												}
+											}
+											case 0x00000007:
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+												Struct {
+													UINT32 MinorAction = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Normal")
+													{
+														UINT32 Synchronous:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Reenumeration should occur synchronously" : "Reenumeration should not occur synchronously");
+														UINT32 RetryInstallation:1 = FormatString("(%s) %s", this.ToBitString, this ? "Installation should be attempted on any devices currently present exept currently installed" : "Installation should not be attempted on any devices currently present except currently installed");
+														UINT32 Asynchronous:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Reenumeration should occur asynchronously" : "Reenumeration should not occur asynchronously");
+														UINT32 Reserved:29 = FormatString("         (%s)", this.ToBitString);
+													}
+												}
+												Default:
+												Struct {
+													UINT32 MinorAction = FormatString( "0x%08X%s", UINT32( FrameData, FrameOffset ), this ? "" : " - Normal")
+													{
+														UINT32 Reserved:29 = FormatString("         (%s)", this.ToBitString);
+														UINT32 Asynchronous:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Reenumeration should occur asynchronously" : "Reenumeration should not occur asynchronously");
+														UINT32 RetryInstallation:1 = FormatString("(%s) %s", this.ToBitString, this ? "Installation should be attempted on any devices currently present exept currently installed" : "Installation should not be attempted on any devices currently present except currently installed");
+														UINT32 Synchronous:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Reenumeration should occur synchronously" : "Reenumeration should not occur synchronously");
+													}
+												}
+											}
+											Default:UINT32 MinorActionUnused = "MinorAction is not used";
+										}
+										NdrWIDESTRINGPtr DeviceInstance1;
+										NdrWIDESTRINGPtr DeviceInstance2;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct PNPRGetDeviceStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										Align4 Pad;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Status=%s Problem=%u ReturnValue=%u", DeviceStatus.ToString, Problem, ReturnValue )]
+									Struct
+									{
+										PNPRDeviceInstanceStatusValue DeviceStatus = PNPRDeviceInstanceStatusValuesTable( this, TRUE);
+										UINT32 Problem = PNPRDeviceProblemValuesTable( this, TRUE);
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 31:
+			_Struct PNPRSetDeviceProblem
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Problem=%u Flags=%u", DeviceID.ToString, Problem, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										Align4 Pad;
+										UINT32 Problem = PNPRDeviceProblemValuesTable( this, TRUE );
+										UINT32 Flags = PNPRSetDeviceProblemFlagsTable( this, TRUE);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 32:
+			_Struct PNPRDisableDevInst
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s VetoName=%s NameLength=%u Flags=%u", DeviceID.ToString, VetoName.ToString, NameLength, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 NameLength;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "VetoName=%s ReturnValue=%u", VetoName.ToString, ReturnValue )]
+									Struct
+									{
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 33:
+			_Struct PNPRUninstallDevInst
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										Align4 Pad;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 34:
+			_Struct PNPRAddID
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ID=%s Flags=%u", DeviceID.ToString, ID.ToString, Flags )]
+									Struct
+									{
+										NdrWIDESTRINGPtr DeviceID;
+										NdrWideString ID;
+										Align4 Pad;
+										UINT32 Flags = PNPRAddIDRequestFlagsTable( this, TRUE);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 35:
+			_Struct PNPRegisterDriver
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Flags=%u", DeviceID.ToString, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Flags = PNPRRegisterDriverFlagsTable( this, TRUE );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 36:
+			_Struct PNPRQueryRemove
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s VetoName=%s NameLength=%u Flags=%u", DeviceID.ToString, VetoName.ToString, NameLength, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 NameLength;
+										UINT32 Flags = PNPRQueryRemoveFlagsTable( this, TRUE );	
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "VetoName=%s ReturnValue=%u", VetoName.ToString, ReturnValue )]
+									Struct
+									{
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 37:
+			_Struct PNPRequestDeviceEject
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s VetoName=%s NameLength=%u Flags=%u", DeviceID.ToString, VetoName.ToString, NameLength, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 NameLength;
+										UINT32 Flags = "Not used";	
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "VetoName=%s ReturnValue=%u", VetoName.ToString, ReturnValue )]
+									Struct
+									{
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 38:
+			_Struct PNPRIsDockStationPresent
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Present=%s", Present.ToString )]
+									Struct
+									{
+										BOOLPtr Present;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Present=%s ReturnValue=%u", Present.ToString, ReturnValue )]
+									Struct
+									{
+										[Post.PNPRPresentFlag = Present.bValue]
+										BOOLPtr Present = Present.bValue;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 39:
+			_Struct PNPRequestEjectPC
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 40:
+			_Struct PNPRHwProfFlags
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Action=%u DeviceID=%s Config=%u Value=%s VetoName=%s NameLength=%u Flags=%u", Action, DeviceID.ToString, Config, Value.ToString, VetoName.ToString, NameLength, Flags )]
+									Struct
+									{
+										UINT32 Action = PNPRHwProfFlagsActionFlagsTable( this );
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 Config = FormatString("%u (0x%08X) - %s", this, this, this ? "Current profile should not be used" : "Current profile should be used");
+										UINT32 Value;
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad2;
+										UINT32 NameLength;
+										switch( Action )
+										{
+											case 0x00000001:UINT32 Flag= "No Flags are valid";
+											case 0x00000002:UINT32 Flags = this == 1?"CM_SET_HW_PROF_FLAGS_UI_NOT_OK - Do not display veto user information":"Display veto user information";
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Value=%s VetoName=%s ReturnValue=%u", Value.ToString, VetoName.ToString, ReturnValue )]
+									Struct
+									{
+										UINT32 Value;
+										NdrPtr VetoTypePtr;
+										switch
+										{
+											case VetoTypePtr.ReferentID != 0:
+												NdrEnum VetoType = PNPRVetoTypeTable( This.Value,TRUE );
+										}
+										NdrWIDESTRINGPtr VetoName;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 41:
+			_Struct PNPRGetHwProfInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Index=%u ProfileInfoSize=%u Flags=%u", Index, ProfileInfoSize, Flags )]
+									Struct
+									{
+										UINT32 Index = PNPRGetHWProfInfoIndexTable( this );
+										PNPRHwprofileinfo HWProfileInfo;
+										UINT32 ProfileInfoSize;
+										UINT32 Flags = "Not used"; 
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										PNPRHwprofileinfo HWProfileInfo;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 42:
+			_Struct PNPRAddEmptyLogConf
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Priority=%u Flags=%u", DeviceID.ToString, Priority, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Priority = PNPRLogicalConfigurationPriorityValuesTable( this );
+										UINT32 Flags = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "LogConfTag=%u ReturnValue=%u", LogConfTag, ReturnValue )]
+									Struct
+									{
+										UINT32 LogConfTag;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 43:
+			_Struct PNPRFreeLogConf
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfType=%u LogConfTag=%u Flags=%u", DeviceID.ToString, LogConfType, LogConfTag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 LogConfTag;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 44:
+			_Struct PNPRGetFirstLogConf
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfType=%u Flags=%u", DeviceID.ToString, LogConfType, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "LogConfTag=%u ReturnValue=%u", LogConfTag, ReturnValue )]
+									Struct
+									{
+										UINT32 LogConfTag;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 45:
+			_Struct PNPRGetNextLogConf
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfType=%u CurrentTag=%u Flags=%u", DeviceID.ToString, LogConfType, CurrentTag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 CurrentTag;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "NextTag=%u ReturnValue=%u", NextTag, ReturnValue )]
+									Struct
+									{
+										UINT32 NextTag;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 46:
+			_Struct PNPRGetLogConfPriority
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s Type=%u Tag=%u Flags=%u", DeviceID.ToString, Type, Tag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 Type = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 Tag;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Priority=%u ReturnValue=%u", Priority, ReturnValue )]
+									Struct
+									{
+										UINT32 Priority = PNPRLogicalConfigurationPriorityValuesTable( this );
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 47:
+			_Struct PNPRAddResDes
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u ResourceID=%u ResourceLen=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, ResourceID, ResourceLen, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										NdrConformantArray (FALSE, TRUE) ResourceData;
+										Align4 Pad2;
+										UINT32 ResourceLen;
+										UINT32 Flags = PNPRAddResDesFlagsTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ResourceTag=%u ReturnValue=%u", ResourceTag, ReturnValue )]
+									Struct
+									{
+										UINT32 ResourceTag;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 48:
+			_Struct PNPRFreeResDes
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u ResourceID=%u ResourceTag=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, ResourceID, ResourceTag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 ResourceTag;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "PreviousResType=%u PreviousResTag=%u ReturnValue=%u", PreviousResType, PreviousResTag, ReturnValue )]
+									Struct
+									{
+										UINT32 PreviousResType;
+										UINT32 PreviousResTag;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 49:
+			_Struct PNPRGetNextResDes
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u ResourceID=%u ResourceTag=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, ResourceID, ResourceTag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 ResourceTag;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "NextResDesTag=%u NextResDesType=%u ReturnValue=%u", NextResTag, NextResType, ReturnValue )]
+									Struct
+									{
+										UINT32 NextResTag;
+										UINT32 NextResType = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 50:
+			_Struct PNPRGetResDesData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u ResourceID=%u ResourceTag=%u BufferLen=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, ResourceID, ResourceTag, BufferLen, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 ResourceTag;
+										UINT32 BufferLen;
+										UINT32 Flags = PNPResourceFieldWidthTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										NdrConformantArray (FALSE, TRUE) Buffer;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 51:
+			_Struct PNPRGetResDesDataSize
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u ResourceID=%u ResourceTag=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, ResourceID, ResourceTag, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 ResourceTag;
+										UINT32 Flags = PNPResourceFieldWidthTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Size=%u ReturnValue=%u", Size, ReturnValue )]
+									Struct
+									{
+										UINT32 Size;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 52:
+			_Struct PNPRModifyResDes
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s LogConfTag=%u LogConfType=%u CurrentResourceID=%u NewResourceID=%u ResourceTag=%u ResourceLen=%u Flags=%u", DeviceID.ToString, LogConfTag, LogConfType, CurrentResourceID, NewResourceID, ResourceTag, ResourceLen, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 LogConfTag;
+										UINT32 LogConfType = PNPRLogicalConfigurationFlagValuesTable( this, TRUE );
+										UINT32 CurrentResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 NewResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										UINT32 ResourceTag;
+										NdrConformantArray (FALSE, TRUE) ResourceData;
+										Align4 Pad2;
+										UINT32 ResourceLen;
+										UINT32 Flags = PNPResourceFieldWidthTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 53:
+			_Struct PNPRDetectResourceConflict
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ResourceID=%u ResourceLen=%u Flags=%u", DeviceID.ToString, ResourceID, ResourceLen, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										NdrConformantArray (FALSE, TRUE) ResourceData;
+										Align4 Pad2;
+										UINT32 ResourceLen;
+										UINT32 Flags = PNPResourceFieldWidthTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ConflictDetected=%d ReturnValue=%u", PbConflictDetected, ReturnValue )]
+									Struct
+									{
+										BOOL PbConflictDetected;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 54:
+			_Struct PNPRQueryResConfList
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s ResourceID=%u ResourceLen=%u BufferLen=%u Flags=%u", DeviceID.ToString, ResourceID, ResourceLen, BufferLen, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										Align4 Pad1;
+										UINT32 ResourceID = PNPRResourceTypeValuesTable( this, TRUE );
+										NdrConformantArray (FALSE, TRUE) ResourceData;
+										Align4 Pad2;
+										UINT32 ResourceLen;
+										UINT32 BufferLen;
+										UINT32 Flags = PNPResourceFieldWidthTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										NdrConformantArray (FALSE, TRUE) Buffer;
+										Align4 Pad;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 61:
+			_Struct PNPRGetCustomDevProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "DeviceID=%s CustomPropName=%s Length=%u Flags=%u", DeviceID.ToString, CustomPropName.ToString, Length, Flags )]
+									Struct
+									{
+										NdrWideString DeviceID;
+										NdrWideString CustomPropName;
+										Align4 Pad;
+										UINT32 Length;
+										UINT32 Flags = this==1 ? "CM_CUSTOMDEVPROP_MERGE_MULTISZ - Property values are merged":"Property values are not merged";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "RegDataType=%u TransferLen=%u Length=%u ReturnValue=%u", RegDataType, TransferLen, Length, ReturnValue )]
+									Struct
+									{
+										UINT32 RegDataType = PNPRRegistryTypeValuesTable( this,TRUE);
+										NdrConformantArray (FALSE, FALSE) Buffer;
+										Align4 Pad;
+										UINT32 TransferLen;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 62:
+			_Struct PNPRGetVersionInternal
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "PwVersion=%u", PwVersion )]
+									Struct
+									{
+										PNPRVersion ( TRUE ) PwVersion;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "PwVersion=%u ReturnValue=%u", PwVersion, ReturnValue )]
+									Struct
+									{
+										PNPRVersion ( TRUE ) PwVersion;
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 63:
+			_Struct PNPRGetBlockedDriverInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Length=%u Flags=%u", Length, Flags )]
+									Struct
+									{
+										UINT32 Length;
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "TransferLen=%u Length=%u ReturnValue=%u", TransferLength, Length, ReturnValue )]
+									Struct
+									{
+										PNPRParseConformantArray(True, FALSE) Buffer;
+										Align4 Pad;
+										UINT32 TransferLength;
+										UINT32 Length;
+										UINT32 Result = PNPRReturnCodeTable( this );	
+									}
+							}
+						}
+				}
+			}
+		
+		Case 64:
+			_Struct PNPRGetServerSideDeviceInstallFlags
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "Flags=%u", Flags )]
+									Struct
+									{
+										UINT32 Flags = "Not used";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "SSDIFlags=%s ReturnValue=%u", SSDIFlags.ToString, ReturnValue )]
+									Struct
+									{
+										UINT32 SSDIFlags = FormatString("0x%08X - %s",this,this==1?"SSDI_REBOOT_PENDING - A reboot is pending from a server-side device installation":"Reboot not pending");
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 65:
+			_Struct PNPRGetObjectPropKeys
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ObjectName=%s ObjectType=%u PropertyCultureName=%s PropertyCount=%u Flags=%u", ObjectName.ToString, ObjectType, PropertyCultureName.ToString, PropertyCount, Flags )]
+									Struct
+									{
+										NdrWideString ObjectName;
+										Align4 Pad1;
+										UINT32 ObjectType=PNPRObjectTypeTable(this);
+										NdrWIDESTRINGPtr PropertyCultureName;
+										Align4 Pad2;
+										UINT32 PropertyCount;
+										UINT32 Flags = FormatString( "%s",Flags == 0x80000000?"Reserved for use by system configuration tasks running on the server.":"Undefine");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "PropertyCount=%u TransferLen=%u ReturnValue=%u", PropertyCount, TransferLen, ReturnValue )]
+									Struct
+									{
+										UINT32 PropertyCount;
+										UINT32 TransferLen;
+										NdrConformantVarying Count;
+										switch
+										{
+											case Count.ActualCount:
+												PNPRDevpropkey PropertyKey[Count.ActualCount];
+										}
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 66:
+			_Struct PNPRGetObjectProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ObjectName=%s ObjectType=%u PropertyCultureName=%s PropertySize=%u Flags=%u", ObjectName.ToString, ObjectType, PropertyCultureName.ToString, PNPRPropertySize, Flags )]
+									Struct
+									{
+										NdrWideString ObjectName;
+										Align4 Pad1;
+										UINT32 ObjectType=PNPRObjectTypeTable(this);
+										NdrWIDESTRINGPtr PropertyCultureName;
+										Align4 Pad2;					
+										PNPRDevpropkey PropertyKey;
+										UINT32 PNPRPropertySize;
+										UINT32 Flags = FormatString( "%s",Flags == 0x80000000?"Reserved for use by system configuration tasks running on the server.":"Undefine");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "PropertyType=%u PropertySize=%u TransferLen=%u ReturnValue=%u", PropertyType, PNPRPropertySize, TransferLen, ReturnValue )]
+									Struct
+									{
+										PNPRPropertyType PropertyType;
+										UINT32 PNPRPropertySize;
+										UINT32 TransferLen;
+										NdrConformantVarying Count;
+										switch
+										{
+											case Count.ActualCount:
+											_struct
+											{
+												BLOB(Count.ActualCount) PropertyBuffer;
+												ALIGN4 Pad;
+											}
+										}
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 67:
+			_Struct PNPRSetObjectProp
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ObjectName=%s ObjectType=%u PropertyCultureName=%s PropertyType=%u PropertySize=%u Flags=%u", ObjectName.ToString, ObjectType, PropertyCultureName.ToString, PropertyType, PNPRPropertySize, Flags )]
+									Struct
+									{
+										NdrWideString ObjectName;
+										Align4 Pad1;
+										UINT32 ObjectType=PNPRObjectTypeTable(this);
+										NdrWIDESTRINGPtr PropertyCultureName;
+										Align4 Pad;
+										PNPRDevpropkey PropertyKey;
+										PNPRPropertyType PropertyType;
+										UINT32 PNPRPropertySize;
+										NdrPtr PNPRopertyBufferpointor;
+										switch
+										{
+											case PNPRopertyBufferpointor.referentID != 0:
+												struct
+												{
+													NdrConformant PNPRPropertySizeConformant;
+													BLOB(PNPRPropertySize) PropertyBuffer;
+												}
+										}
+										ALIGN4 Pad2;
+										UINT32 Flags = FormatString( "%s",Flags == 0x80000000?"Reserved for use by system configuration tasks running on the server.":"Undefine");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PNPRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 Result = PNPRReturnCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 0:
+		Case 1:
+		Case 4:
+		Case 5:
+		Case 55:
+		Case 56:
+		Case 57:
+		Case 58:
+		Case 59:
+		Case 60:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[PNPRSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("PNPR", "Invalid PNPR method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[PNPRSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("PNPR", "Invalid PNPR method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("PNPR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "PNPR", "Unknown PNPR method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+Table PNPRMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Opnum00NotUsedOnWire";
+		Case 1: "Opnum01NotUsedOnWire";
+		Case 2: "PNPR_GetVersion";
+		Case 3: "PNPR_GetGlobalState";
+		Case 4: "Opnum04NotUsedOnWire";
+		Case 5: "Opnum05NotUsedOnWire";
+		Case 6: "PNPR_ValidateDeviceInstance";
+		Case 7: "PNPR_GetRootDeviceInstance";
+		Case 8: "PNPR_GetRelatedDeviceInstance";
+		Case 9: "PNPR_EnumerateSubKeys";
+		Case 10: "PNPR_GetDeviceList";
+		Case 11: "PNPR_GetDeviceListSize";
+		Case 12: "PNPR_GetDepth";
+		Case 13: "PNPR_GetDeviceRegProp";
+		Case 14: "PNPR_SetDeviceRegProp";
+		Case 15: "PNPR_GetClassInstance";
+		Case 16: "PNPR_CreateKey";
+		Case 17: "PNPR_DeleteRegistryKey";
+		Case 18: "PNPR_GetClassCount";
+		Case 19: "PNPR_GetClassName";
+		Case 20: "PNPR_DeleteClassKey";
+		Case 21: "PNPR_GetInterfaceDeviceAlias";
+		Case 22: "PNPR_GetInterfaceDeviceList";
+		Case 23: "PNPR_GetInterfaceDeviceListSize";
+		Case 24: "PNPR_RegisterDeviceClassAssociation";
+		Case 25: "PNPR_UnregisterDeviceClassAssociation";
+		Case 26: "PNPR_GetClassRegProp";
+		Case 27: "PNPR_SetClassRegProp";
+		Case 28: "PNPR_CreateDevInst";
+		Case 29: "PNPR_DeviceInstanceAction";
+		Case 30: "PNPR_GetDeviceStatus";
+		Case 31: "PNPR_SetDeviceProblem";
+		Case 32: "PNPR_DisableDevInst";
+		Case 33: "PNPR_UninstallDevInst";
+		Case 34: "PNPR_AddID";
+		Case 35: "PNPR_RegisterDriver";
+		Case 36: "PNPR_QueryRemove";
+		Case 37: "PNPR_RequestDeviceEject";
+		Case 38: "PNPR_IsDockStationPresent";
+		Case 39: "PNPR_RequestEjectPC";
+		Case 40: "PNPR_HwProfFlags";
+		Case 41: "PNPR_GetHwProfInfo";
+		Case 42: "PNPR_AddEmptyLogConf";
+		Case 43: "PNPR_FreeLogConf";
+		Case 44: "PNPR_GetFirstLogConf";
+		Case 45: "PNPR_GetNextLogConf";
+		Case 46: "PNPR_GetLogConfPriority";
+		Case 47: "PNPR_AddResDes";
+		Case 48: "PNPR_FreeResDes";
+		Case 49: "PNPR_GetNextResDes";
+		Case 50: "PNPR_GetResDesData";
+		Case 51: "PNPR_GetResDesDataSize";
+		Case 52: "PNPR_ModifyResDes";
+		Case 53: "PNPR_DetectResourceConflict";
+		Case 54: "PNPR_QueryResConfList";
+		Case 55: "Opnum55NotUsedOnWire";
+		Case 56: "Opnum56NotUsedOnWire";
+		Case 57: "Opnum57NotUsedOnWire";
+		Case 58: "Opnum58NotUsedOnWire";
+		Case 59: "Opnum59NotUsedOnWire";
+		Case 60: "Opnum60NotUsedOnWire";
+		Case 61: "PNPR_GetCustomDevProp";
+		Case 62: "PNPR_GetVersionInternal";
+		Case 63: "PNPR_GetBlockedDriverInfo";
+		Case 64: "PNPR_GetServerSideDeviceInstallFlags";
+		Case 65: "PNPR_GetObjectPropKeys";
+		Case 66: "PNPR_GetObjectProp";
+		Case 67: "PNPR_SetObjectProp";
+		Default: FormatString("unknown, %s",Opnum);
+	}
+}
+
+Table PNPRReturnCodeTable( Code )
+{
+	Switch( Code )
+	{
+		Case 0x00000000: FormatString( "CR_SUCCESS (0x%08X)", Code );
+		Case 0x00000001: FormatString( "CR_DEFAULT (0x%08X)", Code );
+		Case 0x00000002: FormatString( "CR_OUT_OF_MEMORY (0x%08X)", Code );
+		Case 0x00000003: FormatString( "CR_INVALID_POINTER (0x%08X)", Code );
+		Case 0x00000004: FormatString( "CR_INVALID_FLAG (0x%08X)", Code );
+		Case 0x00000005: FormatString( "CR_INVALID_DEVNODE | CR_INVALID_DEVINST (0x%08X)", Code );
+		Case 0x00000006: FormatString( "CR_INVALID_RES_DES (0x%08X)", Code );
+		Case 0x00000007: FormatString( "CR_INVALID_LOG_CONF (0x%08X)", Code );
+		Case 0x00000008: FormatString( "CR_INVALID_ARBITRATOR (0x%08X)", Code );
+		Case 0x00000009: FormatString( "CR_INVALID_NODELIST (0x%08X)", Code );
+		Case 0x0000000A: FormatString( "CR_DEVNODE_HAS_REQS | CR_DEVINST_HAS_REQS (0x%08X)", Code );
+		Case 0x0000000B: FormatString( "CR_INVALID_RESOURCEID (0x%08X)", Code );
+		Case 0x0000000C: FormatString( "CR_DLVXD_NOT_FOUND (0x%08X)", Code );
+		Case 0x0000000D: FormatString( "CR_NO_SUCH_DEVNODE | CR_NO_SUCH_DEVINST (0x%08X)", Code );
+		Case 0x0000000E: FormatString( "CR_NO_MORE_LOG_CONF (0x%08X)", Code );
+		Case 0x0000000F: FormatString( "CR_NO_MORE_RES_DES (0x%08X)", Code );
+		Case 0x00000010: FormatString( "CR_ALREADY_SUCH_DEVNODE | CR_ALREADY_SUCH_DEVINST (0x%08X)", Code );
+		Case 0x00000011: FormatString( "CR_INVALID_RANGE_LIST (0x%08X)", Code );
+		Case 0x00000012: FormatString( "CR_INVALID_RANGE (0x%08X)", Code );
+		Case 0x00000013: FormatString( "CR_FAILURE (0x%08X)", Code );
+		Case 0x00000014: FormatString( "CR_NO_SUCH_LOGICAL_DEV (0x%08X)", Code );
+		Case 0x00000015: FormatString( "CR_CREATE_BLOCKED (0x%08X)", Code );
+		Case 0x00000016: FormatString( "CR_NOT_SYSTEM_VM (0x%08X)", Code );
+		Case 0x00000017: FormatString( "CR_REMOVE_VETOED (0x%08X)", Code );
+		Case 0x00000018: FormatString( "CR_APM_VETOED (0x%08X)", Code );
+		Case 0x00000019: FormatString( "CR_INVALID_LOAD_TYPE (0x%08X)", Code );
+		Case 0x0000001A: FormatString( "CR_BUFFER_SMALL (0x%08X)", Code );
+		Case 0x0000001B: FormatString( "CR_NO_ARBITRATOR (0x%08X)", Code );
+		Case 0x0000001C: FormatString( "CR_NO_REGISTRY_HANDLE (0x%08X)", Code );
+		Case 0x0000001D: FormatString( "CR_REGISTRY_ERROR (0x%08X)", Code );
+		Case 0x0000001E: FormatString( "CR_INVALID_DEVICE_ID (0x%08X)", Code );
+		Case 0x0000001F: FormatString( "CR_INVALID_DATA (0x%08X)", Code );
+		Case 0x00000020: FormatString( "CR_INVALID_API (0x%08X)", Code );
+		Case 0x00000021: FormatString( "CR_DEVLOADER_NOT_READY (0x%08X)", Code );
+		Case 0x00000022: FormatString( "CR_NEED_RESTART (0x%08X)", Code );
+		Case 0x00000023: FormatString( "CR_NO_MORE_HW_PROFILES (0x%08X)", Code );
+		Case 0x00000024: FormatString( "CR_DEVICE_NOT_THERE (0x%08X)", Code );
+		Case 0x00000025: FormatString( "CR_NO_SUCH_VALUE (0x%08X)", Code );
+		Case 0x00000026: FormatString( "CR_WRONG_TYPE (0x%08X)", Code );
+		Case 0x00000027: FormatString( "CR_INVALID_PRIORITY (0x%08X)", Code );
+		Case 0x00000028: FormatString( "CR_NOT_DISABLEABLE (0x%08X)", Code );
+		Case 0x00000029: FormatString( "CR_FREE_RESOURCES (0x%08X)", Code );
+		Case 0x0000002A: FormatString( "CR_QUERY_VETOED (0x%08X)", Code );
+		Case 0x0000002B: FormatString( "CR_CANT_SHARE_IRQ (0x%08X)", Code );
+		Case 0x0000002C: FormatString( "CR_NO_DEPENDENT (0x%08X)", Code );
+		Case 0x0000002D: FormatString( "CR_SAME_RESOURCES (0x%08X)", Code );
+		Case 0x0000002E: FormatString( "CR_NO_SUCH_REGISTRY_KEY (0x%08X)", Code );
+		Case 0x0000002F: FormatString( "CR_INVALID_MACHINENAME (0x%08X)", Code );
+		Case 0x00000030: FormatString( "CR_REMOTE_COMM_FAILURE (0x%08X)", Code );
+		Case 0x00000031: FormatString( "CR_MACHINE_UNAVAILABLE (0x%08X)", Code );
+		Case 0x00000032: FormatString( "CR_NO_CM_SERVICES (0x%08X)", Code );
+		Case 0x00000033: FormatString( "CR_ACCESS_DENIED (0x%08X)", Code );
+		Case 0x00000034: FormatString( "CR_CALL_NOT_IMPLEMENTED (0x%08X)", Code );
+		Case 0x00000035: FormatString( "CR_INVALID_PROPERTY (0x%08X)", Code );
+		Case 0x00000036: FormatString( "CR_DEVICE_INTERFACE_ACTIVE (0x%08X)", Code );
+		Case 0x00000037: FormatString( "CR_NO_SUCH_DEVICE_INTERFACE (0x%08X)", Code );
+		Case 0x00000038: FormatString( "CR_INVALID_REFERENCE_STRING (0x%08X)", Code );
+		Case 0x00000039: FormatString( "CR_INVALID_CONFLICT_LIST (0x%08X)", Code );
+		Case 0x0000003A: FormatString( "CR_INVALID_INDEX (0x%08X)", Code );
+		Case 0x0000003B: FormatString( "CR_INVALID_STRUCTURE_SIZE (0x%08X)", Code );
+	}
+}
+
+Table PNPRReturnCodeNameTable( Code )
+{
+	Switch( Code )
+	{
+		Case 0x00000000: "CR_SUCCESS";
+		Case 0x00000001: "CR_DEFAULT";
+		Case 0x00000002: "CR_OUT_OF_MEMORY";
+		Case 0x00000003: "CR_INVALID_POINTER";
+		Case 0x00000004: "CR_INVALID_FLAG";
+		Case 0x00000005: "CR_INVALID_DEVNODE | CR_INVALID_DEVINST";
+		Case 0x00000006: "CR_INVALID_RES_DES";
+		Case 0x00000007: "CR_INVALID_LOG_CONF";
+		Case 0x00000008: "CR_INVALID_ARBITRATOR";
+		Case 0x00000009: "CR_INVALID_NODELIST";
+		Case 0x0000000A: "CR_DEVNODE_HAS_REQS | CR_DEVINST_HAS_REQS";
+		Case 0x0000000B: "CR_INVALID_RESOURCEID";
+		Case 0x0000000C: "CR_DLVXD_NOT_FOUND";
+		Case 0x0000000D: "CR_NO_SUCH_DEVNODE | CR_NO_SUCH_DEVINST";
+		Case 0x0000000E: "CR_NO_MORE_LOG_CONF";
+		Case 0x0000000F: "CR_NO_MORE_RES_DES";
+		Case 0x00000010: "CR_ALREADY_SUCH_DEVNODE | CR_ALREADY_SUCH_DEVINST";
+		Case 0x00000011: "CR_INVALID_RANGE_LIST";
+		Case 0x00000012: "CR_INVALID_RANGE";
+		Case 0x00000013: "CR_FAILURE";
+		Case 0x00000014: "CR_NO_SUCH_LOGICAL_DEV";
+		Case 0x00000015: "CR_CREATE_BLOCKED";
+		Case 0x00000016: "CR_NOT_SYSTEM_VM";
+		Case 0x00000017: "CR_REMOVE_VETOED";
+		Case 0x00000018: "CR_APM_VETOED";
+		Case 0x00000019: "CR_INVALID_LOAD_TYPE";
+		Case 0x0000001A: "CR_BUFFER_SMALL";
+		Case 0x0000001B: "CR_NO_ARBITRATOR";
+		Case 0x0000001C: "CR_NO_REGISTRY_HANDLE";
+		Case 0x0000001D: "CR_REGISTRY_ERROR";
+		Case 0x0000001E: "CR_INVALID_DEVICE_ID";
+		Case 0x0000001F: "CR_INVALID_DATA";
+		Case 0x00000020: "CR_INVALID_API";
+		Case 0x00000021: "CR_DEVLOADER_NOT_READY";
+		Case 0x00000022: "CR_NEED_RESTART";
+		Case 0x00000023: "CR_NO_MORE_HW_PROFILES";
+		Case 0x00000024: "CR_DEVICE_NOT_THERE";
+		Case 0x00000025: "CR_NO_SUCH_VALUE";
+		Case 0x00000026: "CR_WRONG_TYPE";
+		Case 0x00000027: "CR_INVALID_PRIORITY";
+		Case 0x00000028: "CR_NOT_DISABLEABLE";
+		Case 0x00000029: "CR_FREE_RESOURCES";
+		Case 0x0000002A: "CR_QUERY_VETOED";
+		Case 0x0000002B: "CR_CANT_SHARE_IRQ";
+		Case 0x0000002C: "CR_NO_DEPENDENT";
+		Case 0x0000002D: "CR_SAME_RESOURCES";
+		Case 0x0000002E: "CR_NO_SUCH_REGISTRY_KEY";
+		Case 0x0000002F: "CR_INVALID_MACHINENAME";
+		Case 0x00000030: "CR_REMOTE_COMM_FAILURE";
+		Case 0x00000031: "CR_MACHINE_UNAVAILABLE";
+		Case 0x00000032: "CR_NO_CM_SERVICES";
+		Case 0x00000033: "CR_ACCESS_DENIED";
+		Case 0x00000034: "CR_CALL_NOT_IMPLEMENTED";
+		Case 0x00000035: "CR_INVALID_PROPERTY";
+		Case 0x00000036: "CR_DEVICE_INTERFACE_ACTIVE";
+		Case 0x00000037: "CR_NO_SUCH_DEVICE_INTERFACE";
+		Case 0x00000038: "CR_INVALID_REFERENCE_STRING";
+		Case 0x00000039: "CR_INVALID_CONFLICT_LIST";
+		Case 0x0000003A: "CR_INVALID_INDEX";
+		Case 0x0000003B: "CR_INVALID_STRUCTURE_SIZE";
+	}
+}
+
+Table PNPRResourceTypeValuesTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "ResType_All | ResType_None (0x%08X)%s", Value, bDescription ? " - Return all resource types" : "" );
+		Case 0x00000001: FormatString( "ResType_Mem (0x%08X)%s", Value, bDescription ? " - Physical address resource" : "" );
+		Case 0x00000002: FormatString( "ResType_IO (0x%08X)%s", Value, bDescription ? " - Physical I/O address resource" : "" );
+		Case 0x00000003: FormatString( "ResType_DMA (0x%08X)%s", Value, bDescription ? " - Direct Memory Access (DMA) channels resource" : "" );
+		Case 0x00000004: FormatString( "ResType_IRQ (0x%08X)%s", Value, bDescription ? " - Interrupt request (IRQ) resource" : "" );
+		Case 0x00000005: FormatString( "ResType_DoNotUse (0x%08X)%s", Value, bDescription ? " - Spacer used to synchronize subsequent resource types with Windows NT" : "" );
+		Case 0x00000006: FormatString( "ResType_BusNumber (0x%08X)%s", Value, bDescription ? " - Bus number resource" : "" );
+		Case 0x00000007: FormatString( "ResType_MemLarge (0x%08X)%s", Value, bDescription ? " - Memory resources >= 4GB" : "" );
+		Case 0x0000FFFF: FormatString( "ResType_ClassSpecific (0x%08X)%s", Value, bDescription ? " - Class-specific resource" : "" );
+		Case 0x00008000: FormatString( "ResType_Ignored_Bit (0x%08X)%s", Value, bDescription ? " - Unused" : "" );
+		Case 0x00008001: FormatString( "ResType_DevicePrivate (0x%08X)%s", Value, bDescription ? " - Device private data" : "" );
+		Case 0x00008002: FormatString( "ResType_PcCardConfig (0x%08X)%s", Value, bDescription ? " - PC card configuration data" : "" );
+		Case 0x00008003: FormatString( "ResType_MfCardConfig (0x%08X)%s", Value, bDescription ? " - MF card configuration data" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRLocateDevNodeFlagsTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "CM_LOCATE_DEVNODE_NORMAL (0x%08X)%s", Value, bDescription ? "- Validate only device instances that are currently available to an active connection from the Configuration Manager" : "" );
+		Case 0x00000001: FormatString( "CM_LOCATE_DEVNODE_PHANTOM (0x%08X)%s", Value, bDescription ? " - Allow validation of a device instance that is not currently available to an active connection, but does exist in the registry" : "" );
+		Case 0x00000002: FormatString( "CM_LOCATE_DEVNODE_CANCELREMOVE (0x%08X)%s", Value, bDescription ? " - If the device is marked for pending removal, cancel the removal" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRRelationshipTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "PNPR_GET_PARENT_DEVICE_INSTANCE (0x%08X)%s", Value, bDescription ? " - Parent Device" : "" );
+		Case 0x00000002: FormatString( "PNPR_GET_CHILD_DEVICE_INSTANCE (0x%08X)%s", Value, bDescription ? " - Child Device" : "" );
+		Case 0x00000003: FormatString( "PNPR_GET_SIBLING_DEVICE_INSTANCE (0x%08X)%s", Value, bDescription ? " - Sibling Device" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRBranchTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "PNPR_ENUMERATOR_SUBKEYS (0x%08X)%s", Value, bDescription ? " - Use the global base ENUM registry key for the subkeys enumeration" : "" );
+		Case 0x00000002: FormatString( "PNPR_CLASS_SUBKEYS (0x%08X)%s", Value, bDescription ? " - Use the global base CLASS registry key for the subkeys enumeration" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRDRPRegistryPropertyValueTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "CM_DRP_DEVICEDESC (0x%08X)%s", Value, bDescription ? " - DeviceDesc REG_SZ property" : "");
+		Case 0x00000002: FormatString( "CM_DRP_HARDWAREID (0x%08X)%s", Value, bDescription ? " - HardwareID REG_MULTI_SZ property" : "");
+		Case 0x00000003: FormatString( "CM_DRP_COMPATIBLEIDS (0x%08X)%s", Value, bDescription ? " - CompatibleIDs REG_MULTI_SZ property" : "");
+		Case 0x00000005: FormatString( "CM_DRP_SERVICE (0x%08X)%s", Value, bDescription ? " - Service REG_SZ property" : "");
+		Case 0x00000008: FormatString( "CM_DRP_CLASS (0x%08X)%s", Value, bDescription ? " - Class REG_SZ property" : "");
+		Case 0x00000009: FormatString( "CM_DRP_CLASSGUID (0x%08X)%s", Value, bDescription ? " - Class GUID REG_SZ property" : "");
+		Case 0x0000000A: FormatString( "CM_DRP_DRIVER (0x%08X)%s", Value, bDescription ? " - Driver REG_SZ property" : "");
+		Case 0x0000000B: FormatString( "CM_DRP_CONFIGFLAGS (0x%08X)%s", Value, bDescription ? " - ConfigFlags REG_DWORD property" : "");
+		Case 0x0000000C: FormatString( "CM_DRP_MFG (0x%08X)%s", Value, bDescription ? " - Manufacturer REG_SZ property" : "");
+		Case 0x0000000D: FormatString( "CM_DRP_FRIENDLYNAME (0x%08X)%s", Value, bDescription ? " - FriendlyName REG_SZ property" : "");
+		Case 0x0000000E: FormatString( "CM_DRP_LOCATION_INFORMATION (0x%08X)%s", Value, bDescription ? " - LocationInformation REG_SZ property" : "");
+		Case 0x0000000F: FormatString( "CM_DRP_PHYSICAL_DEVICE_OBJECT_NAME (0x%08X)%s", Value, bDescription ? " - PhysicalDeviceObjectName REG_SZ property" : "");
+		Case 0x00000010: FormatString( "CM_DRP_CAPABILITIES (0x%08X)%s", Value, bDescription ? " - Capabilities REG_DWORD property" : "");
+		Case 0x00000011: FormatString( "CM_DRP_UI_NUMBER (0x%08X)%s", Value, bDescription ? " - User interface number REG_DWORD property" : "");
+		Case 0x00000012: FormatString( "CM_DRP_UPPERFILTERS (0x%08X)%s", Value, bDescription ? " - UpperFilters REG_MULTI_SZ property" : "");
+		Case 0x00000013: FormatString( "CM_DRP_LOWERFILTERS (0x%08X)%s", Value, bDescription ? " - LowerFilters REG_MULTI_SZ property" : "");
+		Case 0x00000014: FormatString( "CM_DRP_BUSTYPEGUID (0x%08X)%s", Value, bDescription ? " - Bus type GUID property" : "");
+		Case 0x00000015: FormatString( "CM_DRP_LEGACYBUSTYPE (0x%08X)%s", Value, bDescription ? " - Legacy bus type INTERFACE_TYPE property" : "");
+		Case 0x00000016: FormatString( "CM_DRP_BUSNUMBER (0x%08X)%s", Value, bDescription ? " - Bus number DWORD property" : "");
+		Case 0x00000017: FormatString( "CM_DRP_ENUMERATOR_NAME (0x%08X)%s", Value, bDescription ? " - Enumerator name REG_SZ property" : "");
+		Case 0x00000018: FormatString( "CM_DRP_SECURITY (0x%08X)%s", Value, bDescription ? " - Security device override property" : "");
+		Case 0x00000019: FormatString( "CM_DRP_SECURITY_SDS (0x%08X)%s", Value, bDescription ? " - Security device override property" : "");
+		Case 0x0000001A: FormatString( "CM_DRP_DEVTYPE (0x%08X)%s", Value, bDescription ? " - Device type device override property" : "");
+		Case 0x0000001B: FormatString( "CM_DRP_EXCLUSIVE (0x%08X)%s", Value, bDescription ? " - Exclusivity device override property" : "");
+		Case 0x0000001C: FormatString( "CM_DRP_CHARACTERISTICS (0x%08X)%s", Value, bDescription ? " - Characteristics device override property" : "");
+		Case 0x0000001D: FormatString( "CM_DRP_ADDRESS (0x%08X)%s", Value, bDescription ? " - Device address property" : "");
+		Case 0x0000001E: FormatString( "CM_DRP_UI_NUMBER_DESC_FORMAT (0x%08X)%s", Value, bDescription ? " - UINumberDescFormat REG_SZ property" : "");
+		Case 0x0000001F: FormatString( "CM_DRP_DEVICE_POWER_DATA (0x%08X)%s", Value, bDescription ? " - CM_POWER_DATA REG_BINARY property" : "");
+		Case 0x00000020: FormatString( "CM_DRP_REMOVAL_POLICY (0x%08X)%s", Value, bDescription ? " - CM_DEVICE_REMOVAL_POLICY REG_DWORD property" : "");
+		Case 0x00000021: FormatString( "CM_DRP_REMOVAL_POLICY_HW_DEFAULT (0x%08X)%s", Value, bDescription ? " - CM_DRP_REMOVAL_POLICY_HW_DEFAULT REG_DWORD property" : "");
+		Case 0x00000022: FormatString( "CM_DRP_REMOVAL_POLICY_OVERRIDE (0x%08X)%s", Value, bDescription ? " - CM_DRP_REMOVAL_POLICY_OVERRIDE REG_DWORD property" : "");
+		Case 0x00000023: FormatString( "CM_DRP_INSTALL_STATE (0x%08X)%s", Value, bDescription ? " - CM_DRP_INSTALL_STATE REG_DWORD property" : "");
+		Case 0x00000024: FormatString( "CM_DRP_LOCATION_PATHS (0x%08X)%s", Value, bDescription ? " - CM_DRP_LOCATION_PATHS REG_MULTI_SZ property" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRCRPRegistryPropertyValueTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "CM_CRP_DEVICEDESC (0x%08X)%s", Value, bDescription ? " - DeviceDesc REG_SZ property" : "");
+		Case 0x00000002: FormatString( "CM_CRP_HARDWAREID (0x%08X)%s", Value, bDescription ? " - HardwareID REG_MULTI_SZ property" : "");
+		Case 0x00000003: FormatString( "CM_CRP_COMPATIBLEIDS (0x%08X)%s", Value, bDescription ? " - CompatibleIDs REG_MULTI_SZ property" : "");
+		Case 0x00000004: FormatString( "CM_CRP_UNUSED0 (0x%08X)%s", Value, bDescription ? " - Unused" : "");
+		Case 0x00000005: FormatString( "CM_CRP_SERVICE (0x%08X)%s", Value, bDescription ? " - Service REG_SZ property" : "");
+		Case 0x00000006: FormatString( "CM_CRP_UNUSED1 (0x%08X)%s", Value, bDescription ? " - Unused" : "");
+		Case 0x00000007: FormatString( "CM_CRP_UNUSED2 (0x%08X)%s", Value, bDescription ? " - Unused" : "");
+		Case 0x00000008: FormatString( "CM_CRP_CLASS (0x%08X)%s", Value, bDescription ? " - Class REG_SZ property" : "");
+		Case 0x00000009: FormatString( "CM_CRP_CLASSGUID (0x%08X)%s", Value, bDescription ? " - Class GUID REG_SZ property" : "");
+		Case 0x0000000A: FormatString( "CM_CRP_DRIVER (0x%08X)%s", Value, bDescription ? " - Driver REG_SZ property" : "");
+		Case 0x0000000B: FormatString( "CM_CRP_CONFIGFLAGS (0x%08X)%s", Value, bDescription ? " - ConfigFlags REG_DWORD property" : "");
+		Case 0x0000000C: FormatString( "CM_CRP_MFG (0x%08X)%s", Value, bDescription ? " - Manufacturer REG_SZ property" : "");
+		Case 0x0000000D: FormatString( "CM_CRP_FRIENDLYNAME (0x%08X)%s", Value, bDescription ? " - FriendlyName REG_SZ property" : "");
+		Case 0x0000000E: FormatString( "CM_CRP_LOCATION_INFORMATION (0x%08X)%s", Value, bDescription ? " - LocationInformation REG_SZ property" : "");
+		Case 0x0000000F: FormatString( "CM_CRP_PHYSICAL_DEVICE_OBJECT_NAME (0x%08X)%s", Value, bDescription ? " - PhysicalDeviceObjectName REG_SZ property" : "");
+		Case 0x00000010: FormatString( "CM_CRP_CAPABILITIES (0x%08X)%s", Value, bDescription ? " - Capabilities REG_DWORD property" : "");
+		Case 0x00000011: FormatString( "CM_CRP_UI_NUMBER (0x%08X)%s", Value, bDescription ? " - User interface number REG_DWORD property" : "");
+		Case 0x00000012: FormatString( "CM_CRP_UPPERFILTERS (0x%08X)%s", Value, bDescription ? " - UpperFilters REG_MULTI_SZ property" : "");
+		Case 0x00000013: FormatString( "CM_CRP_LOWERFILTERS (0x%08X)%s", Value, bDescription ? " - LowerFilters REG_MULTI_SZ property" : "");
+		Case 0x00000014: FormatString( "CM_CRP_BUSTYPEGUID (0x%08X)%s", Value, bDescription ? " - Bus type GUID property" : "");
+		Case 0x00000015: FormatString( "CM_CRP_LEGACYBUSTYPE (0x%08X)%s", Value, bDescription ? " - Legacy bus type INTERFACE_TYPE property" : "");
+		Case 0x00000016: FormatString( "CM_CRP_BUSNUMBER (0x%08X)%s", Value, bDescription ? " - Bus number DWORD property" : "");
+		Case 0x00000017: FormatString( "CM_CRP_ENUMERATOR_NAME (0x%08X)%s", Value, bDescription ? " - Enumerator name REG_SZ property" : "");
+		Case 0x00000018: FormatString( "CM_CRP_SECURITY (0x%08X)%s", Value, bDescription ? " - Security device override property" : "");
+		Case 0x0000001A: FormatString( "CM_CRP_DEVTYPE (0x%08X)%s", Value, bDescription ? " - Device type device override property" : "");
+		Case 0x0000001B: FormatString( "CM_CRP_EXCLUSIVE (0x%08X)%s", Value, bDescription ? " - Exclusivity device override property" : "");
+		Case 0x0000001C: FormatString( "CM_CRP_CHARACTERISTICS (0x%08X)%s", Value, bDescription ? " - Characteristics device override property" : "");
+		Case 0x0000001D: FormatString( "CM_CRP_ADDRESS (0x%08X)%s", Value, bDescription ? " - Device address property" : "");
+		Case 0x0000001E: FormatString( "CM_CRP_UI_NUMBER_DESC_FORMAT (0x%08X)%s", Value, bDescription ? " - UINumberDescFormat REG_SZ property" : "");
+		Case 0x0000001F: FormatString( "CM_CRP_DEVICE_POWER_DATA (0x%08X)%s", Value, bDescription ? " - CM_POWER_DATA REG_BINARY property" : "");
+		Case 0x00000020: FormatString( "CM_CRP_REMOVAL_POLICY (0x%08X)%s", Value, bDescription ? " - CM_DEVICE_REMOVAL_POLICY REG_DWORD property" : "");
+		Case 0x00000021: FormatString( "CM_CRP_REMOVAL_POLICY_HW_DEFAULT (0x%08X)%s", Value, bDescription ? " - CM_CRP_REMOVAL_POLICY_HW_DEFAULT REG_DWORD property" : "");
+		Case 0x00000022: FormatString( "CM_CRP_REMOVAL_POLICY_OVERRIDE (0x%08X)%s", Value, bDescription ? " - CM_CRP_REMOVAL_POLICY_OVERRIDE REG_DWORD property" : "");
+		Case 0x00000023: FormatString( "CM_CRP_INSTALL_STATE (0x%08X)%s", Value, bDescription ? " - CM_CRP_INSTALL_STATE REG_DWORD property" : "");
+		Case 0x00000024: FormatString( "CM_CRP_LOCATION_PATHS (0x%08X)%s", Value, bDescription ? " - CM_CRP_LOCATION_PATHS REG_MULTI_SZ property" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRRegistryTypeValuesTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "REG_NONE (0x%08X)%s", Value, bDescription ? " - No Value type is defined" : "");
+		Case 0x00000001: FormatString( "REG_SZ (0x%08X)%s", Value, bDescription ? " - Null-terminated string; either Unicode or ANSI, depending on which set of functions is used" : "");
+		Case 0x00000002: FormatString( "REG_EXPAND_SZ  (0x%08X)%s", Value, bDescription ? " - Null-terminated string that contains unexpanded references to environment variables; for example, PATH. It is either a Unicode or an ANSI string, depending on which set of functions is used" : "");
+		Case 0x00000003: FormatString( "REG_BINARY (0x%08X)%s", Value, bDescription ? " - Binary data in any form" : "");
+		Case 0x00000004: FormatString( "REG_DWORD or REG_DWORD_LITTLE_ENDIAN (0x%08X)%s", Value, bDescription ? " - A 32-bit number in little-endian format; equivalent to REG_DWORD" : "");
+		Case 0x00000005: FormatString( "REG_DWORD_BIG_ENDIAN (0x%08X)%s", Value, bDescription ? " - A 32-bit number in big-endian format" : "");
+		Case 0x00000006: FormatString( "REG_LINK (0x%08X)%s", Value, bDescription ? " - Unicode symbolic link" : "");
+		Case 0x00000007: FormatString( "REG_MULTI (0x%08X)%s", Value, bDescription ? " - Array of null-terminated strings that are terminated by two NULL characters" : "");
+		Case 0x00000008: FormatString( "REG_RESOURCE_LIST (0x%08X)%s", Value, bDescription ? " - Device-driver resource list" : "");
+		Case 0x00000009: FormatString( "REG_FULL_RESOURCE_DESCRIPTOR (0x%08X)%s", Value, bDescription ? " - A list of hardware resources that a physical device is using" : "");
+		Case 0x0000000A: FormatString( "REG_RESOURCE_REQUIREMENTS_LIST (0x%08X)%s", Value, bDescription ? " - 	A device driver's list of possible hardware resources it or one of the physical devices it controls can use" : "");
+		Case 0x0000000B: FormatString( "REG_QWORD or REG_QWORD_LITTLE_ENDIAN (0x%08X)%s", Value, bDescription ? " - A 64-bit number in little-endian format; equivalent to REG_QWORD" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRDeviceInstanceStatusValuesTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "DN_ROOT_ENUMERATED (0x%08X)%s", Value, bDescription ? " - Device instance was enumerated by the root directory" : "");
+		Case 0x00000002: FormatString( "DN_DRIVER_LOADED (0x%08X)%s", Value, bDescription ? " - Device instance has the Register_Device_Driver flag for registering a device driver" : "");
+		Case 0x00000004: FormatString( "DN_ENUM_LOADED (0x%08X)%s", Value, bDescription ? " - Device instance has the Register_Enumerator flag, which indicates that an enumeration method is being registered or needs to be registered" : "");
+		Case 0x00000008: FormatString( "DN_STARTED (0x%08X)%s", Value, bDescription ? " - Device instance is currently configured" : "");
+		Case 0x00000010: FormatString( "DN_MANUAL (0x%08X)%s", Value, bDescription ? " - Device instance was manually installed" : "");
+		Case 0x00000020: FormatString( "DN_NEED_TO_ENUM (0x%08X)%s", Value, bDescription ? " - Device instance may need re-enumeration" : "");
+		Case 0x00000040: FormatString( "DN_NOT_FIRST_TIME (0x%08X)%s", Value, bDescription ? " - Device instance already received a configuration" : "");
+		Case 0x00000080: FormatString( "DN_HARDWARE_ENUM (0x%08X)%s", Value, bDescription ? " - Enumeration generates a hardwEnum value, which then generates a hardware IDare identifier" : "");
+		Case 0x00000100: FormatString( "DN_LIAR (0x%08X)%s", Value, bDescription ? " - Device did not accurately report whether reconfiguration can occur once" : "");
+		Case 0x00000200: FormatString( "DN_HAS_MARK (0x%08X)%s", Value, bDescription ? " - There is no current and active request to create the device instance" : "");
+		Case 0x00000400: FormatString( "DN_HAS_PROBLEM (0x%08X)%s", Value, bDescription ? " - Device instance needs a device installer" : "");
+		Case 0x00000800: FormatString( "DN_FILTERED (0x%08X)%s", Value, bDescription ? " -  Device instance is filtered" : "");
+		Case 0x00001000: FormatString( "DN_MOVED (0x%08X)%s", Value, bDescription ? " - Device instance has been moved" : "");
+		Case 0x00002000: FormatString( "DN_DISABLEABLE (0x%08X)%s", Value, bDescription ? " - Device instance can be rebalanced" : "");
+		Case 0x00004000: FormatString( "DN_REMOVABLE (0x%08X)%s", Value, bDescription ? " - Device instance can be removed" : "");
+		Case 0x00008000: FormatString( "DN_PRIVATE_PROBLEM (0x%08X)%s", Value, bDescription ? " - Device instance has a private problem" : "");
+		Case 0x00010000: FormatString( "DN_MF_PARENT (0x%08X)%s", Value, bDescription ? " - Device instance is a multiple-function parent" : "");
+		Case 0x00020000: FormatString( "DN_MF_CHILD (0x%08X)%s", Value, bDescription ? " - Device instance is a multiple-function child" : "");
+		Case 0x00040000: FormatString( "DN_WILL_BE_REMOVED (0x%08X)%s", Value, bDescription ? " - Device instance is being removed" : "");
+		Case 0x00080000: FormatString( "DN_NOT_FIRST_TIMEE (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OEM Pre-Install Kit (OPK2) flag. Device instance received a configuration enumeration" : "");
+		Case 0x00100000: FormatString( "DN_STOP_FREE_RES (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OPK2 flag. When child is stopped, free resources" : "");
+		Case 0x00200000: FormatString( "DN_REBAL_CANDIDATE (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OPK2 flag. Do not skip this device instance during rebalancing" : "");
+		Case 0x00400000: FormatString( "DN_BAD_PARTIAL (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OPK2 flag. Device instance's logical configuration does not have the same resources" : "");
+		Case 0x00800000: FormatString( "DN_NT_ENUMERATOR (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OPK2 flag. Device instance is a Windows NT enumerator" : "");
+		Case 0x01000000: FormatString( "DN_NT_DRIVER (0x%08X)%s", Value, bDescription ? " - Windows NT 4.0: OPK 2 flag. Device instance is a Windows NT driver" : "");
+		Case 0x02000000: FormatString( "DN_NEEDS_LOCKING (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance needs a lock to resume processing" : "");
+		Case 0x04000000: FormatString( "DN_ARM_WAKEUP (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance can be the wake-up device" : "");
+		Case 0x08000000: FormatString( "DN_APM_ENUMERATOR (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance is an APM-aware enumerator" : "");
+		Case 0x10000000: FormatString( "DN_APM_DRIVER (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance is an APM-aware driver" : "");
+		Case 0x20000000: FormatString( "DN_SILENT_INSTALL (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance was installed silently" : "");
+		Case 0x40000000: FormatString( "DN_NO_SHOW_IN_DM (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. Device instance will not appear in the device manager" : "");
+		Case 0x80000000: FormatString( "DN_BOOT_LOG_PROB (0x%08X)%s", Value, bDescription ? " - Windows 98 flag. A problem occurred during pre-assignment of the boot log configuration" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+
+Table PNPRDeviceProblemValuesTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: FormatString( "CM_PROB_NOT_CONFIGURED (0x%08X)%s", Value, bDescription ? " - No configuration is available for the device" : "");
+		Case 0x00000003: FormatString( "CM_PROB_OUT_OF_MEMORY (0x%08X)%s", Value, bDescription ? " - Memory is insufficient to run the device instance" : "");
+		Case 0x00000009: FormatString( "CM_PROB_INVALID_DATA (0x%08X)%s", Value, bDescription ? " - Data is invalid" : "");
+		Case 0x0000000A: FormatString( "CM_PROB_FAILED_START (0x%08X)%s", Value, bDescription ? " - Device failed while being started" : "");
+		Case 0x0000000C: FormatString( "CM_PROB_NORMAL_CONFLICT (0x%08X)%s", Value, bDescription ? " - A configuration conflict has occurred" : "");
+		Case 0x0000000E: FormatString( "CM_PROB_NEED_RESTART (0x%08X)%s", Value, bDescription ? " - A restart is required" : "");
+		Case 0x00000010: FormatString( "CM_PROB_PARTIAL_LOG_CONF (0x%08X)%s", Value, bDescription ? " - Logical configuration is incomplete" : "");
+		Case 0x00000011: FormatString( "CM_PROB_UNKNOWN_RESOURCE (0x%08X)%s", Value, bDescription ? " - Device has an unknown resource type" : "");
+		Case 0x00000012: FormatString( "CM_PROB_REINSTALL (0x%08X)%s", Value, bDescription ? " - Reinstallation is required" : "");
+		Case 0x00000013: FormatString( "CM_PROB_REGISTRY (0x%08X)%s", Value, bDescription ? " - A registry problem has occurred" : "");
+		Case 0x00000015: FormatString( "CM_PROB_WILL_BE_REMOVED (0x%08X)%s", Value, bDescription ? " - Device instance will be removed" : "");
+		Case 0x00000016: FormatString( "CM_PROB_DISABLED (0x%08X)%s", Value, bDescription ? " - Device instance is disabled" : "");
+		Case 0x00000018: FormatString( "CM_PROB_DEVICE_NOT_THERE (0x%08X)%s", Value, bDescription ? " - Device does not exist" : "");
+		Case 0x0000001B: FormatString( "CM_PROB_NO_VALID_LOG_CONF (0x%08X)%s", Value, bDescription ? " - No valid log configuration exists" : "");
+		Case 0x0000001C: FormatString( "CM_PROB_FAILED_INSTALL (0x%08X)%s", Value, bDescription ? " - Installation failed" : "");
+		Case 0x0000001D: FormatString( "CM_PROB_HARDWARE_DISABLED", Value );
+		Case 0x0000001F: FormatString( "CM_PROB_FAILED_ADD (0x%08X)%s", Value, bDescription ? " - Driver was not added" : "");
+		Case 0x00000020: FormatString( "CM_PROB_DISABLED_SERVICE (0x%08X)%s", Value, bDescription ? " - The service cannot be started, either because it is disabled or because it has no enabled devices associated with it. The service's Start = 4" : "");
+		Case 0x00000021: FormatString( "CM_PROB_TRANSLATION_FAILED (0x%08X)%s", Value, bDescription ? " - Resource translation failed" : "");
+		Case 0x00000022: FormatString( "CM_PROB_NO_SOFTCONFIG (0x%08X)%s", Value, bDescription ? " - Software configuration does not exist" : "");
+		Case 0x00000023: FormatString( "CM_PROB_BIOS_TABLE (0x%08X)%s", Value, bDescription ? " - Device is missing in the BIOS table" : "");
+		Case 0x00000024: FormatString( "CM_PROB_IRQ_TRANSLATION_FAILED (0x%08X)%s", Value, bDescription ? " - IRQ translator failed" : "");
+		Case 0x00000025: FormatString( "CM_PROB_FAILED_DRIVER_ENTRY (0x%08X)%s", Value, bDescription ? " - Driver entry method failed" : "");
+		Case 0x00000026: FormatString( "CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD (0x%08X)%s", Value, bDescription ? " - Driver should have unloaded, but did not" : "");
+		Case 0x00000027: FormatString( "CM_PROB_DRIVER_FAILED_LOAD (0x%08X)%s", Value, bDescription ? " - Driver load was unsuccessful" : "");
+		Case 0x00000028: FormatString( "CM_PROB_DRIVER_SERVICE_KEY_INVALID (0x%08X)%s", Value, bDescription ? " - An error occurred while accessing the driver's service key" : "");
+		Case 0x00000029: FormatString( "CM_PROB_LEGACY_SERVICE_NO_DEVICES (0x%08X)%s", Value, bDescription ? " - Loaded legacy service did not create any devices" : "");
+		Case 0x0000002A: FormatString( "CM_PROB_DUPLICATE_DEVICE (0x%08X)%s", Value, bDescription ? " - Two devices have the same name" : "");
+		Case 0x0000002B: FormatString( "CM_PROB_FAILED_POST_START (0x%08X)%s", Value, bDescription ? " - Drivers set the device state to Failed" : "");
+		Case 0x0000002C: FormatString( "CM_PROB_HALTED (0x%08X)%s", Value, bDescription ? " - Device failed after being started in user mode" : "");
+		Case 0x0000002D: FormatString( "CM_PROB_PHANTOM (0x%08X)%s", Value, bDescription ? " - Device currently exists only in the registry" : "");
+		Case 0x0000002E: FormatString( "CM_PROB_SYSTEM_SHUTDOWN (0x%08X)%s", Value, bDescription ? " - System is shutting down" : "");
+		Case 0x0000002F: FormatString( "CM_PROB_HELD_FOR_EJECT (0x%08X)%s", Value, bDescription ? " - Device is offline and awaiting removal" : "");
+		Case 0x00000030: FormatString( "CM_PROB_DRIVER_BLOCKED (0x%08X)%s", Value, bDescription ? " - One or more drivers are blocked from loading" : "");
+		Case 0x00000031: FormatString( "CM_PROB_REGISTRY_TOO_LARGE (0x%08X)%s", Value, bDescription ? " - System hive has grown too large" : "");
+		Case 0x00000032: FormatString( "CM_PROB_SETPROPERTIES_FAILED (0x%08X)%s", Value, bDescription ? " - Failed to apply one or more registry properties" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRLogicalConfigurationFlagValuesTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "BASIC_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the request list" : "" );
+		Case 0x00000001: FormatString( "FILTERED_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the filtered request list" : "" );
+		Case 0x00000002: FormatString( "ALLOC_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the <ALLOC> element" : "" );
+		Case 0x00000003: FormatString( "BOOT_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the <RM ALLOC> element" : "");
+		Case 0x00000004: FormatString( "FORCED_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the FORCED log configuration" : "" );
+		Case 0x00000005: FormatString( "OVERRIDE_LOG_CONF (0x%08X)%s", Value, bDescription ? " -  Specifies the override request list" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRLogicalConfigurationPriorityValuesTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "LCPRI_FORCECONFIG (0x%08X) - Logical configuration is from a forced configuration", Value );
+		Case 0x00000001: FormatString( "LCPRI_BOOTCONFIG (0x%08X) - Logical configuration is from a boot configuration", Value );
+		Case 0x00002000: FormatString( "LCPRI_DESIRED (0x%08X) - Logical configuration is the preferred one; it provides better performance", Value );
+		Case 0x00003000: FormatString( "LCPRI_NORMAL (0x%08X) - Logical configuration is the normal one; it provides accepTable performance", Value );
+		Case 0x00003FFF: FormatString( "LCPRI_LASTBESTCONFIG (0x%08X) - For Configuration Manager (CM) use only", Value );
+		Case 0x00005000: FormatString( "LCPRI_SUBOPTIMAL (0x%08X) - Logical configuration is less than optimal", Value );
+		Case 0x00007FFF: FormatString( "LCPRI_LASTSOFTCONFIG (0x%08X) - For Configuration Manager (CM) use only", Value );
+		Case 0x00008000: FormatString( "LCPRI_RESTART (0x%08X) - Logical configuration needs to restart", Value );
+		Case 0x00009000: FormatString( "LCPRI_REBOOT (0x%08X) - Logical configuration needs to reboot", Value );
+		Case 0x0000A000: FormatString( "LCPRI_POWEROFF (0x%08X) - Indicates that a shutdown or turn-off is required", Value );
+		Case 0x0000C000: FormatString( "LCPRI_HARDRECONFIG (0x%08X) - Indicates that a jumper needs to be changed", Value );
+		Case 0x0000E000: FormatString( "LCPRI_HARDWIRED (0x%08X) - Logical configuration cannot be changed", Value );
+		Case 0x0000F000: FormatString( "LCPRI_IMPOSSIBLE (0x%08X) - Current logical configuration is not possible", Value );
+		Case 0x0000FFFF: FormatString( "LCPRI_DISABLED (0x%08X) - Logical configuration has been disabled OR MAX_LCPRI - Specifies that the priority of the logical configuration is the maximum", Value );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRVetoTypeTable( Value,bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "PNPR_VetoTypeUnknown (0x%08X)%s", Value,bDescription?" - Used when none of the others apply":""); 
+		Case 0x00000001: FormatString( "PNPR_VetoLegacyDevice (0x%08X)%s", Value,bDescription?" - Vetoed by a legacy (non-PNPR) device or a device with a legacy driver":""); 
+		Case 0x00000002: FormatString( "PNPR_VetoPendingClose (0x%08X)%s", Value,bDescription?" - Not used":""); 
+		Case 0x00000003: FormatString( "PNPR_VetoWindowsApp (0x%08X)%s", Value,bDescription?" - Vetoed by an application":""); 
+		Case 0x00000004: FormatString( "PNPR_VetoWindowsService (0x%08X)%s", Value,bDescription?" - Named service vetoed the operation":""); 
+		Case 0x00000005: FormatString( "PNPR_VetoOutstandingOpen (0x%08X)%s", Value,bDescription?" - Vetoed due to open handles on the device":"" ); 
+		Case 0x00000006: FormatString( "PNPR_VetoDevice (0x%08X)%s", Value,bDescription?" - Vetoed by the device driver":""); 
+		Case 0x00000007: FormatString( "PNPR_VetoDriver (0x%08X)%s", Value,bDescription?" - Vetoed by the driver":""); 
+		Case 0x00000008: FormatString( "PNPR_VetoIllegalDeviceRequest (0x%08X)%s", Value,bDescription?" - Device is not removable; thus, the request is illegal":""); 
+		Case 0x00000009: FormatString( "PNPR_VetoInsufficientPower (0x%08X)%s", Value,bDescription?" - There is insufficient power to complete the operation":"" ); 
+		Case 0x0000000A: FormatString( "PNPR_VetoNonDisableable (0x%08X)%s", Value,bDescription?" - Device cannot be disabled. It may be needed to boot the systm, for example":""); 
+		Case 0x0000000B: FormatString( "PNPR_VetoLegacyDriver (0x%08X)%s", Value,bDescription?" - Vetoed due to a legacy driver; that is, a driver that called one of the legacy resource allocation APIs":""); 
+		Case 0x0000000C: FormatString( "PNPR_VetoInsufficientRights (0x%08X)%s", Value,bDescription?" - PNPR_VetoInsufficientRights":""); 
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRGetHWProfInfoIndexTable( Value ) {
+	Switch( Value ) {
+		Case 0xFFFFFFFF: FormatString( "A Value of 0xFFFFFFFF indicates that the current profile should be used (0x%08X)", Value ); 
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPResourceFieldWidthTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "CM_RESDES_WIDTH_DEFAULT (0x%08X) - A 32-bit or 64-bit IRQ_RESOURCE/IRQ_DES value, based on the client", Value ); 
+		Case 0x00000001: FormatString( "CM_RESDES_WIDTH_32 (0x%08X) - A 32-bit IRQ_RESOURCE/IRQ_DES Value", Value ); 
+		Case 0x00000002: FormatString( "CM_RESDES_WIDTH_64 (0x%08X) - A 64-bit IRQ_RESOURCE/IRQ_DES Value", Value ); 
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRDeleteRegistryKeyFlagsTable( Value )
+{
+	Switch( Value ) {
+		Case 0xFFFFFFFF: FormatString( "Delete private key for all profiles (0x%08X)", Value ); 
+		Default        : FormatString( "Deletes only the specified private key (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRDeleteClassKeyFlagsTable( Value )
+{
+	Switch( Value ) {
+		Case 0x00000000: FormatString( "CM_DELETE_CLASS_ONLY (0x%08X) - Delete only the specified class", Value ); 
+		Case 0x00000001: FormatString( "CM_DELETE_CLASS_SUBKEYS (0x%08X) - Delete the specified class and all subkeys", Value ); 
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRGetInterfaceDeviceListSizeFlagsTable( Value, bDescription )
+{
+	Switch( Value ) {
+		Case 0x00000000: FormatString( "CM_GET_DEVICE_INTERFACE_LIST_PRESENT (0x%08X)%s", Value, bDescription ? " - List only device interfaces that are currently available to an active connection" : "" );
+		Case 0x00000001: FormatString( "CM_GET_DEVICE_INTERFACE_LIST_ALL_DEVICES (0x%08X)%s", Value, bDescription ? " - List all registered device interfaces, whether currently available to an active connection or not" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRDeviceInstanceActionMajorActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000003: FormatString( "PNPR_DEVINST_SETUP (0x%08X) - Setup the device instance", Value ); 
+		Case 0x00000004: FormatString( "PNPR_DEVINST_ENABLE (0x%08X) - Enable the device instance", Value ); 
+		Case 0x00000007: FormatString( "PNPR_DEVINST_REENUMERATE (0x%08X) - Enumerate the device instance", Value ); 
+		Default        : FormatString( "No Description Available (0x%08X)", Value ); 
+	}
+}
+
+Table PNPRSetDeviceProblemFlagsTable( Value, bDescription)
+{
+	Switch( Value ) {
+		Case 0x00000000: FormatString( "CM_SET_DEVNODE_PROBLEM_NORMAL (0x%08X)%s", Value, bDescription ? " -  Set the specified problem only if no other problem currently exists" : "" );
+		Case 0x00000001: FormatString( "CM_SET_DEVNODE_PROBLEM_OVERRIDE (0x%08X)%s", Value, bDescription ? " -  Override the current problem with the new problem" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRAddIDRequestFlagsTable( Value, bDescription)
+{
+	Switch( Value ) {
+		Case 0x00000000: FormatString( "CM_ADD_ID_HARDWARE (0x%08X)%s", Value, bDescription ? " -  Add the hardware identifier" : "" );
+		Case 0x00000001: FormatString( "CM_ADD_ID_COMPATIBLE (0x%08X)%s", Value, bDescription ? " -  Add a compatible identifier" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRRegisterDriverFlagsTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "CM_REGISTER_DEVICE_DRIVER_STATIC (0x%08X)%s", Value, bDescription ? " - Static device driver" : "" );
+		Case 0x00000001: FormatString( "CM_REGISTER_DEVICE_DRIVER_DISABLEABLE (0x%08X)%s", Value, bDescription ? " - Device driver can be disabled" : "");
+		Case 0x00000002: FormatString( "CM_REGISTER_DEVICE_DRIVER_REMOVABLE (0x%08X)%s", Value, bDescription ? " - Device driver is removable" : "");
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRQueryRemoveFlagsTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "CM_REMOVE_UI_OK (0x%08X)%s", Value, bDescription ? " - Ignored by the server" : "" );
+		Case 0x00000001: FormatString( "CM_REMOVE_UI_NOT_OK (0x%08X)%s", Value, bDescription ? " - Ignored by the server" : "" );
+		Case 0x00000002: FormatString( "CM_REMOVE_NO_RESTART (0x%08X)%s", Value, bDescription ? " - Remove the device instance without restarting the computer" : "" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRAddResDesFlagsTable( Value )
+{
+	Switch( Value ) {
+		Case 0x00000000: FormatString( "CM_RESDES_WIDTH_32 - 32-bit resource (0x%08X)", Value );
+		Case 0x00000001: FormatString( "CM_RESDES_WIDTH_32 - 32-bit resource (0x%08X)", Value );
+		Case 0x00000002: FormatString( "CM_RESDES_WIDTH_64 - 64-bit resource (0x%08X)", Value );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRHwProfileInfoFlagsTable( Value, bDescription )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "CM_HWPI_NOT_DOCKABLE (0x%08X)%s", Value, bDescription ? " - Machine is not dockable ":"" );
+		Case 0x00000001: FormatString( "CM_HWPI_UNDOCKED (0x%08X)%s", Value, bDescription ? " - Hardware profile is for a docked configuration ":"");
+		Case 0x00000002: FormatString( "CM_HWPI_DOCKED (0x%08X)%s", Value, bDescription ? " - Hardware profile is for an undocked configuration ":"" );
+		Default        : FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+Table PNPRHwProfFlagsActionFlagsTable ( Value )
+{
+	switch( Value )
+	{
+		case 0x00000001:FormatString("PNPR_GET_HWPROFFLAGS - Get the flag value (0x%08X)", Value );
+		case 0x00000002:FormatString("PNPR_SET_HWPROFFLAGS - Set the flag value (0x%08X)", Value );
+		Default:FormatString( "No Description Available (0x%08X)", Value );
+	}
+}
+
+//
+//	HWPROFILEINFO
+//	Alignment: 4
+//
+Struct PNPRHwprofileinfo = "ProfileHandle = " + HWPIulHWProfile.ToString+ ", HWPIFriendlyName = " + HWPIszFriendlyName.toString + "  ProfileFlags = "+PNPRHwProfileInfoFlagsTable(HWPIdwFlags,FALSE )
+{
+	UINT32 HWPIulHWProfile;
+	WCHAR HWPIszFriendlyName[80];
+	Align4 pad;
+	UINT32 HWPIdwFlags = PNPRHwProfileInfoFlagsTable( this, TRUE );
+}
+
+Struct PNPRVersion( bAlign ) = Version.ToString
+{
+	UINT16 Version = (Major == 0 && Minor == 0) ? "NULL" : FormatString( "%u.%u", Major, Minor )
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT16 Minor:8 = FormatString( "%u (0x%02X)", this, this );
+				UINT16 Major:8 = FormatString( "%u (0x%02X)", this, this );
+			}
+
+			Default:
+			Struct
+			{
+				UINT16 Major:8 = FormatString( "%u (0x%02X)", this, this );
+				UINT16 Minor:8 = FormatString( "%u (0x%02X)", this, this );
+			}
+		}
+	}
+
+	Switch( bAlign ) {
+		Case TRUE: ALIGN4 Padding;
+	}
+}
+
+Struct PNPRParseConformantArray( bVarying, RegDataType ) = Property.PNPResult
+{
+	Switch( bVarying )
+	{
+		Case TRUE:
+		Struct {
+			[PNPRLength = this.ActualCount]
+			NdrConformantVarying Size;
+		}
+
+		Default:
+		Struct {
+			[PNPRLength = this.MaxCount]
+			NdrConformant Size;
+		}
+	}
+
+	Switch
+	{
+		//Case RegDataType == 0x00000001:
+		//Case RegDataType == 0x00000002:
+		//Struct {
+		//	[PNPResult = this.ToString] WideString Buffer;
+		//}
+
+		//Case RegDataType == 0x00000004:INT32 Number;
+		//Case RegDataType == 0x00000005:
+		//Struct {
+		//	[PNPResult = this.ToString] UINT32 Buffer;
+		//}
+
+		//Case RegDataType == 0x00000007:
+		//Struct {
+		//	[PNPResult = this.ToString] WideStrings Buffer;
+		//}
+
+		//Case RegDataType == 0x0000000B:
+		//Struct {
+		//	[PNPResult = this.ToString] UINT64 Buffer;
+		//}
+
+		Default:
+		Struct {
+			[PNPResult = this.ToString] Blob (Property.PNPRLength) Buffer;
+		}
+	}
+
+}
+
+struct PNPRMULTISZ
+{
+	while [UINT16(FrameData, FrameOffset)]
+	{
+		UnicodeString DeviceInstanceID;
+	}
+	BLOB(FrameLength - FrameOffset) BufferEnd;
+}
+
+
+Struct PNPRDevpropkey
+{
+	MSRPCGuid Fmtid;
+	UINT32 Pid;
+}
+
+Table PNPRObjectTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000002: "ObjectName is a device instance ID. ";
+		Case 0x00000003: "ObjectName is a device interface ID. ";
+		Case 0x00000004: "ObjectName is a Device Setup Class GUID.";
+		Case 0x00000005: "ObjectName is a Device Interface Class GUID. ";
+		Default        : "Unknown value. ";
+	}
+}
+
+// Table PNPRPropertyTypeTable( Value )
+// {
+	// Switch( Value )
+	// {
+		// Case 0x00001000: "DEVPROP_TYPEMOD_ARRAY ";
+		// Case 0x00002000: "DEVPROP_TYPEMOD_LIST ";
+		// Case 0x00000000: "DEVPROP_TYPE_EMPTY ";
+		// Case 0x00000001: "DEVPROP_TYPE_NULL ";
+		// Case 0x00000002: "DEVPROP_TYPE_SBYTE ";
+		// Case 0x00000003: "DEVPROP_TYPE_BYTE ";
+		// Case 0x00000004: "ODEVPROP_TYPE_INT16";
+		// Case 0x00000005: "DEVPROP_TYPE_UINT16 ";
+		// Case 0x00000006: "DEVPROP_TYPE_INT32 ";
+		// Case 0x00000007: "DEVPROP_TYPE_UINT32 ";
+		// Case 0x00000008: "DEVPROP_TYPE_INT64 ";
+		// Case 0x00000009: "DEVPROP_TYPE_UINT64 ";
+		// Case 0x0000000A: "DEVPROP_TYPE_FLOAT ";
+		// Case 0x0000000B: "DEVPROP_TYPE_DOUBLE ";
+		// Case 0x0000000C: "DEVPROP_TYPE_DECIMAL ";
+		// Case 0x0000000D: "DEVPROP_TYPE_GUID ";
+		// Case 0x0000000E: "DEVPROP_TYPE_CURRENCY ";
+		// Case 0x0000000F: "DEVPROP_TYPE_DATE ";
+		// Case 0x00000010: "DEVPROP_TYPE_FILETIME ";
+		// Case 0x00000011: "DEVPROP_TYPE_BOOLEAN ";
+		// Case 0x00000012: "DEVPROP_TYPE_STRING ";
+		// Case 0x00000013: "DEVPROP_TYPE_SECURITY_DESCRIPTOR ";
+		// Case 0x00000014: "DEVPROP_TYPE_SECURITY_DESCRIPTOR_STRING ";
+		// Case 0x00000015: "DEVPROP_TYPE_DEVPROPKEY ";
+		// Case 0x00000016: "DEVPROP_TYPE_DEVPROPTYPE ";
+		// Case 0x00000017: "DEVPROP_TYPE_ERROR ";
+		// Case 0x00000018: "DEVPROP_TYPE_NTSTATUS ";
+		// Case 0x00000019: "DEVPROP_TYPE_STRING_INDIRECT ";
+		// Default        : "Unknown value. ";
+	// }
+// }
+
+table PNPRPropTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "DEVPROP_TYPE_EMPTY";
+		case 0x01: "DEVPROP_TYPE_NULL";
+		case 0x02: "DEVPROP_TYPE_SBYTE";
+		case 0x03: "DEVPROP_TYPE_BYTE";
+		case 0x04: "DEVPROP_TYPE_INT16";
+		case 0x05: "DEVPROP_TYPE_UINT16";
+		case 0x06: "DEVPROP_TYPE_INT32";
+		case 0x07: "DEVPROP_TYPE_UINT32";
+		case 0x08: "DEVPROP_TYPE_INT64";
+		case 0x09: "DEVPROP_TYPE_UINT64";
+		case 0x0A: "DEVPROP_TYPE_FLOAT";
+		case 0x0B: "DEVPROP_TYPE_DOUBLE";
+		case 0x0C: "DEVPROP_TYPE_DECIMAL";
+		case 0x0D: "DEVPROP_TYPE_GUID";
+		case 0x0E: "DEVPROP_TYPE_CURRENCY";
+		case 0x0F: "DEVPROP_TYPE_DATE";
+		case 0x10: "DEVPROP_TYPE_FILETIME";
+		case 0x11: "DEVPROP_TYPE_BOOLEAN";
+		case 0x12: "DEVPROP_TYPE_STRING";
+		case 0x13: "DEVPROP_TYPE_SECURITY_DESCRIPTOR";
+		case 0x14: "DEVPROP_TYPE_SECURITY_DESCRIPTOR_STRING";
+		case 0x15: "DEVPROP_TYPE_DEVPROPKEY";
+		case 0x16: "DEVPROP_TYPE_DEVPROPTYPE";
+		case 0x17: "DEVPROP_TYPE_ERROR";
+		case 0x18: "DEVPROP_TYPE_NTSTATUS";
+		case 0x19: "DEVPROP_TYPE_STRING_INDIRECT";
+		default:
+			FormatString("Unknown value: %d", value);
+	}
+}
+
+struct PNPRPropertyType = PropertyType.ToString
+{
+	UINT32 PropertyType = FormatString("%s%s", 
+		this >= 0x00002000? "LIST OF ": this >= 0x00001000? "ARRAY OF": "", PNPRPropTypeTable(this & 0xFF));
+}
+
+struct PNPRDeviceInstanceStatusValue = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+		Struct {
+			UINT32 Status = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 RootEnumerated:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Device instance was enumerated by the root directory" : "Device instance was not enumerated by the root directory");
+				UINT32 DriverLoaded:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance has the Register_Device_Driver flag for registering a device driver" : "Device instance does not have the Register_Device_Driver flag for registering a device driver");
+				UINT32 EnumLoaded:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance has the Register_Enumerator flag" : "Device instance does not have the Register_Enumerator flag");
+				UINT32 Started:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Device instance is currently configured" : "Device instance is currently not configured");
+				UINT32 Manual:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Device instance was manually installed" : "Device instance was not manually installed");
+				UINT32 NeedToEnum:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance may need re-enumeration" : "Device instance may not need re-enumeration");
+				UINT32 NotFirstTime:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance already received a configuration" : "Device instance has not already received a configuration");
+				UINT32 HardwareEnum:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Enumeration generates a hardwEnum value" : "Enumeration does not generate a hardwEnum value");
+				UINT32 Liar:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Device did not accurately report whether reconfiguration can occur once" : "Device accurately reported whether reconfiguration can occur once");
+				UINT32 HasMark:1 = FormatString("        (%s) %s", this.ToBitString, this ? "There is no current and active request to create the device instance" : "There is a current and active request to create the device instance");
+				UINT32 HasProblem:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance needs a device installer" : "Device instance does not need a device installer");
+				UINT32 Filtered:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is filtered" : "Device instance is not filtered");
+				UINT32 Moved:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Device instance has been moved" : "Device instance has not been moved");
+				UINT32 Disableable:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Device instance can be rebalanced" : "Device instance cannot be rebalanced");
+				UINT32 Removable:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance can be removed" : "Device instance cannot be removed");
+				UINT32 PrivateProblem:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Device instance has a private problem" : "Device instance does not have a private problem");
+				UINT32 MFParent:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is a multiple-function parent" : "Device instance is not a multiple-function parent");
+				UINT32 MFChild:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Device instance is a multiple-function child" : "Device instance is not a multiple-function child");
+				UINT32 WillBeRemoved:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance is being removed" : "Device instance is not removed");
+				UINT32 NotFirstTimee:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance received a configuration enumeration" : "Device instance did not receive a configuration enumeration");
+				UINT32 StopFreeRes:1 = FormatString("    (%s) %s", this.ToBitString, this ? "When child is stopped, free resources" : "When child is stopped, don't free resources");
+				UINT32 RebalCandidate:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Do not skip this device instance during rebalancing" : "Skip this device instance during rebalancing");
+				UINT32 BadPartial:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance's logical configuration does not have the same resources" : "Device instance's logical configuration has the same resources");
+				UINT32 NTEnumerator:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance is a Windows NT enumerator" : "Device instance is not a Windows NT enumerator");
+				UINT32 NTDriver:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is a Windows NT driver" : "Device instance is not a Windows NT driver");
+				UINT32 NeedsLocking:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance needs a lock to resume processing" : "Device instance does not need a lock to resume processing");
+				UINT32 ArmWakeup:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance can be the wake-up device" : "Device instance cannot be the wake-up device");
+				UINT32 APMEnumerator:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance is an APM-aware enumerator" : "Device instance is not an APM-aware enumerator");
+				UINT32 APMDriver:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance is an APM-aware driver" : "Device instance is not an APM-aware driver");
+				UINT32 SilentInstall:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance was installed silently" : "Device instance was not installed silently");
+				UINT32 NoShowInDM:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance will not appear in the device manager" : "Device instance will appear in the device manager");
+				UINT32 BootLogProb:1 = FormatString("    (%s) %s", this.ToBitString, this ? "A problem occurred during pre-assignment of the boot log configuration" : "No problems occurred during pre-assignment of the boot log configuration");
+			}
+		}
+
+		Default:
+		Struct {
+			UINT32 Status = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 BootLogProb:1 = FormatString("    (%s) %s", this.ToBitString, this ? "A problem occurred during pre-assignment of the boot log configuration" : "No problems occurred during pre-assignment of the boot log configuration");
+				UINT32 NoShowInDM:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance will not appear in the device manager" : "Device instance will appear in the device manager");
+				UINT32 SilentInstall:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance was installed silently" : "Device instance was not installed silently");
+				UINT32 APMDriver:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance is an APM-aware driver" : "Device instance is not an APM-aware driver");
+				UINT32 APMEnumerator:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance is an APM-aware enumerator" : "Device instance is not an APM-aware enumerator");
+				UINT32 ArmWakeup:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance can be the wake-up device" : "Device instance cannot be the wake-up device");
+				UINT32 NeedsLocking:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance needs a lock to resume processing" : "Device instance does not need a lock to resume processing");
+				UINT32 NTDriver:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is a Windows NT driver" : "Device instance is not a Windows NT driver");
+				UINT32 NTEnumerator:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance is a Windows NT enumerator" : "Device instance is not a Windows NT enumerator");
+				UINT32 BadPartial:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance's logical configuration does not have the same resources" : "Device instance's logical configuration has the same resources");
+				UINT32 RebalCandidate:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Do not skip this device instance during rebalancing" : "Skip this device instance during rebalancing");
+				UINT32 StopFreeRes:1 = FormatString("    (%s) %s", this.ToBitString, this ? "When child is stopped, free resources" : "When child is stopped, don't free resources");
+				UINT32 NotFirstTimee:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance received a configuration enumeration" : "Device instance did not receive a configuration enumeration");
+				UINT32 WillBeRemoved:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Device instance is being removed" : "Device instance is not removed");
+				UINT32 MFChild:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Device instance is a multiple-function child" : "Device instance is not a multiple-function child");
+				UINT32 MFParent:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is a multiple-function parent" : "Device instance is not a multiple-function parent");
+				UINT32 PrivateProblem:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Device instance has a private problem" : "Device instance does not have a private problem");
+				UINT32 Removable:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device instance can be removed" : "Device instance cannot be removed");
+				UINT32 Disableable:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Device instance can be rebalanced" : "Device instance cannot be rebalanced");
+				UINT32 Moved:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Device instance has been moved" : "Device instance has not been moved");
+				UINT32 Filtered:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Device instance is filtered" : "Device instance is not filtered");
+				UINT32 HasProblem:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance needs a device installer" : "Device instance does not need a device installer");
+				UINT32 HasMark:1 = FormatString("        (%s) %s", this.ToBitString, this ? "There is no current and active request to create the device instance" : "There is a current and active request to create the device instance");
+				UINT32 Liar:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Device did not accurately report whether reconfiguration can occur once" : "Device accurately reported whether reconfiguration can occur once");
+				UINT32 HardwareEnum:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Enumeration generates a hardwEnum value" : "Enumeration does not generate a hardwEnum value");
+				UINT32 NotFirstTime:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance already received a configuration" : "Device instance has not already received a configuration");
+				UINT32 NeedToEnum:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance may need re-enumeration" : "Device instance may not need re-enumeration");
+				UINT32 Manual:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Device instance was manually installed" : "Device instance was not manually installed");
+				UINT32 Started:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Device instance is currently configured" : "Device instance is currently not configured");
+				UINT32 EnumLoaded:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Device instance has the Register_Enumerator flag" : "Device instance does not have the Register_Enumerator flag");
+				UINT32 DriverLoaded:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Device instance has the Register_Device_Driver flag for registering a device driver" : "Device instance does not have the Register_Device_Driver flag for registering a device driver");
+				UINT32 RootEnumerated:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Device instance was enumerated by the root directory" : "Device instance was not enumerated by the root directory");
+			}
+		}
+	}
+}
+
+struct PNPRDeviceIDListFlagValues = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) ) {
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+		Struct {
+			UINT32 Flags = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 Enumerator:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Contains all device instances matches the enumerator identifier or the device identifier" : "Not contains all device instances matches the enumerator identifier or the device identifier");
+				UINT32 Service:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Contains device instances with service matches pszFilter" : "Not contains device instances with service matches pszFilter");
+				UINT32 EjectRelations:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Contains device instances of ejection relations" : "Not contains device instances of ejection relations");
+				UINT32 RemovalRelations:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Contains device instances of removal relations" : "Not contains device instances of removal relations");
+				UINT32 PowerRelations:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Contains device instances of power relations" : "Not contains device instances of power relations");
+				UINT32 BusRelations:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Contains device instances of bus relations" : "Not contains device instances of bus relations");
+				UINT32 Reserved:26 = FormatString("         (%s)", this.ToBitString);
+			}
+		}
+		Default:
+		Struct {
+			UINT32 Flags = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 Reserved:26 = FormatString("         (%s)", this.ToBitString);
+				UINT32 BusRelations:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Contains device instances of bus relations" : "Not contains device instances of bus relations");
+				UINT32 PowerRelations:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Contains device instances of power relations" : "Not contains device instances of power relations");
+				UINT32 RemovalRelations:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Contains device instances of removal relations" : "Not contains device instances of removal relations");
+				UINT32 EjectRelations:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Contains device instances of ejection relations" : "Not contains device instances of ejection relations");
+				UINT32 Service:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Contains device instances with service matches pszFilter" : "Not contains device instances with service matches pszFilter");
+				UINT32 Enumerator:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Contains all device instances matches the enumerator identifier or the device identifier" : "Not contains all device instances matches the enumerator identifier or the device identifier");
+			}
+		}
+	}
+}
+
+

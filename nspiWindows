@@ -1,0 +1,2161 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Name Service Provider  Interface (NSPI) Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-NSPI]: Name Service Provider  Interface (NSPI) Protocol Specification (1.0.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1167.0
+//#
+//#  Revision Class and Date:Major, 8/21/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol NSPI = FormatString( "%s %s%s%s%s%s", 
+	Property.NSPIMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.NSPISummary && Property.MSRPCEncrypted == ConstEncTypeClearData ?  ", " + Property.NSPISummary : "" )
+{
+		[Property.NSPISummary = ""]
+		[Property.NSPIMethodName = NSPIMethodNameTable( Property.MSRPCOpnum )]
+		Switch( Property.MSRPCOpnum )
+		{
+			Case 0:
+				_Struct NspiBind
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X", Flags )]
+										Struct
+										{											
+											UINT32 Flags;
+											NSPIStat Stat;
+											NSPIFlatUIDRPtr ServerGuid;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											//NSPIStat Stat;
+											NSPIFlatUIDRPtr ServerGuid;
+											ContextHandle ContextHandle;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 1:
+				_Struct NspiUnbind
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle ContextHandle;
+											UINT32 Reserved;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											ContextHandle ContextHandle;
+											UINT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 2:
+				_Struct NspiUpdateStat
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X Delta=0x%X", Reserved, Delta.Value )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											NSPIStat Stat;
+											INT32PTR Delta;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Delta=0x%X ReturnValue=0x%X", Delta.Value, ReturnValue )]
+										Struct
+										{
+											NSPIStat Stat;
+											INT32PTR Delta;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 3:
+				_Struct NspiQueryRows
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X ETableCount=0x%X Count=0x%X", Flags, ETableCount, Count )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											NSPIStat Stat;
+											UINT32 ETableCount;
+											NSPIUINT32ConformantPtr ETable;
+											UINT32 Count;
+											NSPIPropertyTagArrayRPtr PropTags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIStat Stat;
+											NSPIPropertyRowSetRPtr Rows;
+											Align4 Pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 4:
+				_Struct NspiSeekEntries
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											NSPIStat Stat;											
+											NSPIPropertyValueRStruct Target;
+											NSPIPropertyTagArrayRPtr ETable;
+											NSPIPropertyTagArrayRPtr PropTags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIStat Stat;
+											NSPIPropertyRowSetRPtr Rows;											
+											Align4 Pad;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 5:
+				_Struct NspiGetMatches
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved1=0x%X Reserved2=0x%X Requested=0x%X", Reserved1, Reserved2, Requested )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved1 = MustBeSetToTable(this,"0");
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr Reserved = MustBeSetToTable(this,"0");
+											UINT32 Reserved2 = MustBeSetToTable(this,"0");
+											NSPIRestrictionRPtr Filter;
+											NSPIPropertyNameRIdlStructPtr PropName;
+											UINT32 Requested;
+											NSPIPropertyTagArrayRPtr PropTags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr OutMIds;
+											NSPIPropertyRowSetRPtr Rows;
+											Align4 Pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 6:
+				_Struct NspiResortRestriction
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved = MustBeSetToTable(this,"0");
+											NSPIStat Stat;
+											NSPIPropertyTagArrayR InMIds;
+											NSPIPropertyTagArrayRPtr OutMIds;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr OutMIds;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 7:
+				_Struct NspiDNToMId
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved = MustBeSetToTable(this,"0");
+											NdrAlign Pad;
+											NSPIStringArrayRIdlStruct Names;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr MIds;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 8:
+				_Struct NspiGetPropList
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X MId=0x%X CodePage=0x%X", Flags, MId, CodePage )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											UINT32 MId;
+											UINT32 CodePage;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr PropTags;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 9:
+				_Struct NspiGetProps
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X", Flags )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr PropTags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyRowRIdlStructPtr Rows;
+											Align4 Pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 10:
+				_Struct NspiCompareMIds
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X MId1=0x%X MId2=0x%X", Reserved, MId1, MId2 )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved = MustBeSetToTable(this,"0");
+											NSPIStat Stat;
+											UINT32 MId1;
+											UINT32 MId2;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Result=0x%X ReturnValue=0x%X", Result, ReturnValue )]
+										Struct
+										{
+											INT32 Result;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 11:
+				_Struct NspiModProps
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved = MustBeSetToTable(this,"0");
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr PropTags;
+											NSPIPropertyRowRIdlStruct Row;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 12:
+				_Struct NspiGetSpecialTable
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X Version=0x%X", Flags, Version )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											NSPIStat Stat;
+											UINT32 Version;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Version=0x%X ReturnValue=0x%X", Version, ReturnValue )]
+										Struct
+										{
+											UINT32 Version;
+											NSPIPropertyRowSetRPtr Rows;
+											Align4 pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 13:
+				_Struct NspiGetTemplateInfo
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X Type=0x%X DN=%s CodePage=0x%X LocaleID=0x%X", Flags, Type, DN, CodePage, LocaleID )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											UINT32 Type;
+											NdrStringPtr DN;
+											Align4 pad;
+											UINT32 CodePage;
+											UINT32 LocaleID;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyRowRIdlStructPtr Data;
+											Align4 pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 14:
+				_Struct NspiModLinkAtt
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Flags=0x%X PropTag=0x%X MId=0x%X", Flags, PropTag, MId )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Flags;
+											UINT32 PropTag;
+											UINT32 MId;
+											NSPIBinaryArrayRIdlStruct EntryIds;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 16:
+				_Struct NspiQueryColumns
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X Flags=0x%X", Reserved, Flags )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											UINT32 Flags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr Columns;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 17:
+				_Struct NspiGetNamesFromIDs
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											NSPIFlatUIDRPtr Lpguid;
+											NSPIPropertyTagArrayRPtr PropTags;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr ReturnedPropTags;
+											NSPIPropertyNameSetRPtr Names;
+											Align4 pad;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 18:
+				_Struct NspiGetIDsFromNames
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X Flags=0x%X CPropNames=0x%X", Reserved, Flags, CPropNames )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved = MustBeSetToTable(this,"0");
+											UINT32 Flags;
+											UINT32 CPropNames;
+											NSPIPropertyNameRIdlStructPtr Names;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr PropTags;											
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 19:
+				_Struct NspiResolveNames
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr PropTags;
+											NdrAlign Pad;
+											NSPIStringArrayRIdlStruct PaStr;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr MIds;
+											NSPIPropertyRowSetRPtr Rows;
+											Align4 pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Case 20:
+				_Struct NspiResolveNamesW
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00: //REQUEST
+							_Struct Request
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "Reserved=0x%X", Reserved )]
+										Struct
+										{
+											ContextHandle Rpc;
+											UINT32 Reserved;
+											NSPIStat Stat;
+											NSPIPropertyTagArrayRPtr PropTags;
+											NdrAlign Pad;
+											NSPIWStringsArrayIdlStruct PaWStr;
+										}
+								}
+							}
+						
+						Case 0x02: //RESPONSE
+							_Struct Response
+							{
+								Switch
+								{
+									Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+									Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+									Default:
+										[NSPISummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+										Struct
+										{
+											NSPIPropertyTagArrayRPtr Flags;
+											NSPIPropertyRowSetRPtr Rows;
+											Align4 pad;
+											INT32 ReturnValue;
+										}
+								}
+							}
+					}
+				}
+			
+			Default:
+				ReportParserError( ParserErrorProtocolClassWindows, "NSPI", "Unknown nspi method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+		}
+}
+
+Table NSPIMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "NspiBind";
+		Case 1: "NspiUnbind";
+		Case 2: "NspiUpdateStat";
+		Case 3: "NspiQueryRows";
+		Case 4: "NspiSeekEntries";
+		Case 5: "NspiGetMatches";
+		Case 6: "NspiResortRestriction";
+		Case 7: "NspiDNToMId";
+		Case 8: "NspiGetPropList";
+		Case 9: "NspiGetProps";
+		Case 10: "NspiCompareMIds";
+		Case 11: "NspiModProps";
+		Case 12: "NspiGetSpecialTable";
+		Case 13: "NspiGetTemplateInfo";
+		Case 14: "NspiModLinkAtt";
+		Case 15: "nspi_Opnum15DummyMethod";
+		Case 16: "NspiQueryColumns";
+		Case 17: "NspiGetNamesFromIDs";
+		Case 18: "NspiGetIDsFromNames";
+		Case 19: "NspiResolveNames";
+		Case 20: "NspiResolveNamesW";
+		Default: "unknown";
+	}
+}
+
+
+//
+//[MS-NSPI]:_AndOrRestriction_r
+//Alignment:NdrAlign
+//
+Struct NSPIAndOrRestrictionR
+{
+	UINT32 CRes;
+	NdrPtr ResPtr;
+	switch
+	{
+		case ResPtr.referentId > 0:
+		_struct
+		{
+			NdrConformant	Size;
+			switch
+			{
+				case size.maxcount > 0:
+				NSPIRestrictionR	Res[size.maxcount];
+			}
+		}
+	}
+}
+
+//
+//[MS-NSPI]:_BinaryArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIBinaryArrayRConformant
+{
+	NdrConformant Size;
+	NSPINSPIBinaryRIdlStruct Bin[Size.MaxCount]   
+}
+
+//
+//[MS-NSPI]:BinaryArray_R Point
+//Alignment:NdrAlign
+//
+Struct NSPIBinaryArrayR
+{
+	UINT32 CValues;
+	NdrPtr BinPtr;
+}
+
+//
+//[MS-NSPI]:BinaryArray_R
+//Alignment:NdrAlign
+//
+Struct NSPIBinaryArrayRIdlStruct
+{
+	NSPIBinaryArrayR BinaryArrayR;
+	Switch 
+	{
+		Case BinaryArrayR.BinPtr.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				[ local.count = 0, local.Ptr = 0] 
+				while[ local.count < Size.MaxCount ]
+				{
+					[ local.count = local.count + 1, local.Ptr = local.Ptr + (binaryR.bPtr.referentID > 0 ? 1 : 0)]
+					NSPIBinaryR binaryR;
+				}
+				NSPIINT8Conformant bin[ local.Ptr ];
+			}
+			
+	}
+}
+//
+//[MS-NSPI]:Binary_r
+//Alignment:NdrAlign
+//
+Struct NSPINSPIBinaryRIdlStruct
+{
+	NSPIBinaryR BinaryR;
+	switch 
+	{
+		case NSPIBinaryR.BPtr.ReferentID != 0:
+			NSPIINT8Conformant BData;
+	}
+}
+//2.3.1.3   Binary_r
+Struct NSPIBinaryR
+{
+	UINT32 Cb;
+	NdrPtr bPtr;
+}
+//
+//[MS-NSPI]:_BitMaskRestriction_r
+//Alignment:Align4
+//
+Struct NSPIBitMaskRestrictionR
+{
+	UINT32 RelBMR;
+	UINT32 PropTag;
+	UINT32 Mask;
+}
+
+//
+//[MS-NSPI]:_ComparePropsRestriction_r
+//Alignment:Align4
+//
+Struct NSPIComparePropsRestrictionR
+{
+	UINT32 Relop;
+	UINT32 PropTag1;
+	UINT32 PropTag2;
+}
+
+//
+//[MS-NSPI]:_ContentRestriction_r
+//Alignment:NdrAlign
+//
+Struct NSPIContentRestrictionR
+{
+	UINT32 FuzzyLevel;
+	UINT32 PropTag;
+	NdrPtr PropPtr;
+	switch
+	{
+		case PropPtr.referentId>0: NSPIPropertyValueR	Prop;
+	}
+}
+
+//
+//[MS-NSPI]:_ExistRestriction_r
+//Alignment:Align4
+//
+Struct NSPIExistRestrictionR
+{
+	UINT32 Reserved1 = MustBeSetToTable(this,"0x00000000");
+	UINT32 PropTag;
+	UINT32 Reserved2 = MustBeSetToTable(this,"0x00000000");
+}
+
+
+Struct NSPIDateTimeArrayRConformant
+{
+	NdrConformant	Size;
+	switch
+	{
+		case size.maxcount > 0:
+		FILETIME	lpft[size.maxcount];
+	}
+}
+
+//
+//[MS-NSPI]:_FlatUIDArray_r
+//Alignment:NdrAlign
+//
+struct NSPIDateTimeArrayR
+{
+	UINT32	cValues;
+	NdrPtr	FtPtr;
+}
+
+
+Struct NSPIFlatUIDArrayConformant
+{
+	NdrConformant Size;
+	[Local.Count = 0]
+	while [Local.Count < Size.MaxCount]
+	{
+		[Local.Count = Local.Count + (Ptr.ReferentID != 0)?1:0]
+		NdrPtr Ptr;
+	}
+	NSPIFlatUIDR Guid[Local.Count]
+}
+
+Struct NSPIFlatUIDArrayR
+{
+	UINT32 CValues;
+	NdrPtr GuidPtr;
+}
+
+//
+//	_FlatUID_r
+//
+Struct NSPIFlatUIDR
+{
+	GUID(0)	Ab;
+}
+
+
+Struct NSPIFlatUIDRPtr
+{
+	NdrPtr FlatUIDRPtr;
+	Switch {
+		Case FlatUIDRPtr.ReferentID != 0:
+			NSPIFlatUIDR FlatUIDR;
+	}
+}
+
+Struct NSPIINT16Conformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+		INT16 Element[Size.MaxCount];
+	}
+}
+
+Struct NSPIINT32Conformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+		INT32 Element[Size.MaxCount];
+	}
+}
+
+Struct NSPIINT8Conformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+		INT8 Element[Size.MaxCount];
+	}
+}
+
+//
+//	_LongArray_r
+//
+Struct NSPILongArrayR
+{
+	UINT32 CValues;
+	NdrPtr LPtr;
+}
+
+//
+//	_NotRestriction_r
+//
+Struct NSPINotRestrictionR
+{
+	NdrPtr ResPtr;
+	switch
+	{
+		case ResPtr.referentId > 0:
+			NSPIRestrictionR	Res;
+	}
+}
+
+//
+//[MS-NSPI]:PropertyName_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyNameR
+{
+	[post.Property.NSPIGuidCount = Property.NSPIGuidCount + (GuidPtr.referentID == 0 ? 0 : 1)]
+	NdrPtr GuidPtr;
+	UINT32 Reserved = MustBeSetToTable(this,"0x00000000");
+	INT32 ID;
+}
+Struct NSPIPropertyNameRConformant
+{	
+	[local.GuidCount = 0]
+	while[local.GuidCount < Property.NameRCount]
+	{
+		[local.GuidCount = local.GuidCount + 1]
+		NSPIPropertyNameR AnamesHeader;
+	}
+	[Local.Count = 0]
+	[MaxLoopCount = Property.NameRCount]
+	While[Local.Count < Property.NSPIGuidCount]
+	{
+		[Local.Count = Local.Count + 1]
+		NSPIFlatUIDR Guid;
+	}
+}
+
+//
+//[MS-NSPI]:PropertyName_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyNameRIdlStruct
+{
+	NSPIPropertyNameR PropertyNameR;
+	Switch {
+		Case PropertyNameR.guidPtr.ReferentID != 0:
+			NSPIFlatUIDR Lpguid;
+	}
+}
+
+Struct NSPIPropertyNameRIdlStructPtr
+{
+	NdrPtr PropertyNameRIdlStructPtr;
+	Switch {
+		Case PropertyNameRIdlStructPtr.ReferentID != 0:
+			NSPIPropertyNameRIdlStruct PropertyNameRIdlStruct;
+	}
+}
+
+//
+//[MS-NSPI]:PropertyNameSet_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyNameSetR
+{
+	[Property.NameRCount=this.MaxCount]
+	NdrConformant Size;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 CNames;
+	NSPIPropertyNameRConformant ANames;
+}
+
+Struct NSPIPropertyNameSetRPtr
+{
+	NdrPtr PropertyNameSetRPtr;
+	Switch {
+		Case PropertyNameSetRPtr.ReferentID != 0:
+			NSPIPropertyNameSetR PropertyNameSetR;
+	}
+}
+
+//
+//[MS-NSPI]:_PropertyRestriction_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyRestrictionR
+{
+	UINT32 Relop;
+	UINT32 PropTag;
+	NdrPtr PropPtr;
+	switch
+	{
+		case PropPtr.referentId>0: NSPIPropertyValueR	Prop;
+	}
+}
+
+//
+//[MS-NSPI]:_PropertyRow_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyRowR
+{
+	UINT32 Reserved = MustBeSetToTable(this,"0x00000000");
+	UINT32 CValues;
+	[post.Property.NSPIARowDataCount = Property.NSPIARowDataCount + (PropsPtr.referentID == 0 ? 0 : 1)]
+	NdrPtr PropsPtr;
+}
+
+struct NSPIPropertyRowRConformant
+{	
+	[Property.NSPIARowDataCount = 0]
+	[Local.PropertyRowRHeaderCount = 0]
+	[MaxLoopCount = Property.NSPIPropertyRowRConformantSize.MaxCount]
+	while[Local.PropertyRowRHeaderCount < NSPIPropertyRowRConformantSize.MaxCount]
+	{
+		[Local.PropertyRowRHeaderCount = Local.PropertyRowRHeaderCount + 1]
+		NSPIPropertyRowR Element;
+	}
+	[Local.Count = 0]
+	while[Local.Count < Property.NSPIARowDataCount]
+	{
+		[Local.Count = Local.Count + 1]
+		NSPIPropertyValueRConformant Props;
+	}	
+}
+
+//
+//[MS-NSPI]:PropertyRow_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyRowRIdlStruct
+{
+	NSPIPropertyRowR PropertyRowR;
+	Switch {
+		Case PropertyRowR.PropsPtr.ReferentID != 0:
+			NSPIPropertyValueRConformant Props;
+	}
+}
+
+Struct NSPIPropertyRowRIdlStructPtr
+{
+	NdrPtr PropertyRowRIdlStructPtr;
+	Switch {
+		Case PropertyRowRIdlStructPtr.ReferentID != 0:
+			NSPIPropertyRowRIdlStruct PropertyRowRIdlStruct;
+	}
+}
+
+//
+//[MS-NSPI]:_PropertyRowSet_r
+//Alignment:NdrALign
+//
+Struct NSPIPropertyRowSetR
+{
+	[post.Property.NSPIPropertyRowRConformantSize.MaxCount = Size.MaxCount]
+	NdrConformant Size;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 CRows;
+	NdrAlign Pad;
+	NSPIPropertyRowRConformant ARow;
+}
+
+Struct NSPIPropertyRowSetRPtr
+{
+	NdrPtr PropertyRowSetRPtr;
+	Switch {
+		Case PropertyRowSetRPtr.ReferentID != 0:
+			NSPIPropertyRowSetR PropertyRowSetR;
+	}
+}
+
+//
+//[MS-NSPI]:PropertyTagArray_r
+//Alignment:None
+//
+Struct NSPIPropertyTagArrayR
+{
+	NdrConformant Length;
+	UINT32 CValues;	
+	NdrVarying VarLength;
+	switch
+	{
+		case VarLength.ActualCount > 0:
+		UINT32 AulPropTag[VarLength.ActualCount];
+	}
+}
+
+//
+//[MS-NSPI]:PropertyTagArray_r
+//ALignment:NdrAlign
+//
+Struct NSPIPropertyTagArrayRPtr
+{
+	NdrPtr PropertyTagArrayRPtr;
+	Switch {
+		Case PropertyTagArrayRPtr.ReferentID != 0:
+			NSPIPropertyTagArrayR PropertyTagArrayR;
+	}
+}
+
+//
+//[MS-NSPI]:_PropertyValue_r
+//Alignment:NdrAlign
+//
+Struct NSPIPropertyValueR
+{
+	NdrAlign Pad;	
+	UINT32 PropTag;
+	UINT32 Reserved;
+	NSPIPvR	Value;
+}
+
+
+
+//
+//[MS-NSPI]:_PropertyValue_r
+//Alignment:Align4
+//
+Struct NSPIPropertyValueRStruct
+{
+	UINT32 PropTag;
+	UINT32 Reserved;
+	NSPIPROPVALUNIONStruct Value;
+}
+
+//
+//[MS-NSPI]:Binary_R
+//Alignment:NdrAlign
+//
+Struct NSPIBinaryRStruct
+{
+	UINT32 Cb;
+	NdrPtr bPtr;
+	NdrConformant Size;
+	Blob(Size.MaxCount) B;
+}
+
+//
+//[MS-NSPI]:FlatUIDArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIFlatUIDRStruct
+{
+	NdrPtr GuidPtr;
+	Switch
+	{
+		Case GuidPtr.ReferentID != 0:
+			GUID(0)	Ab;
+	}
+}
+
+//
+//[MS-NSPI]:ShortArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIShortArrayRStruct
+{
+	UINT32 CValues;
+	NdrPtr IPtr;
+	Switch
+	{
+		Case IPtr.ReferentID != 0:
+			Struct 
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.maxcount > 0:
+						INT16 Element[Size.MaxCount];
+				}
+			}
+	}
+}
+
+//
+//[MS-NSPI]:LongArray_r
+//Alignment:NdrAlign
+//
+Struct NSPILongArrayRStruct
+{
+	UINT32 cValues;
+	NdrPtr LPtr;
+	Switch
+	{
+		Case LPtr.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						INT32 Element[Size.MaxCount];
+				}
+			}
+	}
+} 
+
+//
+//[MS-NSPI]:StringArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIStringArrayRStruct
+{
+	UINT32	CValues;
+	NdrPtr	SzAPtr;
+	Switch
+	{
+		Case	SzAPtr.ReferentID != 0:
+				NSPIStringConformant MVszAData;		
+			
+	}
+}
+
+//
+//[MS-NSPI]:BinaryArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIBinaryArrayRStruct
+{	
+	NSPIBinaryArrayR BinaryArrayRPtr;
+	Switch 
+	{
+		Case BinaryArrayRPtr.BinPtr.ReferentID != 0:
+			NSPIBinaryArrayRConformant 	BinaryArrayRData;
+	}
+}
+
+//
+//[MS-NSPI]:WStringArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIWStringArrayRStruct
+{
+	NSPIWStringArrayR MVszWPtr;
+	Switch
+	{
+		Case MVszWPtr.SzWPtr.referentID != 0:
+			NSPIWideStringConformant MVszWData;
+	}
+}
+
+//
+//[MS-NSPI]:FlatUIDArrayR_r
+//Alignment:NdrAlign
+//
+Struct NSPIFlatUIDArrayRStruct
+{	
+	NSPIFlatUIDArrayR MVguidPtr;
+	Switch
+	{
+		Case MVguidPtr.GuidPtr.referentID != 0:
+			NSPIFlatUIDArrayConformant MVguidData;
+	}
+}
+
+
+Struct NSPIDateTimeArrayRStruct
+{	
+	NSPIDateTimeArrayR MVftPtr;
+	Switch
+	{
+		Case MVftPtr.FtPtr.referentID != 0:
+			NSPIDateTimeArrayRConformant MVftData;	
+	}
+}
+
+Struct NSPISzAStruct
+{
+	NdrPtr APtr;
+	Switch
+	{
+		Case APtr.referentID != 0:
+			NdrString SzA;
+	}
+}
+
+Struct NSPISzWStruct
+{
+	NdrPtr WPtr;
+	Switch
+	{
+		Case WPtr.referentID != 0:
+			NdrWideString SzW;	
+	}
+}
+
+Struct NSPIPROPVALUNIONStruct
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 SwitchValue;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad2;
+	}
+	Switch( SwitchValue & 0x0000FFFF )
+	{
+		Case 2:
+			Struct
+			{
+				INT16 I;
+				Switch
+				{
+					case Property.MSRPCNdr64:
+					Align8 pad3;
+				}
+			}
+			
+		Case 3:
+			Struct
+			{
+				INT32 L;
+				Switch
+				{
+					case Property.MSRPCNdr64:
+					Align8 pad3;
+				}
+			}		
+		Case 11:
+			Struct
+			{
+				UINT16 B;
+				Switch
+				{
+					case Property.MSRPCNdr64:
+					Align8 pad3;
+				}
+			}
+		Case 30:
+			NSPISzAStruct SzA;
+		Case 258:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIBinaryRStruct Bin;
+			}
+				
+		Case 31:
+		    NSPISzWStruct SzW;
+		Case 72:
+			NSPIFlatUIDRStruct Guid;
+		Case 64:
+				FILETIME Ft;
+		Case 10:
+			Struct
+			{
+				INT32 Err;
+				Switch
+				{
+					case Property.MSRPCNdr64:
+					Align8 pad3;
+				}
+			}
+		Case 4098:	
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIShortArrayRStruct MVi;
+			}
+			
+		Case 4099:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPILongArrayRStruct MVl;
+			}
+			
+		Case 4126:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIStringArrayRStruct MVszA;
+			}
+			
+		Case 4354:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIBinaryArrayRStruct MVbin;
+			}
+		Case 4127:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIWStringArrayRStruct MVszW;
+			}
+			
+		Case 4168:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIFlatUIDArrayRStruct MVguid;
+			}
+			
+		Case 4160:
+			Struct
+			{
+				NdrAlign Pad1;
+				NSPIDateTimeArrayRStruct MVft;
+			}
+			
+		Case 1:
+		Case 13:
+			Struct
+			{
+				INT32 Reserved = MustBeSetToTable(this,"0x00000000");
+				Switch
+				{
+					case Property.MSRPCNdr64:
+					Align8 pad3;
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "NSPI", "Unknown Union Switch Value" ) Unknown;
+	}	
+}
+
+Struct NSPIPropertyValueRConformant
+{
+	NdrConformant Size;
+	[Property.NSPIPropsCount = 0]
+	[MaxLoopCount = Size.MaxCount]
+	while [Property.NSPIPropsCount < Size.Maxcount]
+	{
+		[Property.NSPIPropsCount = Property.NSPIPropsCount + 1]
+		NSPIPropertyValueR PropertyValueRS;
+	}
+	[Local.Count = 0]
+	[MaxLoopCount = Size.MaxCount]
+	while [Local.Count < Size.MaxCount]
+	{
+		[Local.Count = Local.Count + 1]
+		switch (property.NSPISwitchValue$[Local.Count])
+		{
+				case 30:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NdrString SzA;
+					}
+				case 31:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NdRWideString SzW;
+					}
+				case 72:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIFlatUIDR Guid;
+					}
+				case 258:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIINT8Conformant	BinData;
+					}
+				case 4098:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIINT16Conformant	MviData;
+					}
+				case 4099:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIINT32Conformant	MvlData;
+					}
+				case 4126:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIStringConformant	MVszAData;
+					}
+				case 4354:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIBinaryArrayRConformant	MVbinData;
+					}
+				case 4127:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIWideStringConformant	MVszWData;
+					}
+				case 4168:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIFlatUIDArrayConformant	MVguidData;
+					}
+				case 4160:
+					switch
+					{
+						case property.NSPIIPvRPtr$[Local.Count] != 0:
+							NSPIDateTimeArrayRConformant	MVftData;
+					}
+		}
+	}
+}
+
+//
+//	_PV_r
+//
+Struct NSPIPvR
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	[Post.property.NSPIIPvRPtr$["SwitchValue"]]
+	[Post.property.NSPISwitchValue$[Property.NSPIPropsCount] = SwitchValue & 0x0000FFFF]
+	UINT32 SwitchValue;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad2;
+	}
+	Switch( SwitchValue )
+	{
+		Case 2: INT16 I;
+		Case 3: INT32 L;
+		Case 11:UINT16 B;
+		Case 30:
+			[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = APtr.ReferentID]
+			NdrPtr APtr;
+		Case 258:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = Bin.bPtr.ReferentID]
+				NSPIBinaryR Bin;
+			}
+			
+		Case 31:
+			[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = WPtr.ReferentID]
+			NdrPtr WPtr;
+		Case 72:
+			[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = GuidPtr.ReferentID]
+			NdrPtr GuidPtr;
+		Case 64:FILETIME Ft;
+		Case 10:INT32 Err;
+		Case 4098:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVi.IPtr.ReferentID]
+				NSPIShortArrayR MVi;
+			}
+			
+		Case 4099:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVl.LPtr.ReferentID]
+				NSPILongArrayR MVl;
+			}
+		Case 4126:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVszA.SzAPtr.ReferentID]
+				NSPIStringArrayR MVszA;
+			}
+			
+		Case 4354:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVbin.BinPtr.ReferentID]
+				NSPIBinaryArrayR MVbin;
+			}
+		Case 4127:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVszW.SzWPtr.ReferentID]
+				NSPIWStringArrayR MVszW;
+			}
+		Case 4168:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVguid.GuidPtr.ReferentID]
+				NSPIFlatUIDArrayR MVguid;
+			}
+		Case 4160:
+			Struct
+			{
+				NdrAlign Pad1;
+				[Post.property.NSPIIPvRPtr$[Property.NSPIPropsCount] = MVft.FtPtr.ReferentID]
+				NSPIDateTimeArrayR MVft;
+			}
+			
+		Case 1:
+		Case 13:INT32 Reserved = MustBeSetToTable(this,"0x00000000");
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "NSPI", "Unknown Union Switch Value" ) Unknown;
+	}	
+}
+
+//
+//	_Restriction_r
+//
+Struct NSPIRestrictionR
+{
+	UINT32 Rt;
+	NSPIRestrictionUnionRConformant Res;
+}
+
+/*Struct NSPIRestrictionRConformant
+{
+	NdrConformant Size;
+	NSPIRestrictionR Element[Size.MaxCount];
+}*/
+
+Struct NSPIRestrictionRPtr
+{
+	NdrPtr RestrictionRPtr;
+	Switch {
+		Case RestrictionRPtr.ReferentID != 0:
+			NSPIRestrictionR RestrictionR;
+	}
+}
+
+//
+//	RestrictionUnion_r
+//
+Struct NSPIRestrictionUnionR
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 SwitchValue;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad2;
+	}
+	Switch( SwitchValue )
+	{
+		Case 0:
+			NSPIAndOrRestrictionR ResAnd;
+		Case 1:
+			NSPIAndOrRestrictionR ResOr;
+		Case 2:
+			NSPINotRestrictionR ResNot;
+		Case 3:
+			NSPIContentRestrictionR ResContent;
+		Case 4:
+			NSPIPropertyRestrictionR ResProperty;
+		Case 5:
+			NSPIComparePropsRestrictionR ResCompareProps;
+		Case 6:
+			NSPIBitMaskRestrictionR ResBitMask;
+		Case 7:
+			NSPISizeRestrictionR ResSize;
+		Case 8:
+			NSPIExistRestrictionR ResExist;
+		Case 9:
+			NSPISubRestrictionR ResSub;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "NSPI", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Struct NSPIRestrictionUnionRConformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+		NSPIRestrictionUnionR Element[Size.MaxCount];
+	}
+}
+
+//
+//	ShortArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIShortArrayR
+{
+	UINT32 CValues;
+	NdrPtr IPtr;
+}
+
+//
+//	_SizeRestriction_r
+//Alignment:Align4
+//
+Struct NSPISizeRestrictionR
+{
+	UINT32 Relop;
+	UINT32 PropTag;
+	UINT32 Cb;
+}
+
+//
+//	_STAT
+//
+Table NSPISortTypeTable(value)
+{
+ switch(value)
+ {
+  case 0x00000000:"SortTypeDisplayName";
+  case 0x00000003:"SortTypePhoneticDisplayName";
+  case 0x000003E8:"SortTypeDisplayName_RO";
+  case 0x000003E9:"SortTypeDisplayName_W";
+ }
+}
+
+//
+//[MS-NSPI]:STAT
+//Alignment:Align4
+//
+Struct NSPIStat
+{
+	UINT32 SortType = NSPISortTypeTable(this);
+	UINT32 ContainerID;
+	UINT32 CurrentRec;
+	INT32 Delta;
+	UINT32 NumPos;
+	UINT32 TotalRecs;
+	UINT32 CodePage;
+	UINT32 TemplateLocale;
+	UINT32 SortLocale;
+}
+
+//
+// _StringArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIStringArrayR
+{
+	UINT32 CValues;
+	NdrPtr SzAPtr;
+}
+
+Struct NSPIStringArrayRIdlStruct
+{
+	NSPIStringArray StringArray;
+	NSPIStringConformant Strings;
+}
+
+//
+//	_StringsArray
+//
+
+Struct NSPIStringArray
+{
+	UINT32 Count;
+}
+
+Struct NSPIStringConformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+			NdrPtr StringPtr[Size.MaxCount];
+	}
+	[local.count = 0]
+	[Local.MaxLoopCount = Size.MaxCount]
+	while [local.count < size.maxcount]
+	{
+		[Post.local.count = local.count + 1]
+		Switch {
+			Case StringPtr[local.count].ReferentID > 0:
+			NdrString StringValue;
+		}
+	}
+}
+
+//
+//	_SubRestriction_r
+//Alignment:NdrAlign
+//
+Struct NSPISubRestrictionR
+{
+	UINT32 SubObject;
+	NdrPtr ResPtr;
+}
+
+Struct NSPIUINT32Conformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount>0:
+		UINT32 Element[Size.MaxCount];
+	}
+}
+
+Struct NSPIUINT32ConformantPtr
+{
+	NdrPtr UINT32ConformantPtr;
+	Switch {
+		Case UINT32ConformantPtr.ReferentID != 0:
+			NSPIUINT32Conformant UINT32Conformant;
+	}
+}
+
+//
+//	_WStringArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIWStringArrayR
+{
+	UINT32 CValues;
+	NdrPtr SzWPtr;
+}
+
+//
+//	_WStringsArray
+//
+Struct NSPIWStringsArray
+{
+	UINT32 Count;
+}
+
+//
+//[MS-NSPI]:WStringsArray_r
+//Alignment:NdrAlign
+//
+Struct NSPIWStringsArrayIdlStruct
+{
+	NSPIWStringsArray WStringsArray;
+	NSPIWideStringConformant Strings;
+}
+
+Struct NSPIWideStringConformant
+{
+	NdrConformant Size;
+	switch
+	{
+		case size.maxcount > 0:
+			NdrPtr WStrngPtr[Size.MaxCount];
+	}
+	[local.count = 0]
+	[MaxLoopCount = Size.MaxCount]
+	while [local.count < size.maxcount]
+	{
+		[Post.local.count = local.count + 1]
+		Switch {
+			Case WStrngPtr[local.count].ReferentID > 0:
+			NdrWideString WStringValue;
+		}
+	}
+}

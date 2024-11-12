@@ -1,0 +1,71 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Messenger Service Send Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MSRP]: Messenger Service Remote Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+[MsgSvcSendSummary = "", MsgSvcSendTempString = "", ReturnValue = 0]
+Protocol MsgSvcSend = FormatString( "%s%s%s%s%s", MsgSvcSendMethodTable( Property.MsrpcOpnum ), Property.MsrpcPtype ? " Response" : " Request", MsgSvcSendSummary != "" ? ", " + MsgSvcSendSummary : "", Property.MsrpcPtype ? ", " + "Status = " + WinErrorCodeNameTable( ReturnValue ) : "", Property.ParserError ? ", " + Property.ParserErrorMessage : Property.ParserErrorMessage )
+{
+	Switch( Property.MsrpcOpnum )
+	{
+		Case 0:
+		_Struct NetrSendMessage
+		{
+			Switch (property.MsrpcPtype)
+			{
+				Case 0x00: //RPC_REQUEST
+				[MsgSvcSendSummary = "From: " + From.ToString + ", To: " + To.ToString + " Text: " + Text.ToString ]
+				_Struct Request
+				{
+					Switch
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							Struct
+							{
+								NdrString From;
+								NdrString To;
+								NdrString Text;
+							}
+					}
+				}
+
+				Case 0x02:
+				[MsgSvcSendSummary = ""]
+				_Struct Response
+				{
+					Switch
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							Struct
+							{
+								[ReturnValue = UINT32( FrameData, Offset )]
+								UINT32 ReturnValue = WinErrorCodeTable( this );
+							}
+					}
+				}
+			}
+		}
+
+		Default: ReportParserError(ParserErrorProtocolClassWindows, "MsgSvcSend", "Unknown MsgSvcSend Request" ) ParserError;
+	}
+}
+Table MsgSvcSendMethodTable( Opnum ) {
+	Switch( Opnum ) {
+		Case 0x00: "NetrSendMessage";
+	}
+}
+
+

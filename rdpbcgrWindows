@@ -1,0 +1,2713 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Desktop Protocol: Basic Connectivity and Graphics Remoting
+//#
+//#  Details:                Remote Desktop Protocol Family
+//#
+//#  Microsoft References:   [MS-RDPBCGR]:  Remote Desktop Protocol: Basic Connectivity and Graphics Remoting Specification (14.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 12/9/2009
+//#                          Minor, 3/19/2010
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPBCGR = FormatString ("%s%s", Property.RDPBCGRPacketType, Property.RDPBCGREncrypted ? " Encrypted" : "")
+{
+	//
+	// Build conversation for RDP
+	// Notes: Since RDP can self-reassembled, so we should ditect if RDP conversation exist before build RDP conversation
+	//
+	switch
+	{
+		case !conversation.RDPBCGR.Id:
+			[BuildConversationWithParent]
+			_struct _BuildRDPConversation{};
+	}
+	[ 
+		Conversation.RDPBCGRTCPLostSegment = Property.TCPLostSegment? true: Conversation.RDPBCGRTCPLostSegment,
+		Post.Conversation.RDPBCGRCompressed = Property.RDPBCGRCompressedType? true: Conversation.RDPBCGRCompressed,
+		Post.Conversation.ConversationDescription =
+		( ! IsValueNone(Conversation.TCP.RDPBCGREncryptionLevel) ? FormatString("(EncryptionLevel: %s)", RDPBCGREncryptionLevelTable(Conversation.TCP.RDPBCGREncryptionLevel)): "" )+ 
+		( Conversation.RDPBCGRTCPLostSegment? "[Segment Lost]": "" )+
+		( Conversation.RDPBCGRCompressed? "[Compressed]": "" )+
+		( FormatString(" ConvID = %d", ConvID) )
+	]
+	
+	switch
+	{
+		case ISOTS:	
+			_struct 
+			{
+				[
+					Property.RDPBCGRSecurityFlags = UINT32(FrameData, FrameOffset), 
+					Property.RDPBCGREncrypted = ((Property.RDPBCGRSecurityFlags & 0x0008) != 0)
+				] 
+				switch
+				{
+					case Property.RDPBCGRSecurityFlags & 0x0001:
+						RDPBCGRSecurityExchangePDUData SecurityExchangePDUData;
+					default:
+						struct
+						{
+							switch
+							{
+								case Conversation.TCP.RDPBCGREncryptionLevel == 4:
+									RDPBCGRTsSecurityHeader2 SecurityHeader2;
+								case Property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress:
+								case Conversation.TCP.RDPBCGREncryptionLevel >= 2:
+									RDPBCGRTsSecurityHeader1 SecurityHeader1;
+								case Conversation.TCP.RDPBCGREncryptionLevel == 1:
+								default:	// Fallback logic if negotiation frames lost
+									RDPBCGRTsSecurityHeader SecurityHeader;
+							}
+							switch
+							{		
+								case Property.RDPBCGRSecurityFlags & 0x0040:
+									[Property.RDPBCGRPacketType = "TsClientSecurityExchangePDU"]
+									BLOB(FrameLength - FrameOffset) TsClientInfoPDU;
+								
+								case Property.RDPBCGRSecurityFlags & 0x0080:
+									[Property.RDPBCGRPacketType = "RDPELE"]
+									RDPELE RDPELE;
+									
+								case Property.RDPBCGRSecurityFlags & 0x0400:
+									[Property.RDPBCGRPacketType = "ServerRedirectionPacket"]
+									BLOB(FrameLength - FrameOffset) ServerRedirectionPacket;
+									
+								case MCSChannel == Conversation.TCP.RDPBCGRMCSGlobalChannelID:
+									[Property.RDPBCGRPacketType = "SlowPathPacket"]
+									RDPBCGRSlowPathPacket SlowPathPacket;
+									
+								default:
+									[Property.RDPBCGRPacketType = "VirtualChannelPdu"]
+									RDPBCGRVirtualChannelPdu VirtualChannelPdu;
+							}
+						}
+				}
+			}
+		default:		// Fast path
+			switch
+			{
+				case Property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress:
+				case Property.DestinationPort == 3389:
+					while [FrameLength > FrameOffset]
+					{
+						[Property.RDPBCGRPacketType = "TsFpInputPdu"]
+						RDPBCGRTsFpInputPdu TsFpInputPdu;
+					}
+				case Property.SourceNetworkAddress == Conversation.TCP.ServerNetworkAddress:
+				case Property.SourcePort == 3389:
+					[Property.RDPBCGRFPStart = true]
+					// Since the other direction is encrypted, we don't need Conversation.RDPBCGRFPNextSeq$[Property.TCPDirection]
+					[Conversation.RDPBCGRFPNextSeqTable$[FrameNumber + 1] = Conversation.RDPBCGRFPNextSeq]
+					[Property.RDPBCGRFPOutputFirstFragLen = Conversation.RDPBCGRFPNextSeqTable$[FrameNumber + 1] > TCPSeqNumber ? Conversation.RDPBCGRFPNextSeqTable$[FrameNumber + 1] - TCPSeqNumber : 0]
+					[
+						Post.PayloadStart(
+							NetworkDirection,
+							0,
+							0,
+							0,
+							0,
+							Property.RDPBCGRFPStart,
+							Property.RDPBCGRFPEnd,
+							RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+							)
+					]
+					[
+						// Initialize
+						Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] ? Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] ? Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] : 0, 
+
+						// Order type
+						Conversation.TCP.RDPBCGRLastStandardOrderType = Conversation.TCP.RDPBCGRLastStandardOrderType ? Conversation.TCP.RDPBCGRLastStandardOrderType : 0, 
+						Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastStandardOrderType << 0) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber], 
+						Property.RDPEGDICurrentStandardOrderType = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 0) & 0xFF, 
+
+						// GlyphIndex ulCharInc
+						Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc = Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc ? Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc : 0, 
+						Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastStandardOrderType << 8) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber], 
+						Property.RDPEGDICurrentGlyphIndexUlCharInc = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 8) & 0xFF, 
+
+						// FastIndex ulCharInc
+						Conversation.TCP.RDPBCGRLastFastIndexUlCharInc = Conversation.TCP.RDPBCGRLastFastIndexUlCharInc ? Conversation.TCP.RDPBCGRLastFastIndexUlCharInc : 0, 
+						Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastFastIndexUlCharInc << 16) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber], 
+						Property.RDPEGDICurrentFastIndexUlCharInc = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 16) & 0xFF, 
+
+						// PolygonSC NumDeltaEntries
+						Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries << 0) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentPolygonSCNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 0) & 0xFF, 
+
+
+						// PolygonCB NumDeltaEntries
+						Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries << 8) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentPolygonCBNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 8) & 0xFF, 
+
+						// PolygonSC NumDeltaEntries
+						Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries << 16) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentPolyLineNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 16) & 0xFF, 
+
+						//MultiDstBlt nDeltaEntries
+						Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries << 24) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentMultiDstBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 24) & 0xFF, 
+
+						//MultiPatBlt nDeltaEntries
+						Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries << 32) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentMultiPatBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 32) & 0xFF, 
+
+						//MultiOpaqueRect nDeltaEntries
+						Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries << 40) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 40) & 0xFF, 
+
+						// MultiScrBlt nDeltaEntries
+						Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries << 48) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentMultiScrBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 48) & 0xFF, 
+
+						// MultiScrBlt nDeltaEntries
+						Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries : 0, 
+						Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries << 56) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+						Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 56) & 0xFF, 
+
+						// Store Property.RDPEGDICurrent value into conversation properties, ONLY when the frame is complete
+						Post.Conversation.TCP.RDPBCGRLastStandardOrderType = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentStandardOrderType : Conversation.TCP.RDPBCGRLastStandardOrderType, 
+						Post.Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentGlyphIndexUlCharInc : Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc, 
+						Post.Conversation.TCP.RDPBCGRLastFastIndexUlCharInc = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentFastIndexUlCharInc : Conversation.TCP.RDPBCGRLastFastIndexUlCharInc, 
+
+						Post.Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentPolygonSCNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentPolygonCBNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentPolyLineNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentMultiDstBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentMultiPatBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentMultiScrBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries, 
+						Post.Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries = Property.RDPBCGRFPStart && Property.RDPBCGRFPEnd ? Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries, 
+						Conversation.RDPBCGRFPNoLengthPerFrameTable$[FrameNumber] = Conversation.RDPBCGRFPNoLength$[Property.NetworkDirection]
+					]
+					while [FrameLength > FrameOffset]
+					{
+						switch 
+						{
+							case Property.TCPRetransmit == 1:
+								[Property.RDPBCGRPacketType = "Retransmition"]
+								BLOB(Property.RDPBCGRFPOutputFirstFragLen > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.RDPBCGRFPOutputFirstFragLen) FpOutputRetransmition;
+							case FrameLength - FrameOffset < 3 :
+								[Property.RDPBCGRPacketType = "FpOutputContinuation"]
+								[Conversation.RDPBCGRFPNoLength$[Property.NetworkDirection] = true]
+								[conversation.RDPBCGRFPLengthOfConsumedLen = FrameLength - FrameOffset - 1]
+								[conversation.RDPBCGRFPPartLength = (FrameLength - FrameOffset == 2) ? UINT8(FrameData, FrameOffset + 1) : 0]
+								RDPBCGRTsFpUpdatePdu TsFpUpdatePduNoLength;
+
+							case ((!PayloadHeader || PayloadHeader.ContainedProtocol != "RDPBCGR") && FrameOffset == ProtocolOffset && Property.RDPBCGRFPOutputFirstFragLen > 0)
+								|| (Conversation.RDPBCGRFPOutputLastIsContinuationTable$[Property.TCPSeqNumber] && Property.HighestReassembledProtocol == "TCP" && FrameOffset == ProtocolOffset):
+								[Property.RDPBCGRFPStart = false]
+								[Property.RDPBCGRFPEnd = (RDPBCGRFPOutputFirstFragLen == (FrameLength - FrameOffset))]
+								[Property.RDPBCGRPacketType = "FpOutputContinuation"]
+								[Conversation.RDPBCGRFPOutputLastIsContinuationTable$[Property.TCPSeqNumber] = true]
+								BLOB(Property.RDPBCGRFPOutputFirstFragLen > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.RDPBCGRFPOutputFirstFragLen) FpOutputContinuation;
+
+							case Conversation.RDPBCGRFPNoLengthPerFrameTable$[FrameNumber]:
+								[Property.RDPBCGRPacketType = "FpOutputContinuation"]
+								[Property.RDPBCGRFPStart = false]
+								[conversation.RDPBCGRFPLengthOfConsumedLenMVS$[FrameNumber] = conversation.RDPBCGRFPLengthOfConsumedLen]
+								[conversation.RDPBCGRFPPartLengthMVS$[FrameNumber] = conversation.RDPBCGRFPPartLength]
+								[Property.RDPBCGRFPOutputFirstFragLen = (conversation.RDPBCGRFPLengthOfConsumedLenMVS$[FrameNumber] == 0) ? ((UINT8( Framedata, Offset ) & 0x80) == 0x80 ? (UINT16(FrameData, FrameOffset)& 0x7FFF - 1 ): UINT8(FrameData, FrameOffset) - 1 ) : 
+								(conversation.RDPBCGRFPLengthOfConsumedLenMVS$[FrameNumber] == 1) ? (conversation.RDPBCGRFPPartLengthMVS$[FrameNumber] & 0x80) == 0x80 ? (((conversation.RDPBCGRFPPartLengthMVS$[FrameNumber] * 256 + UINT8(FrameData, FrameOffset)) & 0x7FFF) - 2) : Property.RDPBCGRFPOutputFirstFragLen : Property.RDPBCGRFPOutputFirstFragLen]
+								[Conversation.RDPBCGRFPNoLength$[Property.NetworkDirection] = (Property.RDPBCGRFPOutputFirstFragLen <= FrameLength - FrameOffset) ? false : true]
+								[Conversation.RDPBCGRFPNextSeq = Property.HighestReassembledProtocol == "RDPBCGR" ? Conversation.RDPBCGRFPNextSeq : TCPSeqNumber + Property.RDPBCGRFPOutputFirstFragLen]
+								[Property.RDPBCGRFPEnd = (RDPBCGRFPOutputFirstFragLen == (FrameLength - FrameOffset))]
+								BLOB(Property.RDPBCGRFPOutputFirstFragLen > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.RDPBCGRFPOutputFirstFragLen) ContinuationPayloadWithCalLength;
+
+							// Check if it is a valid FpOutputHeader
+							case (UINT8( Framedata, Offset ) & 0x3C) == 0:
+								[Property.RDPBCGRFastPathOutputBeginOffset = FrameOffset]
+								[Property.RDPBCGRPacketType = "TsFpUpdatePdu"]
+								RDPBCGRTsFpUpdatePdu TsFpUpdatePdu;
+
+							// Invalid FpOutputHeader
+							default:
+								_struct
+								{
+									ReportParserError(ParserErrorProtocolClassWindows, "RDPBCGR", "Invalid FpOutputHeader, May Need Reassembly") ParserError;
+									[Property.RDPBCGRPacketType = "Invalid FpOutputHeader, May Need Reassembly"]
+									BLOB(FrameLength - FrameOffset) FpOutputContinuationData;
+								}
+						}
+					}
+			}
+	}
+}
+
+Protocol RDPBCGRCompressedVirtualChannelData
+{
+	Blob(FrameLength - FrameOffset) VirtualChannelData;
+}
+
+// Common data type
+[DataTypeByteOrder = BigEndian]
+struct RDPBCGRCommonEncodedValue2Bytes = Formatstring("%u", property.RDPBCGREncodedValue)
+{
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+			[property.RDPBCGREncodedValue = this & 0x7FFF]
+			UINT16 WordLValue = FormatString("%u", this & 0x7FFF);
+		default:
+			[property.RDPBCGREncodedValue]
+			UINT8 ByteValue;
+	}
+}
+
+[DataTypeByteOrder = BigEndian]
+struct RDPBCGRCommonEncodedSignedValue2Bytes = Formatstring("%d", property.RDPBCGREncodedValue)
+{
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+			[property.RDPBCGREncodedValue = (this & 0x4000) ? this | (~0x3FFF) : this & 0x3FFF]
+			UINT16 WordLValue = (this & 0x4000) ? this | (~0x3FFF) : this & 0x3FFF;
+		default:
+			[property.RDPBCGREncodedValue = (this & 0x40) ? this | (~0x3F) : this & 0x3F]
+			UINT8 ByteValue = (this & 0x40) ? this | (~0x3F) : this & 0x3F;
+	}
+}
+
+// 2.2.1.1 Client X.224 Connection Request PDU
+[DataTypeByteOrder = LittleEndian]
+struct RDPBCGRClientX224ConnectionRequestPdu
+{
+	[Local.LeftData = AsciiString(FrameData, FrameOffset, FrameLength - FrameOffset)]
+	switch 
+	{
+		case Local.LeftData.Contains("Cookie: mstshash=IDENTIFIER"):
+			AsciiStringTerm("\r\n") cookie;
+		case Local.LeftData.Contains("\r\n"):
+			AsciiStringTerm("\r\n") RoutingToken;
+	}
+	switch 
+	{
+		case FrameLength > FrameOffset:
+			RDPBCGRRdpNegReq RdpNegReq;
+	}
+}
+
+// 2.2.1.1.1 RDP Negotiation Request (RDP_NEG_REQ)
+struct RDPBCGRRdpNegReq = RequestedProtocols.ToString
+{
+	UINT8 Type = MUSTBeSetToTable(this, "0x01");
+	UINT8 Flags = MUSTBeSetToTable(this, "0x00");
+	UINT16 Length = MUSTBeSetToTable(this, "0x0008");
+	UINT32 RequestedProtocols = Hybrid ? "CredSSP" : (SSL ? "TLS 1.0" : "Legacy")
+	{
+		UINT32 SSL:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Support TLS 1.0" : "Not support TLS 1.0");
+		UINT32 Hybrid:1 = FormatString("(%s) %s", this.ToBitString, this ? "Support CredSSP" : "Not support CredSSP");
+		UINT32 Unused:30 = FormatString("(%s)", this.ToBitString);
+	};
+}
+
+// 2.2.1.2 Server X.224 Connection Confirm PDU
+[DataTypeByteOrder = LittleEndian]
+struct RDPBCGRServerX224ConnectionConfirmPdu
+{
+	switch (UINT8(FrameData, FrameOffset))
+	{
+		case 0x02:
+			RDPBCGRRdpNegRsp RdpNegRsp;
+		case 0x03:
+			RDPBCGRRdpNegFailure RdpNegFailure;
+	}
+}
+
+// 2.2.1.2.1 RDP Negotiation Response (RDP_NEG_RSP)
+Table RDPBCGRRdpNegRspSelectedProtocolTable(code)
+{
+	switch (code)
+	{
+		case 0: "Legacy";
+		case 1: "TLS 1.0";
+		case 2: "CredSSP";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRRdpNegRsp = RDPBCGRRdpNegRspSelectedProtocolTable(SelectedProtocol)
+{
+	UINT8 Type = MUSTBeSetToTable(this, "0x02");
+	UINT8 Flags = MUSTBeSetToTable(this, "0x00");
+	UINT16 Length = MUSTBeSetToTable(this, "0x0008");
+	[Conversation.TCP.RDPBCGRSelectedSecurityLayer]
+	[Conversation.TCP.RDPBCGRSelectedSecurityLayerNegFrameNum = FrameNumber]
+	UINT32 SelectedProtocol = RDPBCGRRdpNegRspSelectedProtocolTable(this);
+}
+
+// 2.2.1.2.2 RDP Negotiation Failure (RDP_NEG_FAILURE)
+Table RDPBCGRRdpNegFailureCodeTable(code)
+{
+	switch (code)
+	{
+		case 1: "SSL_REQUIRED_BY_SERVER";
+		case 2: "SSL_NOT_ALLOWED_BY_SERVER";
+		case 3: "SSL_CERT_NOT_ON_SERVER";
+		case 4: "INCONSISTENT_FLAGS";
+		case 5: "HYBRID_REQUIRED_BY_SERVER";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRRdpNegFailure = RDPBCGRRdpNegFailureCodeTable(FailureCode)
+{
+	UINT8 Type = MUSTBeSetToTable(this, "0x03");
+	UINT8 Flags = MUSTBeSetToTable(this, "0x00");
+	UINT16 Length = MUSTBeSetToTable(this, "0x0008");
+	UINT32 FailureCode = RDPBCGRRdpNegFailureCodeTable(this);
+}
+
+// 2.2.1.3 Client MCS Connect Initial PDU with GCC Conference Create Request
+[DataTypeByteOrder = LittleEndian]
+struct RDPBCGRClientMcsConnectInitialPdu
+{
+	AsnPerLengthDeterminant RDPGCCUserDataRequestLength;
+	while [FrameOffset < FrameLength]
+	{
+		RDPBCGRTsUd TsUd;
+	}
+}
+
+// 2.2.1.3.1 User Data Header (TS_UD_HEADER)
+Table RDPGCCUserDataTypeTable(code)
+{
+	switch (code)
+	{
+		case 0xC001: "CS_CORE";
+		case 0xC002: "CS_SECURITY";
+		case 0xC003: "CS_NET";
+		case 0xC004: "CS_CLUSTER";
+		case 0xC005: "CS_MONITOR";
+		case 0x0C01: "SC_CORE";
+		case 0x0C02: "SC_SECURITY";
+		case 0x0C03: "SC_NET";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsUdHeader = FormatString("Type = %s, Length = %u", RDPGCCUserDataTypeTable(Type) ,Length)
+{
+	UINT16 Type = RDPGCCUserDataTypeTable(this);
+	UINT16 Length;	
+}
+
+struct RDPBCGRTsUd = RDPGCCUserDataTypeTable(TsUdHeader.Type)
+{
+	RDPBCGRTsUdHeader TsUdHeader;
+	switch(TsUdHeader.Type)
+	{
+		case 0xC001:
+			[post.conversation.TCP.RDPBCGRColorDepth = (TsUdCsCore.Version == 0x00080001) ? TsUdCsCore.ColorDepth : ((TsUdHeader.Length > 0x8C) ? TsUdCsCore.HighColorDepth: TsUdCsCore.PostBeta2ColorDepth)]
+			RDPBCGRTsUdCsCore(TsUdHeader.Length) TsUdCsCore;
+		case 0xC002:
+			RDPBCGRTsUdCsSec TsUdCsSec;
+		case 0xC003:
+		 	RDPBCGRTsUdCsNet TsUdCsNet;
+		case 0xC004:
+			RDPBCGRTsUdCsCluster TsUdCsCluster;
+		case 0x0C01:
+			RDPBCGRTsUdScCore(TsUdHeader.Length) TsUdScCore;
+		case 0x0C02:
+			RDPBCGRTsUdSCSec1 TsUdSCSec1;
+		case 0x0C03:
+			RDPBCGRTsUdScNet TsUdScNet;
+	}
+}
+
+// 2.2.1.3.2 Client Core Data (TS_UD_CS_CORE)
+Table RDPBCGRVersionTable(code)
+{
+	switch (code)
+	{
+		case 0x00080001: "RDP 4.0";
+		case 0x00080004: "RDP 5.0, 5.1, 5.2, 6.0, 6.1, and 7.0 ";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRKeyBoardTypeTable(code)
+{
+	switch(code)
+	{
+		case 1: "IBM PC/XT or compatible (83-key) keyboard";
+		case 2: "Olivetti ICO (102-key) keyboard";
+		case 3: "IBM PC/AT (84-key) or similar keyboard";
+		case 4: "IBM enhanced (101- or 102-key) keyboard";
+		case 5: "Nokia 1050 and similar keyboards";
+		case 6: "Nokia 9140 and similar keyboards";
+		case 7: "Japanese keyboard";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRColorDepthTable(code)
+{
+	switch(code)
+	{
+		case 0xCA00: "4 bpp";
+		case 0xCA01: "8 bpp";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRPostBeta2ColorDepthTable(code)
+{
+	switch(code)
+	{
+		case 0xCA00: "4 bpp";
+		case 0xCA01: "8 bpp";
+		case 0xCA02: "16BPP_555";
+		case 0xCA03: "16BPP_565";
+		case 0xCA04: "24BPP";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRHighColorDepthTable(code)
+{
+	switch(code)
+	{
+		case 0x4: "4 bpp";
+		case 0x8: "8 bpp";
+		case 0xF: "15-bit 555 RGB";
+		case 0x10: "16-bit 565 RGB";
+		case 0x18: "24-bit RGB";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRTsUdCsCoreConnectionTypeTable(code)
+{
+	switch(code)
+	{
+		case 1: "Modem (56 Kbps)";
+		case 2: "Low-speed broadband (256 Kbps - 2 Mbps)";
+		case 3: "Satellite (2 Mbps - 16 Mbps with high latency)";
+		case 4: "High-speed broadband (2 Mbps - 10 Mbps)";
+		case 5: "WAN (10 Mbps or higher with high latency)";
+		case 6: "LAN (10 Mbps or higher)";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsUdCsCore(Length)
+{
+	UINT32 Version = RDPBCGRVersionTable (this);
+	UINT16 DesktopWidth;
+	UINT16 DesktopHeight;
+	UINT16 ColorDepth = RDPBCGRColorDepthTable(this);
+	UINT16 SASSequence = SHOULDBeSetToTable(this, "RNS_UD_SAS_DEL(0xAA03)");
+	UINT32 KeyboardLayout = LCIDTable(this);
+	UINT32 ClientBuild;
+	UnicodeString(16) ClientName;
+	UINT32 KeyboardType = RDPBCGRKeyBoardTypeTable(this);
+	UINT32 KeyboardSubType;
+	UINT32 KeyboardFunctionKey;
+	UnicodeString(32) ImeFileName;
+	switch
+	{
+		case Length > 0x84:
+			UINT16 PostBeta2ColorDepth = RDPBCGRPostBeta2ColorDepthTable(this);
+	}
+	switch
+	{
+		case Length > 0x86:
+			UINT16 ClientProductId = SHOULDBeSetToTable(this, "initialized to 1");
+	}
+	switch 
+	{
+		case Length > 0x88:
+			UINT32 SerialNumber = SHOULDBeSetToTable(this, "0");
+			
+	}
+	switch
+	{
+		case Length > 0x8C:
+			UINT16 HighColorDepth = RDPBCGRHighColorDepthTable(this);
+	}
+	switch
+	{
+		case Length > 0x8E:
+			UINT16 SupportedColorDepth
+			{
+				UINT16 Support24BPP:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support 24BPP" : "Not Support 24BPP");
+				UINT16 Support16BPP:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support 16BPP" : "Not Support 16BPP");
+				UINT16 Support15BPP:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support 15BPP" : "Not Support 15BPP");
+				UINT16 Support32BPP:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support 32BPP" : "Not Support 32BPP");
+				UINT16 Reserved:12 = FormatString("    (%s)",this.ToBitString);
+			};
+	}
+	switch
+	{
+		case Length > 0x90:
+			UINT16 EarlyCapabilityFlags
+			{
+				UINT16 SupportSetErrorPdu:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Indicates that the client supports the Set Error Info PDU" : "Not Support TS_SET_ERROR_INFO_PDU packet");
+				UINT16 Want32BppSession:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Indicates that the client is requesting a session color depth of 32 bpp" : "Client is not requesting 32BPP session");
+				UINT16 SupportStatusInfoPdu:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Indicates that the client supports the Server Status Info PDU" : "Client not supports the Server Status Info PDU");
+				UINT16 StrongAsymmetricKeys:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Indicates that the client supports asymmetric keys larger than 512 bits for use with the Server Certificate " : "Not support asymmetric keys larger than 512-bits");
+				UINT16 Unused:1 = FormatString("                 (%s)",this.ToBitString);
+				[Property.RDPBCGRValidConnection]
+				UINT16 ValidConnection:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Indicates that the connectionType field contains valid data" : "Not Indicates ConnectionType field contains valid data");
+				UINT16 SupportMonitorLayoutPdu:1 = FormatString("(%s) %s",this.ToBitString,this ? "Indicates that the client supports the Monitor Layout PDU" : "Not Indicates that the client supports the Monitor Layout PDU");
+				UINT16 Unused2:9 = FormatString("                (%s)",this.ToBitString);
+			};
+	}
+	switch
+	{
+		case Length > 0x92:
+			UnicodeString(32) ClientDigProductId;
+	}
+	switch
+	{
+		case Length > 0xD2:
+			UINT8 connectionType = Property.RDPBCGRValidConnection ? RDPBCGRTsUdCsCoreConnectionTypeTable(this): "invalid connection type";
+	}
+	switch
+	{
+		case Length > 0xD3:
+			UINT8 pad1octet;
+	}
+	switch
+	{
+		case Length > 0xD4:
+			_struct ServerSelectedProtocol
+			{
+				UINT32 ServerSelectedProtocols = RDPBCGRRdpNegRspSelectedProtocolTable(this);
+			}
+	}
+}
+
+// 2.2.1.3.3 Client Security Data (TS_UD_CS_SEC)
+struct RDPBCGRCommonEncryptionMethod =  (Support40Bit ? "Support 40-bit;": "") +
+							  (Support128Bit ? "Support 128-bit;": "") +
+							  (Support56Bit ? "Support 56-bit;": "") +
+							  (SupportFIPS ? "Support FIPS Compliant;": "")
+{
+	UINT32 Support40Bit:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Support 40-bit": "Not Support ");
+	UINT32 Support128Bit:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support 128-bit": "Not Support 128-bit");
+	UINT32 Reserved1:1 = FormatString("    (%s)",this.ToBitString);
+	UINT32 Support56Bit:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Support 56-bit": "Not Support 56-bit");
+	UINT32 SupportFIPS:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Support FIPS Compliant": "Not Support FIPS Compliant");
+	UINT32 Reserved2:27 = FormatString("    (%s)",this.ToBitString);
+
+}
+
+struct RDPBCGRTsUdCsSec
+{
+	RDPBCGRCommonEncryptionMethod EncryptionMethod;
+	RDPBCGRCommonEncryptionMethod ExtEncryptionMethod;
+}
+
+// 2.2.1.3.4 Client Network Data (TS_UD_CS_NET)
+struct RDPBCGRTsUdCsNet
+{
+	[Property.RDPBCGRCurrentChannel = 0]
+	UINT32 ChannelCount;
+	while [Property.RDPBCGRCurrentChannel < ChannelCount]
+	{
+		[Property.RDPBCGRCurrentChannel = Property.RDPBCGRCurrentChannel + 1]
+		RDPBCGRChannelDef ChannelDef;
+	}
+}
+
+// 2.2.1.3.4.1 Channel Definition Structure (CHANNEL_DEF)
+struct RDPBCGRChannelDef = "Name = " + Name.ToString
+{
+	[Conversation.TCP.RDPBCGRChannelName$[Property.RDPBCGRCurrentChannel] = Name]
+	AsciiString(8) Name;
+	UINT32 Options
+	{
+		UINT32 Reserved1:20 = FormatString("              (%s)",this.ToBitString);
+		UINT32 RemoteControlPersistent:1 = FormatString("(%s) %s",this.ToBitString,this ? "Remote Control Persistent" : "Not Remote Control Persistent");
+		UINT32 ShowProtocol:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Show Protocol" : "Not Show Protocol");
+		UINT32 Compress:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Compress" : "Not Compress");
+		UINT32 CompressRDP:1 = FormatString("            (%s) %s",this.ToBitString,this ? "Compress RDP" : "Compress RDP");
+		UINT32 Reserved2:1 = FormatString("              (%s)",this.ToBitString);
+		UINT32 PriLow:1 = FormatString("                 (%s) %s",this.ToBitString,this ? "Pri Low" :  "Not Pri Low");
+		UINT32 PriMedium:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Pri Medium" : "Not Pri Medium");
+		UINT32 PriHigh:1 = FormatString("                (%s) %s",this.ToBitString,this ? "Pri High" : "Not Pri High");
+		UINT32 EncryptCS:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Encrypt CS" : "Not Encrypt CS");
+		UINT32 EncryptSC:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Encrypt SC" :  "Not Encrypt SC");
+		UINT32 EncryptRDP:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Encrypt RDP" : "Not Encrypt RDP");
+		UINT32 Initialized:1 = FormatString("            (%s) %s",this.ToBitString,this ? "Initialized" : "Not Initialized");
+	}
+}
+
+// 2.2.1.3.5 Client Cluster Data (TS_UD_CS_CLUSTER)
+// Only one version can be supported the version values cannot be combined.
+Table RDPBCGRUdCsClusterSupportVersionTable(code)
+{
+	switch (code << 2)
+	{
+		case 0x08: "TS_CLUSTER_REDIRECTION_VERSION3";
+		case 0x0C: "TS_CLUSTER_REDIRECTION_VERSION4";
+		case 0x10: "TS_CLUSTER_REDIRECTION_VERSION5";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsUdCsCluster
+{
+	UINT32 Flags
+	{
+		UINT32 RedirectedSupported:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support Redirected" : "Not support Redirected");
+		UINT32 SessionIDFieldValid:1 = FormatString("(%s) %s",this.ToBitString,this ? "SessionID Field Valid" : "SessionID Field not Valid");
+		UINT32 SupportedVersion:4 = FormatString("   (%s) %s",this.ToBitString, RDPBCGRUdCsClusterSupportVersionTable(this));
+		UINT32 RedirectedSmartcard:1 = FormatString("(%s) %s",this.ToBitString,this ? "Logon with Smartcard" : "Not Logon with Smartcard");
+		UINT32 Unused:25 = FormatString("          (%s)",this.ToBitString);
+	}
+	UINT32 RedirectedSessionID;
+}
+
+// 2.2.1.4 Server MCS Connect Response PDU with GCC Conference Create Response
+[DataTypeByteOrder = LittleEndian]
+struct RDPBCGRServerMcsConnectResponsePdu
+{
+	AsnPerLengthDeterminant RDPGCCUserDataResponseLength;
+	while [FrameOffset < FrameLength]
+	{
+		RDPBCGRTsUd TsUd;
+	}
+}
+
+// 2.2.1.4.2 Server Core Data (TS_UD_SC_CORE)
+struct RDPBCGRTsUdScCore(Length)
+{
+	UINT32 Version = RDPBCGRVersionTable(this);
+	switch
+	{
+   		case Length == 0x0C:
+   			UINT32 ClientRequestedProtocols = RDPBCGRRdpNegRspSelectedProtocolTable(this);
+	}
+}
+
+// 2.2.1.4.3 Server Security Data (TS_UD_SC_SEC1)
+Table RDPBCGREncryptionLevelTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "TS_ENCRYPTION_NONE";
+		case 0x00000001: "TS_ENCRYPTION_LOW";
+		case 0x00000002: "TS_ENCRYPTION_CLIENT_COMPATIBLE";
+		case 0x00000003: "TS_ENCRYPTION_HIGH";
+		case 0x00000004: "TS_ENCRYPTION_FIPS";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsUdSCSec1
+{
+	RDPBCGRCommonEncryptionMethod EncryptionMethod;
+	[Conversation.TCP.RDPBCGREncryptionLevel]
+	UINT32 EncryptionLevel = RDPBCGREncryptionLevelTable(this);
+	UINT32 ServerRandomLen;
+	UINT32 ServerCertLen;
+	BLOB(32) ServerRandom;
+	RDPBCGRServerCertificate(ServerCertLen) ServerCertificate;
+}
+
+// 2.2.1.4.3.1 Server Certificate (SERVER_CERTIFICATE)
+Table RDPBCGRServerCertificateVersionTable(code)
+{
+	switch(code)
+	{
+		case 0x00000001: "CERT_CHAIN_VERSION_1";
+		case 0x00000002: "CERT_CHAIN_VERSION_2";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRServerCertificate(ServerCertLen) = RDPBCGRServerCertificateVersionTable(Version)
+{
+	[Local.BaseOffset = FrameOffset]
+	UINT32 Version
+	{
+		UINT32 certChainVersion:31 = FormatString("(%s) %s",this.ToBitString,RDPBCGRServerCertificateVersionTable(this));
+		UINT32 t:1 = FormatString("               (%s) %s",this.ToBitString, this ? "the certificate has been temporarily issued to the server":" ");
+	}
+	switch (Version)
+	{
+		case 1:
+			RDPBCGRProprietaryServerCertificate ProprietaryServerCertificate;
+		case 2:
+			RDPELEX509CertificateChain X509CertificateChain;
+		default:
+			BLOB(ServerCertLen - 4) UnkownCert;
+	}
+}
+
+// 2.2.1.4.3.1.1 Server Proprietary Certificate (PROPRIETARYSERVERCERTIFICATE)
+struct RDPBCGRProprietaryServerCertificate
+{
+	UINT32 SigAlgId = MUSTBeSetToTable(this, "SIGNATURE_ALG_RSA(0x00000001)");
+	UINT32 KeyAlgId = MUSTBeSetToTable(this, "KEY_EXCHANGE_ALG_RSA(0x00000001)");
+	UINT16 PublicKeyBlobType = MUSTBeSetToTable(this, "BB_RSA_KEY_BLOB(0x0006)");
+	UINT16 PublicKeyBlobLen;
+	RDPBCGRRsaPublicKey RsaPublicKey;
+	UINT16 SignatureBlobType = MUSTBeSetToTable(this, "BB_RSA_SIGNATURE_BLOB (0x0008)");
+	UINT16 SignatureBlobLen;
+	BLOB(SignatureBlobLen) SignatureBlob;
+}
+
+// 2.2.1.4.3.1.1.1 RSA Public Key (RSA_PUBLIC_KEY)
+struct RDPBCGRRsaPublicKey
+{
+	AsciiString(4) Magic;
+	UINT32 KeyLen;
+	UINT32 BitLen;
+	UINT32 DataLen;
+	UINT32 PubExp;
+	ConstrictingBlob(KeyLen) Modulus;
+}
+
+// 2.2.1.4.4 Server Network Data (TS_UD_SC_NET)
+struct RDPBCGRTsUdScNet
+{
+	[Local.TsUdScNetStartOffset = FrameOffset]
+	[Conversation.TCP.RDPBCGRMCSGlobalChannelID, Conversation.TCP.RDPBCGRChannel$[MCSChannelID] = "MCS Channel"]
+	UINT16 MCSChannelID;
+	[Property.RDPBCGRCurrentChannel = 0]
+	UINT16 ChannelCount;
+	while [Property.RDPBCGRCurrentChannel < ChannelCount]
+	{
+		[
+			Property.RDPBCGRCurrentChannel = Property.RDPBCGRCurrentChannel + 1,
+			Conversation.TCP.RDPBCGRChannel$[ChannelIdArray] = Conversation.TCP.RDPBCGRChannelName$[Property.RDPBCGRCurrentChannel]
+		]
+		UINT16 ChannelIdArray;
+	}
+	Align(Local.TsUdScNetStartOffset, 4) Pad;
+}
+
+// 2.2.1.12.1 Licensing Preamble (LICENSE_PREAMBLE)
+Table RDPBCGRPreambleHeaderMsgTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x01: "HS_LICENSE_REQUEST";
+		case 0x02: "HS_PLATFORM_CHALLENGE";
+		case 0x03: "HS_NEW_LICENSE";
+		case 0x04: "HS_UPGRADE_LICENSE";
+		case 0x12: "HC_LICENSE_INFO";
+		case 0x13: "HC_NEW_LICENSE_REQUEST";
+		case 0x15: "HC_PLATFORM_CHALLENGE_RESPONSE";
+		case 0xFF: "GM_ERROR_ALERT";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRPreambleVersionTable(code)
+{
+	switch (code)
+	{
+		case 0x02: "RDP 4.0";
+		case 0x03: "RDP 5.0, 5.1, 5.2, 6.0, 6.1, and 7.0";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsPreambleHeader = "Type = " + RDPBCGRPreambleHeaderMsgTypeTable(MsgType)
+{
+	UINT8 MsgType = RDPBCGRPreambleHeaderMsgTypeTable(this);
+	UINT8 Version = RDPBCGRPreambleVersionTable(this);
+	UINT16 MsgSize;
+}
+
+// 2.2.1.12.2 Licensing Binary Blob (LICENSE_BINARY_BLOB)
+Table RDPBinaryBlobBlobTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x0001: "BB_DATA_BLOB";
+		case 0x0002: "BB_RANDOM_BLOB";
+		case 0x0003: "BB_CERTIFICATE_BLOB";
+		case 0x0004: "BB_ERROR_BLOB";
+		case 0x0005: "BB_DH_KEY_BLOB";
+		case 0x0006: "BB_RSA_KEY_BLOB";
+		case 0x0007: "BB_DSS_SIGNATURE_BLOB";
+		case 0x0008: "BB_RSA_SIGNATURE_BLOB";
+		case 0x0009: "BB_ENCRYPTED_DATA_BLOB";
+		case 0x000A: "BB_MAC_BLOB";
+		case 0x000B: "BB_INTEGER_BLOB";
+		case 0x000C: "BB_NAME_BLOB";
+		case 0x000D: "BB_KEY_EXCHG_ALG_BLOB";
+		case 0x000E: "BB_SCOPE_BLOB";
+		case 0x000F: "BB_CLIENT_USER_NAME_BLOB";
+		case 0x0010: "BB_CLIENT_MACHINE_NAME_BLOB";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRLicenseBinaryBlob = "Type = " + (BlobLen > 0 ? RDPBinaryBlobBlobTypeTable(BlobType) : "Not Available")
+{
+	switch (UINT16(FrameData, FrameOffset + 2))
+	{
+		case 0:
+			UINT16 RandomData = "This value should be ignored";
+		default:
+			UINT16 BlobType = RDPBinaryBlobBlobTypeTable(this);
+	}
+	
+	UINT16 BlobLen;
+	switch (BlobType)
+	{	
+		//case 0x0001: BB_DATA_BLOB - client to server always encrypted
+		//case 0x0002: BB_RANDOM_BLOB - client to server always encrypted
+		//case 0x000F: BB_CLIENT_USER_NAME_BLOB - client to server always encrypted
+		//case 0x0010: BB_CLIENT_MACHINE_NAME_BLOB - client to server always encrypted
+		//BB_ERROR_BLOB
+		case 0x0004:
+			struct EmptyErrorBlob{}
+		case BlobLen == 0:
+			struct{}
+		//BB_CERTIFICATE_BLOB	
+		case 0x0003:
+			RDPBCGRServerCertificate(BlobLen) ServerCertificate;
+		//BB_KEY_EXCHG_ALG_BLOB
+		case 0x000D: 
+			RDPELEKeyExchangeAlgorithm(BlobLen) KeyExchangeAlgorithm;
+		//BB_SCOPE_BLOB
+		case 0x000E: 
+			RDPELEScope(BlobLen) Scope;
+		//BB_ENCRYPTED_DATA_BLOB
+		case 0x0009:
+		default:
+			Blob(BlobLen) BlobData;
+	}
+}
+
+// 2.2.1.12.3 Licensing Error Message (LICENSE_ERROR_MESSAGE)
+Table RDPBCGRLicenseErrorCodeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000001: "ERR_INVALID_SERVER_CERTIFICATE";
+		case 0x00000002: "ERR_NO_LICENSE";
+		case 0x00000003: "ERR_INVALID_MAC";
+		case 0x00000004: "ERR_INVALID_SCOPE";
+		case 0x00000006: "ERR_NO_LICENSE_SERVER";
+		case 0x00000007: "STATUS_VALID_CLIENT";
+		case 0x00000008: "ERR_INVALID_CLIENT";
+		case 0x0000000B: "ERR_INVALID_PRODUCTID";
+		case 0x0000000C: "ERR_INVALID_MESSAGE_LEN";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRLicenseStateTransitionTable(code)
+{
+	switch (code)
+	{
+		case 0x00000001: "ST_TOTAL_ABORT";
+		case 0x00000002: "ST_NO_TRANSITION";
+		case 0x00000003: "ST_RESET_PHASE_TO_START";
+		case 0x00000004: "ST_RESEND_LAST_MESSAGE";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsLicenseErrorMessage = "ErrorCode = " + RDPBCGRLicenseErrorCodeTable(ErrorCode)
+{
+	UINT32 ErrorCode = RDPBCGRLicenseErrorCodeTable(this);
+	UINT32 StateTransition = RDPBCGRLicenseStateTransitionTable(this);
+	switch
+	{
+		case FrameLength > FrameOffset:
+			RDPBCGRLicenseBinaryBlob LiceseBinaryBlob;
+	}
+}
+
+// 2.2.1.13.1.1 Demand Active PDU Data (TS_DEMAND_ACTIVE_PDU)
+struct RDPBCGRTsDemandActivePdu = "SourceDescriptor = " + SourceDescriptor
+{
+	UINT32 ShareID;
+	UINT16 LengthSourceDescriptor;
+	UINT16 LengthCombinedCapabilities;
+	AsciiString(LengthSourceDescriptor) SourceDescriptor;
+	UINT16 NumberCapabilities;
+	UINT16 Pad2Octets;
+	[DataFieldFrameLength = FrameOffset + LengthCombinedCapabilities]
+	RDPBCGRTsCapsSet TsCapsSet[NumberCapabilities];
+	UINT32 SessionID;
+}
+
+// 2.2.1.13.1.1.1 Capability Set (TS_CAPS_SET)
+Table RDPBCGRCapabilitySetTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "TsGeneralCapabilitySet";
+		case 2: "TsBitmapCapabilitySet";
+		case 3:	"TsOrderCapabilitySet";
+		case 4:	"TsBitmapCacheCapabilitySet";
+		case 5:	"TsControlCapabilitySet";
+		case 7:	"TsWindowActivationCapabilitySet";
+		case 8:	"TsPointerCapabilitySet";
+		case 9:	"TsShareCapabilitySet";
+		case 10: "TsColorTableCapabilitySet";
+		case 12: "TsSoundCapabilitySet";
+		case 13: "TsInputCapabilitySet";
+		case 14: "TsFontCapabilitySet";
+		case 15: "TsBrushCapabilitySet";
+		case 16: "TsGlyphCacheCapabilitySet";
+		case 17: "TsOffScreenCapabilitySet";
+		case 18: "TsBitmapCacheHostSupportCapabilitySet";
+		case 19: "TsBitmapCacheCapabilitySetRev2";
+		case 20: "TsVirtualChannelCapabilitySet";
+		case 21: "TsDrawNinegridCapabilitySet";
+		case 22: "TsDrawGdiPlusCapabilitySet";
+		case 23: "TsRailCapabilitySet";
+		case 24: "TsWindowCapabilitySet";
+		case 25: "TsCompDeskCapabilitySet";
+		case 26: "TsMultiFragmentUpdateCapabilitySet";
+		case 27: "TsLargePointerCapabilitySet";
+		case 28: "TsSurfaceCommandCapabilitySet";
+		case 29: "TsBitmapCodecsCapabilitySet";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsCapsSet = RDPBCGRCapabilitySetTypeTable(CapabilitySetType)
+{
+	UINT16 CapabilitySetType = RDPBCGRCapabilitySetTypeTable(this);
+	UINT16 LengthCapability;
+	[DataFieldFrameLength = FrameOffset + LengthCapability - 4]
+	switch (CapabilitySetType)
+	{
+		case 1:
+			RDPBCGRTsGeneralCapabilitySet TsGeneralCapabilitySet;
+		case 2:
+			RDPBCGRTsBitmapCapabilitySet TsBitmapCapabilitySet;
+		case 3:
+			RDPBCGRTsOrderCapabilitySet TsOrderCapabilitySet;
+		//case CapabilitySetType == 4: RDPBCGRTsBitmapCacheCapabilitySet, client to server message always encrypted
+		//case CapabilitySetType == 5: RDPBCGRTsControlCapabilitySet, client to server message always encrypted
+		//case CapabilitySetType == 7: RDPBCGRTsWindowActivationCapabilitySet, client to server message always encrypted
+		case 8:
+			RDPBCGRTsPointerCapabilitySet TsPointerCapabilitySet;
+		case 9:
+			RDPBCGRTsShareCapabilitySet TsShareCapabilitySet;
+		case 10:
+			RDPEGDITsColorTableCapabilitySet TsColorTableCapabilitySet;
+		//case CapabilitySetType == 12: RDPBCGRTsSoundCapabilitySet, client to server message always encrypted
+		case 13:
+			RDPBCGRTsInputCapabilitySet TsInputCapabilitySet;
+		case 14:
+			RDPBCGRTsFontCapabilitySet(LengthCapability) TsFontCapabilitySet;
+		//case CapabilitySetType == 15: RDPBCGRTsBrushCapabilitySet, client to server message always encrypted
+		//case CapabilitySetType == 16: RDPBCGRTsGlyphCacheCapabilitySet, client to server message always encrypted
+		//case CapabilitySetType == 17: RDPBCGRTsOffScreenCapabilitySet, client to server message always encrypted
+		case 18:
+			RDPBCGRTsBitmapCacheHostSupportCapabilitySet TsBitmapCacheHostSupportCapabilitySet;
+		//case CapabilitySetType == 19: RDPBCGRTsBitmapCacheCapabilitySetRev2, client to server message always encrypted
+		case 20:
+			RDPBCGRTsVirtualChannelCapabilitySet TsVirtualChannelCapabilitySet;
+		//case 21: RDPEGDITsDrawNinegridCapabilitySet, Client to Server message always encrypted
+		case 22:
+			RDPEGDITsDrawGdiPlusCapabilitySet TsDrawGdiPlusCapabilitySet;
+		case 23:
+			RDPERPRemoteProgramCapabilitySet TsRailCapabilitySet;
+		case 24:
+			RDPERPWindowListCapabilitySet TsWindowCapabilitySet;
+		case 25:
+			RDPBCGRTsCompDeskCapabilitySet TsCompDeskCapabilitySet;
+		case 26:
+			RDPBCGRTsMultiFragmentUpdateCapabilitySet TsMultiFragmentUpdateCapabilitySet;
+		case 27:
+			RDPBCGRTsLargePointerCapabilitySet TsLargePointerCapabilitySet;
+		case 28:
+			RDPBCGRTsSurfcmdsCapabilityset TsSurfcmdsCapabilityset;
+		case 29:
+			RDPBCGRTsBitmapcodecsCapabilityset TsBitmapcodecsCapabilityset;
+		default:
+			Blob(LengthCapability - 4) UnknownCapabilitySet;
+	}
+}
+
+// 2.2.1.14.1 Synchronize PDU Data (TS_SYNCHRONIZE_PDU)
+struct RDPBCGRTsSynchronizePDU
+{
+	UINT16 MessageType = MUSTBeSetToTable(this, "SYNCMSGTYPE_SYNC (1)");
+	UINT16 TargetUser;
+}
+
+// 2.2.1.15.1 Control PDU Data (TS_CONTROL_PDU)
+Table RDPBCGRControlPduActionTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "Request Control";
+		case 2: "Granted Control";
+		case 3: "Detach";
+		case 4: "Cooperate";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsControlPdu = "Action = " + RDPBCGRControlPduActionTypeTable(Action)
+{
+	UINT16 Action = RDPBCGRControlPduActionTypeTable(this);
+	UINT16 GrantID;
+	UINT32 ControlID;
+}
+
+// 2.2.1.22.1 Font Map PDU Data (TS_FONT_MAP_PDU)
+struct RDPBCGRTsFontMapPdu
+{
+	UINT16 NumberEntries = SHOULDBeSetToTable(this, "0");
+	UINT16 TotalNumEntries = SHOULDBeSetToTable(this, "0");
+	UINT16 MapFlags = SHOULDBeSetToTable(this, "FONTMAP_FIRST|FONTMAP_LAST(0x0003)");
+	UINT16 EntrySize = SHOULDBeSetToTable(this, "0x0004");
+}
+
+// 2.2.3.1.1 Deactivate All PDU Data (TS_DEACTIVATE_ALL_PDU)
+struct RDPBCGRTsDeactiveAllPdu = FormatString("ShareID = %u", ShareID)
+{
+	UINT32 ShareID;
+	UINT16 LengthSourceDescriptor;
+	BLOB(LengthSourceDescriptor) sourceDescriptor = "SHOULD be set to 0x00";
+}
+
+// 2.2.4.1.1 Auto-Reconnect Status PDU Data (TS_AUTORECONNECT_STATUS_PDU)
+struct RDPBCGRAutoreconnectStatusPdu = NTStatusTable(ArcStatus)
+{
+	UINT32 ArcStatus = ShouldBeSetToTable(this,"0");
+}
+
+// 2.2.1.3.6.1 Monitor Definition (TS_MONITOR_DEF)
+struct RDPBCGRMonitorDefinition
+{
+	UINT32 Left;
+	UINT32 Top;
+	UINT32 Right;
+	UINT32 Bottom ;
+	UINT32 Flags = this ? FormatString("%s", "TS_MONITOR_PRIMARY") : " ";
+}
+
+// 2.2.12.1 Monitor Layout PDU
+struct RDPBCGRMonitorLayoutPDU
+{
+	UINT32 MonitorCount;
+	RDPBCGRMonitorDefinition monitorDefArray[MonitorCount];
+}
+// 2.2.5.2 Server Status Info PDU
+Table RDPBCGRServerStatusInfoTable(value)
+{
+	switch(value)
+	{
+		case 0x00000401: "TS_STATUS_FINDING_DESTINATION";
+		case 0x00000402: "TS_STATUS_LOADING_DESTINATION";
+		case 0x00000403: "TS_STATUS_BRINGING_SESSION_ONLINE";
+		case 0x00000404: "TS_STATUS_REDIRECTING_TO_DESTINATION";
+		case 0x00000501: "TS_STATUS_VM_LOADING";
+		case 0x00000502: "TS_STATUS_VM_WAKING";
+		case 0x00000503: "TS_STATUS_VM_BOOTING";
+		default: "Undefined value: " + FormatString("%d", value);
+	}
+}
+struct RDPBCGRServerStatusInfoPDU = FormatString("%s",RDPBCGRServerStatusInfoTable(this))
+{
+	UINT32 statusCode = RDPBCGRServerStatusInfoTable(this);
+}
+
+// 2.2.4.2 Server Auto-Reconnect Packet (ARC_SC_PRIVATE_PACKET)
+struct RDPBCGRArcScPrivatePacket
+{
+	UINT32 cbLen = MUSTBeSetToTable(this, "0x0000001C");
+	UINT32 Version = ShouldBeSetToTable(this, "0x00000001");
+	UINT32 LogonId;
+	BLOB(16) ArcRandomBits;
+}
+
+// 2.2.5.1.1 Set Error Info PDU Data (TS_SET_ERROR_INFO_PDU)
+Table RDPBCGRErrorInfoTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "ERRINFO_NOERROR";
+		case 0x00000001: "ERRINFO_RPC_INITIATED_DISCONNECT";
+		case 0x00000002: "ERRINFO_RPC_INITIATED_LOGOFF";
+		case 0x00000003: "ERRINFO_IDLE_TIMEOUT";
+		case 0x00000004: "ERRINFO_LOGON_TIMEOUT";
+		case 0x00000005: "ERRINFO_DISCONNECTED_BY_OTHERCONNECTION";
+		case 0x00000006: "ERRINFO_OUT_OF_MEMORY";
+		case 0x00000007: "ERRINFO_SERVER_DENIED_CONNECTION";
+		case 0x00000008: "ERRINFO_SERVER_DENIED_CONNECTION_FIPS";
+		case 0x00000009: "ERRINFO_SERVER_INSUFFICIENT_PRIVILEGES";
+		case 0x00000100: "ERRINFO_LICENSE_INTERNAL";
+		case 0x00000101: "ERRINFO_LICENSE_NO_LICENSE_SERVER";
+		case 0x00000102: "ERRINFO_LICENSE_NO_LICENSE";
+		case 0x00000103: "ERRINFO_LICENSE_BAD_CLIENT_MSG";
+		case 0x00000104: "ERRINFO_LICENSE_HWID_DOESNT_MATCH_LICENSE";
+		case 0x00000105: "ERRINFO_LICENSE_BAD_CLIENT_LICENSE";
+		case 0x00000106: "ERRINFO_LICENSE_CANT_FINISH_PROTOCOL";
+		case 0x00000107: "ERRINFO_LICENSE_CLIENT_ENDED_PROTOCOL";
+		case 0x00000108: "ERRINFO_LICENSE_BAD_CLIENT_ENCRYPTION";
+		case 0x00000109: "ERRINFO_LICENSE_CANT_UPGRADE_LICENSE";
+		case 0x0000010A: "ERRINFO_LICENSE_NO_REMOTE_CONNECTIONS";
+		case 0x00000200: "ERRINFO_SALEM_INVALIDHELPSESSION";
+		case 0x00000300: "ERRINFO_RDPENC_INVALID_CREDENTIALS";
+		case 0x00000301: "TS_ERRINFO_RDPENC_INTERNALERROR";
+		case 0x000010C9: "ERRINFO_UNKNOWNPDUTYPE2";
+		case 0x000010CA: "ERRINFO_UNKNOWNPDUTYPE";
+		case 0x000010CB: "ERRINFO_DATAPDUSEQUENCE";
+		case 0x000010CC: "ERRINFO_UNKNOWNFLOWPDU";
+		case 0x000010CD: "ERRINFO_CONTROLPDUSEQUENCE";
+		case 0x000010CE: "ERRINFO_INVALIDCONTROLPDUACTION";
+		case 0x000010CF: "ERRINFO_INVALIDINPUTPDUTYPE";
+		case 0x000010D0: "ERRINFO_INVALIDINPUTPDUMOUSE";
+		case 0x000010D1: "ERRINFO_INVALIDREFRESHRECTPDU";
+		case 0x000010D2: "ERRINFO_CREATEUSERDATAFAILED";
+		case 0x000010D3: "ERRINFO_CONNECTFAILED";
+		case 0x000010D4: "ERRINFO_CONFIRMACTIVEWRONGSHAREID";
+		case 0x000010D5: "ERRINFO_CONFIRMACTIVEWRONGORIGINATOR";
+		case 0x000010DA: "ERRINFO_PERSISTENTKEYPDUBADLENGTH";
+		case 0x000010DB: "ERRINFO_PERSISTENTKEYPDUILLEGALFIRST";
+		case 0x000010DC: "ERRINFO_PERSISTENTKEYPDUTOOMANYTOTALKEYS";
+		case 0x000010DD: "ERRINFO_PERSISTENTKEYPDUTOOMANYCACHEKEYS";
+		case 0x000010DE: "ERRINFO_INPUTPDUBADLENGTH";
+		case 0x000010DF: "ERRINFO_BITMAPCACHEERRORPDUBADLENGTH";
+		case 0x000010E0: "ERRINFO_SECURITYDATATOOSHORT";
+		case 0x000010E1: "ERRINFO_VCHANNELDATATOOSHORT";
+		case 0x000010E2: "ERRINFO_SHAREDATATOOSHORT";
+		case 0x000010E3: "ERRINFO_BADSUPRESSOUTPUTPDU";
+		case 0x000010E5: "ERRINFO_CONFIRMACTIVEPDUTOOSHORT";
+		case 0x000010E6: "ERRINFO_FLOWPDUTOOSHORT";
+		case 0x000010E7: "ERRINFO_CAPABILITYSETTOOSMALL";
+		case 0x000010E8: "ERRINFO_CAPABILITYSETTOOLARGE";
+		case 0x000010E9: "ERRINFO_NOCURSORCACHE";
+		case 0x000010EA: "ERRINFO_BADCAPABILITIES";
+		case 0x000010EB: "ERRINFO_BADUSERDATA";
+		case 0x000010EC: "ERRINFO_VIRTUALCHANNELDECOMPRESSIONERR";
+		case 0x000010ED: "ERRINFO_INVALIDVCCOMPRESSIONTYPE";
+		case 0x000010EF: "ERRINFO_INVALIDCHANNELID";
+		case 0x000010F0: "ERRINFO_VCHANNELSTOOMANY";
+		case 0x000010F2: "ERRINFO_BADSERVERCERTIFICATEDATA";
+		case 0x000010F3: "ERRINFO_REMOTEAPPSNOTENABLED";
+		case 0x000010F4: "ERRINFO_CACHECAPNOTSET";
+		case 0x000010F5: "ERRINFO_BITMAPCACHEERRORPDUBADLENGTH2";
+		case 0x000010F6: "ERRINFO_BITMAPCACHEERRORPDUBADLENGTH3";
+		case 0x000010F7: "ERRINFO_BITMAPCACHEERRORPDUBADLENGTH4";
+		case 0x000010F8: "ERRINFO_BITMAPCACHEERRORPDUBADLENGTH5";
+		case 0x000010FE: "ERRINFO_BADUSERDATA2";
+		case 0x000010FF: "ERRINFO_BADUSERDATA3";
+		case 0x00001100: "ERRINFO_BADUSERDATA4";
+		case 0x00001101: "ERRINFO_BADUSERDATA5";
+		case 0x00001102: "ERRINFO_BADUSERDATA6";
+		case 0x00001103: "ERRINFO_BADUSERDATA7";
+		case 0x00001104: "ERRINFO_BADUSERDATA8";
+		case 0x00001105: "ERRINFO_BADUSERDATA9";
+		case 0x00001106: "ERRINFO_BADUSERDATA10";
+		case 0x00001107: "ERRINFO_BADUSERDATA11";
+		case 0x00001108: "ERRINFO_BADUSERDATA12";
+		case 0x00001109: "ERRINFO_BADUSERDATA13";
+		case 0x0000110A: "ERRINFO_BADUSERDATA14";
+		case 0x0000110B: "ERRINFO_BADUSERDATA15";
+		case 0x0000110C: "ERRINFO_BADUSERDATA16";
+		case 0x0000110D: "ERRINFO_BADUSERDATA17";
+		case 0x0000110E: "ERRINFO_BADUSERDATA18";
+		case 0x0000110F: "ERRINFO_BADUSERDATA19";
+		case 0x00001110: "ERRINFO_BADUSERDATA20";
+		case 0x00001111: "ERRINFO_SECURITYDATATOOSHORT2";
+		case 0x00001112: "ERRINFO_SECURITYDATATOOSHORT3";
+		case 0x00001113: "ERRINFO_SECURITYDATATOOSHORT4";
+		case 0x00001114: "ERRINFO_SECURITYDATATOOSHORT5";
+		case 0x00001115: "ERRINFO_SECURITYDATATOOSHORT6";
+		case 0x00001116: "ERRINFO_SECURITYDATATOOSHORT7";
+		case 0x00001117: "ERRINFO_SECURITYDATATOOSHORT8";
+		case 0x00001118: "ERRINFO_SECURITYDATATOOSHORT9";
+		case 0x00001119: "ERRINFO_SECURITYDATATOOSHORT10";
+		case 0x0000111A: "ERRINFO_SECURITYDATATOOSHORT11";
+		case 0x0000111B: "ERRINFO_SECURITYDATATOOSHORT12";
+		case 0x0000111C: "ERRINFO_SECURITYDATATOOSHORT13";
+		case 0x0000111D: "ERRINFO_SECURITYDATATOOSHORT14";
+		case 0x0000111E: "ERRINFO_SECURITYDATATOOSHORT15";
+		case 0x0000111F: "ERRINFO_SECURITYDATATOOSHORT16";
+		case 0x00001120: "ERRINFO_SECURITYDATATOOSHORT17";
+		case 0x00001121: "ERRINFO_SECURITYDATATOOSHORT18";
+		case 0x00001122: "ERRINFO_SECURITYDATATOOSHORT19";
+		case 0x00001123: "ERRINFO_SECURITYDATATOOSHORT20";
+		case 0x00001124: "ERRINFO_SECURITYDATATOOSHORT21";
+		case 0x00001125: "ERRINFO_SECURITYDATATOOSHORT22";
+		case 0x00001126: "ERRINFO_SECURITYDATATOOSHORT23";
+		case 0x00001191: "ERRINFO_UPDATESESSIONKEYFAILED";
+		case 0x00001192: "ERRINFO_DECRYPTFAILED";
+		case 0x00001193: "ERRINFO_ENCRYPTFAILED";
+		case 0x00001194: "ERRINFO_ENCPKGMISMATCH";
+		case 0x00001195: "ERRINFO_DECRYPTFAILED2";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsSetErrorInfoPdu = "Flags = " + RDPBCGRErrorInfoTable(ErrorInfo)
+{
+	UINT32 ErrorInfo = RDPBCGRErrorInfoTable(this);
+}
+
+// 2.2.6.1 Virtual Channel PDU
+struct RDPBCGRVirtualChannelPDU
+{
+	switch 
+	{
+		case Property.RDPBCGREncrypted:
+			[Property.RDPBCGRPacketType = FormatString("%s Virtual Channel Data", Conversation.TCP.RDPBCGRChannel$[MCSChannel])]
+			BLOB(FrameLength - FrameOffset) EncryptedData;
+		default:
+			_struct
+			{
+				RDPBCGRChannelPduHeader RDPChannelPduHeader;
+				[PayloadStart(
+					NetworkDirection, /* direction */
+					0, /* id */
+					0, /* sequence token */
+					0, /* next sequence token */
+					0, /* total payload length */
+					Property.RDPBCGRChannelPDUIsFirst, /* is first */
+					Property.RDPBCGRChannelPDUIsLast, /* is last */
+					//RssmblyIndStartBit+RssmblyIndEndBit+RssmblySelfBit, //has start and end indication, self reassemble
+					RssmblyIndStartBit+RssmblyIndEndBit //has start and end indication
+					//0x0000, /* Properties... */
+					//Property.RDPVirtualChannelFlags
+					)
+				]
+				RDPBCGRVirtualChannelData VirtualChannelData;
+			}
+	}
+}
+
+// 2.2.6.1.1 Channel PDU Header (CHANNEL_PDU_HEADER)
+Table RDPBCGRChannelCompressionTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "PACKET_COMPR_TYPE_8K";
+		case 1: "PACKET_COMPR_TYPE_64K";
+		case 2: "PACKET_COMPR_TYPE_RDP6";
+		case 3: "PACKET_COMPR_TYPE_RDP61";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRChannelPduHeader = FormatString("Length = %u", Length)
+{
+	[
+		Property.RDPBCGRPDUHeaderLength,
+		Post.Conversation.TCP.RDPBCGRVirtualChannelDataLength$[MCSChannel] = property.RDPBCGRPDUHeaderLength
+	]
+	UINT32 Length;
+	[Property.RDPBCGRVirtualChannelFlags]
+	UINT32 Flags
+	{
+		[RDPBCGRChannelPDUIsFirst = this ? true : false]
+		UINT32 First:1 = FormatString("          (%s) %s",this.ToBitString,this ? "First" : "Not First");
+		[RDPBCGRChannelPDUIsLast = this ? true : false]
+		UINT32 Last:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Last" : "Not Last");
+		UINT32 Reserved1:2 = FormatString("      (%s)",this.ToBitString);
+		UINT32 ShowProtocol:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Show Protocol" : "Not Show Protocol");
+		UINT32 Suspend:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Suspend" : "Not Suspend");
+		UINT32 Resume:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Resume" : "Not Resume");
+		UINT32 Reserved2:9 = FormatString("      (%s)",this.ToBitString);
+		UINT32 CompressionType:4 = FormatString("(%s) %s",this.ToBitString,RDPBCGRChannelCompressionTypeTable(this));
+		UINT32 Reserved3:1 = FormatString("      (%s)",this.ToBitString);
+		UINT32 Compressed:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Compressed" : "Not Compressed");
+		UINT32 AtFront:1 = FormatString("        (%s) %s",this.ToBitString,this ? "At Front" : "Not At Front");
+		UINT32 Flushed:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Flushed" : "Not Flushed");
+		UINT32 Reserved4:8 = FormatString("      (%s)",this.ToBitString);
+	};
+}
+
+[Conversation.TCP.RDPBCGRVirtualChannelDataLength$[FrameNumber] = Conversation.TCP.RDPBCGRVirtualChannelDataLength$[MCSChannel]]
+Protocol RDPBCGRVirtualChannelData
+{
+	switch
+	{
+		case !RDPBCGRChannelPDUIsFirst && FrameLength - FrameOffset < Conversation.TCP.RDPBCGRVirtualChannelDataLength$[FrameNumber]:
+			[Property.RDPBCGRPacketType = "Continuation"]
+			BLOB(FrameLength - FrameOffset) RDPChannelDataContinuation;
+		case Property.RDPBCGRVirtualChannelFlags & 0x00000020:
+			[Property.RDPBCGRPacketType = "ChannelSuspend"]
+			_struct {};
+		case Property.RDPBCGRVirtualChannelFlags & 0x00200000:
+			[Property.RDPBCGRPacketType = "CompressedVirtualChannelData"]
+			RDPBCGRCompressedVirtualChannelData CompressedData;
+		default:
+			switch (Conversation.TCP.RDPBCGRChannel$[MCSChannel])
+			{
+				case "rdpdr\0\0\0":
+					[Property.RDPBCGRPacketType = "RDPEFS"]
+					RDPEFS RDPEFS;
+				case "cliprdr\0":
+					[Property.RDPBCGRPacketType = "RDPECLIP"]
+					RDPECLIP RDPECLIP;
+				case "rdpsnd\0\0":
+					[Property.RDPBCGRPacketType = "RDPEA"]
+					RDPEA RDPEA;
+				case "rail\0\0\0\0":
+					[Property.RDPBCGRPacketType = "RDPERP"]
+					RDPERP RDPERP;
+				case "remdesk\0":
+					[Property.RDPBCGRPacketType = "RA"]
+					RA RA;
+				case "drdynvc\0":
+					[Property.RDPBCGRPacketType = "RDPEDYC"]
+					RDPEDYC RDPEDYC;
+				case "encomsp\0":
+					[Property.RDPBCGRPacketType = "RDPEMC"]
+					RDPEMC RDPEMC;
+				default:
+					[Property.RDPBCGRPacketType = "Unknown RDP Channel Data"]
+					Blob(FrameLength - FrameOffset) UnknownChannelData;
+			}
+	}
+}
+
+
+// 2.2.7.1.1 General Capability Set (TS_GENERAL_CAPABILITYSET)
+Table RDPBCGROsMajorTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "Unspecified";
+		case 0x00000001: "Windows";
+		case 0x00000002: "OS/2";
+		case 0x00000003: "Macintosh";
+		case 0x00000004: "UNIX";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGROsMinorTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "Unspecified";
+		case 0x00000001: "Windows 3.1x";
+		case 0x00000002: "Windows 95";
+		case 0x00000003: "Windows NT";
+		case 0x00000004: "OS/2 2.1";
+		case 0x00000005: "PowerPC";
+		case 0x00000006: "Macintosh";
+		case 0x00000007: "Native X Server";
+		case 0x00000008: "Pseudo X Server";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRGeneralCapabilitySetRefreshRectSupportTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "Server does not support TS_REFRESH_RECT_PDU";
+		case 0x00000001: "Server supports TS_REFRESH_RECT_PDU";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRGeneralCapabilitySetSuppressOutputSupportTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "Server does not support TS_SUPPRESS_OUTPUT_PDU";
+		case 0x00000001: "Server supports TS_SUPPRESS_OUTPUT_PDU";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsGeneralCapabilitySet = FormatString("ProtocolVersion = %u", ProtocolVersion) //1
+{
+	UINT16 OsMajorType = RDPBCGROsMajorTypeTable(this);
+	UINT16 OsMinorType = RDPBCGROsMinorTypeTable(this);
+	UINT16 ProtocolVersion = MUSTBeSetToTable(this, "TS_CAPS_PROTOCOLVERSION (0x0200)");
+	UINT16 Pad2octetsA;
+	UINT16 GeneralCompressionTypes = MUSTBeSetToTable(this, "0");
+	UINT16 ExtraFlags
+	{
+		UINT16 FastPathOutput:1 = FormatString("            (%s) %s",this.ToBitString,this ? "Advertiser supports fast-path output" : "Advertiser NOT supports fast-path output");
+		UINT16 ShadowCompression:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Advertiser supports shadow compression" : "Advertiser NOT supports shadow compression");
+		UINT16 LongLengthCredentials:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Advertiser supports long-length credentials for the user name, password, or domain name"
+							   : "Advertiser NOT supports long-length credentials for the user name, password, or domain name");
+		UINT16 SessionAutoreconnection:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Advertiser supports session auto-reconnection" : "Advertiser NOT supports session auto-reconnection");
+		UINT16 ImprovedEncryptionChecksum:1 = FormatString("(%s) %s",this.ToBitString,this ? "Client and server support improved encryption checksum" : "Client and server NOT support improved encryption checksum");
+		UINT16 Reserved1:5 = FormatString("                 (%s)",this.ToBitString);
+		UINT16 CompressedBitMapDataFlag:1 = FormatString("  (%s) %s",this.ToBitString,this ? "No 8-UINT8 header is present for compressed bitmap data" : "8-UINT8 header is present for compressed bitmap data");
+		UINT16 Reserved2:5 = FormatString("                 (%s)",this.ToBitString);
+
+	};
+	UINT16 UpdateCapabilityFlag = MUSTBeSetToTable(this, "0");
+	UINT16 RemoteUnshareFlag = MUSTBeSetToTable(this, "0");
+	UINT16 GeneralCompressionLevel = MUSTBeSetToTable(this, "0");
+	UINT8 RefreshRectSupport = RDPBCGRGeneralCapabilitySetRefreshRectSupportTable(this);
+	UINT8 SuppressOutputSupport = RDPBCGRGeneralCapabilitySetSuppressOutputSupportTable(this);
+}
+
+// 2.2.7.1.2 Bitmap Capability Set (TS_BITMAP_CAPABILITYSET)
+struct RDPBCGRTsBitmapCapabilitySet = FormatString("Desktop = %ux%u@%u BPP", DesktopWidth, DesktopHeight, PreferredBitsPerPixel)	//2
+{
+	UINT16 PreferredBitsPerPixel;
+	UINT16 Receive1BitPerPixel = (this ? "Client can receive 1 bit per pixel" : "Client can not receive 1 bit per pixel") + " - This field should be set to TRUE";
+	UINT16 Receive4BitsPerPixel = (this ? "Client can receive 4 bits per pixel" : "Client can not receive 4 bits per pixel") + " - This field should be set to TRUE";
+	UINT16 Receive8bitsPerPixel = (this ? "Client can receive 8 bit per pixel" : "Client can not receive 8 bits per pixel") + " - This field should be set to TRUE";
+	UINT16 DesktopWidth;
+	UINT16 DesktopHeight;
+	UINT16 Pad2octets;
+	UINT16 DesktopResizeFlag = this ? "TRUE" : "FALSE";
+	UINT16 BitmapCompressionFlag = MUSTBeSetToTable(this, "TRUE(0x0001)");
+	UINT8 HighColorFlags = shouldBeSetToTable(this, "0");
+	UINT8 DrawingFlags
+	{
+		UINT8 Unused1:1 = FormatString("(%s)",this.ToBitString);
+		UINT8 AllowDynamicColorFidelity:1 = FormatString("(%s) %s",this.ToBitString,this ? "Allow Dynamic Color Fidelity" : "Not Allow Dynamic Color Fidelity");
+		UINT8 AllowColorSubsampling:1 = FormatString("(%s) %s",this.ToBitString,this ? "Allow Color Subsampling" : "Not Allow Color Subsampling");
+		UINT8 AllowSkipAlpha:1 = FormatString("(%s) %s",this.ToBitString,this ? "Allow Skip Alpha" : "Not Allow Skip Alpha");
+		UINT8 Unused2:4 = FormatString("(%s)",this.ToBitString);
+	};
+	UINT16 MultipleRectangleSupport = MUSTBeSetToTable(this, "TRUE(0x0001)");
+	UINT16 Pad2OctetsB;
+}
+
+// 2.2.7.1.3 Order Capability Set (TS_ORDER_CAPABILITYSET)
+struct RDPBCGRTsOrderCapabilitySet = FormatString("CodePage = %u", TextANSICodePage) //3
+{
+	BLOB(16) TerminalDescriptor = "SHOULD be set to all zeros";
+	UINT32 Pad4octetsA;
+	UINT16 DesktopSaveXGranularity = "This value is ignored and assumed to be 1";
+	UINT16 DesktopSaveYGranularity = "This value is ignored and assumed to be 20";
+	UINT16 Pad2OctetsA;
+	UINT16 MaximumOrderLevel = SHOULDBeSetToTable(this, "0x0001 (ORD_LEVEL_1_ORDERS)");
+	UINT16 NumberFonts = SHOULDBeSetToTable(this, "0");
+	UINT16 orderFlags
+	{
+		UINT16 Unused1:1 = FormatString("                (%s)",this.ToBitString);
+		UINT16 NegotiateOrderSupport:1 = FormatString("  (%s) %s (MUST be set)",this.ToBitString,this ? "Support Negotiate Order" : "Not Support Negotiate Order");
+		UINT16 Unused2:1 = FormatString("                (%s)",this.ToBitString);
+		UINT16 ZeroBoundsDeltasSupport:1 = FormatString("(%s) %s (MUST be set)",this.ToBitString,this ? "Support Zero Bounds Deltas" : "Not Support Zero Bounds Deltas");
+		UINT16 Unused3:1 = FormatString("                (%s)",this.ToBitString);
+		UINT16 ColorIndexSupport:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Support Sending Color Indices" : "Not Support Sending Color Indices");
+		UINT16 BrushOnly:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Solid/Pattern Brush Only" : "Not Solid/Pattern Brush Only");
+		UINT16 Extra:1 = FormatString("                  (%s) %s",this.ToBitString,this ? "Indicates that the orderSupportExFlags field contains valid data." : " ");
+		UINT16 Unused4:8 = FormatString("                (%s)",this.ToBitString);
+	};
+	BLOB(32) OrderSupport
+	{
+		UINT8 SupportDstBlt = this ? "True" : "False";
+		UINT8 SupportPatBlt = this ? "True" : "False";
+		UINT8 SupportScrBlt = this ? "True" : "False";
+		UINT8 SupportMemBlt = this ? "True" : "False";
+		UINT8 SupportMem3Blt = this ? "True" : "False";
+		UINT8 Unused1;
+		UINT8 Unused2;
+		UINT8 SupportDrawNineGrid = this ? "True" : "False";
+		UINT8 SupportLineTo = this ? "True" : "False";
+		UINT8 SupportMultiDrawNineGrid = this ? "True" : "False";
+		UINT8 Unused3;
+		UINT8 SupportSaveBitmap = this ? "True" : "False";
+		UINT8 Unused4;
+		UINT8 Unused5;
+		UINT8 Unused6;
+		UINT8 SupportMultiDstBlt = this ? "True" : "False";
+		UINT8 SupportMultiPatBlt = this ? "True" : "False";
+		UINT8 SupportMultiScrBlt = this ? "True" : "False";
+		UINT8 SupportMultiOpaqueRect = this ? "True" : "False";
+		UINT8 SupportFastIndex = this ? "True" : "False";
+		UINT8 SupportPolygonSC = this ? "True" : "False";
+		UINT8 SupportPolygonCB = this ? "True" : "False";
+		UINT8 SupportPolyline = this ? "True" : "False";
+		UINT8 Unused7;
+		UINT8 SupportFastGlyph = this ? "True" : "False";
+		UINT8 SupportEllipseSC = this ? "True" : "False";
+		UINT8 SupportEllipseCB = this ? "True" : "False";
+		UINT8 SupportGlyphIndex = this ? "True" : "False";
+		UINT8 Unused8;
+		UINT8 Unused9;
+		UINT8 Unused10;
+		UINT8 Unused11;
+	};
+	UINT16 TextFlags = "Ignored by the server and client";
+	UINT16 OrderSupportExFlags
+	{
+		UINT16 Unused1:1 = FormatString("                (%s)",this.ToBitString);
+		UINT16 CacheBitmapRev3:1 = FormatString("        (%s) %s",this.ToBitString,this ? "ORDERFLAGS_EX_CACHE_BITMAP_REV3_SUPPORT" : " ");
+		UINT16 AltsecFrameMarker:1 = FormatString("      (%s) %s",this.ToBitString,this ? "ORDERFLAGS_EX_ALTSEC_FRAME_MARKER_SUPPORT" : " ");
+		UINT16 Unused2:13 = FormatString("                (%s)",this.ToBitString);
+	};
+	UINT32 Pad4OctetsB;
+	UINT32 desktopSaveSize = "Ignored by the client and assumed to be 230400 bytes (480 * 480)";
+	UINT16 Pad2OctetsC;
+	UINT16 Pad2OctetsD;
+	UINT16 TextANSICodePage = SHOULDBeSetToTable(this, "0");
+	UINT16 Pad2OctetsE;
+}
+
+// 2.2.7.2.1 Bitmap Cache Host Support Capability Set (TS_BITMAPCACHE_HOSTSUPPORT_CAPABILITYSET)
+struct RDPBCGRTsBitmapCacheHostSupportCapabilitySet = FormatString("Version = %u", CacheVersion) //18
+{
+	UINT8 CacheVersion = MUSTBeSetToTable(this, "TS_BITMAPCACHE_REV2 (0x01)");
+	UINT8 Pad1;
+	UINT16 Pad2;
+}
+
+// 2.2.7.1.5 Pointer Capability Set (TS_POINTER_CAPABILITYSET)
+table RDPBCGRTsPointerCapabilitySetColorPointerFlagTable(value)
+{
+	switch(value)
+	{
+		case 0: "Monochrome mouse cursors are supported";
+		case 1: "Color mouse cursors are supported";
+		default:"Undefined value: " + FormatString("%d", value);
+	}
+}
+struct RDPBCGRTsPointerCapabilitySet //8
+{
+	UINT16 ColorPointerFlag = RDPBCGRTsPointerCapabilitySetColorPointerFlagTable(this);
+	UINT16 ColorPointerCacheSize;
+	UINT16 PointerCacheSize;
+}
+
+// 2.2.7.1.6 Input Capability Set (TS_INPUT_CAPABILITY_SET)
+struct RDPBCGRTsInputCapabilitySet //13
+{
+	UINT16 InputFlags
+	{
+		UINT16 Scancode:1 = FormatString("          (%s) %s",this.ToBitString,this ? "Support Scancode" : "Not Support Scancode");
+		UINT16 Reserved1:1 = FormatString("         (%s)",this.ToBitString);
+		UINT16 ExtendedMouseEvent:1 = FormatString("(%s) %s",this.ToBitString,this ? "Support Extended Mouse Event" : "Not Support Extended Mouse Event");
+		UINT16 FastPathInput:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Support Fast-Path Input" : "Not Support Fast-Path Input");
+		UINT16 UnicodeInput:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Support Unicode Input" : "Not Support Unicode Input ");
+		UINT16 FastPathInput2:1 = FormatString("    (%s) %s (RDP 5.2 or later)",this.ToBitString,this ? "Support Fast-Path Input" : "Not Support Fast-Path Input");
+		UINT16 Reserved2:10 = FormatString("         (%s)",this.ToBitString);
+	};
+	UINT16 Pad2octetsA;
+	UINT32 KeyboardLayout = (Conversation.TCP.ClientNetworkAddress == Property.SourceNetworkAddress || Property.DestinationPort == 3389) ? LCIDTable(this) : "Random Data";
+	UINT32 KeyboardType = (Conversation.TCP.ClientNetworkAddress == Property.SourceNetworkAddress || Property.DestinationPort == 3389) ? RDPBCGRKeyBoardTypeTable(this) : "Random Data";
+	UINT32 KeyboardSubType = (Conversation.TCP.ClientNetworkAddress == Property.SourceNetworkAddress || Property.DestinationPort == 3389) ? this : "Random Data";
+	UINT32 KeyboardFunctionKey = (Conversation.TCP.ClientNetworkAddress == Property.SourceNetworkAddress || Property.DestinationPort == 3389) ? this : "Random Data";
+	Blob(64) ImeFileName = (Conversation.TCP.ClientNetworkAddress == Property.SourceNetworkAddress || Property.DestinationPort == 3389) ? this.ToString : "Random Data";
+}
+
+// 2.2.7.1.7 Brush Capability Set (TS_BRUSH_CAPABILITYSET)
+Table RDPBCGRBrushSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0: "Default";
+		case 1: "Color 8x8";
+		case 2: "Full";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+// 2.2.7.1.8 Glyph Cache Capability Set (TS_GLYPHCACHE_CAPABILITYSET)
+Table RDPBCGRGlyphSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0: "None";
+		case 1: "Partial";
+		case 2: "Full";
+		case 3: "Encode";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+// 2.2.7.1.10 Virtual Channel Capability Set (TS_VIRTUALCHANNEL_CAPABILITYSET)
+Table RDPBCGRVirtualChannelCapabilitySetFlagsTable(code)
+{
+	switch (code)
+	{
+		case 0: "No virtual channel compression";
+		case 1: "64 KB MPPC compression buffer";
+		case 2: "8 KB compression buffer";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsVirtualChannelCapabilitySet = RDPBCGRVirtualChannelCapabilitySetFlagsTable(Flags) //20
+{
+	UINT32 Flags = RDPBCGRVirtualChannelCapabilitySetFlagsTable(this);
+	UINT32 VCChunkSize;
+}
+
+// 2.2.7.2.4 Share Capability Set (TS_SHARE_CAPABILITYSET)
+struct RDPBCGRTsShareCapabilitySet = FormatString("NodeID = %u", NodeID) //9
+{
+	UINT16 NodeID;
+	UINT16 Pad2Octets;
+}
+
+// 2.2.7.2.5 Font Capability Set (TS_FONT_CAPABILITYSET)
+struct RDPBCGRTsFontCapabilitySet(LengthCapability) //14
+{
+	UINT16 FontSupportFlags = SHOULDBeSetToTable(this, "FONTSUPPORT_FONTLIST (0x0001)");
+	UINT16 Pad2octets;
+}
+
+// 2.2.7.2.6 Multifragment Update Capability Set (TS_MULTIFRAGMENTUPDATE_CAPABILITYSET)
+struct RDPBCGRTsMultiFragmentUpdateCapabilitySet = FormatString("MaxRequestSize = %u", MaxRequestSize) //26
+{
+	UINT32 MaxRequestSize;
+}
+
+// 2.2.7.2.7 Large Pointer Capability Set (TS_LARGE_POINTER_CAPABILITYSET)
+struct RDPBCGRTsLargePointerCapabilitySet // 27
+{
+	UINT16 LargePointerSupportFlags = (this == 0x01) ? "Support 96 pixel by 96 pixel mouse pointer shapes" : "Not support 96 pixel by 96 pixel mouse pointer shapes";
+}
+
+// 2.2.7.2.9   Surface Commands Capability Set (TS_SURFCMDS_CAPABILITYSET)
+Struct RDPBCGRTsSurfcmdsCapabilityset // 28
+{
+	UINT32 CmdFlags
+	{
+		UINT32 Unused1:1 = FormatString("       (%s)", this.ToBitString);
+		UINT32 Setsurfacebits:1 = FormatString("(%s)%s", this.ToBitString, this ? "The Set Surface Bits Command is supported." : "The Set Surface Bits Command isn't supported.");
+		UINT32 Unused2:30 = FormatString("       (%s)", this.ToBitString);
+	}
+	UINT32 Reserved;
+}
+
+// 2.2.7.2.10   Bitmap Codecs Capability Set (TS_BITMAPCODECS_CAPABILITYSET)
+Struct RDPBCGRTsBitmapcodecsCapabilityset // 29
+{
+	RDPBCGRTsBitmapcodecs SupportedBitmapCodecs;
+}
+
+// 2.2.7.2.10.1   Bitmap Codecs (TS_BITMAPCODECS)
+Struct RDPBCGRTsBitmapcodecs
+{
+	UINT8 BitmapCodecCount;
+	RDPBCGRTsBitmapcodec BitmapCodec[BitmapCodecCount];
+}
+
+// 2.2.7.2.10.1.1   Bitmap Codec (TS_BITMAPCODEC)
+Struct RDPBCGRTsBitmapcodec
+{
+	RDPBCGRCodecGUID CodecGUID;
+	UINT8 CodecID;
+	UINT16 CodecPropertiesLength;
+	BLOB(CodecPropertiesLength) CodecProperties;
+}
+
+// 2.2.7.2.10.1.1.1   Globally Unique Identifier (GUID)
+Struct RDPBCGRCodecGUID = FormatString( "{%08X-%04X-%04X-%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X}", 
+	CodecGUID1, CodecGUID2, CodecGUID3, UINT8( Framedata, Offset + 8 ), UINT8( Framedata, Offset + 9 ), 
+	UINT8( Framedata, Offset + 10 ), UINT8( Framedata, Offset + 11 ), UINT8( Framedata, Offset + 12 ), 
+	UINT8( Framedata, Offset + 13 ), UINT8( Framedata, Offset + 14 ), UINT8( Framedata, Offset + 15 ))
+{
+	UINT32 CodecGUID1 = FormatString("0x%08X", this);
+	UINT16 CodecGUID2 = FormatString("0x%04X", this);
+	UINT16 CodecGUID3 = FormatString("0x%04X", this);
+	UINT8 CodecGUID[8] = FormatString("0x%02X", this);
+}
+
+// 2.2.7.2.8 Desktop Composition Capability Set (TS_COMPDESK_CAPABILITYSET)
+Table RDPBCGRCompDeskSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0: "Desktop composition services are not supported";
+		case 1: "Desktop composition services are supported";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsCompDeskCapabilitySet = RDPBCGRCompDeskSupportLevelTable(CompDeskSupportLevel)// 25
+{
+	UINT16 CompDeskSupportLevel = RDPBCGRCompDeskSupportLevelTable(this);
+}
+
+// 2.2.8.1.1.1.1 Share Control Header (TS_SHARECONTROLHEADER)
+Table RDPBCGRTsShareControlHeaderPDUTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "TS_PDUTYPE_DEMANDACTIVEPDU";
+		case 3: "TS_PDUTYPE_CONFIRMACTIVEPDU";
+		case 6: "TS_PDUTYPE_DEACTIVATEALLPDU";
+		case 7: "TS_PDUTYPE_DATAPDU";
+		case 10: "TS_PDUTYPE_SERVER_REDIR_PKT";
+		default: "Undefined value: " + FormatString("%d", code & 0x000F);
+	}
+}
+
+struct RDPBCGRTsShareControlHeader = "Type = " + RDPBCGRTsShareControlHeaderPDUTypeTable(PDUType.Type)
+{
+	UINT16 TotalLength;
+	UINT16 PDUType
+	{
+		UINT16 Type:4 = FormatString("           (%s) %s",this.ToBitString,RDPBCGRTsShareControlHeaderPDUTypeTable(this));
+		UINT16 ProtocolVersion:12 = FormatString("(%s) %d",this.ToBitString,this);
+	}
+	UINT16 PDUSource;
+}
+
+struct RDPBCGRSlowPathPacket = FormatString("%s %s", TsShareControlHeader.ToString,Property.RDPBCGREncrypted ? "Encrypted" : "")
+{
+	switch
+	{
+		case Property.RDPBCGREncrypted:
+			BLOB(FrameLength - FrameOffset) EncryptedData;
+			
+		default:
+			struct
+			{
+				switch
+				{
+					case ISOTsTPKTCount == 1:
+						[
+							// Initialize
+							Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] ? Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] ? Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] : 0, 
+
+							// Order type
+							Conversation.TCP.RDPBCGRLastStandardOrderType = Conversation.TCP.RDPBCGRLastStandardOrderType ? Conversation.TCP.RDPBCGRLastStandardOrderType : 0;
+							Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastStandardOrderType << 0) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber]; 
+							Property.RDPEGDICurrentStandardOrderType = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 0) & 0xFF;
+
+							// GlyphIndex ulCharInc
+							Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc = Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc ? Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc : 0 ,
+							Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastStandardOrderType << 8) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] , 
+							Property.RDPEGDICurrentGlyphIndexUlCharInc = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 8) & 0xFF,
+
+							// FastIndex ulCharInc
+							Conversation.TCP.RDPBCGRLastFastIndexUlCharInc = Conversation.TCP.RDPBCGRLastFastIndexUlCharInc ? Conversation.TCP.RDPBCGRLastFastIndexUlCharInc : 0, 
+							Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] = (Conversation.TCP.RDPBCGRLastFastIndexUlCharInc << 16) | Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber], 
+							Property.RDPEGDICurrentFastIndexUlCharInc = (Conversation.TCP.RDPBCGRLastStandardOrderTypeCharIncTable$[FrameNumber] >> 16) & 0xFF, 
+
+							// PolygonSC NumDeltaEntries
+							Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries << 0) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentPolygonSCNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 0) & 0xFF, 
+
+
+							// PolygonCB NumDeltaEntries
+							Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries << 8) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentPolygonCBNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 8) & 0xFF, 
+
+							// PolygonSC NumDeltaEntries
+							Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries = Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries ? Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries << 16) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentPolyLineNumDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 16) & 0xFF, 
+
+							//MultiDstBlt nDeltaEntries
+							Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries << 24) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentMultiDstBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 24) & 0xFF, 
+
+							//MultiPatBlt nDeltaEntries
+							Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries << 32) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentMultiPatBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 32) & 0xFF, 
+
+							//MultiOpaqueRect nDeltaEntries
+							Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries << 40) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 40) & 0xFF, 
+
+							// MultiScrBlt nDeltaEntries
+							Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries << 48) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentMultiScrBltnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 48) & 0xFF, 
+
+							// MultiScrBlt nDeltaEntries
+							Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries = Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries ? Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries : 0, 
+							Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] = (Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries << 56) | Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber], 
+							Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries = (Conversation.TCP.RDPBCGRLastDrawingOrderTable1$[FrameNumber] >> 56) & 0xFF, 
+						]
+						struct{};
+				}
+				
+				[	
+					Local.IsComplete = ((TCP.Flags.Push || HighestReassembledProtocol == "TCP") && Property.ISOTsIsFirst && Property.ISOTsIsLast) || HighestReassembledProtocol == "ISOTS",
+					
+					// Store Property.RDPEGDICurrent value into conversation properties, ONLY when the frame is complete
+					Post.Conversation.TCP.RDPBCGRLastStandardOrderType = Local.IsComplete ? Property.RDPEGDICurrentStandardOrderType : Conversation.TCP.RDPBCGRLastStandardOrderType, 
+					Post.Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc = Local.IsComplete ? Property.RDPEGDICurrentGlyphIndexUlCharInc : Conversation.TCP.RDPBCGRLastGlyphIndexUlCharInc, 
+					Post.Conversation.TCP.RDPBCGRLastFastIndexUlCharInc = Local.IsComplete ? Property.RDPEGDICurrentFastIndexUlCharInc : Conversation.TCP.RDPBCGRLastFastIndexUlCharInc, 
+
+					Post.Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentPolygonSCNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolygonSCNumDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentPolygonCBNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolygonCBNumDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentPolyLineNumDeltaEntries : Conversation.TCP.RDPBCGRLastPolyLineNumDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentMultiDstBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiDstBltnDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentMultiPatBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiPatBltnDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiOpaqueRectnDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentMultiScrBltnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiScrBltnDeltaEntries, 
+					Post.Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries = Local.IsComplete ? Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries : Conversation.TCP.RDPBCGRLastMultiDrawNineGridnDeltaEntries
+				]
+				while[frameoffset < Framelength]
+				{
+					struct
+					{
+						RDPBCGRTsShareControlHeader TsShareControlHeader;
+						switch (TsShareControlHeader.PDUType.Type)
+						{
+							case 1:
+								[Property.RDPBCGRPacketType = "TsDemandActivePDU"]
+								RDPBCGRTsDemandActivePDU TsDemandActivePDU;
+							// case TsShareControlHeader.PDUType.Type == 3 : RDPBCGRTsConfirmActivePDU, client to server message always encrypted
+							case 6:
+								[Property.RDPBCGRPacketType = "TsDeactiveAllPDU"]
+								RDPBCGRTsDeactiveAllPDU TsDeactiveAllPDU;
+							case 7:
+								[Property.RDPBCGRPacketType = "SlowPathIoPacket"]
+								RDPBCGRSlowPathIoPacket(TsShareControlHeader.TotalLength - 6) SlowPathIoPacket = Property.RDPEGDICurrentStandardOrderType;
+							// 10 PDUTYPE_SERVER_REDIR_PKT won't appear unless TLS is enabled
+						}
+					}
+				}
+			}
+	}
+}
+
+// 2.2.8.1.1.1.2 Share Data Header (TS_SHAREDATAHEADER)
+Table RDPBCGRTsShareDataHeaderStreamTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "STREAM_UNDEFINED";
+		case 0x00000001: "TS_STREAM_LOW";
+		case 0x00000002: "TS_STREAM_MED";
+		case 0x00000004: "TS_STREAM_HI";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+Table RDPBCGRTsShareDataHeaderPDUType2Table(code)
+{
+	switch (code)
+	{
+		case 0x00000002: "TS_PDUTYPE2_UPDATE";
+		case 0x00000014: "TS_PDUTYPE2_CONTROL";
+		case 0x0000001B: "TS_PDUTYPE2_POINTER";
+		case 0x0000001C: "TS_PDUTYPE2_INPUT";
+		case 0x0000001F: "TS_PDUTYPE2_SYNCHRONIZE";
+		case 0x00000021: "TS_PDUTYPE2_REFRESH_RECT";
+		case 0x00000022: "TS_PDUTYPE2_PLAY_SOUND";
+		case 0x00000023: "TS_PDUTYPE2_SUPPRESS_OUTPUT";
+		case 0x00000024: "TS_PDUTYPE2_SHUTDOWN_REQUEST";
+		case 0x00000025: "TS_PDUTYPE2_SHUTDOWN_DENIED";
+		case 0x00000026: "TS_PDUTYPE2_SAVE_SESSION_INFO";
+		case 0x00000027: "TS_PDUTYPE2_FONTLIST";
+		case 0x00000028: "TS_PDUTYPE2_FONTMAP";
+		case 0x00000029: "TS_PDUTYPE2_SET_KEYBOARD_INDICATORS";
+		case 0x0000002B: "TS_PDUTYPE2_BITMAPCACHE_PERSISTENT_LIST";
+		case 0x0000002C: "TS_PDUTYPE2_BITMAPCACHE_ERROR_PDU";
+		case 0x0000002D: "TS_PDUTYPE2_SET_KEYBOARD_IME_STATUS";
+		case 0x0000002E: "TS_PDUTYPE2_OFFSCRCACHE_ERROR_PDU";
+		case 0x0000002F: "TS_PDUTYPE2_SET_ERROR_INFO_PDU";
+		case 0x00000030: "TS_PDUTYPE2_DRAWNINEGRID_ERROR_PDU";
+		case 0x00000031: "TS_PDUTYPE2_DRAWGDIPLUS_ERROR_PDU";
+		case 0x00000032: "TS_PDUTYPE2_ARC_STATUS_PDU";
+		case 0x00000036: "PDUTYPE2_STATUS_INFO_PDU";
+		case 0x00000037: "PDUTYPE2_MONITOR_LAYOUT_PDU";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRMPPCCompressionPackageTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "MPPC 8K";
+		case 0x01: "MPPC 64K";
+		case 0x02:"RDP 6.0 bulk compression";
+		case 0x03:"RDP 6.1 bulk compression";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRCommonGeneralCompressedType = (Compressed ? "Compressed" : "Not Compressed")
+{
+	UINT8 MPPC:4 = FormatString("      (%s) %s",this.ToBitString,RDPBCGRMPPCCompressionPackageTypeTable(this));
+	UINT8 Reserved:1 = FormatString("  (%s)",this.ToBitString);
+	UINT8 Compressed:1 = FormatString("(%s) %s",this.ToBitString,this ? "Compressed" : "Not Compressed");
+	UINT8 Front:1 = FormatString("     (%s) %s",this.ToBitString,this ? "At Front" : "Not At Front");
+	UINT8 Flush:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Flushed" : "Not Flushed");
+}
+
+struct RDPBCGRTsShareDataHeader = RDPBCGRTsShareDataHeaderPDUType2Table(PDUType2)
+{
+	UINT32 ShareID;
+	UINT8 Pad1;
+	UINT8 StreamID = RDPBCGRTsShareDataHeaderStreamTypeTable(this);
+	UINT16 UncompressedLength;
+	UINT8 PDUType2 = RDPBCGRTsShareDataHeaderPDUType2Table(this);
+	[
+		(PDUType2 == 2) && (this.Compressed)? Property.RDPEGDICurrentStandardOrderType = 0xFF : "",
+		Property.RDPBCGRCompressedType = this.Compressed ? true: Property.RDPBCGRCompressedType
+	]
+	RDPBCGRCommonGeneralCompressedType CompressedType;
+	UINT16 CompressedLength;
+}
+
+struct RDPBCGRSlowPathIoPacket(Length) = FormatString("%s", RDPBCGRTsShareDataHeaderPDUType2Table(ShareDataHeader.PDUType2))
+{
+	RDPBCGRTsShareDataHeader ShareDataHeader;
+	switch (ShareDataHeader.CompressedType.Compressed)
+	{
+		case 0:
+			switch (ShareDataHeader.PDUType2)
+			{
+				case 2:
+					[Property.RDPBCGRPacketType = "TsGraphicsUpdate"]
+					RDPBCGRTsGraphicsUpdate TsGraphicsUpdate;
+				case 20:
+					[Property.RDPBCGRPacketType = "TsControlPDU"]
+					RDPBCGRTsControlPDU TsControlPDU;
+				case 27:
+					RDPBCGRTsPointerPDU TsPointerPDU;
+				// 28 RDPBCGRTsInputPDU, client to server, always encrypted
+				case 31:
+					[Property.RDPBCGRPacketType = "SynchronizePDU"]
+					RDPBCGRTsSynchronizePDU TsSynchronizePDU;
+				// 33 RDPBCGRTsRefreshRectPDU, client to server, always encrypted
+				case 34:
+					RDPBCGRTsPlaySoundData TsPlaySoundData;
+				// 35 RDPBCGRTsSuppressOutputPDU, client to server, always encrypted
+				// 36 ShutdownRequest No data
+				// 37 ShutdownDenied No data
+				case 38:
+					[Property.RDPBCGRPacketType = "TsSaveSessionInfoPDU"]
+					RDPBCGRTsSaveSessionInfoPDU TsSaveSessionInfoPDU;
+				// 39 RDPBCGRTsFontListPDU, client to server, always encrypted
+				case 40:
+					[Property.RDPBCGRPacketType = "FontMapPDU"]
+					RDPBCGRTsFontMapPDU TsFontMapPDU;
+				case 41:
+					RDPBCGRTsSetKeyboardIndicatorsPdu TsSetKeyboardIndicatorsPdu;
+				// 43 RDPBCGRTsBitmapCachePersistentListPDU, client to server, always encrypted
+				// 44 RDPBCGRTsBitmapCacheErrorPDU, client to server, always encrypted
+				case 45:
+					RDPBCGRTsSetKeyboardImeStatusPDU TsSetKeyboardImeStatusPDU;
+				// 46 RDPBCGRTsOffScrCacheErrorPDU, client to server, always encrypted
+				case 47:
+					[Property.RDPBCGRPacketType = "TsSetErrorInfoPDU"]
+					RDPBCGRTsSetErrorInfoPDU TsSetErrorInfoPDU;
+				// 48 RDPBCGRTsDrawNineGridErrorPDU, client to server, always encrypted
+				// 49 RDPBCGRTsDrawGdiPlusErrorPDU, client to server, always encrypted
+				case 50:
+					[Property.RDPBCGRPacketType = "AutoreconnectStatusPdu"]
+					RDPBCGRAutoreconnectStatusPdu AutoreconnectStatusPdu;
+				case 54:
+					[Property.RDPBCGRPacketType = "ServerStatusInfoPdu"]
+					RDPBCGRServerStatusInfoPDU ServerStatusInfoPDU;
+				case 55:
+					[Property.RDPBCGRPacketType = "MonitorLayoutPDU"]
+					RDPBCGRMonitorLayoutPDU MonitorLayoutPDU;
+			}
+		default:
+			[Property.RDPBCGRPacketType = "CompressedDataPDU"]
+			Blob(ShareDataHeader.CompressedLength - 18) CompressedData;
+	}
+}
+
+// 2.2.8.1.1.2.1 Basic (TS_SECURITY_HEADER)
+struct RDPBCGRTsSecurityHeader = 	Flags ?
+							((Flags.SecurityExchange ? "Security Exchange " : "") +
+							(Flags.Encrypted ? "Encrypted " : "") +
+							(Flags.ResetSeqNumber ? "Reset Seq Number " : "") +
+							(Flags.IgnoreSeqNumber ? "Ignore Seq Number " : "") +
+							(Flags.InfoPacket ? "Info Packet " : "") +
+							(Flags.LicensePacket ? "License Packet " : "") +
+							(Flags.LicensePacketEncryption ? "License Packet Encryption " : "") +
+							(Flags.ServerRedirectionPacket ? "Server Redirection Packet " : "") +
+							(Flags.ImprovedChecksumForMACG ? "Improved Checksum for MAC Generation " : ""))
+							: "Not Encrypted"
+{
+	UINT16 Flags
+	{
+		UINT16 SecurityExchange:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Security Exchange" : "Not Security Exchange");
+		UINT16 Reserved1:2 = FormatString("              (%s)",this.ToBitString);
+		UINT16 Encrypted:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Encrypted" : "Not Encrypted");
+		UINT16 ResetSeqNumber:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Reset Seq Number" : "Not Reset Seq Number");
+		UINT16 IgnoreSeqNumber:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Ignore Seq Number" : "Not Ignore Seq Number");
+		UINT16 InfoPacket:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Info Packet" : "Not Info Packet");
+		UINT16 LicensePacket:1 = FormatString("          (%s) %s",this.ToBitString,this ? "License Packet" : "Not License Packet");
+		UINT16 Reserved2:1 = FormatString("              (%s)",this.ToBitString);
+		UINT16 LicensePacketEncryption:1 = FormatString("(%s) %s",this.ToBitString,this ? "License Packet Encryption" : "Not License Packet Encryption");
+		UINT16 ServerRedirectionPacket:1 = FormatString("(%s) %s",this.ToBitString,this ? "Server Redirection Packet" : "Not Server Redirection Packet");
+		UINT16 ImprovedChecksumForMACG:1 = FormatString("(%s) %s",this.ToBitString,this ? "Improved Checksum for MAC Generation" : "Not Improved Checksum for MAC Generation");
+		UINT16 Reserved3:3 = FormatString("              (%s)",this.ToBitString);
+		UINT16 FlagsHiValid:1 = FormatString("           (%s) %s",this.ToBitString,this ? "FlagsHi field contains valid data" : "FlagsHi should be ignored");
+	};
+	UINT16 FlagsHi = Flags.FlagsHiValid ? this.ToString : "Should be ignored";
+}
+
+// 2.2.8.1.1.2.2 Non-FIPS (TS_SECURITY_HEADER1)
+struct RDPBCGRTsSecurityHeader1 = BasicSecurityHeader.ToString
+{
+	RDPBCGRTsSecurityHeader BasicSecurityHeader;
+	BLOB(8) DataSignature;
+}
+
+// 2.2.8.1.1.2.3 FIPS (TS_SECURITY_HEADER2)
+struct RDPBCGRTsSecurityHeader2 = BasicSecurityHeader.ToString
+{
+	RDPBCGRTsSecurityHeader BasicSecurityHeader;
+	UINT16 Length = MUSTBeSetToTable(this, "0x0010");
+	UINT8 Version;
+	UINT8 PadLen;
+	BLOB(Length - 8) DataSignature;
+}
+
+// 2.2.8.1.2 Client Fast-Path Input Event PDU (TS_FP_INPUT_PDU)
+struct RDPBCGRTsFpInputPdu
+{
+	[Property.RDPBCGREncrypted = FpInputHeader.Encrypted]
+	UINT8 FpInputHeader
+	{
+		UINT8 ActionCode:2 = FormatString("      (%s) %s",this.ToBitString,RDPBCGRTsFpUpdatePduActionCode(this));
+		UINT8 NumEvents:4 = FormatString("       (%s) %d",this.ToBitString,this);
+		UINT8 ImprovedChecksum:1 = FormatString("(%s) %s",this.ToBitString,this ? "Improved Checksum" : "Not Improved Checksum");
+		UINT8 Encrypted:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Encrypted" : "Not Encrypted");
+	};
+	RDPBCGRCommonEncodedValue2Bytes Length;
+	switch(Conversation.TCP.RDPBCGREncryptionLevel)
+	{
+		case 4: RDPBCGRTsFpFipsInfo FipsInformation;
+	}
+	
+	switch
+	{
+		case FpInputHeader.Encrypted:
+			BLOB(8) DataSignature ;
+	}
+	
+	switch(FpInputHeader.NumEvents)
+	{
+		case 0 : UINT8 NumberEvents;
+	}
+	
+	// Input packets are all encrypted
+	switch
+	{
+		case FpInputHeader.Encrypted:
+			[RDPPacketType = "Encrypted Fast-Path Input"]
+			_struct EncryptedFastPathInput
+			{
+				BLOB(FrameLength - FrameOffset) EncryptedData;
+			}
+	}
+}
+
+// 2.2.8.1.2.1 Fast-Path FIPS Information (TS_FP_FIPS_INFO)
+struct RDPBCGRTsFpFipsInfo = FormatString("Version = %u", Version)
+{
+	UINT16 Length = MustBeSetToTable(this,"16 bytes");
+	UINT8 Version = ShouldBeSetToTable(this,"1");
+	UINT8 Padlen;
+}
+
+// 2.2.8.2.1.1 Set Keyboard Indicators PDU Data (TS_SET_KEYBOARD_INDICATORS_PDU)
+struct RDPBCGRTsSetKeyboardIndicatorsPdu = (LedFlags.ScroolLock ? "ScrollLock " : "") +
+																(LedFlags.NumLock ? "NumLock " : "") +
+																(LedFlags.CapsLock ? "CapsLock " : "") +
+																(LedFlags.KanaLock ? "KanaLock " : "")
+{
+	UINT16 UnitId = ShouldBeSetToTable(this,"0");
+	UINT16 LedFlags = (ScroolLock ? "ScrollLock " : "") +
+						(NumLock ? "NumLock " : "") +
+						(CapsLock ? "CapsLock " : "") +
+						(KanaLock ? "KanaLock " : "")
+	{
+		UINT16 ScroolLock:1 = FormatString("(%s) %s",this.ToBitString,this ? "Scroll Lock On" : "Scroll Lock Off");
+		UINT16 NumLock:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Num Lock On" : "Num Lock Off");
+		UINT16 CapsLock:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Caps Lock On" : "Caps Lock Off");
+		UINT16 KanaLock:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Kana Lock On" : "Kana Lock Off");
+		UINT16 Reserved:12 = FormatString("  (%s)",this.ToBitString);
+	};
+}
+
+// 2.2.8.2.2.1 Set Keyboard IME Status PDU Data (TS_SET_KEYBOARD_IME_STATUS_PDU)
+struct RDPBCGRTsSetKeyboardImeStatusPDU
+{
+	UINT16 UnitId = ShouldBeSetToTable(this,"0");
+	UINT32 ImeOpen;
+	UINT32 ImeConvMode;
+}
+
+// 2.2.9.1.1.3.1 Slow Path Graphics Update (TS_GRAPHICS_UPDATE)
+Table RDPBCGRUpdatePDUUpdateTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "ORDERS";
+		case 1: "BITMAP";
+		case 2: "PALETTE";
+		case 3: "SYNCHRONIZE";
+		case 4: "Surfcmds";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsGraphicsUpdate = RDPBCGRUpdatePDUUpdateTypeTable(UINT16(FrameData, FrameOffset))
+{
+	switch (UINT16(FrameData, FrameOffset))
+	{
+		case 0x0000:
+			[Property.RDPBCGRPacketType = "RDPEGDI"]
+			RDPEGDI RDPEGDI;
+		case 0x0001:
+			[Property.RDPBCGRPacketType = "TsUpdateBitmapPDUData"]
+			RDPBCGRTsUpdateBitmapPDUData TsUpdateBitmapPDUData;
+		case 0x0002:
+			[Property.RDPBCGRPacketType = "TsUpdatePalettePDUData"]
+			RDPBCGRTsUpdatePalettePDUData TsUpdatePalettePDUData;
+		case 0x0003:
+			[Property.RDPBCGRPacketType = "TsUpdateSyncPduData"]
+			RDPBCGRTsUpdateSyncPduData TsUpdateSyncPduData;
+	}
+}
+
+
+
+struct RDPBCGRTsUpdatePalettePDUData
+{
+	UINT16 UpdateType = RDPBCGRUpdatePDUUpdateTypeTable(this);
+	UINT16 Pad2Octets;
+	UINT32 NumberColors = MUSTBeSetToTable(this,"256");
+	RDPBCGRTsPaletteEntry paletteEntries[NumberColors];
+}
+
+// 2.2.9.1.2.1.10   Fast-Path Surface Commands Update (TS_FP_SURFCMDS)
+Struct RDPBCGRTsFpSurfcmds
+{
+	while [FrameOffset < FrameLength]
+	{
+		RDPBCGRTsSurfcmd TsSurfcmd;
+	};
+}
+
+// 2.2.9.1.1.3.1.4.1   Surface Command (TS_SURFCMD)
+Struct RDPBCGRTsSurfcmd
+{
+	Switch(UINT16(FrameData, FrameOffset))
+	{
+		case 0x0001: RDPBCGRTsSurfcmdSetSurfBits TsSurfcmdSetSurfBits;
+		default: ReportParserError(ParserErrorProtocolClassWindows, "RDPBCGR", "Unknown Cmd type" ) ParserError;
+	}
+}
+
+// 2.2.9.2.1   Set Surface Bits Command (TS_SURFCMD_SET_SURF_BITS)
+Struct RDPBCGRTsSurfcmdSetSurfBits = FormatString("CmdType = %s",CmdType.ToString)
+{
+	UINT16 CmdType = RDPBCGRCmdtypeTable(this);
+	UINT16 DestLeft;
+	UINT16 DestTop;
+	UINT16 DestRight;
+	UINT16 DestBottom;
+	RDPBCGRBitmapDataEx BitmapData;
+}
+
+Table RDPBCGRCmdtypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "CMDTYPE_SET_SURFACE_BITS";
+		default: "Undefined type:" + FormatString("%d", value);
+	}
+}
+
+// 2.2.9.1.1.3.1.1.2 RGB Palette Entry (TS_PALETTE_ENTRY)
+struct RDPBCGRTsPaletteEntry = FormatString("(%u, %u, %u)", Red, Green, Blue)
+{
+	UINT8 Red;
+	UINT8 Green;
+	UINT8 Blue;
+}
+
+// 2.2.9.1.1.3.1.2 Bitmap Update (TS_UPDATE_BITMAP_PDU_DATA)
+struct RDPBCGRTsUpdateBitmapPDUData
+{
+	UINT16 UpdateType = RDPBCGRUpdatePDUUpdateTypeTable(this);
+	UINT16 NumberRectangles;
+	RDPBCGRTsBitmapData Rectangles[NumberRectangles];
+}
+
+// 2.2.9.1.1.3.1.2.3 Compressed Data Header (TS_CD_HEADER)
+struct RDPBCGRTsCdHeader
+{
+	UINT16 CbCompFirstRowSize;
+	UINT16 CbCompMainBodySize;
+	UINT16 CbScanWidth;
+	UINT16 CbUncompressedSize;
+}
+
+// 2.2.9.1.1.3.1.2.2 Bitmap Data (TS_BITMAP_DATA)
+struct RDPBCGRTsBitmapData
+{
+	INT16 DestLeft;
+	INT16 DestTop;
+	INT16 DestRight;
+	INT16 DestBottom;
+	UINT16 Width;
+	UINT16 Height;
+	UINT16 BitsPerPixel;
+	UINT16 Flags
+	{
+		UINT16 BitmapCompression:1 = FormatString("(%s) %s",this.ToBitString,this ? "Bitmap Compression" : "Not Bitmap Compression");
+		UINT16 Reserved1:9 = FormatString("        (%s)",this.ToBitString);
+		UINT16 TsCdHeader:1 = FormatString("       (%s) %s",this.ToBitString,this ? "TS_CD_HEADER absence" : "Not TS_CD_HEADER absence");
+		UINT16 Reserved2:5 = FormatString("        (%s)",this.ToBitString);
+	};
+	UINT16 BitmapLength;
+	switch
+	{
+		case !Flags.TsCdHeader:
+			RDPBCGRTsCdHeader TsCdHeader;
+	}
+	BLOB(BitmapLength - (Flags.TsCdHeader ? 0 : 8)) BitmapDataStream;
+}
+
+// 2.2.9.1.1.3.1.3 Synchronize Update (TS_UPDATE_SYNC_PDU_DATA)
+struct RDPBCGRTsUpdateSyncPduData = "Synchronize"
+{
+	UINT16 UpdateType = RDPBCGRUpdatePDUUpdateTypeTable(this);
+	UINT16 pad2octets;
+}
+
+// 2.2.9.1.1.4 Server Pointer Update PDU (TS_POINTER_PDU)
+Table RDPBCGRPointerPDUMessageTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "System";
+		case 3: "Position";
+		case 6: "Color";
+		case 7: "Cached";
+		case 8: "Pointer";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRSlowPathPointerTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "hidden Pointer";
+		case 0x00007F00: "Default System Pointer";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsPointerPDU = RDPBCGRPointerPDUMessageTypeTable(MessageType)
+{
+	UINT16 MessageType = RDPBCGRPointerPDUMessageTypeTable(this);
+	UINT16 Pad2octets;
+	[Local.OffsetBeforeMessage = FrameOffset]
+	switch (MessageType)
+	{
+		case 1: UINT32 SystemPointerType = RDPBCGRSlowPathPointerTypeTable(this);
+		// 2 T.128 Monochrome Pointer updates are not used in RDP and are not planned for a future version
+		case 3: RDPBCGRTsPoint16 Position;
+		case 6: RDPBCGRTsColorPointerAttribute TsColorPointerAttribute;
+		case 7: UINT16 CacheIndex;
+		case 8: RDPBCGRTsPointerAttribute TsPointerAttribute;
+	}
+	BLOB(16 - (FrameOffset - Local.OffsetBeforeMessage)) Padding;
+}
+
+// 2.2.9.1.1.4.1 Point (TS_POINT16)
+struct RDPBCGRTsPoint16 = FormatString("(%u, %u)", XPos, YPos)
+{
+	UINT16 XPos;
+	UINT16 YPos;
+}
+
+// 2.2.9.1.1.4.4 Color Pointer Update (TS_COLORPOINTERATTRIBUTE)
+struct RDPBCGRTsColorPointerAttribute = FormatString("HotSpot = %s", HotSpot.ToString)
+{
+	UINT16 CacheIndex;
+	RDPBCGRTsPoint16 HotSpot;
+	UINT16 Width;
+	UINT16 Height;
+	UINT16 LengthANDMask;
+	UINT16 LengthXORMask;
+	BLOB(LengthXORMask) XORMaskData;
+	BLOB(LengthANDMask) ANDMaskData;
+	UINT8 Pad;
+}
+
+// 2.2.9.1.1.4.5 New Pointer Update (TS_POINTERATTRIBUTE)
+struct RDPBCGRTsPointerAttribute = ColorPtrAttr.ToString
+{
+	UINT16 XORBpp;
+	RDPBCGRTsColorPointerAttribute ColorPtrAttr;
+}
+
+// 2.2.9.1.1.5.1 Play Sound PDU Data (TS_PLAY_SOUND_PDU_DATA)
+struct RDPBCGRTsPlaySoundData
+{
+	UINT32 Duration;
+	UINT32 Frequency;
+}
+
+// 2.2.9.1.2 Server Fast-Path Update PDU (TS_FP_UPDATE_PDU)
+
+table RDPBCGRTsFpUpdatePduActionCode(code)
+{
+	switch(code)
+	{
+		case 0: "the PDU is a fast-path output PDU";
+		case 3: "the PDU is a slow-path output PDU";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsFpUpdatePdu
+{
+	[Property.RDPBCGREncrypted = FpOutputHeader.Encrypted]
+	UINT8 FpOutputHeader
+	{
+		UINT8 ActionCode:2 = FormatString("      (%s) %s",this.ToBitString, RDPBCGRTsFpUpdatePduActionCode(this));
+		UINT8 Unused:4 = FormatString("          (%s) %s",this.ToBitString,"Must be set to 0");
+		UINT8 ImprovedChecksum:1 = FormatString("(%s) %s",this.ToBitString,this ? "Improved Checksum" : "Not Improved Checksum");
+		UINT8 Encrypted:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Encrypted" : "Not Encrypted");
+	};
+	[Post.Property.RDPBCGRFPOutputPDULength = Property.RDPBCGREncodedValue]
+	RDPBCGRCommonEncodedValue2Bytes Length;
+	[Conversation.RDPBCGRFPNextSeq = Property.HighestReassembledProtocol == "RDPBCGR" ? Conversation.RDPBCGRFPNextSeq : TCPSeqNumber + Property.RDPBCGRFastPathOutputBeginOffset - ProtocolOffset + Property.RDPBCGRFPOutputPDULength]
+	[Property.RDPBCGRFPEnd = (Property.RDPBCGRFPOutputPDULength == (FrameLength - Property.RDPBCGRFastPathOutputBeginOffset))]
+	[DataFieldFrameLength = FrameOffset + Property.RDPBCGRFPOutputPDULength - (Length.WordLValue? 3: 2)]
+	switch
+	{
+		case Property.RDPBCGRFPStart && Property.RDPBCGRFPOutputPDULength <= FrameLength - Property.RDPBCGRFastPathOutputBeginOffset:
+			_struct
+			{
+				switch 
+				{
+					case Conversation.TCP.RDPBCGREncryptionLevel == 4:
+						RDPBCGRTsFpFipsInfo TsFpFipsInfo;
+				}
+				switch
+				{
+					case Property.RDPBCGREncrypted:
+						_struct
+						{
+							BLOB(8) MACSignature;
+							BLOB(FrameLength - FrameOffset) EncryptedData;
+						}
+					default:
+						while [FrameOffset - Property.RDPBCGRFastPathOutputBeginOffset < Property.RDPBCGRFPOutputPDULength]
+						{
+							RDPBCGRTsFpUpdate TsFpUpdate;
+						}
+				}
+			}
+		default:
+			[Property.RDPBCGRPacketType = "FpOutputContinuation"]
+			Blob(FrameLength - FrameOffset) FpOutputFragmentation = FormatString("This part will be parsed after reassembly, length = %d", FrameLength - FrameOffset);
+	}
+}
+
+//2.2.9.2.2   Extended Bitmap Data (TS_ BITMAP_DATA_EX)
+Struct RDPBCGRBitmapDataEx
+{
+	UINT8 Bpp;
+	UINT8 Reserved1;
+	UINT8 Reserved2;
+	UINT8 CodecID;
+	UINT16 Width;
+	UINT16 Height;
+	UINT32 BitmapdataLength;
+	Switch
+	{
+		case BitmapdataLength > 0:
+			BLOB(BitmapdataLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : BitmapdataLength) BitmapData;
+	}
+}
+
+// 2.2.9.1.2.1 Fast-Path Update (TS_FP_UPDATE)
+Table RDPBCGRFpOutputTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "UpdateOrder";
+		case 1: "UpdateBitmap";
+		case 2: "UpdatePalette";
+		case 3: "Synchronize";
+		case 4: "Surfcmds";
+		case 5: "System Pointer Hidden";
+		case 6: "Mouse Pointer System default";
+		case 7: "Mouse Pointer Mono";
+		case 8: "Mouse Pointer Position";
+		case 9: "Mouse Pointer Color";
+		case 10: "Mouse Pointer Cached";
+		case 11: "Mouse Pointer Pointer";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPBCGRTsFpUpdateFragmentationTable(value)
+{
+	switch(value)
+	{
+		case 0: "SINGLE, not part of a sequence of fragments";
+		case 1: "LAST, contains the last fragment in a sequence of fragments";
+		case 2: "FIRST, contains the first fragment in a sequence of fragment";
+		case 3: "NEXT, contains the second or subsequent fragment in a sequence of fragments";
+		default: "Undefined value: " + FormatString("%d", value);
+	}
+}
+
+Table RDPBCGRTsFpUpdateCompressionFlagTable(value)
+{
+	switch(value)
+	{
+		case 2: "FASTPATH_OUTPUT_COMPRESSION_USED, the compressionFlags field is present";
+		default: "Undefined value: " + FormatString("%d", value);
+	}
+}
+
+struct RDPBCGRTsFpUpdate = "Type = " + RDPBCGRFpOutputTypeTable(Header.Type)
+{
+	UINT8 Header = "Type = " + RDPBCGRFpOutputTypeTable(Type)
+	{
+		[Property.RDPBCGRTsFpUpdateType]
+		UINT8 Type:4 = FormatString("               (%s) %s",this.ToBitString,RDPBCGRFpOutputTypeTable(this));
+		UINT8 Fragmentation:2 = FormatString("      (%s) %s",this.ToBitString,RDPBCGRTsFpUpdateFragmentationTable(this));
+		UINT8 CompressionFlagBits:2 = FormatString("(%s) %s",this.ToBitString,this ? RDPBCGRTsFpUpdateCompressionFlagTable(this) : "Not Compressed");
+	};
+	switch
+	{
+		case Header.CompressionFlagBits:
+			[
+			  (Header.Type == 0) && (this.Compressed)? Property.RDPEGDICurrentStandardOrderType = 0xFF : "",
+			  Property.RDPBCGRCompressedType = this.Compressed? true : Property.RDPBCGRCompressedType
+			]		
+			RDPBCGRCommonGeneralCompressedType CompressFlags;
+	}
+	UINT16 Size;
+	switch
+	{
+		case Size > 0:
+			[DataFieldFrameLength = FrameOffset + Size]
+			switch 
+			{
+				case Header.CompressionFlagBits == 0 || CompressFlags.Compressed == 0:
+					switch
+					{
+						// Workaround for embedded protocol
+						case Header.Fragmentation == 0:
+							RDPBCGRTsFpUpdateDataStruct RDPBCGRTsFpUpdateData;
+						default:
+							[PayloadStart(
+								Property.NetworkDirection, /*direction */
+								0, /* id */
+								0, /* sequence token */
+								0, /* next sequence token */
+								0, /* total payload length */
+								Header.Fragmentation == 2, /* is first */
+								Header.Fragmentation == 1, /* is last */
+								RssmblyIndStartBit+RssmblyIndEndBit,
+								/* Properties... */
+								0x0000,
+								Property.RDPBCGRTsFpUpdateType
+								)]
+							_struct RDPBCGRTsFpUpdateFragmentedData// Fragmeneted data
+							{
+								switch 
+								{
+									case Header.Fragmentation == 2: // First
+										RDPBCGRTsFpUpdateData RDPBCGRTsFpUpdateData;
+									default:
+										Blob(Size > FrameLength - FrameOffset ? FrameLength - FrameOffset:Size) RDPBCGRTsFpUpdateDataContinuation;
+								}
+							}
+					}
+				default:
+					Blob(Size > FrameLength - FrameOffset ? FrameLength - FrameOffset:Size) CompressedData;
+			}
+	}
+}
+
+struct RDPBCGRTsFpUpdateDataStruct
+{
+	switch (Property.RDPBCGRTsFpUpdateType)
+	{
+		case 0:
+			[Property.RDPBCGRPacketType = "RDPEGDI"]
+			RDPEGDI RDPEGDI;
+		case 1:
+			RDPBCGRTsUpdateBitmapPDUData TsUpdateBitmapPDUData;
+		case 2:
+			RDPBCGRTsUpdatePalettePDUData TsUpdatePalettePDUData;
+		case 4:
+			RDPBCGRTsFpSurfcmds TsFpSurfcmds;
+		case 8:
+			RDPBCGRTsPoint16 TsPoint16;
+		case 9:
+			RDPBCGRTsColorPointerAttribute TsColorPointerAttribute;
+		case 10:
+			UINT16 CachedIndex;
+		case 11:
+			RDPBCGRTsPointerAttribute TsPointerAttribute;
+	}
+}
+
+[EmbeddedProtocol,DataTypeByteOrder = LittleEndian]
+Protocol RDPBCGRTsFpUpdateData
+{
+	switch (Property.RDPBCGRTsFpUpdateType)
+	{
+		case 0:
+			[Property.RDPBCGRPacketType = "RDPEGDI"]
+			RDPEGDI RDPEGDI;
+		case 1:
+			RDPBCGRTsUpdateBitmapPDUData TsUpdateBitmapPDUData;
+		case 2:
+			RDPBCGRTsUpdatePalettePDUData TsUpdatePalettePDUData;
+		case 4:
+			RDPBCGRTsFpSurfcmds TsFpSurfcmds;
+		case 8:
+			RDPBCGRTsPoint16 TsPoint16;
+		case 9:
+			RDPBCGRTsColorPointerAttribute TsColorPointerAttribute;
+		case 10:
+			UINT16 CachedIndex;
+		case 11:
+			RDPBCGRTsPointerAttribute TsPointerAttribute;
+	}
+}
+
+// 2.2.10.1.1 Save Session Info PDU Data (TS_SAVE_SESSION_INFO_PDU_DATA)
+Table RDPBCGRSessionInfoTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "TS_INFOTYPE_LOGON";
+		case 0x01: "TS_INFOTYPE_LOGON_LONG";
+		case 0x02: "TS_INFOTYPE_LOGON_PLAINNOTIFY";
+		case 0x03: "TS_INFOTYPE_LOGON_EXTENDED_INFO";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsSaveSessionInfoPDU = "InfoType = " + RDPBCGRSessionInfoTypeTable(InfoType)
+{
+	UINT32 InfoType = RDPBCGRSessionInfoTypeTable(this);
+	switch (InfoType)
+	{
+		case 0:
+			RDPBCGRTsLogonInfo TsLogonInfo;
+		case 1:
+			RDPBCGRTsLogonInfoVersion2 TsLogonInfoVersion2;
+		case 2:
+			[DataFieldFrameLength = FrameOffset + 576]
+			RDPBCGRTsPlainnotify TsPlainnotify;
+		case 3:
+			RDPBCGRTsLogonInfoExtended TsLogonInfoExtended;
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows, "RDPBCGR", "Unknown Info type" ) ParserError;
+	}
+}
+
+// 2.2.10.1.1.1 Logon Info Version 1 (TS_LOGON_INFO)
+struct RDPBCGRTsLogonInfo = "Domain = " + Domain + "UserName = " + UserName
+{
+	UINT32 cbDomain;
+	UnicodeString(26) Domain;
+	UINT32 cbUserName;
+	UnicodeString(256) UserName;
+	UINT32 SessionId;
+}
+
+// 2.2.10.1.1.2 Logon Info Version 2 (TS_LOGON_INFO_VERSION_2)
+table RDPBCGRTsLogonInfoVersion2Version(code)
+{
+	switch(code)
+	{
+		case 1 : "Version 1";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+struct RDPBCGRTsLogonInfoVersion2 = (Domain ? "Domain = " + Domain : "") + (UserName ? "UserName = " + UserName : "")
+{
+	UINT16 Version = RDPBCGRTsLogonInfoVersion2Version(this);
+	UINT32 Size;
+	UINT32 SessionId;
+	UINT32 cbDomain;
+	UINT32 cbUserName;
+	BLOB(558) Pad;
+	UnicodeString(cbDomain/2) Domain;
+	UnicodeString(cbUserName/2) UserName;
+}
+
+// 2.2.10.1.1.3 Plain Notify (TS_PLAIN_NOTIFY)
+struct RDPBCGRTsPlainnotify = "Paddings"
+{
+	BLOB(576) Pad;
+}
+
+// 2.2.10.1.1.4 Logon Info Extended (TS_LOGON_INFO_EXTENDED)
+struct RDPBCGRTsLogonInfoExtended
+{
+	UINT16 Length;
+	UINT32 FieldsPresent
+	{
+		UINT32 AutoreconnectCookie:1 = FormatString("(%s) %s", this.ToBitString, this ? "Present" : "Not Present");
+		UINT32 LogonErrors:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Present" : "Not Present");
+		UINT32 Unused:30 = FormatString("             (%s) %s", this.ToBitString, this ? "Present" : "Not Present");
+	};
+	UINT32 cbFieldData;
+	switch 
+	{
+		case FieldsPresent.AutoreconnectCookie: 
+			RDPBCGRArcScPrivatePacket AutoreconnectCookie;
+	}
+	switch 
+	{
+		case FieldsPresent.LogonErrors: 
+			RDPBCGRTsLogonErrorInfo LogonErrors;
+	}
+	BLOB(570) Pad;
+}
+
+// 2.2.10.1.1.4.1.1 Logon Errors Info (TS_LOGON_ERRORS_INFO)
+Table RDPBCGRErrorNotificationTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "LOGON_FAILED_BAD_PASSWORD";
+		case 1: "LOGON_FAILED_UPDATE_PASSWORD";
+		case 2: "LOGON_FAILED_OTHER";
+		case 3: "LOGON_WARNING";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPBCGRTsLogonErrorInfo = RDPBCGRErrorNotificationTypeTable(ErrorNotificationType)
+{
+	UINT32 ErrorNotificationType = RDPBCGRErrorNotificationTypeTable(this);
+	UINT32 ErrorNotificationData = NtStatusTable(this);
+}
+
+// 2.2.11.1 Inclusive Rectangle (TS_RECTANGLE16)
+struct RDPBCGRTsRectangle16
+{
+	UINT16 Left;
+	UINT16 Top;
+	UINT16 Right;
+	UINT16 Bottom;
+}
+
+//2.2.1.10.1   Security Exchange PDU Data (TS_SECURITY_PACKET)
+struct RDPBCGRSecurityExchangePDUData
+{
+	RDPBCGRTsSecurityHeader BasicSecurityHeader;
+	UINT32 Length;
+	Blob(Length) EncryptedClientRandom;
+}

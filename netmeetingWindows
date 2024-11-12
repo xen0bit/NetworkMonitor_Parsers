@@ -1,0 +1,3609 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NetMeeting Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MNPR]: Microsoft NetMeeting Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/18/2010
+//#
+//####
+//# End Chat
+[DataTypeBitAlign]
+Protocol NetMeeting = FormatString ("%s%s",((NetmeetingGCC ? "GCC " : "") + 
+											(NetmeetingWhiteboard ? "WhiteBoard " : "") + 
+											(NetmeetingFileTransfer ? "FileTransfer " : "") + 
+											(NetmeetingAppShare ? "AppShare " : "") + 
+											(NetmeetingChat ? "Chat " : "")), NetmeetingFrameSummary)
+{
+	[NetmeetingT124DynamicChannel = 
+		Global.T124DynamicChannel$
+			[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, MCSChannel): 
+																MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, MCSChannel)],		
+	NetmeetingT124DynamicChannelOwner = 
+		Global.T124DynamicChannelOwner$
+			[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, MCSChannel): 
+																MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, MCSChannel)], 		
+	NetmeetingT124DynamicUserID = 
+		Global.T124DynamicUserID$
+			[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, NetmeetingT124DynamicChannelOwner): 
+																MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, NetmeetingT124DynamicChannelOwner)], 
+																																																									
+	T124NonStdIdentifier = FormatString("0x%I64X", NetmeetingT124DynamicChannel ? NetmeetingT124DynamicChannel: NetmeetingT124DynamicUserID)
+	]
+	switch 
+	{
+//		case MCSChannel == 0:
+		case MCSChannel == 1:
+		case MCSChannel == 2:
+		case MCSChannel == 3:
+		case MCSChannel == 4:
+		case NetmeetingT124DynamicUserID == "0.0.20.124.0.1":
+			[NetmeetingGCC = True, Post.NetmeetingFrameSummary = GCCPDUSummary + " " + GCCPDUSummaryDetail]
+			T124GCCPDU GCC;
+		case MCSChannel == 8:
+		case NetmeetingT124DynamicUserID == "0.0.20.126.0.1":
+			[T126FrameSummary = ""]
+			[NetmeetingWhiteboard = True, Post.NetmeetingFrameSummary = T126FrameSummary]
+			T126SIPDU WhiteBoard;
+		case MCSChannel == 9:
+		case MCSChannel == 10:
+		case NetmeetingT124DynamicChannel == "0.0.20.127.0.1":
+		case NetmeetingT124DynamicUserID == "0.0.20.127.0.1":
+			[NetmeetingFileTransfer = True, Post.NetmeetingFrameSummary = T127FrameSummary]
+			T127MBFTPDU FileTransfer;
+		case MCSChannel == 11:
+		case T124NonStdIdentifier.Contains("0xB500534C02"):
+			[NetmeetingAppShare = True, DataFieldByteOrder = LittleEndian]
+			switch 
+			{
+				case UINT16(FrameData, FrameOffset) == 0x8000:
+					[NetmeetingFrameSummary = AppShareFlowPDU.ToString]
+					FlowPDU AppShareFlowPDU;
+				case (UINT8 ( FrameData, FrameOffset + 2 ) == 0x01 || UINT8 ( FrameData, FrameOffset + 2 ) == 0x02) &&
+						((UINT16( FrameData, FrameOffset + 5 ) == 0x0A || UINT16( FrameData, FrameOffset + 5 ) == 0x0B) ||
+						 (UINT16( FrameData, FrameOffset + 5 ) >= 0x15 && UINT16( FrameData, FrameOffset + 5 ) <= 0x19) ||
+						 (UINT16( FrameData, FrameOffset + 5 ) == 0x1E || UINT16( FrameData, FrameOffset + 5 ) == 0x1F) ||
+						 (UINT16( FrameData, FrameOffset + 5 ) == 0x20 || UINT16( FrameData, FrameOffset + 5 ) == 0x21) ||
+						 (UINT16( FrameData, FrameOffset + 5 ) >= 0x28 && UINT16( FrameData, FrameOffset + 5 ) <= 0x30) ||
+						 (UINT16( FrameData, FrameOffset + 5 ) >= 0x32 && UINT16( FrameData, FrameOffset + 5 ) <= 0x37) ||
+						  UINT16( FrameData, FrameOffset + 5 ) == 0x46):
+					[NetmeetingFrameSummary = "- " + ObjectManagerPacket.ToString]
+					ObjMgrPkt ObjectManagerPacket;
+				default:
+					[NetmeetingFrameSummary = AppShareS20Packet.ToString]
+					S20Packet AppShareS20Packet;
+			}
+		case T124NonStdIdentifier.Contains("0xB500534C01"):
+			[NetmeetingChat = True, Post.NetmeetingFrameSummary = Chat.ToString]
+			ChatPDU Chat;	
+				
+		default:
+			switch
+			{
+				case UINT8(FrameData, FrameOffset) == T125DataLength:
+				case UINT16(FrameData, FrameOffset) == T125DataLength:
+					[NetmeetingFrameSummary = "- " + ObjectManagerPacket2.ToString]
+					[NetmeetingAppShare = True, DataFieldByteOrder = LittleEndian]
+					ObjMgrPkt ObjectManagerPacket2;
+					
+				case UINT16(FrameData, FrameOffset) == 0x0080:
+					[NetmeetingFrameSummary = AppShareFlowPDU.ToString]
+					[NetmeetingAppShare = True, DataFieldByteOrder = LittleEndian]
+					FlowPDU AppShareFlowPDU;	
+					
+				default:
+					[NetmeetingGCC = True, Post.NetmeetingFrameSummary = GCCPDUSummary + " " + GCCPDUSummaryDetail]
+					T124GCCPDU DefaultGCC;
+			}
+	}
+}
+
+//Application Sharing Structs
+Table OSVersionTable (value)
+{
+	switch (value)
+	{
+		case 1 : "CAPS_WINDOWS_31 - Windows 3.1";
+		case 2 : "CAPS_WINDOWS_95 - Windows 95, Windows 98, or Windows Me";
+		case 3 : "CAPS_WINDOWS_NT - Windows 2000 or Windows XP";
+	}	
+}
+
+//# begin appshare table
+Table AppShareFlowControlPDUTypeTable(code)
+{
+	switch (code)
+	{
+		case 66: "flowResponsePDU";
+		case 67: "flowStopPDU";
+		case 65: "flowTestPDU";
+	}
+}
+
+Table AppShareUpdateOrderType(value)
+{
+	switch(value)
+	{
+		case 0x00: "OE2_DSTBLT_ORDER";
+		case 0x01: "OE2_PATBLT_ORDER";
+		case 0x02: "OE2_SCRBLT_ORDER";
+		case 0x05: "OE2_TEXTOUT_ORDER";
+		case 0x06: "OE2_EXTTEXTOUT_ORDER";
+		case 0x08: "OE2_RECTANGLE_ORDER";
+		case 0x09: "OE2_LINETO_ORDER";
+		case 0x0A: "OE2_OPAQUERECT_ORDER";
+		case 0x0B: "OE2_SAVEBITMAP_ORDER";
+		case 0x0C: "OE2_DESKSCROLL_ORDER";
+		case 0x0D: "OE2_MEMBLT_R2_ORDER";
+		case 0x0E: "OE2_MEM3BLT_R2_ORDER";
+		case 0x0F: "OE2_POLYGON_ORDER";
+		case 0x10: "OE2_PIE_ORDER";
+		case 0x11: "OE2_ELLIPSE_ORDER";
+		case 0x12: "OE2_ARC_ORDER";
+		case 0x13: "OE2_CHORD_ORDER";
+		case 0x14: "OE2_POLYBEZIER_ORDER";
+		case 0x15: "OE2_ROUNDRECT_ORDER";
+	}
+}
+Table Listengingflags(value)
+{
+	switch(value)
+	{
+		case 0x01: "Left edge has changed.";
+		case 0x02: "Top has changed.";
+
+	}
+}
+Table ListengingBackMode(value)
+{
+	switch(value)
+	{
+		case 1: "Region should be filled with the background color before drawing is done.";
+		case 2: "Region should not be filled with the background color before drawing is done.";
+	}
+}
+Table ListengingBrushStyle(value)
+{
+	switch(value)
+	{
+		case 0: "BS_SOLID;Brush uses a solid style.";
+		case 1: "BS_NULL;Brush is not drawn.";
+		case 2: "BS_HATCHED;Brush uses a hatched style.";
+		case 3: "BS_PATTERN;Pattern brush defined by a bitmap.";
+	}
+}
+Table ListengingBrushHatch(value)
+{
+	switch(value)
+	{
+		case 0: "HS_HORIZONTAL;Lines should be horizontal.";
+		case 1: "HS_VERTICAL;Lines should be vertical.";
+		case 2: "HS_FDIAGONAL;A 45-degree downward, left-to-right line.";
+		case 3: "HS_BDIAGONAL;A 45-degree upward, right-to-left line.";
+		case 4: "HS_CROSS;Both HS_HORIZONTAL and HS_VERTICAL lines.";
+		case 5: "HS_DIAGCROSS;Both HS_FDIAGONAL and HS_BDIAGONAL lines.";
+	}
+}
+Table ListengingROP2(value)
+{
+	switch(value)
+	{
+		case 0: "R2_BLACK;The pixel is always drawn as black.";
+		case 1: "R2_NOTMERGEPEN;The pixel is the inverse of the R2_MERGEPEN color.";
+		case 2: "R2_MASKNOTPEN;The pixel is a combination of the colors common to both the screen and the inverse of the pen.";
+		case 3: "R2_NOTCOPYPEN;The pixel is the inverse of the pen color.";
+		case 4: "R2_MASKPENNOT;The pixel is a combination of the colors common to both the pen and the inverse of the screen.";
+		case 5: "R2_NOT;The pixel is the inverse of the screen color.";
+		case 6: "R2_XORPEN;The pixel is a combination of the colors in the pen and in the screen, but not in both.";
+		case 7: "R2_NOTMASKPEN;The pixel is the inverse of the R2_MASKPEN color.";
+		case 8: "R2_MASKPEN;The pixel is a combination of the colors common to both the pen and the screen.";
+		case 9: "R2_NOTXORPEN;The pixel is the inverse of the R2_XORPEN color.";
+		case 10: "R2_NOP;The pixel should remain unchanged.";
+		case 11: "R2_MERGENOTPEN;The pixel is a combination of the screen color and the inverse of the pen color.";
+		case 12: "R2_COPYPEN;The pixel always has the color of the pen.";
+		case 13: "R2_MERGEPENNOT;The pixel is a combination of the pen color and the inverse of the screen color.";
+		case 14: "R2_MERGEPEN;The pixel is a combination of the pen color and the screen color.";
+		case 15: "R2_WHITE;The pixel is always drawn as white.";
+	}
+}
+Table ListengingPenStyle(value)
+{
+	switch(value)
+	{
+		case 0: "PS_SOLID;The pen is solid.";
+		case 1: "PS_DASH;The pen is dashed.";
+		case 2: "PS_DOT;The pen is dotted.";
+		case 3: "PS_DASHDOT;The pen has alternating dashes and dots.";
+		case 4: "PS_DASHDOTDOT;The pen has alternating dashes and double dots.";
+		case 5: "PS_NULL;The pen is invisible.";
+		case 6: "PS_INSIDEFRAME;The pen is solid.This applies only to geometric pens.";
+	}
+}
+Table ListengingArcDirection(value)
+{
+	switch(value)
+	{
+		case 0: "ORD_ARC_COUNTERCLOCKWISE;The arc should be drawn counter-clockwise.";
+		case 1: "ORD_ARC_CLOCKWISE;The arc should be drawn clockwise.";
+	}
+}
+Table ListengingFillMode(value)
+{
+	switch(value)
+	{
+		case 1: "ALTERNATE;Alternate fills the area between odd-numbered and even-numbered polygon sides on each scan line.";
+		case 2: "WINDING;Fills any region with a nonzero winding value.";
+	}
+}
+Table ListeningOperation(value)
+{
+	switch(value)
+	{
+		case 0: "The receiver should save the referenced region of the screen.";
+		case 1: "The receiver should restore the referenced region of the screen from the saved copy.";
+	}
+}
+//# end appshare table
+
+Table NetmeetingVersionTable (value)
+{
+	switch (value)
+	{
+		case 0x0200 : "CAPS_VERSION_20 - Supports only NetMeeting 2.x";	
+		case 0x0300 : "CAPS_VERSION_30 - Supports versions 2.x and 3 of NetMeeting";
+	}	
+}
+
+Table NetMeetingGenCompressionLevelTable (value)
+{
+		switch (value)
+	{
+		case 0x0001 : "CAPS_GEN_COMPRESSION_LEVEL_0";	
+		case 0x0002 : "CAPS_GEN_COMPRESSION_LEVEL_1";
+	}
+}
+
+Table streamTable (value)
+{
+	switch (value)
+	{
+		case 1 : "PROT_STR_UPDATES - Low priority";
+		case 2 : "PROT_STR_MISC - Normal priority";
+		case 3 : "PROT_STR_UNUSED - Obsolete and should not be used";
+		case 4 : "PROT_STR_INPUT - Normal priority";
+	}
+}
+
+Table datatypeTable (value)
+{
+	switch (value)
+	{
+		case 0x17 : "DT_AWC - An ActiveWindowPDU packet";
+		case 0x14 : "DT_CA - A Control Order for NetMeeting 2 packet";
+		case 0x15 : "DT_CA30 - A Control Order for NetMeeting 3 packet";
+		case 0x1B : "DT_CM - A Cursor Management Order packet";
+		case 0x20 : "DT_CPC - A Screen Capabilities Update packet";
+		case 0x0B : "DT_FH - A Font List packet";
+		case 0x16 : "DT_HET30 - For a Host Tracking packet";
+		case 0x19 : "DT_HET - For a NetMeeting 2 compatible Host Tracking packet";
+		case 0x1C : "DT_IM - An Input PDU packet";
+		case 0x1F : "DT_SNI - A Synchronization Order packet";
+		case 0x18 : "DT_SWL - A Shared Window List packet";
+		case 0x02 : "DT_UP - An Update Order packet";
+	}
+}
+
+Table compressionTypeTable (value)
+{
+	switch (value)
+	{
+		case 0 : "CT_NONE - Uncompressed";
+		case 1 : "CT_PKZIP - PKZIP compression";
+		case 2 : "CT_PERSIST_PKZIP - PKZIP compression, with a persistent dictionary for each type of S20_DATA message, is supported";
+	}
+}
+
+Table AppShareActiveWindowMsgTable (value)
+{
+	switch (value)
+	{
+		case 0x0001 : "AWC_MSG_ACTIVE_CHANGE_LOCAL - Foreground window has changed.";
+		case 0x0002 : "AWC_MSG_ACTIVE_CHANGE_SHARED - Shared window state has changed.";
+		case 0x0003 : "AWC_MSG_ACTIVE_CHANGE_INVISIBLE - Shared window has become invisible.";
+		case 0x8001 : "AWC_MSG_ACTIVATE_WINDOW - Sender is requesting activation of the shared window.";
+		case 0x8003 : "AWC_MSG_RESTORE_WINDOW - Sender is requesting restoration of the shared window.";
+		case 0x8005 : "AWC_MSG_SAS - Sender is sending a CTRL-ALT-DELETE key sequence.";
+	}
+}
+
+Table NetmeetingWindowNameTable(value)
+{
+	switch (value)
+	{
+		case 0x0001 : "ForegroundWindow";
+		case 0x0002 : "SharedWindow";
+		case 0x0003 : "SharedWindow";
+		case 0x8001 : "SharedWindow";
+		case 0x8003 : "SharedWindow";
+	}
+}
+
+Table GiveControlReplyTable (value)
+{
+	switch (value)
+	{
+		case 0 : "CARESULT_CONFIRMED - Request was granted.";
+		case 1 : "CARESULT_DENIED - Request was denied.";
+		case 2 : "CARESULT_DENIED_BUSY - Request was denied because the user was occupied.";
+		case 3 : "CARESULT_DENIED_USER - Request was denied because the user rejected the request.";
+		case 4 : "CARESULT_DENIED_WRONGSTATE - Request was denied because the receiver was not in an acceptable state to accept control.";
+		case 5 : "CARESULT_DENIED_TIMEOUT - Request was denied due to user time-out.";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table CursorIdIDCTable (value)
+{
+	switch (value)
+	{
+		case 0 : "CM_IDC_NULL - Cursor should be hidden.";
+		case 32512 : "CM_IDC_ARROW - Standard arrow cursor should be displayed.";
+	}
+}
+
+Table nfCodePageTable (value)
+{
+	switch (value)
+	{
+		case 0 : "WIN_ANSI - Codepage is Windows ANSI.";
+		case 255 : "OEM_FONT - Codepage is for an OEM font.";
+		case 0xFFFF : "Unknown - Codepage is unknown.";
+	}
+}
+
+Table hostStateTable (value)
+{
+	switch (value)
+	{
+		case 0 : "HET_NOTHOSTING - Sender is no longer sharing applications or the desktop.";
+		case 1 : "HET_APPSSHARED - Sender is sharing one or more applications.";
+		case 0xFFFF : "HET_DESKTOPSHARED - Sender is sharing the entire desktop.";
+	}
+}
+
+Table aEventsTypeTable (value)
+{
+	switch (value)
+	{
+		case 1 : "IM_TYPE_ASCII - Event consists of standard keyboard input.";
+		case 2 : "IM_TYPE_VK1 - Event consists of virtual keyboard keys, such as ALT, CTRL, or SHIFT.";
+		case 3 : "IM_TYPE_VK2 - Event consists of keyboard hotkeys.";
+	}	
+}
+
+Table UnassignedTable (value)
+{
+	switch
+	{
+	case value >= 0xC1 && value <= 0xD7 : "Reserved";
+	case value >= 0xE9 && value <= 0xF5 : "OEM specific";
+	}
+}
+
+Table KeycodeTable (value)
+{
+	switch (value)
+	{
+		case 	0x1	:	"VK_LBUTTON	-	Left mouse button";
+		case 	0x2	:	"VK_RBUTTON	-	Right mouse button";
+		case 	0x3	:	"VK_CANCEL	-	Control-break processing";
+		case 	0x4	: "VK_MBUTTON	-	Middle mouse button";
+		case 	0x5	: "VK_XBUTTON1 - Windows 2000/XP: X1 mouse button";
+		case 	0x6	: "VK_XBUTTON2 - Windows 2000/XP: X2 mouse button";
+		case 	0x7	: "Undefined";
+		case 	0x8	: "VK_BACK - BACKSPACE key";
+		case 	0x9	: "VK_TAB - TAB key";
+		case 	0x0A : "Reserved";
+		case 	0x0C : "VK_CLEAR - CLEAR key";
+		case 	0x0D : "VK_RETURN - ENTER key";
+		case 	0x0E : "Undefined";
+		case  	0x0F : "Undefined";
+		case 	0x10 : "VK_SHIFT - SHIFT key";
+		case 	0x11 : "VK_CONTROL - CTRL key";
+		case 	0x12 : "VK_MENU - ALT key";
+		case 	0x13 : "VK_PAUSE - PAUSE key";
+		case 	0x14 : "VK_CAPITAL - CAPS LOCK key";
+		case 	0x15 : "VK_KANA - Input Method Editor";
+		//case 	0x15 : "VK_HANGUEL - IME Hanguel mode";
+		//case 	0x15 : "VK_HANGUL - IME Hangul mode";
+		case 	0x16 : "Undefined";
+		case 	0x17 : "VK_JUNJA - IME Junja mode";
+		case 	0x18 : "VK_FINAL - IME final mode";
+		case 	0x19 : "VK_HANJA - IME Hanja mode";
+		//case 	0x19 : "VK_KANJI - IME Kanji mode";
+		case 	0x1A : " - Undefined";
+		case 	0x1B : "VK_ESCAPE - ESC key";
+		case 	0x1C : "VK_CONVERT - IME convert";
+		case 	0x1D : "VK_NONCONVERT - IME nonconvert";
+		case 	0x1E : "VK_ACCEPT - IME accept";
+		case 	0x1F : "VK_MODECHANGE - IME mode change request";
+		case 	0x20 : "VK_SPACE - SPACEBAR";
+		case 	0x21 : "VK_PRIOR - PAGE UP key";
+		case 	0x22 : "VK_NEXT - PAGE DOWN key";
+		case 	0x23 : "VK_END - END key";
+		case 	0x24 : "VK_HOME - HOME key";
+		case 	0x25 : "VK_LEFT - LEFT ARROW key";
+		case 	0x26 : "VK_UP - UP ARROW key";
+		case 	0x27 : "VK_RIGHT - RIGHT ARROW key";
+		case 	0x28 : "VK_DOWN - DOWN ARROW key";
+		case 	0x29 : "VK_SELECT - SELECT key";
+		case 	0x2A : "VK_PRINT - PRINT key";
+		case 	0x2B : "VK_EXECUTE - EXECUTE key";
+		case 	0x2C : "VK_SNAPSHOT - PRINT SCREEN key";
+		case 	0x2D : "VK_INSERT - INS key";
+		case 	0x2E : "VK_DELETE - DEL key";
+		case 	0x2F : "VK_HELP - HELP key";
+		case 	0x30 : "0 key";
+		case 	0x31 : "1 key";
+		case 	0x32 : "2 key";
+		case 	0x33 : "3 key";
+		case 	0x34 : "4 key";
+		case 	0x35 : "5 key";
+		case 	0x36 : "6 key";
+		case 	0x37 : "7 key";
+		case 	0x38 : "8 key";
+		case 	0x39 : "9 key";
+		case 	0x3A : "Undefined";
+		case  	0x40 : "Undefined";
+		case 	0x41 : "A key";
+		case 	0x42 : "B key";
+		case 	0x43 : "C key";
+		case 	0x44 : "D key";
+		case 	0x45 : "E key";
+		case 	0x46 : "F key";
+		case 	0x47 : "G key";
+		case 	0x48 : "H key";
+		case 	0x49 : "I key";
+		case 	0x4A : "J key";
+		case 	0x4B : "K key";
+		case 	0x4C : "L key";
+		case 	0x4D : "M key";
+		case 	0x4E : "N key";
+		case 	0x4F : "O key";
+		case 	0x50 : "P key";
+		case 	0x51 : "Q key";
+		case 	0x52 : "R key";
+		case 	0x53 : "S key";
+		case 	0x54 : "T key";
+		case 	0x55 : "U key";
+		case 	0x56 : "V key";
+		case 	0x57 : "W key";
+		case 	0x58 : "X key";
+		case 	0x59 : "Y key";
+		case 	0x5A : "Z key";
+		case 	0x5B : "VK_LWIN - Left Windows key";
+		case 	0x5C : "VK_RWIN - Right Windows key";
+		case 	0x5D : "VK_APPS - Applications key";
+		case 	0x5E : "Reserved";
+		case 	0x5F : "VK_SLEEP - Computer Sleep key";
+		case 	0x60 : "VK_NUMPAD0 - Numeric keypad 0 key";
+		case 	0x61 : "VK_NUMPAD1 - Numeric keypad 1 key";
+		case 	0x62 : "VK_NUMPAD2 - Numeric keypad 2 key";
+		case 	0x63 : "VK_NUMPAD3 - Numeric keypad 3 key";
+		case 	0x64 : "VK_NUMPAD4 - Numeric keypad 4 key";
+		case 	0x65 : "VK_NUMPAD5 - Numeric keypad 5 key";
+		case 	0x66 : "VK_NUMPAD6 - Numeric keypad 6 key";
+		case 	0x67 : "VK_NUMPAD7 - Numeric keypad 7 key";
+		case 	0x68 : "VK_NUMPAD8 - Numeric keypad 8 key";
+		case 	0x69 : "VK_NUMPAD9 - Numeric keypad 9 key";
+		case 	0x6A : "VK_MULTIPLY - Multiply key";
+		case 	0x6B : "VK_ADD - Add key";
+		case 	0x6C : "VK_SEPARATOR - Separator key";
+		case 	0x6D : "VK_SUBTRACT - Subtract key";
+		case 	0x6E : "VK_DECIMAL - Decimal key";
+		case 	0x6F : "VK_DIVIDE - Divide key";
+		case 	0x70 : "VK_F1 - F1 key";
+		case 	0x71 : "VK_F2 - F2 key";
+		case 	0x72 : "VK_F3 - F3 key";
+		case 	0x73 : "VK_F4 - F4 key";
+		case 	0x74 : "VK_F5 - F5 key";
+		case 	0x75 : "VK_F6 - F6 key";
+		case 	0x76 : "VK_F7 - F7 key";
+		case 	0x77 : "VK_F8 - F8 key";
+		case 	0x78 : "VK_F9 - F9 key";
+		case 	0x79 : "VK_F10 - F10 key";
+		case 	0x7A : "VK_F11 - F11 key";
+		case 	0x7B : "VK_F12 - F12 key";
+		case 	0x7C : "VK_F13 - F13 key";
+		case 	0x7D : "VK_F14 - F14 key";
+		case 	0x7E : "VK_F15 - F15 key";
+		case 	0x7F : "VK_F16 - F16 key";
+		case 	0x80 : "VK_F17 - F17 key";
+		case 	0x81 : "VK_F18 - F18 key";
+		case 	0x82 : "VK_F19 - F19 key";
+		case 	0x83 : "VK_F20 - F20 key";
+		case 	0x84 : "VK_F21 - F21 key";
+		case 	0x85 : "VK_F22 - F22 key";
+		case 	0x86 : "VK_F23 - F23 key";
+		case 	0x87 : "VK_F24 - F24 key";
+		case 	0x88 : "Unassigned";
+		case  	0x89 : "Unassigned";
+		case  	0x8A : "Unassigned";
+		case  	0x8B : "Unassigned";
+		case  	0x8C : "Unassigned";
+		case  	0x8D : "Unassigned";
+		case  	0x8E : "Unassigned";
+		case  	0x8F : "Unassigned";
+		case 	0x90 : "VK_NUMLOCK - NUM LOCK key";
+		case 	0x91 : "VK_SCROLL - SCROLL LOCK key";
+		case 	0x92 : "OEM specific";
+		case  	0x93 : "OEM specific";
+		case  	0x94 : "OEM specific";
+		case  	0x95 : "OEM specific";
+		case  	0x96 : "OEM specific";
+		case 	0x97 : "Unassigned";
+		case  	0x98 : "Unassigned";
+		case  	0x99 : "Unassigned";
+		case  	0x9A : "Unassigned";
+		case  	0x9B : "Unassigned";
+		case  	0x9C : "Unassigned";
+		case  	0x9D : "Unassigned";
+		case  	0x9E : "Unassigned";
+		case  	0x9F : "Unassigned";
+		case 	0xA0 : "VK_LSHIFT - Left SHIFT key";
+		case 	0xA1 : "VK_RSHIFT - Right SHIFT key";
+		case 	0xA2 : "VK_LCONTROL - Left CONTROL key";
+		case 	0xA3 : "VK_RCONTROL - Right CONTROL key";
+		case 	0xA4 : "VK_LMENU - Left MENU key";
+		case 	0xA5 : "VK_RMENU - Right MENU key";
+		case 	0xA6 : "VK_BROWSER_BACK - Windows 2000/XP: Browser Back key";
+		case 	0xA7 : "VK_BROWSER_FORWARD - Windows 2000/XP: Browser Forward key";
+		case 	0xA8 : "VK_BROWSER_REFRESH - Windows 2000/XP: Browser Refresh key";
+		case 	0xA9 : "VK_BROWSER_STOP - Windows 2000/XP: Browser Stop key";
+		case 	0xAA : "VK_BROWSER_SEARCH - Windows 2000/XP: Browser Search key";
+		case 	0xAB : "VK_BROWSER_FAVORITES - Windows 2000/XP: Browser Favorites key";
+		case 	0xAC : "VK_BROWSER_HOME - Windows 2000/XP: Browser Start and Home key";
+		case 	0xAD : "VK_VOLUME_MUTE - Windows 2000/XP: Volume Mute key";
+		case 	0xAE : "VK_VOLUME_DOWN - Windows 2000/XP: Volume Down key";
+		case 	0xAF : "VK_VOLUME_UP - Windows 2000/XP: Volume Up key";
+		case 	0xB0 : "VK_MEDIA_NEXT_TRACK - Windows 2000/XP: Next Track key";
+		case 	0xB1 : "VK_MEDIA_PREV_TRACK - Windows 2000/XP: Previous Track key";
+		case 	0xB2 : "VK_MEDIA_STOP - Windows 2000/XP: Stop Media key";
+		case 	0xB3 : "VK_MEDIA_PLAY_PAUSE - Windows 2000/XP: Play/Pause Media key";
+		case 	0xB4 : "VK_LAUNCH_MAIL - Windows 2000/XP: Start Mail key";
+		case 	0xB5 : "VK_LAUNCH_MEDIA_SELECT - Windows 2000/XP: Select Media key";
+		case 	0xB6 : "VK_LAUNCH_APP1 - Windows 2000/XP: Start Application 1 key";
+		case 	0xB7 : "VK_LAUNCH_APP2 - Windows 2000/XP: Start Application 2 key";
+		case 	0xB8 : "Reserved";
+		case  	0xB9 : "Reserved";
+		case 	0xBA : "VK_OEM_1 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the ';:' key";
+		case 	0xBB : "VK_OEM_PLUS - Windows 2000/XP: For any country/region, the '+' key";
+		case 	0xBC : "VK_OEM_COMMA - Windows 2000/XP: For any country/region, the ',' key";
+		case 	0xBD : "VK_OEM_MINUS - Windows 2000/XP: For any country/region, the '-' key";
+		case 	0xBE : "VK_OEM_PERIOD - Windows 2000/XP: For any country/region, the '.' key";
+		case 	0xBF : "VK_OEM_2 - Used for miscellaneous characters; it can vary by keyboard.";
+		case 	0xC0 : "VK_OEM_3 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the '`~' key ";
+		case 	0xD8 : "Unassigned";
+		case  	0xD9 : "Unassigned";
+		case  	0xDA : "Unassigned";
+		case 	0xDB : "VK_OEM_4 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the '[{' key";
+		case 	0xDC : "VK_OEM_5 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the '\\|' key";
+		case 	0xDD : "VK_OEM_6 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the ']}' key";
+		case 	0xDE : "VK_OEM_7 - Used for miscellaneous characters; it can vary by keyboard. Windows 2000/XP: For the US standard keyboard, the 'single-quote/double-quote' key";
+		case 	0xDF : "VK_OEM_8 - Used for miscellaneous characters; it can vary by keyboard.";
+		case 	0xE0 : "Reserved";
+		case 	0xE1 : "OEM specific";
+		case 	0xE2 : "VK_OEM_102 - Windows 2000/XP: Either the angle bracket key or the backslash key on the RT 102-key keyboard";
+		case 	0xE3 : "OEM specific";
+		case  	0xE4 : "OEM specific";
+		case 	0xE5 : "VK_PROCESSKEY - Windows 95/98/Me, Windows NT 4.0, Windows 2000/XP: IME PROCESS key";
+		case 	0xE6 : "OEM specific";
+		case 	0xE7 : "VK_PACKET - Windows 2000/XP: Used to pass Unicode characters as if they were keystrokes. The VK_PACKET key is the low word of a 32-bit Virtual Key value used for non-keyboard input methods. For more information, see Remark in KEYBDINPUT, SendInput, WM_KEYDOWN, and WM_KEYUP";
+		case 	0xE8 : "Unassigned";
+		case 	0xF6 : "VK_ATTN - Attn key";
+		case 	0xF7 : "VK_CRSEL - CrSel key";
+		case 	0xF8 : "VK_EXSEL - ExSel key";
+		case 	0xF9 : "VK_EREOF - Erase EOF key";
+		case 	0xFA : "VK_PLAY - Play key";
+		case 	0xFB : "VK_ZOOM - Zoom key";
+		case 	0xFC : "VK_NONAME - Reserved";
+		case 	0xFD : "VK_PA1 - PA1 key";
+		case 	0xFE : "VK_OEM_CLEAR - Clear key";
+		default : UnassignedTable (value);
+	}
+}
+
+Table NetmeetingTextPduHeaderNonStandardPduTypeTable(code)
+{
+	switch (code)
+	{
+		case 30: "Text should be added";
+		case 31: "Text should be deleted";
+		case 32: "Text should be changed";
+	}
+}
+
+//# Begin App Share
+[SupportedOrdersCount = 0]
+struct capsOrders = FormatString("Support %u/18", SupportedOrdersCount)
+{
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 DstBltSupport = this ? "Support DstBlt" : "Not Support DstBlt";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 PatBltSupport = this ? "Support PatBlt" : "Not Support PatBlt";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 ScreenBltSupport = this ? "Support ScreenBlt" : "Not Support ScreenBlt";
+	
+	UINT8 Obsolete1;
+	UINT8 Obsolete2;
+	
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 TextOrderSupport = this ? "Support TextOrder" : "Not Support TextOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 ExtTextOrderSupport = this ? "Support ExtTextOrder" : "Not Support ExtTextOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 RectangleSupport = this ? "Support RectangleOrder": "Not Support RectangleOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 LineOrderSupport = this ? "Support LineOrder": "Not Support LineOrder";
+	
+	UINT8 Unused = "Unused";
+	
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 Support = this ? "Support OpaqueRect" : "Not Support OpaqueRect";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 SaveBitmapSupport = this ? "Support SaveBitmap" : "Not Support SaveBitmap";
+	
+	UINT8 Reserved = "Reserved";
+	
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 MemBltSupport = this ? "Support MemBlt" : "Not Support MemBlt";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 Mem3BltSupport = this ? "Support Mem3Blt" : "Not Support Mem3Blt";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 PolygonOrderSupport = this ? "Support PolygonOrder" : "Not Support PolygonOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 PieOrderSupport = this ? "Support PieOrder" : "Not Support PieOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 EllipseOrderSupport = this ? "Support EllipseOrder" : "Not Support EllipseOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 ArcOrderSupport = this ? "Support ArcOrder" : "Not Support ArcOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 ChordOrderSupport = this ? "Support ChordOrder" : "Not Support ChordOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 PolyBezierOrderSupport = this ? "Support PolyBezierOrder" : "Not Support PolyBezierOrder";
+	[SupportedOrdersCount = this ? SupportedOrdersCount + 1 : SupportedOrdersCount]
+	UINT8 RoundRectOrderSupport = this ? "Support RoundRectOrder" : "Not Support RoundRectOrder";
+	BLOB(10) UndefinedcapsOrders;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct PROTCAPSGENERAL = NetmeetingVersionTable (version)
+{
+	UINT16 capID = MustBeSetToTable(this,"1");
+	UINT16 capSize = MustBeSetToTable(this,"24");
+	UINT16 OS = this == 1? "Windows Operation System": FormatString("%u", this);
+	switch(OS)
+	{
+		case 1:	UINT16 OSVersion = OSVersionTable(this);
+		default: _struct {UINT16 OSVersion;};
+	}
+	UINT16 version = NetmeetingVersionTable (this);
+	UINT16 supportsDOS6Compression = MustBeSetToTable(this,"2");
+	UINT16 genCompressionType = compressionTypeTable(this);
+	UINT16 typeFlags
+	{
+		UINT16 AsService:1 = FormatString("   (%s) %s", this.ToBitString, this ? "AS_SERVICE" : "Not AS_SERVICE");
+		UINT16 AsUnattended:1 = FormatString("(%s) %s", this.ToBitString, this ? "AS_UNATTENDED" : "Not AS_UNATTENDED");
+		UINT16 Unused:14 = FormatString("      (%s)", this.ToBitString);
+	};
+	UINT16 supportsCapsUpdate = this ? "Support receiving capability changes" : "Not support receiving capability changes";
+	UINT16 supportsRemoteUnshare = MustBeSetToTable(this,"2");
+	UINT16 genCompressionLevel = NetMeetingGenCompressionLevelTable(this);
+	UINT16 pad1;
+}
+
+struct PROTCAPSSCREEN = FormatString("%uX%u@%u", capsScreenWidth, capsScreenHeight, capsBPP)
+{
+	UINT16 capID = MustBeSetToTable(this,"2");
+	UINT16 capSize = MustBeSetToTable(this,"28");
+	UINT16 capsBPP;
+	UINT16 capsSupports1BPP = this ? "Support 1 BPP" : "Not Supports 1 BPP";
+	UINT16 capsSupports4BPP = this ? "Support 4 BPP" : "Not Supports 4 BPP";
+	UINT16 capsSupports8BPP = this ? "Support 8 BPP" : "Not Supports 8 BPP";
+	UINT16 capsScreenWidth;
+	UINT16 capsScreenHeight;
+	UINT16 capsSupportsV1Compression = this ? "Support NetMeeting 2.x compression of bitmaps" : "Not support NetMeeting 2.x compression of bitmaps";
+	UINT16 capsSupportsDesktopResize = this ? "Support desktop resizing" : "Not support desktop resizing";
+	UINT16 capsSupportsV2Compression = this ? "Support NetMeeting 3 compression of bitmaps" : "Not support NetMeeting 3 compression of bitmaps";
+	UINT16 pad1;
+	UINT16 capsSupports24BPP = this ? "Support 24 BPP" : "Not Support 24 BPP";
+	UINT16 pad2;
+}
+
+struct PROTCAPSORDERS = FormatString("Supported Orders %u/18", SupportedOrdersCount)
+{
+	UINT16 capID = MustBeSetToTable(this,"3");
+	UINT16 capSize = MustBeSetToTable(this,"84");
+	BLOB(16) capsDisplayDriver = "Obsolete";
+	UINT32 capsSaveBitmapSize = MustBeSetToTable(this,"160000");
+	UINT16 capsSaveBitmapXGranularity = MustBeSetToTable(this,"1");
+	UINT16 capsSaveBitmapYGranularity = MustBeSetToTable(this,"20");
+	UINT16 capsSaveBitmapMaxSaveLevel = MustBeSetToTable(this,"0");
+	UINT16 capsMaxOrderLevel = MustBeSetToTable(this,"1");
+	UINT16 capsNumFonts;
+	UINT16 capsEncodingLevel
+	{
+		UINT16 BaseOE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Supports OE encoding" : "Not Supports OE encoding");
+		UINT16 OE2Negotiable:1 = FormatString("(%s) %s", this.ToBitString, this ? "Will negotiate support for OE2 encoding" : "Will NOT negotiate support for OE2 encoding");
+		UINT16 Unused:14 = FormatString("      (%s)", this.ToBitString);
+	};
+	capsOrders capsOrders;
+	UINT16 capsfFonts = MustBeSetToTable(this,"0x03B5");
+	UINT16 pad1;
+	UINT32 capsSendSaveBitmapSize = MustBeSetToTable(this,"160000");
+	UINT32 capsReceiveSaveBitmapSize = MustBeSetToTable(this,"160000");
+	UINT16 capsfSendScroll = "Obsolete";
+	UINT16 pad2;
+}
+
+struct PROTCAPSBITMAPCACHE = FormatString("Small: %uX%u, Medium: %uX%u, Large: %uX%u", 
+																					capsSmallCacheNumEntries1, capsSmallCacheCellSize1, 
+																					capsMediumCacheNumEntries1, capsMediumCacheCellSize1, 
+																					capsLargeCacheNumEntries1, capsLargeCacheCellSize1)
+{
+	UINT16 capID = MustBeSetToTable(this,"4");
+	UINT16 capSize = MustBeSetToTable(this,"40");
+	BLOB(12) unused;
+	UINT16 capsSmallCacheNumEntries1;
+	UINT16 capsSmallCacheCellSize1;
+	UINT16 capsMediumCacheNumEntries1;
+	UINT16 capsMediumCacheCellSize1;
+	UINT16 capsLargeCacheNumEntries1;
+	UINT16 capsLargeCacheCellSize1;
+	UINT16 obselete1;
+	UINT16 obselete2;
+	UINT16 obselete3;
+	UINT16 obselete4;
+	UINT16 obselete5;
+	UINT16 obselete6;
+}
+
+struct PROTCAPSCM = FormatString("Size = %u", capsCursorCacheSize)
+{
+	UINT16 capID = MustBeSetToTable(this,"8");
+	UINT16 capSize = MustBeSetToTable(this,"8");
+	UINT16 capsSupportsColorCursors = this ? "the member supports color cursors." : "the member does not support color cursors.";
+	UINT16 capsCursorCacheSize;
+}
+
+struct PROTCAPSPM = FormatString("Size = %u", capsColorTableCacheSize)
+{
+	UINT16 capID = MustBeSetToTable(this,"10");
+	UINT16 capSize = MustBeSetToTable(this,"8");
+	UINT16 capsColorTableCacheSize;
+	UINT16 pad1;
+}
+
+struct PROTCAPSSC = FormatString("GCCID = %u", gccID)
+{
+	UINT16 capID = MustBeSetToTable(this,"9");
+	UINT16 capSize = MustBeSetToTable(this,"8");
+	UINT32 gccID;
+}
+
+struct CPCALLCAPS = general.ToString + ", " + orders.ToString
+{
+	UINT16 numCapabilitie = MustBeSetToTable(this,"7");
+	UINT16 pad1 = "Obsolete";
+	PROTCAPSGENERAL general;
+	PROTCAPSSCREEN screen;
+	PROTCAPSORDERS orders;
+	PROTCAPSBITMAPCACHE bitmaps;
+	PROTCAPSCM cursor;
+	PROTCAPSPM palette;
+	PROTCAPSSC share; 
+}
+
+Table CooperatemsgTable (value)
+{
+	switch (value)
+	{
+		case 3 : "the sender is not cooperating in control of the host.";
+		case 4 : "the sender is cooperating in control of the host.";
+		default: "unknown message.";
+	}
+}
+
+struct Cooperate = Cooperatemsg.ToString
+{
+	UINT16 Cooperatemsg = CooperatemsgTable (this);
+	UINT16 Cooperateunused1 = MustBeSetToTable(this,"0");
+	UINT32 Cooperateunused2 = MustBeSetToTable(this,"0");
+}
+
+struct GrantedControl = FormatString ("ControllerID=%d, Seq Number=%d",controllerId,CcontrolGeneration)
+{
+	UINT16 GrantedControlmsg;
+	UINT16 controllerId;	
+	UINT32 CcontrolGeneration;
+}
+
+struct NotifyState = NotifyStatestate.ToString + FormatString ("ControllerID=%d", NotifyStatecontrollerId)
+{
+	UINT16 NotifyStatemsg;
+	UINT16 NotifyStatestate = 1 ? "the sender is controllable." : "the sender is not controllable.";
+	UINT64 NotifyStatecontrollerId;
+}
+
+struct RequestControl
+{
+	UINT16 RequestControlmsg;
+	UINT16 RequestControlunused1;
+	UINT32 RequestControlunused2;
+}
+
+Table ControlPausemsgTable (value)
+{
+	switch (value)
+	{
+		case 0x8003 : "a pause";
+		case 0x8004 : "an unpause";
+		default : "unknown";
+	}
+}
+
+struct ControlPause = FormatString ("%s, viewerControlID=%d,hostControlId=%d",ControlPausemsg.ToString,viewerControlId,hostControlId)
+{
+	UINT32 ControlPausemsg = ControlPausemsgTable (this);
+	UINT32 viewerControlId;
+	UINT32 hostControlId;
+}
+
+struct ControlReleased = FormatString ("viewerControlID=%d,hostControlId=%d",viewerControlId,hostControlId)
+{
+	UINT32 ControlReleasedmsg;
+	UINT32 viewerControlId;
+	UINT32 hostControlId;	
+}
+
+struct ControlRevoked = FormatString ("viewerControlID=%d,hostControlId=%d",viewerControlId,hostControlId)
+{
+	UINT32 ControlRevokedmsg;
+	UINT32 viewerControlId;
+	UINT32 hostControlId;	
+}
+
+struct GiveControl = FormatString ("hostControlID=%d, %s", hostControlId, mcsPassFrom.ToString)
+{
+	UINT32 GiveControlmsg;
+	UINT32 hostControlId;
+	UINT32 mcsPassFrom = 0 ? "the host is passing control" : FormatString ("Identifier of the user passing control=%d",this);
+}
+
+struct GiveControlReply = FormatString ("viewerControlID=%d,hostControlID=%d, %s, %s",viewerControlId, hostControlId, mcsPassFrom.ToString,result.ToString)
+{
+	UINT32 GiveControlReplymsg;
+	UINT32 hostControlId;
+	UINT32 mcsPassFrom = 0 ? "the host is passing control" : FormatString ("Identifier of the user passing control=%d",this);
+	UINT32 result = GiveControlReplyTable (this);
+	UINT32 viewerControlId;
+}
+
+struct PassControl = FormatString ("hostControlId=%d, Identifier of the user to which pass control to = %d",hostControlId,mcsPassTo)
+{
+	UINT32 PassControlmsg;
+	UINT32 viewerControlId; 
+	UINT32 hostControlId;
+	UINT32 mcsPassTo;	
+}
+
+struct TakeControl = FormatString ("viewerControlId=%d", viewerControlId)
+{
+	UINT32 TakeControlmsg;
+	UINT32 viewerControlId;
+}
+
+struct TakeControlReply = FormatString ("viewerControlId=%d, hostControlId=%d, %s",viewerControlId, hostControlId, result.ToString)
+{
+	UINT32 TakeControlReplymsg;
+	UINT32 viewerControlId;
+	UINT32 result = GiveControlReplyTable (this);
+	UINT32 hostControlId;
+}
+
+struct CursorId = CursorIdIDC.ToString
+{
+	UINT16 CursorIdType;
+	UINT16 CursorIdFlags = MustBeSetToTable(this,"0");
+	UINT32 CursorIdIDC = CursorIdIDCTable (this);
+}
+
+struct CursorMove = FormatString ("xPos=%d,yPos=%d",xPos,yPos)
+{
+	UINT16 CursorMoveType;
+	UINT16 CursorMoveFlags
+	{
+		UINT16 DEFAULT:1 = FormatString("          (%s) %s ",this.ToBitString, this? "Receiver should move the cursor unless it is in control of the session": "");
+		UINT16 CM_SYNC_CURSORPOS:1 = FormatString("(%s) %s ",this.ToBitString, this? "Receiver should move the cursor to the specified location even if it is in control of the session": "");
+		UINT16 reserved:14 = FormatString("         (%s)",this.ToBitString);
+	};
+	UINT16 xPos;
+	UINT16 yPos;
+}
+
+struct SendColorCursor = FormatString ("cacheIndex=%d,xHotSpot=%d,yHotSpot=%d,width=%d,height=%d",
+															cacheIndex,xHotSpot,yHotSpot,width,height)
+{
+	UINT16 SendColorCursorType;
+	UINT16 SendColorCursorFlags = MustBeSetToTable(this,"0");
+	UINT16 cacheIndex;
+	UINT16 xHotSpot;
+	UINT16 yHotSpot;
+	UINT16 width;
+	UINT16 height;
+	UINT16 cbANDMask;
+	UINT16 cbXORMask;
+	Switch
+	{
+		Case cbANDMask+cbXORMask > FrameLength - OffSet:
+			Blob(FrameLength - OffSet) aBitsStub;
+		Default:
+			BLOB(cbANDMask+cbXORMask) aBits
+			{			
+				BLOB(cbXORMask) XORbitmapaBits;
+				BLOB(cbANDMask) ANDmaskaBits;				
+			};
+	}	
+}
+
+struct SendColorCursorCacheId = FormatString ("cacheIndex = %d",cacheIndex)
+{
+	UINT16 SendColorCursorCacheIdType;
+	UINT16 SendColorCursorCacheIdFlags = MustBeSetToTable(this,"0");
+	UINT16 cacheIndex;
+}
+
+struct SendMonoCursor = FormatString ("xHotSpot=%d, yHotSpot=%d, width=%d, height=%d",
+																			xHotSpot, yHotSpot, width, height)
+{
+	UINT16 SendMonoCursorType;
+	UINT16 SendMonoCursorFlags = MustBeSetToTable(this,"0");
+	UINT16 xHotSpot;
+	UINT16 yHotSpot;
+	UINT16 width;
+	UINT16 height;
+	UINT16 cbBits;
+	BLOB(cbBits) aBits;
+}
+
+struct aFonts = nfFaceName.ToString
+{
+	AsciiString(32) nfFaceName;
+	UINT16 nfFontFlags
+	{
+		UINT16 FixedPitch:1 = FormatString("(%s) %s", this.ToBitString, this ? "FixedPitch" : "Not FixedPitch");
+		UINT16 FixedSize:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FixedSize" : "Not FixedSize");
+		UINT16 Italic:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Italic" : "Not Italic");
+		UINT16 Underline:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Underline" : "Not Underline");
+		UINT16 Strikeout:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Strikeout" : "Not Strikeout");
+		UINT16 Type:1 = FormatString("      (%s) %s", this.ToBitString, this ? "TrueType" : "Not TrueType");
+		UINT16 Baseline:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Aligned on the text baseline." : "Not aligned on the text baseline.");
+		UINT16 Unused:9 = FormatString("    (%s)", this.ToBitString);
+	};
+	UINT16 nfAveWidth;
+	UINT16 nfAveHeight;
+	UINT16 nfAspectX;
+	UINT16 nfAspectY;
+	UINT16 nfSigFats;
+	UINT16 nfSigThins;
+	UINT16 nfSigSymbol;
+	UINT16 nfCodePage = nfCodePageTable (this);
+	UINT16 nfMaxAscent;
+}
+
+struct KeyboardEvent = KeycodeTable (Keycode) + (Flags.Down ? " Down " : "") + (Flags.Release ? " Release " : "") + (Flags.AltDown ? "With Alt" : "")
+{
+	UINT32 timeMS;
+	UINT16 type = aEventsTypeTable (this);
+	UINT16 Flags = (Down ? "KeyDown " : "") + (Release ? "KeyRelease " : "") + (AltDown ? "With Alt" : "")
+	{
+		UINT16 Right:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Right" : "Not Right");
+		UINT16 Reserved1:7 = FormatString("(%s)", this.ToBitString);
+		UINT16 Extended:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Extended" : "Not Extended");
+		UINT16 Reserved2:3 = FormatString("(%s)", this.ToBitString);
+		UINT16 Quiet:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Quiet" : "Not Quiet");
+		UINT16 AltDown:1 = FormatString("  (%s) %s", this.ToBitString, this ? "AltDown" : "Not AltDown");
+		UINT16 Down:1 = FormatString("     (%s) %s", this.ToBitString, this ? "KeyDown" : "Not KeyDown");
+		UINT16 Release:1 = FormatString("  (%s) %s", this.ToBitString, this ? "KeyRelease" : "Not KeyRelease");
+	};
+	UINT16 Keycode = KeycodeTable (this);
+}
+
+struct MouseEvent = FormatString("(%u, %u)", x, y)
+{
+	UINT32 timeMS;
+	UINT16 type;
+	UINT16 Flags = (Wheel ? "Wheel Rotation" + (Direction ? "Backward " : "Forward ") + FormatString("%u ", Mouserotation) : "") + 
+								(Move ? "Mouse Move " : "") + 
+								(Button1 ? "Button1 " : "") + (Button2 ? "Button2 " : "") + (Button3 ? "Button3 " : "") +  (Down ? (Double ? "DoubleClick" : "Click") : "Release")
+	{
+		UINT16 Mouserotation:8 = FormatString("(%s) %u", this.ToBitString, this);
+		UINT16 Direction:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Backward" : "Forward");
+		UINT16 Wheel:1 = FormatString("        (%s) %s", this.ToBitString, this ? "WheelRotation" : "Not WheelRotation");
+		UINT16 Double:1 = FormatString("       (%s) %s", this.ToBitString, this ? "DoubleClick" : "Not DoubleClick");
+		UINT16 Move:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Move" : "Not Move");
+		UINT16 Button1:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Button1" : "Not Button1");
+		UINT16 Button2:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Button2" : "Not Button2");
+		UINT16 Button3:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Button3" : "Not Button3");
+		UINT16 Down:1 = FormatString("         (%s) %s", this.ToBitString, this ? "ButtonDown" : "Not ButtonDown");
+	};
+	UINT16 x;
+	UINT16 y;
+}
+
+struct rectangles = FormatString("(%u, %u, %u, %u)", DeltaLeft, DeltaTop, DeltaRight, DeltaBottom)
+{
+	UINT16 DeltaLeft;
+	UINT16 DeltaTop;
+	UINT16 DeltaRight;
+	UINT16 DeltaBottom;
+}
+
+struct aNonRectData = FormatString("Count = %u", length)
+{
+	UINT16 length = FormatString("%u rectangles", this);
+	rectangles rectangles[length];
+}
+
+struct SWLWinAttributes = FormatString("WinID = %#X (%u, %u, %u, %u)", winId, LeftEdges, TopEdges, RightEdges, BottomEdges)
+{
+	UINT32 winId;
+	UINT32 extra;
+	UINT32 ownerWinID;
+	UINT32 Flags = (Minimized ? "Minimized " : "") + 
+								(Taggable ? "Taggable " : "") + 
+								(Hosted ? "Hosted " : "") + 
+								(Topmost ? "Topmost " : "") + 
+								(Taskbar ? "ShowInTaskbar " : "") + 
+								(Nonrectangle ? "Nonrectangle " : "") 
+	{
+		UINT32 Minimized:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Minimized" : "Not Minimized");
+		UINT32 Taggable:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Taggable" : "Not Taggable");
+		UINT32 Hosted:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Hosted" : "Not Hosted");
+		UINT32 Reserved1:2 = FormatString("   (%s)", this.ToBitString);
+		UINT32 Topmost:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Topmost" : "Not Topmost");
+		UINT32 Reserved2:10 = FormatString("   (%s)", this.ToBitString);
+		[Post.TaskbarCount = TaskbarCount + this]
+		UINT32 Taskbar :1 = FormatString("    (%s) %s", this.ToBitString, this ? "ShowInTaskbar" : "Not ShowInTaskbar");
+		UINT32 Reserved3:1 = FormatString("   (%s)", this.ToBitString);
+		[Post.NonRectgularCount = NonRectgularCount + this]
+		UINT32 Nonrectangle:1 = FormatString("(%s) %s", this.ToBitString, this ? "Nonrectangle" : "Not Nonrectangle");
+		UINT32 Unused:13 = FormatString("      (%s)", this.ToBitString);
+	};
+	UINT16 LeftEdges;
+	UINT16 TopEdges;
+	UINT16 RightEdges;
+	UINT16 BottomEdges;
+}
+
+struct SWLPacketChunk = FormatString("idChunk = %u, Size = %u", idChunk, size)
+{
+	UINT16 size;
+	UINT16 idChunk = MustBeSetToTable(this,"0x524E");
+	aNonRectData aNonRectData; 
+}
+
+struct ActiveWindowPDU = AppShareActiveWindowMsgTable (msg)
+{
+	UINT16 msg = AppShareActiveWindowMsgTable (this);
+	UINT16 unused;
+	UINT32 data1 = msg == 0x8005 ? "Unused" : FormatString ("Identifier = %u", this);
+	UINT32 data2 = "Unused";
+}
+
+struct ControlOrdersforNetMeeting2
+{
+	switch
+	{
+		case UINT16(FrameData, FrameOffset) == 3 || 4 : Cooperate Cooperate;
+		case UINT16(FrameData, FrameOffset) == 2 : GrantedControl GrantedControl;
+		case UINT16(FrameData, FrameOffset) == 0 : NotifyState NotifyState;
+		case UINT16(FrameData, FrameOffset) == 1 : RequestControl RequestControl;
+	}
+}
+
+struct ControlOrdersforNetMeeting3
+{
+	switch
+	{
+		case UINT32(FrameData, FrameOffset) == 0x8003 || 0x8004 : ControlPause ControlPause;
+		case UINT32(FrameData, FrameOffset) == 0x8001 : ControlReleased ControlReleased;
+		case UINT32(FrameData, FrameOffset) == 0x8002 : ControlRevoked ControlRevoked;
+		case UINT32(FrameData, FrameOffset) == 3 : GiveControl GiveControl;
+		case UINT32(FrameData, FrameOffset) == 4 : GiveControlReply GiveControlReply;
+		case UINT32(FrameData, FrameOffset) == 5 : PassControl PassControl;
+		case UINT32(FrameData, FrameOffset) == 1 : TakeControl TakeControl;
+		case UINT32(FrameData, FrameOffset) == 2 : TakeControlReply TakeControlReply;
+	}
+}
+
+struct CursorManagementOrders
+{
+	switch
+	{
+		case UINT16(FrameData, FrameOffset) == 1 : CursorId CursorId;
+		case UINT16(FrameData, FrameOffset) == 3 : CursorMove CursorMove;
+		case UINT16(FrameData, FrameOffset) == 6 : SendColorCursor SendColorCursor;
+		case UINT16(FrameData, FrameOffset) == 7 : SendColorCursorCacheId SendColorCursorCacheId;
+		case UINT16(FrameData, FrameOffset) == 2 : SendMonoCursor SendMonoCursor;
+	}
+}
+
+struct FontList = FormatString ("Number of Fonts = %d", cFonts)
+{
+	UINT16 cFonts;
+	UINT16 cbFontSize = MustBeSetToTable(this,"50");
+	aFonts aFonts[cFonts];
+}
+
+struct HostTracking = hostState.toString
+{
+	UINT16 HostTrackingmsg;
+	UINT16 hostState = hostStateTable (this);
+}
+
+struct InputPDU = FormatString ("Number of events = %d", numEvents)
+{
+	UINT16 numEvents;
+	UINT16 unused;
+	switch
+	{
+		case UINT32 (FrameData, FrameOffset+4) == 0x8001 : MouseEvent MouseEvent;
+		default : KeyboardEvent KeyboardEvent;
+	}
+}
+
+struct SynchronizationOrder = FormatString ("Destination = %s", destination.ToString)
+{
+	UINT16 message;
+	UINT16 destination;
+}
+
+struct SharedWindowList = FormatString("Number of Windows = %u", numWindows)
+{
+	UINT16 msg;
+	UINT16 Flags = FormatString("0x02X", this)
+	{
+		UINT16 StateSyncing:1 = FormatString("(%s) %s", this.ToBitString, this ? "Receiver should resend its entire window list" : "Receiver don't have to resend its entire window list");
+		UINT16 Unused:15 = FormatString("      (%s)", this.ToBitString);
+	};
+	UINT16 numWindows;
+	UINT16 Tick = FormatString ("%d milliseconds", this);
+	UINT16 Token;
+	UINT16 Reserved;
+	[NonRectgularCount = 0, TaskbarCount = 0]
+	SWLWinAttributes aWindows[numWindows];
+	while [TaskbarCount > 0]
+	{
+		[TaskbarCount = TaskbarCount - 1]
+		switch (UINT16(FrameData, FrameOffset))
+		{
+			case 0xFF00:
+				UINT16 NoTitle;
+			default:
+				AsciiString windowText;
+		}
+	}
+	switch
+	{
+		case NonRectgularCount > 0:
+			SWLPacketChunk nonRectInfo[NonRectgularCount];
+	}
+}
+
+struct AppSharePoint = FormatString("(%u, %u)", X, Y)
+{
+	UINT8 X;
+	UINT8 Y;
+}
+
+
+struct AppShareBounds = BoundsPresent ? 
+												(Bounds.Flags.OE2BCFLEFT ? "BOUND_LEFT " : "") + 
+												(Bounds.Flags.OE2BCFTOP ? "BOUND_TOP " : "") + 
+												(Bounds.Flags.OE2BCFRIGHT ? "BOUND_RIGHT " : "") + 
+												(Bounds.Flags.OE2BCFBOTTOM ? "BOUND_BOTTOM " : "") + 
+												(Bounds.Flags.OE2BCFDELTALEFT ? "BOUND_DELTA_LEFT " : "") + 
+												(Bounds.Flags.OE2BCFDELTATOP ? "BOUND_DELTA_TOP " : "") + 
+												(Bounds.Flags.OE2BCFDELTARIGHT ? "BOUND_DELTA_RIGHT " : "") + 
+												(Bounds.Flags.OE2BCFDELTABOTTOM ? "BOUND_DELTA_BOTTOM " : "")
+												: "Not Present"
+{
+	switch
+	{
+		case BoundsPresent:
+			_struct Bounds
+			{
+				UINT8 Flags = (OE2BCFLEFT ? "BOUND_LEFT " : "") + 
+											(OE2BCFTOP ? "BOUND_TOP " : "") + 
+											(OE2BCFRIGHT ? "BOUND_RIGHT " : "") + 
+											(OE2BCFBOTTOM ? "BOUND_BOTTOM " : "") + 
+											(OE2BCFDELTALEFT ? "BOUND_DELTA_LEFT " : "") + 
+											(OE2BCFDELTATOP ? "BOUND_DELTA_TOP " : "") + 
+											(OE2BCFDELTARIGHT ? "BOUND_DELTA_RIGHT " : "") + 
+											(OE2BCFDELTABOTTOM ? "BOUND_DELTA_BOTTOM " : "")
+				{
+					UINT8 OE2BCFLEFT:1 = FormatString("        (%s) %s",this.ToBitString,this ? "BOUND_LEFT" : "BOUND_LEFT Absence");
+					UINT8 OE2BCFTOP:1 = FormatString("         (%s) %s",this.ToBitString,this ? "BOUND_TOP" : "BOUND_TOP Absence");
+					UINT8 OE2BCFRIGHT:1 = FormatString("       (%s) %s",this.ToBitString,this ? "BOUND_RIGHT" : "BOUND_RIGHT Absence");
+					UINT8 OE2BCFBOTTOM:1 = FormatString("      (%s) %s",this.ToBitString,this ? "BOUND_BOTTOM" : "BOUND_BOTTOM Absence");
+					UINT8 OE2BCFDELTALEFT:1 = FormatString("  (%s) %s",this.ToBitString,this ? "BOUND_DELTA_LEFT" : "BOUND_DELTA_LEFT Absence");
+					UINT8 OE2BCFDELTATOP:1 = FormatString("   (%s) %s",this.ToBitString,this ? "BOUND_DELTA_TOP" : "BOUND_DELTA_TOP Absence");
+					UINT8 OE2BCFDELTARIGHT:1 = FormatString(" (%s) %s",this.ToBitString,this ? "BOUND_DELTA_RIGHT" : "BOUND_DELTA_RIGHT Absence");
+					UINT8 OE2BCFDELTABOTTOM:1 = FormatString("(%s) %s",this.ToBitString,this ? "BOUND_DELTA_BOTTOM" : "BOUND_DELTA_BOTTOM Absence");
+				};
+				switch
+				{
+					case Flags.OE2BCFLEFT:
+						UINT16 LeftBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFTOP:
+						UINT16 TopBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFRIGHT:
+						UINT16 RightBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFBOTTOM:
+						UINT16 BottomBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFDELTALEFT:
+						INT8 LeftDeltaBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFDELTATOP:
+						INT8 TopDeltaBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFDELTARIGHT:
+						INT8 RightDeltaBound;
+				}
+				switch
+				{
+					case Flags.OE2BCFDELTABOTTOM:
+						INT8 BottomDeltaBound;
+				}
+			}
+	}
+}
+
+struct DesktopScroll
+{
+	UINT8 FieldBytes
+	{
+		UINT8 xOriginPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 yOriginPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Unused:6 = FormatString("        (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.xOriginPresent:
+			UINT16 xOrigin;
+	}
+  switch
+	{
+		case FieldBytes.yOriginPresent:
+			UINT16 yOrigin;
+	}
+}
+struct ArcOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 BackModePresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 nLeftRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 nRightRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nBottomRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 nXStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 nYStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 nXEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 nYEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 ROP2Present:1 = FormatString("        (%s)", this.ToBitString); 
+		UINT16 PenStylePresent:1 = FormatString("    (%s)", this.ToBitString); 
+		UINT16 PenWidthPresent:1 = FormatString("    (%s)", this.ToBitString); 
+		UINT16 PenColorPresent:1 = FormatString("    (%s)", this.ToBitString); 
+		UINT16 ArcDirectionPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 Unused:1 = FormatString("             (%s)", this.ToBitString);
+	};
+	AppShareBounds bounds;
+	switch
+	{
+  		case FieldBytes.BackModePresent:
+  			UINT16 BackMode = ListengingBackMode(this);
+	}
+	switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+	switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+	switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+	switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+	switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+	switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+	switch
+	{
+		case FieldBytes.nXEndPresent:
+			UINT16 nXEnd;
+	}
+	switch
+	{
+		case FieldBytes.nYEndPresent:
+			UINT16 nYEnd;
+	}
+	switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+	switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+	switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+	switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+	switch
+	{
+		case FieldBytes.ArcDirectionPresent:
+			UINT8 ArcDirection = ListengingArcDirection(this);
+	}
+}
+
+struct CompressedBitmap = FormatString ("size of the data = %d",cbCompMainBodySize)
+{
+	UINT16 cbCompFirstRowSize;
+	UINT16 cbCompMainBodySize;
+	UINT16 cbScanWidth;
+	UINT16 cbUncompressedSize;
+	BLOB(cbCompMainBodySize > framelength - frameoffset ? framelength - frameoffset : cbCompMainBodySize) data;
+}
+
+struct CacheBitmapOrder(bmcPacketType) =  FormatString("cacheId = %u (%ux%u@%uBPP)", cacheId, cxSubBitmapWidth, cxSubBitmapHeight, Bpp)
+{
+	UINT8 cacheId;
+	UINT8 unused;
+	UINT8 cxSubBitmapWidth;
+	UINT8 cxSubBitmapHeight;
+	UINT8 Bpp;
+	UINT16 cbBitmapBits;
+	UINT16 iCacheEntry;
+	switch(bmcPacketType)
+	{
+		case 0: BLOB(cbBitmapBits > framelength - frameoffset ? framelength - frameoffset : cbBitmapBits) Uncompressedbitmap;
+		case 2: CompressedBitmap CompressedBitmap;
+	}
+}
+
+struct tagRGBQUAD = FormatString("(%u, %u, %u)", rgbBlue, rgbGreen, rgbRed)
+{
+  UINT8 rgbBlue; 
+  UINT8 rgbGreen; 
+  UINT8 rgbRed; 
+  UINT8 rgbReserved; 	
+}
+struct CacheColorTableOrder
+{
+	UINT8 Index;
+	UINT16 colorTableSize;
+	tagRGBQUAD Data[colorTableSize];
+}
+
+struct ChordOrder
+{
+	UINT24 FieldBytes
+	{
+		UINT24 BackModePresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 nLeftRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 nTopRectPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 nRightRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT24 nBottomRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT24 nXStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 nYStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 nXEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT24 nYEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT24 BackColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 ForeColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushOrgXPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushOrgYPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushStylePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT24 ROP2Present:1 = FormatString("        (%s)", this.ToBitString);
+		UINT24 PenStylePresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 PenWidthPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 PenColorPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 ArcDirectionPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Unused:5 = FormatString("             (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.BackModePresent:
+			UINT16 BackMode = ListengingBackMode(this);
+	}
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+  switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+  switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+  switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+  switch
+	{
+		case FieldBytes.nXEndPresent:
+			UINT16 nXEnd;
+	}
+  switch
+	{
+		case FieldBytes.nYEndPresent:
+			UINT16 nYEnd;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+  switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT16 ROP2 = ListengingROP2(this);
+	}
+  switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+  switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+  switch
+	{
+		case FieldBytes.ArcDirectionPresent:
+			UINT8 ArcDirection = ListengingArcDirection(this);
+	}
+}
+
+struct DstBlt
+{
+	UINT8 FieldBytes
+	{
+		UINT8 nLeftRectPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 nTopRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 nWidthPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT8 nHeightPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT8 bRopPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT8 Unused:3 = FormatString("          (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nWidthPresent:
+			UINT16 nWidth;
+	}
+  switch
+	{
+		case FieldBytes.nHeightPresent:
+			UINT16 nHeight;
+	}
+  switch
+	{
+		case FieldBytes.bRopPresent:
+			UINT8 bRop;
+	}
+}
+
+struct EllipseOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 BackModePresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nLeftRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nRightRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 nBottomRectPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgXPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgYPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushStylePresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushHatchPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushExtraPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ROP2Present:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 PenStylePresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 PenWidthPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 PenColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.BackModePresent:
+			UINT16 BackMode = ListengingBackMode(this);
+	}
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+  switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+  switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.BrushHatchPresent:
+			UINT8 BrushHatch;
+	}
+  switch
+	{
+		case FieldBytes.BrushExtraPresent:
+			UINT56 BrushExtra;
+	}
+  switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+  switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+  switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+}
+struct ExtTextOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 BackModePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nXStartPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nYStartPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontHeightPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 FontWidthPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontWeightPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 FontFlagsPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontIndexPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 LeftPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 TopPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 RightPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 BottomPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 Unused:2 = FormatString("           (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.BackModePresent:
+			UINT16 BackMode = ListengingBackMode(this);
+	}
+  switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+  switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+	UINT16 CharExtra;
+	UINT16 BreakExtra;
+	UINT16 BreakCount;
+  switch
+	{
+		case FieldBytes.FontHeightPresent:
+			UINT16 FontHeight;
+	}
+  switch
+	{
+		case FieldBytes.FontWidthPresent:
+			UINT16 FontWidth;
+	}
+  switch
+	{
+		case FieldBytes.FontWeightPresent:
+			UINT16 FontWeight;
+	}
+  switch
+	{
+		case FieldBytes.FontFlagsPresent:
+			UINT16 FontFlags
+			{
+				UINT16 RESERVED:10 = Formatstring(" (%s) NF_RESERVEDS", this.ToBitString);
+				UINT16 TRUETYPE:1 = Formatstring("  (%s) NF_TRUETYPE: %s", this.ToBitString, this ? "The text should be drawn with a TrueType font." 
+				                                                                                 : "The text should not be drawn with a TrueType font.");
+				UINT16 STRIKEOUT:1 = Formatstring(" (%s) NF_STRIKEOUT: %s", this.ToBitString, this ? "The text should struck out." 
+				                                                                                  : "The text should not struck out.");
+				UINT16 UNDERLINE:1 = Formatstring(" (%s) NF_UNDERLINE: %s", this.ToBitString, this ? "The text should be underlined." 
+				                                                                                  : "The text should not be underlined.");
+				UINT16 ITALIC:1 = Formatstring("    (%s) NF_ITALIC: %s", this.ToBitString, this ? "The text should be italic." 
+				                                                                               : "The text should not be italic.");
+				UINT16 FIXEDSIZE:1 = Formatstring(" (%s) NF_FIXED_SIZE: %s", this.ToBitString, this ? "The text should use a fixed size." 
+				                                                                                   : "The text should not use a fixed size.");
+				UINT16 FIXEDPITCH:1 = Formatstring("(%s) NF_FIXED_PITCH: %s", this.ToBitString, this ? "The text should use a fixed pitch." 
+				                                                                                    : "The text should not use a fixed pitch.");
+			};
+	}
+  switch
+	{
+		case FieldBytes.FontIndexPresent:
+			UINT16 FontIndex;
+	}
+	UINT16 fuOptions
+	{
+		UINT16 RESERVED1:13 = Formatstring("(%s) ETO_RESERVED1: %s", this.ToBitString, this);
+		UINT16 CLIPPED:1 = Formatstring("    (%s) ETO_CLIPPED: %s", this.ToBitString, this ? "The text is clipped to the rectangle." 
+		                                                                               : "The text is not clipped to the rectangle.");
+		UINT16 OPAQUE:1 = Formatstring("     (%s) ETO_OPAQUE: %s", this.ToBitString, this ? "The background color fills the rectangle before the text is drawn." 
+		                                                                                   : "The background color does not fill the rectangle before the text is not drawn.");
+		UINT16 RESERVED2:1 = Formatstring(" (%s) ETO_RESERVED2", this.ToBitString);
+	};
+	switch
+	{
+		case FieldBytes.LeftPresent:
+			UINT16 Left;
+	}
+	switch
+	{
+		case FieldBytes.TopPresent:
+			UINT16 Top;
+	}
+	switch
+	{
+		case FieldBytes.RightPresent:
+			UINT16 Right;
+	}
+	switch
+	{
+		case FieldBytes.BottomPresent:
+			UINT16 Bottom;
+	}
+	UnicodeString String;
+	UnicodeString deltaX;
+}
+struct LineOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 nXStartPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nYStartPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nXEndPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 nYEndPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 ROP2Present:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 PenStylePresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 PenWidthPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 PenColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 Unused:7 = FormatString("          (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+  switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+  switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+  switch
+	{
+		case FieldBytes.nXEndPresent:
+			UINT16 nXEnd;
+	}
+  switch
+	{
+		case FieldBytes.nYEndPresent:
+			UINT16 nYEnd;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+  switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+  switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+}
+struct MemBlt
+{
+	UINT16 FieldBytes
+	{
+		UINT16 cacheIdPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nLeftRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nWidthPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 nHeightPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 bRopPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 nXSrcPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 nYSrcPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 cacheIndexPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 reserved:7 = FormatString("         (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.cacheIdPresent:
+			UINT16 cacheId;
+	}
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nWidthPresent:
+			UINT16 nWidth;
+	}
+  switch
+	{
+		case FieldBytes.nHeightPresent:
+			UINT16 nHeight;
+	}
+  switch
+	{
+		case FieldBytes.bRopPresent:
+			UINT8 bRop;
+	}
+  switch
+	{
+		case FieldBytes.nXSrcPresent:
+			UINT16 nXSrc;
+	}
+  switch
+	{
+		case FieldBytes.nYSrcPresent:
+			UINT16 nYSrc;
+	}
+  switch
+	{
+		case FieldBytes.cacheIndexPresent:
+			UINT16 cacheIndex;
+	}
+}
+struct Mem3Blt
+{
+	UINT16 FieldBytes
+	{
+		UINT16 nLeftRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nWidthPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT16 nHeightPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 bRopPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 nXSrcPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 nYSrcPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgXPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgYPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushStylePresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 cacheIndexPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 Unused:3 = FormatString("             (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 cacheId;
+	switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+	switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+	switch
+	{
+		case FieldBytes.nWidthPresent:
+			UINT16 nWidth;
+	}
+	switch
+	{
+		case FieldBytes.nHeightPresent:
+			UINT16 nHeight;
+	}
+	switch
+	{
+		case FieldBytes.bRopPresent:
+			UINT8 bRop;
+	}
+	switch
+	{
+		case FieldBytes.nXSrcPresent:
+			UINT16 nXSrc;
+	}
+	switch
+	{
+		case FieldBytes.nYSrcPresent:
+			UINT16 nYSrc;
+	}
+	switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+	switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case FieldBytes.cacheIndexPresent:
+			UINT16 cacheIndex;
+	}
+}
+struct OpaqueRect
+{
+	UINT8 FieldBytes
+	{
+		UINT8 nLeftRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT8 nTopRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT8 nRightRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 nBottomRectPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 ForeColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT8 Unused:3 = FormatString("            (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+  switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+}
+struct PatBlt
+{
+	UINT16 FieldBytes
+	{
+		UINT16 nLeftRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nWidthPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT16 nHeightPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 bRopPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushOrgXPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushOrgYPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushStylePresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 Unused:6 = FormatString("           (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nWidthPresent:
+			UINT16 nWidth;
+	}
+  switch
+	{
+		case FieldBytes.nHeightPresent:
+			UINT16 nHeight;
+	}
+  switch
+	{
+		case FieldBytes.bRopPresent:
+			UINT8 bRop;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+  switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+}
+struct PieOrder
+{
+	UINT24 FieldBytes
+	{
+		UINT24 nLeftRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 nTopRectPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 nRightRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT24 nBottomRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT24 nXStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 nYStartPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 nXEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT24 nYEndPresent:1 = FormatString("       (%s)", this.ToBitString);
+		UINT24 BackColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 ForeColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushOrgXPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushOrgYPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 BrushStylePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT24 ROP2Present:1 = FormatString("        (%s)", this.ToBitString);
+		UINT24 PenStylePresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 PenWidthPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 PenColorPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 ArcDirectionPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Unused:6 = FormatString("             (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+  switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+  switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+  switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+  switch
+	{
+		case FieldBytes.nXEndPresent:
+			UINT16 nXEnd;
+	}
+  switch
+	{
+		case FieldBytes.nYEndPresent:
+			UINT16 nYEnd;
+	}
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+  switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+	switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+	switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+	switch
+	{
+		case FieldBytes.ArcDirectionPresent:
+			UINT8 ArcDirection = ListengingArcDirection(this);
+	}
+}
+struct PolyBePoints
+{
+	UINT8 length;
+	AppSharePoint point[length/2];
+}
+struct PolyBezierOrder
+{
+	UINT8 FieldBytes
+	{
+		UINT8 BackColorPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 ForeColorPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 ROP2Present:1 = FormatString("     (%s)", this.ToBitString);
+		UINT8 PenStylePresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 PenWidthPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 PenColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 Unused:2 = FormatString("          (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+  switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+  switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+  switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+	PolyBePoints aPoints;
+}
+struct PolygonOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 BackColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushOrgXPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushOrgYPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 BrushStylePresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 ROP2Present:1 = FormatString("      (%s)", this.ToBitString);
+		UINT16 PenStylePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 PenWidthPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 PenColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 FillModePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 Unused:6 = FormatString("           (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+  switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+  switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+  switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+  switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+	switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+	switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+	switch
+	{
+		case FieldBytes.FillModePresent:
+			UINT8 FillMode = ListengingFillMode(this);
+	}
+	UnicodeString aPoints;
+}
+struct RectangleOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 nLeftRectPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nTopRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nRightRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 nBottomRectPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgXPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushOrgYPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 BrushStylePresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ROP2Present:1 = FormatString("       (%s)", this.ToBitString);
+		UINT16 PenStylePresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 PenWidthPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 PenColorPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 Unused:3 = FormatString("           (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+	switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+	switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+	switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+	switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+	switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+	switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+	switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+	switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+}
+struct RoundRectOrder
+{
+	UINT24 FieldBytes
+	{
+		UINT24 nLeftRectPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 nTopRectPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT24 nRightRectPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 nBottomRectPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT24 nEllipseWidthPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT24 nEllipseHeightPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 BackColorPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 ForeColorPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 BrushOrgXPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 BrushOrgYPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT24 BrushStylePresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT24 ROP2Present:1 = FormatString("          (%s)", this.ToBitString);
+		UINT24 PenStylePresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT24 PenWidthPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT24 PenColorPresent:1 = FormatString("      (%s)", this.ToBitString);
+		UINT24 Unused:9 = FormatString("               (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	UINT16 BackMode = ListengingBackMode(this);
+	switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT32 nLeftRect;
+	}
+	switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+	switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+	switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+	switch
+	{
+		case FieldBytes.nEllipseWidthPresent:
+			UINT32 nEllipseWidth;
+	}
+	switch
+	{
+		case FieldBytes.nEllipseHeightPresent:
+			UINT16 nEllipseHeight;
+	}
+	switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+	switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgXPresent:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case FieldBytes.BrushOrgYPresent:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent:
+			UINT8 BrushStyle = ListengingBrushStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && (BrushStyle == 2 || BrushStyle == 3):
+			UINT8 BrushHatch;
+	}
+	switch
+	{
+		case FieldBytes.BrushStylePresent && BrushStyle == 3:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case FieldBytes.ROP2Present:
+			UINT8 ROP2 = ListengingROP2(this);
+	}
+	switch
+	{
+		case FieldBytes.PenStylePresent:
+			UINT8 PenStyle = ListengingPenStyle(this);
+	}
+	switch
+	{
+		case FieldBytes.PenWidthPresent:
+			UINT8 PenWidth;
+	}
+	switch
+	{
+		case FieldBytes.PenColorPresent:
+			UINT24 PenColor;
+	}
+}
+struct SaveBitmap
+{
+	UINT8 FieldBytes
+	{
+		UINT8 SavedBitmapPositionPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 nLeftRectPresent:1 = FormatString("          (%s)", this.ToBitString);
+		UINT8 nTopRectPresent:1 = FormatString("           (%s)", this.ToBitString);
+		UINT8 nRightRectPresent:1 = FormatString("         (%s)", this.ToBitString);
+		UINT8 nBottomRectPresent:1 = FormatString("        (%s)", this.ToBitString);
+		UINT8 Unused:3 = FormatString("                    (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	switch
+	{
+		case FieldBytes.SavedBitmapPositionPresent:
+			UINT32 SavedBitmapPosition = ListeningOperation(this);
+	}
+	switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+	switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+	switch
+	{
+		case FieldBytes.nRightRectPresent:
+			UINT16 nRightRect;
+	}
+	switch
+	{
+		case FieldBytes.nBottomRectPresent:
+			UINT16 nBottomRect;
+	}
+	UINT16 Operation;
+}
+struct ScreenBlt
+{
+	UINT8 FieldBytes
+	{
+		UINT8 nLeftRectPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 nTopRectPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 nWidthPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT8 nHeightPresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT8 bRopPresent:1 = FormatString("     (%s)", this.ToBitString);
+		UINT8 nXSrcPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT8 nYSrcPresent:1 = FormatString("    (%s)", this.ToBitString);
+		UINT8 Unused:1 = FormatString("          (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+  switch
+	{
+		case FieldBytes.nLeftRectPresent:
+			UINT16 nLeftRect;
+	}
+  switch
+	{
+		case FieldBytes.nTopRectPresent:
+			UINT16 nTopRect;
+	}
+  switch
+	{
+		case FieldBytes.nWidthPresent:
+			UINT16 nWidth;
+	}
+  switch
+	{
+		case FieldBytes.nHeightPresent:
+			UINT16 nHeight;
+	}
+  switch
+	{
+		case FieldBytes.bRopPresent:
+			UINT8 bRop;
+	}
+  switch
+	{
+		case FieldBytes.nXSrcPresent:
+			UINT16 nXSrc;
+	}
+  switch
+	{
+		case FieldBytes.nYSrcPresent:
+			UINT32 nYSrc;
+	}
+}
+struct TextOrder
+{
+	UINT16 FieldBytes
+	{
+		UINT16 BackModePresent:1 = FormatString("  (%s)", this.ToBitString);
+		UINT16 nXStartPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 nYStartPresent:1 = FormatString("   (%s)", this.ToBitString);
+		UINT16 BackColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 ForeColorPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontHeightPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 FontWidthPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontWeightPresent:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 FontFlagsPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 FontIndexPresent:1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 Unused:6 = FormatString("           (%s)", this.ToBitString);
+	}
+	AppShareBounds Bounds;
+	switch
+	{
+		case FieldBytes.BackModePresent:
+			UINT16 BackMode = ListengingBackMode(this);
+	}
+	switch
+	{
+		case FieldBytes.nXStartPresent:
+			UINT16 nXStart;
+	}
+	switch
+	{
+		case FieldBytes.nYStartPresent:
+			UINT16 nYStart;
+	}
+	switch
+	{
+		case FieldBytes.BackColorPresent:
+			UINT24 BackColor;
+	}
+	switch
+	{
+		case FieldBytes.ForeColorPresent:
+			UINT24 ForeColor;
+	}
+	UINT16 CharExtra;
+	UINT16 BreakExtra;
+	UINT16 BreakCount;
+	switch
+	{
+		case FieldBytes.FontHeightPresent:
+			UINT16 FontHeight;
+	}
+	switch
+	{
+		case FieldBytes.FontWidthPresent:
+			UINT16 FontWidth;
+	}
+	switch
+	{
+		case FieldBytes.FontWeightPresent:
+			UINT16 FontWeight;
+	}
+	switch
+	{
+		case FieldBytes.FontFlagsPresent:
+			UINT8 FontFlags
+			{
+				UINT8 FIXEDPITCH:1 = Formatstring("(%s) NF_FIXED_PITCH: %s", this.ToBitString, this ? "The text should use a fixed pitch." 
+																									: "The text should not use a fixed pitch.");
+				UINT8 FIXEDSIZE:1 = Formatstring(" (%s) NF_FIXED_SIZE: %s", this.ToBitString, this ? "The text should use a fixed size." 
+																								   : "The text should not use a fixed size.");
+				UINT8 ITALIC:1 = Formatstring("    (%s) NF_ITALIC: %s", this.ToBitString, this ? "The text should be italic." 
+																							   : "The text should not be italic.");
+				UINT8 UNDERLINE:1 = Formatstring(" (%s) NF_UNDERLINE: %s", this.ToBitString, this ? "The text should be underlined." 
+																								  : "The text should not be underlined.");
+				UINT8 STRIKEOUT:1 = Formatstring(" (%s) NF_STRIKEOUT: %s", this.ToBitString, this ? "The text should struck out." 
+																								  : "The text should not struck out.");
+				UINT8 RESERVEDS:2 = Formatstring(" (%s) NF_RESERVEDS", this.ToBitString);
+				UINT8 TRUETYPE:1 = Formatstring("  (%s) NF_TRUETYPE: %s", this.ToBitString, this ? "The text should be drawn with a TrueType font." 
+																								 : "The text should not be drawn with a TrueType font.");
+			};
+	}
+	switch
+	{
+		case FieldBytes.FontIndexPresent:
+			UINT16 FontIndex;
+	}
+	UnicodeString String;
+}
+
+
+Table MSPRUpdateTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0000: "UPD_ORDERS";
+		case 0x0001: "UPD_SCREEN_DATA";
+		case 0x0002: "UPDA_PALETTE";
+		case 0x0003: "UPD_SYNC";
+		default: "Unkown update type";
+	}
+}
+
+struct MSPRTSHRRect16
+{
+	UINT16 left;
+	UINT16 Top;
+	UINT16 right;
+	UINT16 Bottom;
+}
+
+struct MSPRUPDScreenData
+{
+	MSPRTSHRRect16 Position;
+	UINT16 realWidth;
+	UINT16 realHeight;
+	UINT16 Format;
+	UINT16 compressed;
+	UINT16 dataSize;
+	switch(compressed)
+	{
+		case 0x0000:BLOB(dataSize > framelength - frameoffset ? framelength - frameoffset : dataSize) Uncompressedbitmap;
+		case 0x0001:CompressedBitmap CompressedBitmap;
+	}
+}
+
+struct MSPRTSHRColor
+{
+	UINT8 Red;
+	UINT8 green;
+	UINT8 blue;
+}
+
+struct MSPRUPDPalette
+{
+	UINT32 numColors;
+	MSPRTSHRColor aColors[numColors];
+}
+
+struct MSPRUPDSync = "Resets the state of the connection"
+{
+	//The values "cOrders", "sendBPP", and "data" MUST NOT be sent
+	//UINT16 cOrders;
+	//UINT16 sendBPP;
+	//UINT8 data;
+}
+
+struct UpdateOrder = AppShareUpdateOrderType(CurrentOrderType)
+{
+	UINT16 updateType = MSPRUpdateTypeTable(this);
+	UINT16 padding;
+	switch(updateType)
+	{
+		case 0x0001: 
+			struct
+			{
+				UINT16 cOrders;
+				UINT16 sendBPP;
+				MSPRUPDScreenData MSPRUPDScreenData;
+			}
+		case 0x0002: 
+			struct
+			{
+				UINT16 cOrders;
+				UINT16 sendBPP;
+				MSPRUPDPalette MSPRUPDPalette;
+			}
+		case 0x0003: MSPRUPDSync MSPRUPDSync;
+		case 0x0000:
+			struct
+			{
+				UINT16 cOrders;
+				UINT16 sendBPP;
+				[Property.OrderCount = 0]
+				while MSPRUPDOrders[Property.OrderCount < cOrders]
+				{
+					[Property.OrderCount = Property.OrderCount + 1]
+					UINT8 pControlFlag
+					{
+						UINT8 OE2CFSTANDARDENC:1 = FormatString("   (%s) %s", this.ToBitString,this ? "Encoded in the OE2 format" : "Not Encoded in the OE2 format");
+						UINT8 OE2CFUNENCODED:1 = FormatString("     (%s) %s", this.ToBitString,this ? "Inencoded" : "Encoded");
+						[BoundsPresent]
+						UINT8 OE2CFBOUNDS:1 = FormatString("        (%s) %s", this.ToBitString,this ? "Bounds present" : "Not Bounds Present");
+						UINT8 OE2CFTYPECHANGE:1 = FormatString("    (%s) %s", this.ToBitString,this ? "Type change" : "Not Type change");
+						[DeltaCoordinates]                                    
+						UINT8 OE2CFDELTACOORDS:1 = FormatString("   (%s) %s", this.ToBitString,this ? "Delta coordinates" : "Not Delta coordinates");
+						UINT8 Unused:3 = FormatString("             (%s)", this.ToBitString);
+					}
+					
+					switch
+					{
+						case pControlFlag.OE2CFTYPECHANGE && !pControlFlag.OE2CFUNENCODED:
+							[CurrentOrderType]
+							UINT8 OrderStateType = AppShareUpdateOrderType(this);
+					}
+					
+					switch 
+					{
+						case pControlFlag.OE2CFUNENCODED && !pControlFlag.OE2CFTYPECHANGE:
+							_struct UnEncoded
+							{
+								UINT16 cbOrderDataLength;
+								UINT16 fOrderFlags = "Set to 0x08";
+								UINT8 bmcPacketType;
+								switch (bmcPacketType)
+								{
+									case 0:
+									case 2:
+										CacheBitmapOrder(bmcPacketType) CacheBitmapOrder;
+									case 1: CacheColorTableOrder CacheColorTableOrder;
+								}
+							}
+						default:
+							switch (CurrentOrderType)
+							{
+								case 0x00: DstBlt DstBlt;
+								case 0x01: PatBlt PatBlt;
+								case 0x02: ScreenBlt ScreenBlt;
+								case 0x05: TextOrder TextOrder;
+								case 0x06: ExtTextOrder ExtTextOrder;
+								case 0x08: RectangleOrder RectangleOrder;
+								case 0x09: LineOrder LineOrder;
+								case 0x0A: OpaqueRect OpaqueRect;
+								case 0x0B: SaveBitmap SaveBitmap;
+								case 0x0C: DesktopScroll DesktopScroll;
+								case 0x0D: MemBlt MemBlt;
+								case 0x0E: Mem3Blt Mem3Blt;
+								case 0x0F: PolygonOrder PolygonOrder;
+								case 0x10: PieOrder PieOrder;
+								case 0x11: EllipseOrder EllipseOrder;
+								case 0x12: ArcOrder ArcOrder;
+								case 0x13: ChordOrder ChordOrder;
+								case 0x14: PolyBezierOrder PolyBezierOrder;
+								case 0x15: RoundRectOrder RoundRectOrder;
+								default: Blob(FrameLength - OffSet) UnknownOrderStubs;
+							}
+					}
+				}
+			}
+		default:
+			switch
+			{
+				case property.NMPRDataLength - 12 > FrameLength - OffSet:
+					Blob(FrameLength - OffSet) UnknownOrderStub;
+				Default:
+					Blob(property.NMPRDataLength - 12) UnknownOrder;
+			}		
+	}
+}
+
+struct S20CREATE = "Name = " + nameData
+{
+	UINT32 correlator;
+	UINT16 lenName;
+	UINT16 lenCaps;
+	AsciiString(lenName) nameData;
+	CPCALLCAPS capsData;
+}
+
+struct S20COLLISION = FormatString("Correlator = %u", correlator)
+{
+	UINT32 correlator;
+}
+
+struct S20DATA = datatypeTable (datatype)
+{
+	UINT32 correlator;	
+	UINT8 ackID = "Obsolete";
+	UINT8 stream = streamTable (this);
+	[property.NMPRDataLength]
+	UINT16 dataLength;
+	UINT8 datatype = datatypeTable (this);
+	UINT8 compressionType = compressionTypeTable (this);
+	UINT16 compressedLength;
+	switch (compressionType)
+	{
+		case 0:
+			switch (datatype)
+			{
+				case 0x17 : ActiveWindowPDU ActiveWindowPDU;
+				case 0x14 : ControlOrdersforNetMeeting2 ControlOrdersforNetMeeting2;
+				case 0x15 : ControlOrdersforNetMeeting3 ControlOrdersforNetMeeting3;
+				case 0x16 :
+				case 0x19 : HostTracking HostTracking;
+				case 0x1B : CursorManagementOrders CursorManagementOrders;
+				case 0x20 : PROTCAPSSCREEN PROTCAPSSCREEN;
+				case 0x0B : FontList FontList;
+				case 0x1C : InputPDU InputPDU;
+				case 0x1F : SynchronizationOrder SynchronizationOrder;
+				case 0x18 : SharedWindowList SharedWindowList;
+				case 0x02 : UpdateOrder UpdateOrder;
+				default:
+					switch
+					{
+						case dataLength - 4 > FrameLength - OffSet:
+							Blob(FrameLength - OffSet) UnknownPDUStub;
+						Default:
+							Blob(dataLength - 4) UnknownPDU;
+					}					
+			}
+		default:
+			switch
+			{
+				case compressedLength - 4 > Framelength - offset:
+					Blob(Framelength - offset) CompressedDataStub;
+				Default:
+					Blob(compressedLength - 4) CompressedData;
+			}
+	}
+}
+
+struct S20DELETE = FormatString("Correlator = %u", correlator)
+{
+	UINT32 correlator;
+	UINT16 target;
+	UINT16 lenName;
+	UINT8 capsData;
+}
+
+struct S20END = FormatString("Correlator = %u", correlator)
+{
+	UINT32 correlator;
+	UINT16 lenName = ShouldBeSetToTable(this, "0");
+	UINT8 capsData = "Obsolete and not used";
+}
+
+struct S20JOIN = "Name = " + nameData
+{
+	UINT16 lenName;
+	UINT16 lenCaps;
+	AsciiString(lenName) nameData;
+	CPCALLCAPS capsData;
+}
+
+struct S20LEAVE = FormatString("Correlator = %u", correlator)
+{
+	UINT32 correlator;
+}
+
+struct S20RESPOND = "Name = " + nameData
+{
+	UINT32 correlator;
+	UINT16 originator;
+	UINT16 lenName;
+	UINT16 lenCaps;
+	AsciiString(lenName) nameData;
+	CPCALLCAPS capsData;
+}
+
+struct FlowPDU = FormatString ("%s, pduSource=%d",AppShareFlowControlPDUTypeTable(PDUTypeFlow),pduSource)
+{
+	UINT16 flowMarker = MustBeSetToTable(this,"0x8000");
+	[NetmeetingPacketType = AppShareFlowControlPDUTypeTable(this)]
+	UINT16 PDUTypeFlow = AppShareFlowControlPDUTypeTable(this);
+	UINT8 flowIdentifier;
+	UINT8 flowNumber;
+	[NetmeetingPacketType = NetmeetingPacketType+ FormatString (",pduSource=%d",pduSource)]
+	UINT16 pduSource;
+}
+
+Table ObjectManagerMessageTypeTable( MessageType )
+{
+	Switch( MessageType )
+	{
+		Case 0x0000: "OMNET_NULL_MESSAGE";
+		Case 0x000A: "OMNET_HELLO";
+		Case 0x000B: "OMNET_WELCOME";
+		Case 0x0015: "OMNET_LOCK_REQ";
+		Case 0x0016: "OMNET_LOCK_GRANT";
+		Case 0x0017: "OMNET_LOCK_DENY";
+		Case 0x0018: "OMNET_UNLOCK";
+		Case 0x0019: "OMNET_LOCK_NOTIFY";
+		Case 0x001E: "OMNET_WSGROUP_SEND_REQ";
+		Case 0x001F: "OMNET_WSGROUP_SEND_MIDWAY";
+		Case 0x0020: "OMNET_WSGROUP_SEND_COMPLETE";
+		Case 0x0021: "OMNET_WSGROUP_SEND_DENY";
+		Case 0x0028: "OMNET_WORKSET_CLEAR";
+		Case 0x0029: "OMNET_WORKSET_NEW";
+		Case 0x0030: "OMNET_WORKSET_CATCHUP";
+		Case 0x0032: "OMNET_OBJECT_ADD";
+		Case 0x0033: "OMNET_OBJECT_CATCHUP";
+		Case 0x0034: "OMNET_OBJECT_REPLACE";
+		Case 0x0035: "OMNET_OBJECT_UPDATE";
+		Case 0x0036: "OMNET_OBJECT_DELETE";
+		Case 0x0037: "OMNET_OBJECT_MOVE";
+		Case 0x0046: "OMNET_MORE_DATA";
+	}	
+}
+
+Struct ObjMgrSequenceStamp
+{
+	UINT32 GenNumber;
+	UINT16 UserID;
+	UINT16 Padding;
+}
+
+Struct ObjMgrObjectId
+{
+	UINT32 Sequence;
+	UINT16 Creator;
+	UINT16 Padding;
+}
+
+Struct ObjMgrPersonData = FormatString( "Name = %s, Handle = 0x%08X", PersonName == "" ? "NULL" : PersonName, PersonHandle )
+{
+	AsciiString ( 48 ) PersonName;
+	UINT32 PersonHandle;
+}
+
+Struct ObjMgrGroupIdentificationObject
+{
+	UINT32 Length;
+	AsciiString ( 4 ) IdStamp;
+	UINT16 ChannelId;
+	UINT16 Creator;
+	UINT16 WsGroupId;
+	UINT8 Pad1;
+	UINT8 Pad2;
+
+	Switch
+	{
+		Case Length > 16:
+		Struct
+		{
+			AsciiString ( 16 ) FunctionProfile;
+			AsciiString ( 32 ) WsGroupName;
+		}
+	}
+}
+
+Struct ObjMgrGroupRegistrationRecordObject
+{
+	UINT32 Length;
+	AsciiString ( 4 ) IdStamp;
+	UINT16 UserID;
+	UINT16 Status;
+
+	Switch {
+		Case Length > 8: ObjMgrPersonData PersonData;
+	}
+}
+
+Struct ObjMgrData
+{
+	switch (AsciiString(FrameData, FrameOffset + 4, 4))
+	{
+		case "OMWI": ObjMgrGroupIdentificationObject IdentificationData;
+		case "OMRR": ObjMgrGroupRegistrationRecordObject RegistrationRecordData;
+	}
+}
+
+Struct ObjMgrPktHdr = FormatString( "MessageType = %s, Sender = %u", MessageType.ToString, Sender )
+{
+	UINT16 Sender;
+	UINT16 MessageType = FormatString( "%s (0x%04X)", ObjectManagerMessageTypeTable( this ), this );
+}
+
+[ObjMgrPktSummary = Header.ToString]
+Struct ObjMgrJoinerPkt
+{
+	ObjMgrPktHdr Header;
+	UINT32 CapsLen;
+	UINT32 CompressionsCaps;
+}
+
+[ObjMgrPktSummary = Header.ToString]
+Struct ObjMgrOperationPkt
+{
+	ObjMgrPktHdr Header;
+	Switch
+	{
+		Case Header.MessageType != 0x0046:
+		Struct
+		{
+			UINT8 WsGroupId;
+			UINT8 WorksetId;
+			UINT8 Position;
+			UINT8 Flags;
+			ObjMgrSequenceStamp SeqStamp;
+			Switch
+			{
+				Case Header.MessageType != 0x0028:
+				Struct
+				{
+					ObjMgrObjectId ObjectId;
+					Switch
+					{
+						Case Header.MessageType != 0x0029 && Header.MessageType != 0x0030 && Header.MessageType != 0x0037 && Header.MessageType != 0x0038:
+						Struct
+						{
+							UINT32 TotalSize;
+							Switch
+							{
+								Case Header.MessageType != 0x0034 && Header.MessageType != 0x0035:
+								Struct
+								{
+									UINT32 UpdateSize;
+									
+									Switch
+									{
+										Case Header.MessageType != 0x0032:
+										Struct
+										{
+											ObjMgrSequenceStamp PositionStamp;
+											ObjMgrSequenceStamp ReplaceStamp;
+											ObjMgrSequenceStamp UpdateStamp;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+[ObjMgrPktSummary = Header.ToString]
+Struct ObjMgrWsGroupSendPkt
+{
+	ObjMgrPktHdr Header;
+	UINT8 WsGroupId;
+	UINT8 Pad1;
+	UINT16 Correlator;
+	ObjMgrObjectId ObjectId;
+	UINT32 MaxObjIdSeqUsed;
+}
+
+[ObjMgrPktSummary = Header.ToString]
+Struct ObjMgrLockPkt
+{
+	ObjMgrPktHdr Header;
+	UINT8 WsGroupId;
+	UINT8 WorksetId;
+	UINT16 Data1;
+	UINT32 LockReqCB;
+}
+
+Struct ObjMgrPkt = FormatString( "Object Manager, %s, Length=%u", Property.ObjMgrPktSummary, TotalLength )
+{
+	UINT16 TotalLength;
+	UINT8 Compression;
+	Switch( UINT16( FrameData, FrameOffset + 2 ) )
+	{
+		Case 0x000A:
+		_Struct Hello {
+			ObjMgrJoinerPkt ObjPkt;
+		}
+
+		Case 0x000B:
+		_Struct Welcome {
+			ObjMgrJoinerPkt ObjPkt;
+		}
+
+		Case 0x0015:
+		_Struct LockRequest {
+			ObjMgrLockPkt ObjPkt;
+		}
+
+		Case 0x0016:
+		_Struct LockGrant {
+			ObjMgrLockPkt ObjPkt;
+		}
+
+		Case 0x0017:
+		_Struct LockDeny {
+			ObjMgrLockPkt ObjPkt;
+		}
+
+		Case 0x0018:
+		_Struct UnLock {
+			ObjMgrLockPkt ObjPkt;
+		}
+
+		Case 0x0019:
+		_Struct LockNotify {
+			ObjMgrLockPkt ObjPkt;
+		}
+
+		Case 0x001E:
+		_Struct WsGroupSendRequest {
+			ObjMgrWsGroupSendPkt ObjPkt;
+		}
+
+		Case 0x001F:
+		_Struct WsGroupSendMidway {
+			ObjMgrWsGroupSendPkt ObjPkt;
+		}
+
+		Case 0x0020:
+		_Struct WsGroupSendComplete {
+			ObjMgrWsGroupSendPkt ObjPkt;
+		}
+
+		Case 0x0021:
+		_Struct WsGroupSendDeny {
+			ObjMgrWsGroupSendPkt ObjPkt;
+		}
+
+		Case 0x0028:
+		_Struct WorksetClear {
+			ObjMgrOperationPkt ObjPkt;
+		}
+
+		Case 0x0029:
+		_Struct WorksetNew {
+			ObjMgrOperationPkt ObjPkt;
+		}
+
+		Case 0x0030:
+		_Struct WorksetCatchup {
+			ObjMgrOperationPkt ObjPkt;
+		}
+
+		Case 0x0032:
+		_Struct ObjectAdd
+		{
+			ObjMgrOperationPkt ObjPkt;
+			ObjMgrData ObjData;
+		}
+
+		Case 0x0033:
+		_Struct ObjectCatchup
+		{
+			ObjMgrOperationPkt ObjPkt;
+			ObjMgrData ObjData;
+		}
+
+		Case 0x0034:
+		_Struct ObjectReplace
+		{
+			ObjMgrOperationPkt ObjPkt;
+			ObjMgrData ObjData;
+		}
+
+		Case 0x0035:
+		_Struct ObjectUpdate
+		{
+			ObjMgrOperationPkt ObjPkt;
+			ObjMgrData ObjData;
+		}
+
+		Case 0x0036:
+		_Struct ObjectDelete {
+			ObjMgrOperationPkt ObjPkt;
+		}
+
+		Case 0x0037:
+		_Struct ObjectMove {
+			ObjMgrOperationPkt ObjPkt;
+		}
+
+		Case 0x0046:
+		_Struct MoreData {
+			ObjMgrOperationPkt ObjPkt;
+		}
+	}
+}
+
+struct S20Packet = FormatString ("%s, Length=%d", property.NetmeetingPacketType, TotalLength)
+{
+	UINT16 TotalLength;
+	UINT16 NetmeetingPacketType
+	{
+		[S20PacketType]
+		UINT16 NetmeetingPacketType:4 = FormatString("(%s) %u", this.ToBitString, this);
+		[NetmeetingVersion]
+		UINT16 version:12 = FormatString("   (%s) %u", this.ToBitString, this);
+	};
+	UINT16 user;
+	switch 
+	{
+		case NetmeetingVersion & 0x01:
+		case NetmeetingVersion & 0x02:
+			switch (S20PacketType)
+			{
+				case 1:
+					[NetmeetingPacketType = "S20Create"]
+					S20CREATE S20CREATE;
+				case 2:
+					[NetmeetingPacketType = "S20Join"]
+					S20JOIN S20JOIN;
+				case 3:
+					[NetmeetingPacketType = "S20Respond"]
+					S20RESPOND S20RESPOND;
+				case 4:
+					[NetmeetingPacketType = "S20Delete"]
+					S20DELETE S20DELETE;
+				case 5:
+					[NetmeetingPacketType = "S20Leave"]
+					S20LEAVE S20LEAVE;
+				case 6:
+					[NetmeetingPacketType = "S20End"]
+					S20END S20END;
+				case 7:
+					[NetmeetingPacketType = "S20Data"]
+					S20DATA S20DATA;
+				case 8:
+					[NetmeetingPacketType = "S20Collision"]
+					S20COLLISION S20COLLISION;
+			}
+		
+	}
+}
+//# End App Share
+
+//# Begin White Board
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingMSTextPDU = StringValue
+{
+	NetmeetingTEXTPDUHEADER header;
+	switch (header.nonStandardPdu)
+	{
+		case 30:
+		case 32:
+			NetmeetingTEXTPDUATTRIB attrib;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingTEXTPDUATTRIB = StringValue
+{
+	UINT32 attributesFlag
+	{
+		UINT32 ChangedPenColor:1 = FormatString("   (%s) %s", this.ToBitString, this ? "ChangedFillColor" : "Not ChangedFillColor");
+		UINT32 ChangedFillColor:1 = FormatString("  (%s) %s", this.ToBitString, this ? "ChangedFillColor" : "Not ChangedFillColor");
+		UINT32 ChangedViewState:1 = FormatString("  (%s) %s", this.ToBitString, this ? "ChangedViewState" : "Not ChangedViewState");
+		UINT32 ChangedZOrder:1 = FormatString("     (%s) %s", this.ToBitString, this ? "ChangedZOrder" : "Not ChangedZOrder");
+		UINT32 ChangedAnchorPoint:1 = FormatString("(%s) %s", this.ToBitString, this ? "ChangedAnchorPoint" : "Not ChangedAnchorPoint");
+		UINT32 ChangedFont:1 = FormatString("       (%s) %s", this.ToBitString, this ? "ChangedFont" : "Not ChangedFont");
+		UINT32 ChangedText:1 = FormatString("       (%s) %s", this.ToBitString, this ? "ChangedText" : "Not ChangedText");
+		UINT32 Unused:25 = FormatString("            (%s)", this.ToBitString);
+	};
+	switch 
+	{
+		case attributesFlag.ChangedPenColor:
+			NetmeetingCOLORREF textPenColor;
+		default:
+			BLOB(4) textPenColorPadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedFillColor:
+			NetmeetingCOLORREF textFillColor;
+		default:
+			BLOB(4) textFillColorPadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedViewState:
+			UINT32 textViewState;
+		default:
+			BLOB(4) textViewStatePadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedZOrder:
+			UINT32 textZOrder;
+		default:
+			BLOB(4) textZOrderPadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedAnchorPoint:
+			NetmeetingPOINT textAnchorPoint;
+		default:
+			BLOB(8) textAnchorPadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedFont:
+			NetmeetingLOGFONT textFont;
+		default:
+			BLOB(60) textFontPadding;
+	}
+	switch 
+	{
+		case attributesFlag.ChangedText:
+			_struct ChangeText
+			{
+				UINT32 numberOfLines;
+				NetmeetingVARIABLESTRING textString;
+			}
+		default:
+			BLOB(4) numberOfLinesPadding;
+	}
+	BLOB(FrameLength - FrameOffset) Padding;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingTEXTPDUHEADER = FormatString("%s - TextHandle = %u, WorkspaceHandle = %u", NetmeetingTextPduHeaderNonStandardPduTypeTable(T124NonStandardPDU), textHandle, workspaceHandle)
+{
+	UINT32 nonStandardPdu = NetmeetingTextPduHeaderNonStandardPduTypeTable(this);
+	UINT32 textHandle;
+	UINT32 workspaceHandle;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingVARIABLESTRING = StringValue
+{
+	NetmeetingVARIABLESTRINGHEADER header;
+	switch
+	{
+		case header.len > 0:
+			[StringValue]
+			UnicodeString(header.len - 12) string;
+		default:
+			[StringValue = "NULL"]
+			struct NullString{};
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingVARIABLESTRINGHEADER = FormatString("Length = %u", len)
+{
+	UINT32 len;
+	NetmeetingPOINT start;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingPOINT = FormatString("(%d, %d)", x, y)
+{
+	INT32 x;
+	INT32 y;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingLOGFONT = lfFaceName.ToString
+{
+	INT32 lfHeight;
+	INT32 lfWidth;
+	INT32 lfEscapement;
+	INT32 lfOrientation;
+	INT32 lfWeight;
+	UINT8 lfItalic;
+	UINT8 lfUnderline;
+	UINT8 lfStrikeOut;
+	UINT8 lfCharSet;
+	UINT8 lfOutPrecision;
+	UINT8 lfClipPrecision;
+	UINT8 lfQuality;
+	UINT8 lfPitchAndFamily;
+	AsciiString(32) lfFaceName;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingCOLORREF = FormatString("(%u, %u, %u)", Color.R, Color.G, Color.B)
+{
+	UINT32 Color
+	{
+		UINT8 R;
+		UINT8 G;
+		UINT8 B;
+		UINT8 Zero;
+	};
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct NetmeetingBITMAPINFOHEADER
+{
+	UINT32 biSize; 
+	INT32 biWidth; 
+	INT32 biHeight; 
+	UINT16 biPlanes; 
+	UINT16 biBitCount; 
+	UINT32 biCompression; 
+	UINT32 biSizeImage; 
+	INT32 biXPelsPerMeter; 
+	INT32 biYPelsPerMeter; 
+	UINT32 biClrUsed; 
+	UINT32 biClrImportant; 
+}
+//# End White Board
+
+//# Start Chat
+struct ChatPDU = ChatData
+{
+	UINT8 ChatPDULength;
+	UINT56 ChatPDUHeader = MustBeSetToTable(this,"0");
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString ((FrameLength - FrameOffset) / 2) ChatData;
+}

@@ -1,0 +1,1320 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  User-to-Network Interface
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2022
+//#                          http://www.javvin.com/protocolATM-SigUNI.html
+//#                          http://www.networkdictionary.com/protocols/atmuni.php
+//#                          [UNI31] ATM Forum, User Network Interface Specification version 3.1, July 1996. af-uni-0010.002
+//#                          RFC 2022, support for Multicast over UNI 3.0/3.1 based ATM Networks.
+//#                          http://www.lirmm.fr/atm/normes.html
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+// http://www.networkdictionary.com/chinese/protocols/atmuni.php
+// af-uni-0010.002 --> chap5a.rtf --> Figure 5-17
+// Page25  5.4  General Message Format and Information Element Coding
+Protocol UNI31 = FormatString("%s, MessageLength = %d",
+							  UNI31MessageTypeTable(MessageTypeField.MessageType),
+							  MessageLength
+							 )
+{
+	UINT8 Discriminator = FormatString("%s, %d(0x%02X)",UNI31DiscriminatorTable(this), this, this);
+	UINT8 CallReferenceLength = Length
+	{
+		UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+		UINT8 Length:4 = FormatString("  (%s) %d", this.ToBitString, this);
+	};
+	UINT24  CallReferenceValue = Value
+	{
+		UINT24 Flag:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Sent to originating side" 
+                                                                     : "Sent from originating side");
+		UINT24 Value:23 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	UINT16 MessageTypeField = UNI31MessageTypeTable( MessageType )
+	{
+		[UNIMessageType]
+		UINT16 MessageType:8 = FormatString("(%s) %s", this.ToBitString, UNI31MessageTypeTable(this));
+		UINT16 Extension:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Extension set" 
+                                                                                 : "Extension not set");
+		UINT16 Reserved:2 = FormatString("   (%s)", this.ToBitString);
+		UINT16 Flag:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Follow explicit instructions" 
+                                                                       : "Message instruction field not significant");
+		UINT16 Spare:2 = FormatString("      (%s) %d", this.ToBitString, this);
+		UINT16 ActionID:2 = FormatString("   (%s) %s", this.ToBitString, UNI31MsgTypeActionTable(this));
+	};
+	
+	// [ af-uni-0010.002 --> chap5a.rtf -->Page 31  5.4.4.2  Message Length]
+	// The purpose of the message length is to identify the length of the contents of a message.
+	// It is the binary coding of the number of octets of the message contents, excluding the
+	// octets used for "protocol discriminator", "call reference", "message type" and for the
+	// message length indication itself.
+	[UNI31EndOffset = offset + this + 2]
+	UINT16 MessageLength;
+
+	// [ af-uni-0010.002 --> chap5a.rtf --> 5.4.5  Variable Length Information Elements ]
+ 	// [ Page 31  5.4.5  Variable Length Information Elements ]
+	While validation[offset < UNI31EndOffset]
+	{
+		switch
+		{
+			case  UINT8( Framedata, Offset ) == 0x08:UNI31InfoElement Cause;
+			case  UINT8( Framedata, Offset ) == 0x14:UNI31InfoElement CallState;
+			case  UINT8( Framedata, Offset ) == 0x54:UNI31InfoElement EndpointReference;
+			case  UINT8( Framedata, Offset ) == 0x55:UNI31InfoElement EndpointState;
+			case  UINT8( Framedata, Offset ) == 0x58:UNI31InfoElement ATMAdaptationLayerParameters;
+			case  UINT8( Framedata, Offset ) == 0x59:UNI31InfoElement ATMTrafficDescriptor;
+			case  UINT8( Framedata, Offset ) == 0x5a:UNI31InfoElement ConnectionIdentifier;
+			case  UINT8( Framedata, Offset ) == 0x5c:UNI31InfoElement QualityOfServiceParamter;
+			case  UINT8( Framedata, Offset ) == 0x5d:UNI31InfoElement BroadbandHighLayerInformation;
+			case  UINT8( Framedata, Offset ) == 0x5e:UNI31InfoElement BroadbandBearerCapability;
+			case  UINT8( Framedata, Offset ) == 0x5f:UNI31InfoElement BroadbandLowLayerInformation;
+			case  UINT8( Framedata, Offset ) == 0x60:UNI31InfoElement BroadbandLockingShift;
+			case  UINT8( Framedata, Offset ) == 0x61:UNI31InfoElement BroadbandNonLockingShift;
+			case  UINT8( Framedata, Offset ) == 0x62:UNI31InfoElement BroadbandSendingConplete;
+			case  UINT8( Framedata, Offset ) == 0x63:UNI31InfoElement BroadbandRepeatIndicator;
+			case  UINT8( Framedata, Offset ) == 0x6c:UNI31InfoElement CallingPartyNumber;
+			case  UINT8( Framedata, Offset ) == 0x6d:UNI31InfoElement CallingPartySubaddress;
+			case  UINT8( Framedata, Offset ) == 0x70:UNI31InfoElement CalledPartyNumber;
+			case  UINT8( Framedata, Offset ) == 0x71:UNI31InfoElement CalledPartySubaddress;
+			case  UINT8( Framedata, Offset ) == 0x78:UNI31InfoElement TransitNetworkSelection;
+			case  UINT8( Framedata, Offset ) == 0x79:UNI31InfoElement RestartIndicator;
+			default:AsciiString(UNI31EndOffset - offset) UndescribedElement;
+		}
+	}
+}
+// af-uni-0010.002 --> chap5a.rtf --> Figure 5-18  Protocol Discriminator
+Table  UNI31DiscriminatorTable( value )
+{
+	switch
+	{
+		case value >= 0x00 && value <= 0x07:
+			"Not available for use in the message protocol discriminator";
+		case value == 0x08:
+			"Q.931/(I.451) user-network call control messages";
+		case value == 0x09:
+			"Q.93B user-network call control messages";
+		case value >= 0x10 && value <= 0x3F:
+			"Reserved for other network layer or layer 3 protocols including Recommendation X.25";
+		case value >= 0x40 && value <= 0x4F:
+			"National use";
+		case value >= 0x50 && value <= 0xFE:
+			"Reserved for other network layer or layer 3 protocols including Recommendation X.25";
+		default:
+			FormatString("Unhandled Discriminator 0x%02X",value);
+	}
+}
+
+Table  UNI31MsgTypeActionTable( value )
+{
+	switch( value )
+	{
+		case  0:"Clear call";
+		case  1:"Discard and ignore";
+		case  2:"Discard and report status";
+		case  3:"Reserve";
+		default:"Unknown";
+	}
+}
+
+Table  UNI31IEActionIndicatorTable( value )
+{
+	switch( value )
+	{
+		case  0:"Clear call";
+		case  1:"Discard Information Element, and proceed";
+		case  2:"Discard Information Element, proceed and report status";
+		case  5:"Discard message and ignore";
+		case  6:"Discard message and report status";
+		default:"Reserved Action";
+	}
+}
+
+// af-uni-0010.002 --> chap5a.rtf -->5.4.4.1 Message Type
+Table  UNI31MessageTypeTable( value )
+{
+	switch( value )
+	{
+		//Call establish messages
+		case 0x02:"Call Proceeding";
+		case 0x05:"Setup";
+		case 0x07:"Connect";
+		case 0x0F:"Connect Acknowledge";
+		//Call clearing messages
+		case 0x46:"Restart";
+		case 0x4D:"Release";
+		case 0x4E:"Restart Acknowledge";
+		case 0x5A:"Release Complete";
+		//Miscellaneous messages
+		case 0x75:"Status Enquiry";
+		case 0x7D:"Status";
+		//Point-to-Mutipoint messages
+		case 0x80:"Add Party";
+		case 0x81:"Add Party Acknowledge";
+		case 0x82:"Add Party Reject";
+		case 0x83:"Drop Party";
+		case 0x84:"Drop Party Acknowledge";
+		default  :"Unhandled Type";
+
+	}
+}
+
+
+Table UNI31InfoElementCodingStandardTable(code)
+{
+	switch(code)
+	{
+		case  0:"ITU-T standardized";
+		case  3:"Standard defined for the network present on the network side of the interface";
+		default:"Unhandled Coding Standard";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 33  5.4.5.1  Coding Rules ]
+Table  UNI31InformationElementIDTable( value )
+{
+	switch( value )
+	{
+		case  0x08:"Cause";
+		case  0x14:"Call state";
+		case  0x54:"Endpoint reference";
+		case  0x55:"Endpoint state";
+		case  0x58:"ATM adaptation layer parameters";
+		case  0x59:"ATM traffic descriptor";
+		case  0x5a:"Connection identifier";
+		case  0x5c:"Quality of service paramter";
+		case  0x5d:"Broadband high layer information";
+		case  0x5e:"Broadband bearer capability";
+		case  0x5f:"Broadband low_layer information";
+		case  0x60:"Broadband locking shift";
+		case  0x61:"Broadband non_locking shift";
+		case  0x62:"Broadband sending conplete";
+		case  0x63:"Broadband repeat indicator";
+		case  0x6c:"Calling party number";
+		case  0x6d:"Calling party subaddress";
+		case  0x70:"Called party number";
+		case  0x71:"Called party subaddress";
+		case  0x78:"Transit network selection";
+		case  0x79:"Restart indicator";
+		default   :FormatString("Unknown Element %d",value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 4  5.4.5.15  Cause -- Location (octet 6) ]
+Table  UNI31CausevalueTable( value )
+{
+	switch( value )
+	{
+		case   1:"unallocated (unassigned) number";
+		case   2:"no route to specified transit network";
+		case   3:"no route to destination";
+		case  16:"normal call clearing";
+		case  17:"user busy";
+		case  18:"no user responding";
+		case  21:"call rejected";
+		case  22:"number changed";
+		case  23:"user rejects all calls with calling line id restriction(CLIR)";
+		case  27:"destination out of order";
+		case  28:"invalid number format(address incomplete)";
+		case  30:"response to STATUS ENQUIRY";
+		case  31:"normal, unspecified";
+		case  35:"requested VPCI/VCI not available";
+		case  36:"VPCI/VCI assignment failiure";
+		case  37:"user cell rate not available";
+		case  38:"network out of order";
+		case  41:"temporary failiure";
+		case  43:"access information discarded";
+		case  45:"no VPCI/VCI available";
+		case  47:"resource unavailable, unspecified";
+		case  49:"Quality of service unavilable";
+		case  57:"bearer capability not authorized";
+		case  58:"bearer capability not presently available";
+		case  63:"service or option not available, unspecified";
+		case  65:"bearer capability not implemented";
+		case  73:"unsupported combination of traffic parameters";
+		case  78:"AAL parameters cannot be supported";
+		case  81:"invalid call reference value";
+		case  82:"identified channel does not exist";
+		case  88:"incompatible destination";
+		case  89:"invalid endpoint reference";
+		case  91:"invalid transit network selection";
+		case  92:"too many pending add party requests";
+		case  96:"mandatory information element is missing";
+		case  97:"message type non-existent or not implemented";
+		case  99:"information element non-existent or not implemented";
+		case 100:"invalid information element contents";
+		case 101:"message not compatible with call state";
+		case 102:"recovery on timer expiry";
+		case 104:"incorrect message length";
+		case 111:"protocol error, unspecified";
+		default :FormatString("Unknown Cause %d",value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 5  5.4.5.15  Cause -- Location (octet 5) ]
+Table  UNI31LocationTable( value )
+{
+	switch( value )
+	{
+		case  0:"user";
+		case  1:"private network serving the local user";
+		case  2:"public network serving the local user";
+		case  3:"transit network";
+		case  4:"public network serving the remote user";
+		case  5:"private network serving the remote user";
+		case  7:"international network ";
+		case 10:"network beyond interworking point";
+		default:FormatString("Location %d",value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 6  Note 2 -  The following coding ]
+Table  UNI31Note2CondTable( value )
+{
+	switch( value )
+	{
+		case  1:"Permanent";
+		case  2:"Transient";
+		default:"Unknown";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 7  Note 3 -  The following coding ]
+Table  UNI31Note3RejReasonTable( value )
+{
+	switch( value )
+	{
+		case  0:"User specific";
+		case  1:"Information element missing";
+		case  2:"Information element contents are not sufficient";
+		default:"Unhandled reason";
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 7  Note 3 -  The following coding ]
+struct  UNI31CauseCondition
+{
+	UINT8 Condition
+	{
+		UINT8 Ext:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                     : "Ext not set");
+		UINT8 RejectionReason:5 = FormatString("(%s) %s", this.ToBitString, UNI31Note3RejReasonTable(this));
+		UINT8 Cond:2 = FormatString("           (%s) %s", this.ToBitString, UNI31Note2CondTable(this));
+	};
+	switch( Condition.RejectionReason )
+	{
+		case  0:UINT8 UserSpecificDiagnostic;
+		case  1:UINT8 InfoElementID1;
+		case  2:UINT8 InfoElementID2;
+		default: 
+			switch
+			{
+				case FrameLength > FrameOffset:
+					_struct UnhandledCode
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "UNI31", "UNI31CauseCondition Code Error") UNI31CauseConditionCodeError;
+						BLOB( FrameLength - FrameOffset ) UnknownData;
+					}
+			}
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 8  Note 9 -  The following coding ]
+struct  UNI31CauseVPCIAndVCI
+{
+	UINT16 VPCI;
+	UINT16 VCI;
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 8  Note 10 -  The following coding ]
+struct  UNI31CauseTimerNumber = FormatString("%s %s %s", T1.Value.ToString,
+											 T2.Value.ToString, T3.Value.ToString )
+{
+	UINT8 T1
+	{
+		UINT8 Value:7 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 Sparse:1 = FormatString("(%s) %s", this.ToBitString, this ? "Sparse" : "Not Sparse");
+	};
+	UINT8 T2
+	{
+		UINT8 Value:7 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 Sparse:1 = FormatString("(%s) %s", this.ToBitString, this ? "Sparse" : "Not Sparse");
+	};
+	UINT8 T3
+	{
+		UINT8 Value:7 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 Sparse:1 = FormatString("(%s) %s", this.ToBitString, this ? "Sparse" : "Not Sparse");
+	};
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 10  5.4.5.16  Connection Identifier ]
+Table  UNI31VCITable( value )
+{
+	switch
+	{
+		case  value<16:FormatString("Reserved by ITU-T %d (%#X)",value,value);
+		case  value<32:FormatString("Reserved by ATM Forum %d (%#X)",value,value);
+		default       :FormatString("Available for assignment %d (%#X)",value,value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 11  5.4.5.18  Quality of Service Parameter ]
+Table  UNI31QoSClassTable( value )
+{
+	switch( value )
+	{
+		case   0:FormatString("QoS class0 - Unspecified Qos class %d (%#X)",value,value);
+		case   1:FormatString("Qos class1 %d (%#X)",value,value);
+		case   2:FormatString("Qos class2 %d (%#X)",value,value);
+		case   3:FormatString("Qos class3 %d (%#X)",value,value);
+		case   4:FormatString("Qos class4 %d (%#X)",value,value);
+		case 255:FormatString("Reserved by ITU-T for future indication of parameterized %d (%#X)",value,value);
+		default :FormatString("Unknown %d (%#X)",value,value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 13  5.4.5.20  Restart Indicator --Class]
+Table  UNI31InfoElement79ClassTable( value )
+{
+	switch( value )
+	{
+		case  0:"Indicated virtual channel";
+		case  2:"All virtual channels controlled";
+		default:"Unhandled class";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 17   5.4.8.2  Endpoint State -- Endpoint Reference Party-state ]
+Table  UNI31PartyStateTable( value )
+{
+	switch( value )
+	{
+		case  0:"Null";
+		case  1:"Add Party Initiated";
+		case  6:"Add Party Received";
+		case 11:"Drop Party Initiated";
+		case 12:"Drop Party Received";
+		case 10:"Active";
+		default:FormatString("0x%02X", value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 13   5.4.5.10  Call State ]
+Table  UNI31CallStateTable( value )
+{
+	switch( value )
+	{
+		case  0:"Null";
+		case  1:"Call initiated";
+		case  3:"Outgoing call proceeding";
+		case  6:"Call present";
+		case  8:"Connect request";
+		case  9:"Incoming call proceeding";
+		case 10:"Active";
+		case 11:"Release request";
+		case 12:"Release indication";
+		case 61:"Restart request";
+		case 62:"Restart";
+		default:"Unhandled State";
+	}
+}
+
+Table  UNI31SubaddressTable( value )
+{
+	switch( value )
+	{
+		case  0:"NSAP X.213/ISO8348AD2 ";
+		case  1:"ATM Endsystem Address";
+		default:"Unknown";
+	}
+}
+
+Table  UNI31PlanIDTable( value )
+{
+	switch( value )
+	{
+		case  1:"ISDN/telephony numbering plan(E.164)";
+		case  2:"ATM Endsystem Address";
+		default:"Unknown";
+	}
+}
+
+Table  UNI31PartyNumberTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"Unknown";
+		case  1:"International number";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 17   5.4.5.12  Called Party Subaddres --  Type of Subaddress]
+Table  UNI31SubAddressTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"NSAP X.213/ISO8348AD2";
+		case  1:"ATM endsystem address";
+		default:"Unhandled address type";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 2   5.4.5.13  Calling Party Number ]
+Table  UNI31SID( value )
+{
+	switch( value )
+	{
+		case  0:"User-provided, not screened";
+		case  1:"User-provided, verified and passed";
+		case  2:"User-provided, verified and failed";
+		case  3:"Network provided";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5c.rtf --> Page 1   5.4.5.13  Calling Party Number ]
+Table  UNI31PID( value )
+{
+	switch( value )
+	{
+		case  0:"Presentation allowed";
+		case  1:"Presentation restricted";
+		case  2:"Number not available";
+		case  3:"Reserved";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 39   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31AALTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:"ALL Type 1";
+		case  3:"ALL Type 3/4";
+		case  5:"ALL Type 5";
+		case 16:"User-Defined AAL";
+		default:"Unhandled ALL Type";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 40   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31SubtypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"Null";
+		case  1:"Voice-band single transport";
+		case  2:"Circuit transport";
+		case  4:"High-quality audio signal transport";
+		case  5:"Video signal transport";
+		default:"Unhandled";
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 40   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31CBRRateTable( value )
+{
+	switch( value )
+	{
+		case  1:"64 kbit/s";
+		case  4:"1544 kbit/s(DS1)";
+		case  5:"6312 kbit/s(DS2)";
+		case  6:"32064 kbit/s";
+		case  7:"44736 kbit/s(DS3)";
+		case  8:"97728 kbit/s";
+		case 16:"2048 kbit/s(E1)";
+		case 17:"8448 kbit/s(E2)";
+		case 18:"34368 kbit/s(E3)";
+		case 19:"139264 kbit/s";
+		case 64:"n*64 kbit/s";
+		case 65:"n*8 kbit/s";
+		default:"Unhandled Rate";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 40   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31SCRFMTable( value )
+{
+	switch( value )
+	{
+		case  0:FormatString("Null(Synchronous circuit transport), %d (%#X)",value,value);
+		case  1:FormatString("Synchronous Residual Time Stamp method(Synchronous circuit transport), %d (%#X)",value,value);
+		case  2:FormatString("Adaptive clock method, %d (%#X)",value,value);
+		default:FormatString("Unknown, %d (%#X)",value,value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 40   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31ErrorTable( value )
+{
+	switch( value )
+	{
+		case  0:FormatString("Null %d (%#X)",value,value);
+		case  1:FormatString("A forward error connection method for less sensitive signal transport %d (%#X)",value,value);
+		case  2:FormatString("A forward error connection method for delay sensitive signal transport %d (%#X)",value,value);
+		default:FormatString("Unknown %d (%#X)",value,value);
+	}
+}
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 36   5.4.5.5  ATM Adaptation Layer Parameters ]
+struct  UNI31AALType1
+{
+	UINT8 SubtypeID;
+	UINT8 Subtype = UNI31SubtypeTable(this);
+	UINT8 CBRRateID;
+	UINT8 CBRRate = FormatString("%s, %d(0x%02X)", UNI31CBRRateTable(this), this, this);
+	switch(CBRRate)
+	{
+		case 64:
+		case 65:
+			_struct MultiplierInfor
+			{
+				UINT8  MultiplierID;
+				UINT16 Multiplier;
+			};
+	};
+	UINT8 SourceClockFrequencyRecoveryMethodID;
+	UINT8 SourceClockFrequencyRecoveryMethod  = UNI31SCRFMTable(this);
+	UINT8 ErrorConnMethodID;
+	UINT8 ErrorConnMethod = UNI31ErrorTable(this);
+	UINT8 StructuredDataTransferBlocksizeId;
+	UINT16 StructuredDataTransferBlocksize;
+	UINT8 PartiallyFilledCellsId;
+	UINT8 PartiallyFilledCells;
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 41   5.4.5.5  ATM Adaptation Layer Parameters ]
+Table  UNI31SSCSTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:FormatString("Null %d (%#X)",value,value);
+		case  1:FormatString("Data SSCS based on SSCOP(assured operation) %d (%#X)",value,value);
+		case  2:FormatString("Data SSCS based on SSCOP(non-assured operation) %d (%#X)",value,value);
+		case  4:FormatString("Frame relay SSCS %d (%#X)",value,value);
+		default:FormatString("Unknown %d (%#X)",value,value);
+	}
+}
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 38   5.4.5.5  ATM Adaptation Layer Parameters ]
+struct  UNI31AALType3
+{
+	UINT8  ForwardMaximumCPCSSDUSizeId;
+	UINT16 ForwardMaximumCPCSSDUSize;
+	UINT8  BackwardMaximumCPCSSDUsizeId;
+	UINT16 BackwardMaximumCPCSSDUsize;
+	UINT8  MIDRangeID;
+	UINT16 LowMIDRange;
+	UINT16 HighMIDRange;
+	UINT8  SSCSTypeID;
+	UINT8  SSCSType = UNI31SSCSTypeTable(this);
+}
+
+
+// [ af-uni-0010.002 --> chap5a.rtf --> Page 38   5.4.5.5  ATM Adaptation Layer Parameters ]
+struct  UNI31AALType5
+{
+	UINT8  ForwardMaximumCPCSSDUSizeId;
+	UINT16 ForwardMaximumCPCSSDUSize;
+	UINT8  BackwardMaximumCPCSSDUsizeId;
+	UINT16 BackwardMaximumCPCSSDUsize;
+	UINT8  SSCSTypeID;
+	UINT8  SSCSType = UNI31SSCSTypeTable(this);
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 6   5.4.5.7  Broadband Bearer Capability ]
+Table  UNI31BearerClassType( value )
+{
+	switch( value )
+	{
+		case  1:"BCOB-A";
+		case  3:"BCOB-C";
+		case 16:"BCOB-X";
+		default:"Unhandled Bearer";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 6   5.4.5.7  Broadband Bearer Capability ]
+Table  UNI31TrafficTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"No indication";
+		case  1:"Constant bit rate";
+		case  2:"Variable bit rate";
+		default:"Unhandled traffic type";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 7   5.4.5.7  Broadband Bearer Capability ]
+Table  UNI31TimingReqTable( value )
+{
+	switch( value )
+	{
+		case  0:"No identication";
+		case  1:"End-to-end timing required";
+		case  2:"End-to-end timing not required";
+		case  3:"Reserved";
+		default:"Unhandled";
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 7   5.4.5.7  Broadband Bearer Capability ]
+Table  UNI31SCTable( value )
+{
+	switch( value )
+	{
+		case  0:"Not susceptible to clipping";
+		case  1:"Susceptible to clipping";
+		default:"Unhandled";
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 7   5.4.5.7  Broadband Bearer Capability ]
+Table  UNI31PCCTable( value )
+{
+	switch( value )
+	{
+		case  0:"Point-to-point";
+		case  1:"Point-to-multipoint";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 7   5.4.5.8  Broadband High Layer Information ]
+Table  UNI31HighLayerInfoTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"ISO";
+		case  1:"User specific";
+		case  3:"Vendor-specific application identifier";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 11   5.4.5.9  Broadband Low Layer Information ]
+Table  UNI31InfoLayer2ProtocolTable( value )
+{
+	switch( value )
+	{
+		case  1:"Basic mode ISO 1745";
+		case  2:"ITU-T recommendation Q921";
+		case  6:"ITU-T recommendation X.25 link layer";
+		case  7:"ITU-T recommendation X.25 multilink";
+		case  8:"Extended LAPR for half duplex operation";
+		case  9:"HDLC ARM(ISO 4335)";
+		case 10:"HDLC NRM(ISO 4335)";
+		case 11:"HDLC ARM(ISO 4335)";
+		case 12:"LAN logical link control";
+		case 13:"ITU-T recommendation X.75 single link procedure";
+		case 14:"ITU-T recommendation Q922";
+		case 16:"User specified";
+		case 17:"ISO 7776 DTE-DTE operation";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 12   5.4.5.9  Broadband Low Layer Information ]
+Table  UNI31InfoLayer3ProtocolTable( value )
+{
+	switch( value )
+	{
+		case  6:"ITU-T recommendation X.25";
+		case  7:"ISO/IEC 8208";
+		case  8:"X223/ISO 8878";
+		case  9:"ISO/IEC 0473";
+		case 10:"CCITT recommendation Y.70 mininum network layer";
+		case 11:"ISO/IEC TR 9577";
+		case 16:"User specified";
+		default:"Unhandled";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 12   5.4.5.9  Broadband Low Layer Information ]
+Table UNI31Layer2ModeTable( value )
+{
+	switch( value )
+	{
+		case  1:"Normal mode of operation";
+		case  2:"Extended mode of operation";
+		default:"Unhandled mode";
+	}
+}
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 12   5.4.5.9  Broadband Low Layer Information ]
+Table UNI31Layer3ModeTable( value )
+{
+	switch( value )
+	{
+		case  1:"Normal packet sequence numbering";
+		case  2:"Extended packet sequence numbering";
+		default:"Unhandled packet sequence numbering";
+	}
+}
+
+
+// [ af-uni-0010.002 --> chap5b.rtf --> Page 12   5.4.5.9  Broadband Low Layer Information ]
+Table UNI31DefaultPacketSizeTable( value )
+{
+	switch( value )
+	{
+		case  4:"Default packet size 16 Octets";
+		case  5:"Default packet size 32 Octets";
+		case  6:"Default packet size 64 Octets";
+		case  7:"Default packet size 128 Octets";
+		case  8:"Default packet size 256 Octets";
+		case  9:"Default packet size 512 Octets";
+		case 10:"Default packet size 1024 Octets";
+		case 11:"Default packet size 2048 Octets";
+		case 12:"Default packet size 4096 Octets";
+		default:"Unhandled Packet size";
+	}
+}
+
+struct  UNI31InfoElement
+{
+	UINT8 InfoElementID = FormatString("%s, %d(0x%02X)", UNI31InformationElementIDTable(this), this, this);
+	UINT8 IEInstruction
+	{
+		UINT8 Ext:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                     : "Ext not set");
+		UINT8 CodingStandard:2 = FormatString("   (%s) %s", this.ToBitString, UNI31InfoElementCodingStandardTable(this));
+		UINT8 Flag:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Follow explicit instructions" 
+                                                                      : "IE instruction field not significant");
+		UINT8 Reserved:1 = FormatString("         (%s)", this.ToBitString);
+		UINT8 IEActionIndicator:3 = FormatString("(%s) %s", this.ToBitString, UNI31IEActionIndicatorTable(this));
+	};
+	//The third octet group of an information element indicates the length of that information element.
+	//The length of an information element does not include the length of the information element
+	//identifier field, the length of the information element compatibility instruction indicator,
+	//or the length of the length field itself.
+	UINT16 ElementLength;
+	
+	switch
+	{
+		case ElementLength > 0:
+			switch(InfoElementID)
+			{
+				case 0x08:
+					_struct Cause
+					{
+						UINT8 Location = UNI31LocationTable( Loc )
+						{
+							UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Spare:3 = FormatString("(%s) %d", this.ToBitString, this);
+							UINT8 Loc:4 = FormatString("  (%s) %s", this.ToBitString, UNI31LocationTable(this));
+						};
+						UINT8 CauseValue = UNI31CausevalueTable ( Value )
+						{
+							UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Value:7 = FormatString("(%s) %s", this.ToBitString, UNI31CausevalueTable(this));
+						};
+					
+							   // [ af-uni-0010.002 --> chap5c.rtf --> Page 5 ]
+								/*
+								the struct and fields' names in the following switch are not good.
+
+							   switch( CauseValue.Value )
+							   {
+								   case  1:    UNI31Note2Struct  UNI31Note2Struct1;
+								   case  3:    UNI31Note2Struct  UNI31Note2Struct2;
+								   case  21:   UNI31Note3Struct  UNI31Note3Struct21;
+								   // [ af-uni-0010.002 --> chap5c.rtf --> Page 8  Note 8 -  The following coding ]
+								   case  37:   UINT8 ATMUserCellRateSubfieldID[ ElementLength - 2 ];
+								   // [ af-uni-0010.002 --> chap5c.rtf --> Page 8  Note 6 -  The following coding ]
+								   case  43:   UINT8 InfoElementID43[ ElementLength - 2 ];
+								   case  49:   UNI31Note2Struct  UNI31Note2Struct49;
+								   case  82:   UNI31Note9Struct  UNI31Note9Struct82;
+								   case  96:   UINT8 InfoElementID96[ ElementLength - 2 ];
+								   case  97:   UNI31Note10struct UNI31Note10struct97;
+								   case  99:   UINT8 InfoElementID99[ ElementLength - 2 ];
+								   case  100:  UINT8 InfoElementID100[ ElementLength - 2 ];
+								   case  101:  UNI31Note10Struct UNI31Note10Struct101;
+								   case  102:  UNI31Note11Struct UNI31Note11Struct102;
+								   //default:    AsciiString(ElementLength - 2) ReservedData;
+							   }
+								*/
+						switch
+						{
+							case CauseValue.Value == 1 || CauseValue.Value == 3 || CauseValue.Value == 49:
+								UINT8 Diagnostic
+								{
+									UINT8 Ext:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                 : "Ext not set");
+									UINT8 Spare:3 = FormatString("    (%s) %d", this.ToBitString, this);
+									UINT8 PU:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Network service - User" 
+                                                                                                : "Network service - Provider");
+									UINT8 NA:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Abnormal" : "Normal");
+									UINT8 Condition:2 = FormatString("(%s) %s", this.ToBitString, UNI31Note2CondTable(this));
+								};
+							case CauseValue.Value == 21:
+								UNI31CauseCondition CauseCondition;
+							case CauseValue.Value == 37:
+								UINT8 ATMUserCellRateSubfieldID[ ElementLength - 2 ];
+							case CauseValue.Value == 82:
+								UNI31CauseVPCIAndVCI VPCIAndVCI;
+							case CauseValue.Value == 97 || CauseValue.Value == 101:
+								UINT8 MessageType;
+							case CauseValue.Value == 102:
+								UNI31CauseTimerNumber TimerNumber;
+							case CauseValue.Value == 43 || CauseValue.Value == 96 ||
+								 CauseValue.Value == 99 || CauseValue.Value == 100:
+								 	UINT8 InfoElementID[ ElementLength - 2 ];
+						}
+					}
+				case 0x14:
+					UINT8 CallState =  UNI31CallStateTable(Value)
+					{
+						UINT8 Spare:2 = FormatString("(%s) %d", this.ToBitString, this);
+						UINT8 Value:6 = FormatString("(%s) %s", this.ToBitString, UNI31CallStateTable(this));
+					};
+				// Endpoint Reference
+				case 0x54:
+					_struct EndpointReference
+					{
+						UINT8 ReferenceType = FormatString("%s%d(%#X) ", (this==0) ? "Locally defined integer, " : "", this, this);
+						UINT16 ReferenceIdentifierValue = Value
+						{
+							UINT16 Flag:1 = FormatString(" (%s) %s", this.ToBitString, this ? "To the original side" 
+                                                                                           : "From the original side");
+							UINT16 Value:15 = FormatString("(%s) %d", this.ToBitString, this);
+						};
+					}
+				case 0x55:
+					UINT8 PartyState
+					{
+						UINT8 Spare:2 = FormatString("(%s) %d", this.ToBitString, this);
+						UINT8 Value:6 = FormatString("(%s) %s", this.ToBitString, UNI31PartyStateTable(this));
+					};
+				case 0x58:
+					_struct ATMALPrameters
+					{
+						UINT8 AALType = UNI31AALTypeTable(this);
+						switch( AALType )
+						{
+							case  1:UNI31AALType1   UNI31AALType1Content;
+							case  3:UNI31AALType3   UNI31AALType3Content;
+							case  5:UNI31AALType5   UNI31AALType5Content;
+							// case 16:UNI31AALType16  UNI31AALType16Content;
+							default:UINT8 Data[ ElementLength - 1 ];
+						};
+					};
+				case 0x59:
+					_struct ATMTrafficDescriptor
+					{
+						// 5
+						UINT8   ForwardPeakCellRateIdentifier0;
+						UINT24  ForwardPeakCellRate0;
+						// 6
+						UINT8   BackwardPeakCellRateIdentifier0;
+						UINT24  BackwardPeakCellRate0;
+						// 7
+						UINT8   ForwardPeakCellRateIdentifier1;
+						UINT24  ForwardPeakCellRate1;
+						// 8
+						UINT8   BackwardPeakCellRateIdentifier1;
+						UINT24  BackwardPeakCellRate1;
+						// 9
+						UINT8   ForwardSustainableCellRateIdentifier0;
+						UINT24  ForwardSustainableCellRate0;
+						// 10
+						UINT8   BackwardSustainableCellRateIdentifier0;
+						UINT24  BackwardSustainableCellRate0;
+						// 11
+						UINT8   ForwardSustainableCellRateIdentifier1;
+						UINT24  ForwardSustainableCellRate1;
+						// 12
+						UINT8   BackwardSustainableCellRateIdentifier1;
+						UINT24  BackwardSustainableCellRate1;
+						// 13
+						UINT8   ForwardMaximumBurstSizeIdentifier0;
+						UINT24  ForwardMaximumBurstSize0;
+						// 14
+						UINT8   BackwardMaximumBurstSizeIdentifier0;
+						UINT24  BackwardMaximumBurstSize0;
+						// 15
+						UINT8   ForwardMaximumBurstSizeIdentifier1;
+						UINT24  ForwardMaximumBurstSize1;
+						// 16
+						UINT8   BackwardMaximumBurstSizeIdentifier1;
+						UINT24  BackwardMaximumBurstSize1;
+						// 17
+						UINT8   BestEffortIndicator;
+						UINT8   TrafficManagementOptionsIdentifier;
+						UINT8   Tag
+						{
+							UINT8   Reserved:6 = FormatString("       (%s)", this.ToBitString);
+							UINT8   TaggingBackward:1 = FormatString("(%s) %s", this.ToBitString, this ? "Tagging requested" 
+                                                                                                       : "FTagging not requested");
+							UINT8   TaggingForward:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Tagging requested" 
+                                                                                                      : "FTagging not requested");
+						};
+					};
+				// Connection Identifier
+				case 0x5A:
+					_struct ConnectionIdentifier
+					{
+						UINT8 PrefferedOrExclusive
+						{
+							UINT8 Ext:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Spare:2 = FormatString("                 (%s) %d", this.ToBitString, this);
+							UINT8 VPAssociatedsignalling:2 = FormatString("(%s) %s", this.ToBitString, this ? "Explicit indication of VPCI" : "");
+							UINT8 PreferredExclusive:3 = FormatString("    (%s) %s", this.ToBitString, this ? "" : "Exclusive VPCI, exclusize VCI");
+						};
+						UINT16 VPCI;
+						UINT16 VCI = UNI31VCITable(this) ;
+					}
+				case 0x5c:
+					_struct QualityofServiceParamter
+					{
+						UINT8 QoSClassForward  = UNI31QoSClassTable(this);
+						UINT8 QoSClassBackward = UNI31QoSClassTable(this);
+					}
+				case 0x5d:
+					_struct BroadbandHighLayerInformation
+					{
+						UINT8 HighLayerInfoType
+						{
+							UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Value:7 = FormatString("(%s) %s", this.ToBitString, UNI31HighLayerInfoTypeTable(this));
+						};
+						switch( HighLayerInfoType.Value )
+						{
+							case 1:
+								INT64 UserSpecificData;
+							case 3:
+								struct VendorSpecific
+								{
+									UINT24  OUI;
+									UINT32 ApplicationID;
+								};
+						  	default:
+						  		AsciiString( ElementLength - 1 ) HighLayerInfo;
+						};
+					}
+				case 0x5e:
+					_struct BroadbandBearerCapability
+					{
+						UINT8 Bearer = UNI31BearerClassType(Class)
+						{
+							UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Spare:2 = FormatString("(%s) %d", this.ToBitString, this);
+							UINT8 Class:5 = FormatString("(%s) %s", this.ToBitString, UNI31BearerClassType(this));
+						};
+						switch( Bearer.Class )
+						{
+							case  16:
+						   		UINT8 ClassX
+						   		{
+									UINT8 Ext:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                 : "Ext not set");
+									UINT8 Spare:2 = FormatString("      (%s) %d", this.ToBitString, this);
+									UINT8 TrafficType:3 = FormatString("(%s) %s", this.ToBitString, UNI31TrafficTypeTable(this));
+									UINT8 TimingReq:2 = FormatString("  (%s) %s", this.ToBitString, UNI31TimingReqTable(this));
+						   		};
+						};
+						UINT8 Class
+						{
+							UINT8 Ext:1 = FormatString("                       (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 SusceptibilitytoClipping:2 = FormatString("  (%s) %s", this.ToBitString, UNI31SCTable(this));
+							UINT8 Spare:3 = FormatString("                     (%s) %d", this.ToBitString, this);
+							UINT8 UserPlaneConnConfiguration:2 = FormatString("(%s) %s", this.ToBitString, UNI31PCCTable(this));
+						};
+					}
+				
+				//5.4.5.9  Broadband Low Layer Information
+				case 0x5f:
+					_struct BroadbandLowLayerInformation
+					{
+						// 6
+						UINT8 UserInfoLayer2Protocol = FormatString("%s, Layer2ID = %d", UNI31InfoLayer2ProtocolTable( Value ), Layer2ID)
+						{
+							UINT8 Ext:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Layer2ID:2 = FormatString("(%s) %d", this.ToBitString, this);
+							UINT8 Value:5 = FormatString("   (%s) %s", this.ToBitString, UNI31InfoLayer2ProtocolTable(this));
+						};
+					
+					 	switch(UserInfoLayer2Protocol.Value)
+					 	{
+					 		case  6:
+					 		case  7:
+					 		case  9:
+					 		case 10:
+					 		case 11:
+					 		case 14:
+					 		case 17:
+								_struct ITUTRecommendations
+								{
+									UINT8 UserSpecificData = FormatString("Q.933use = %d, mode = %s", Q933use, UNI31Layer2ModeTable(Mode) )      // 6a
+									{
+										UINT8 Ext:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                     : "Ext not set");
+										UINT8 Mode:2 = FormatString("   (%s) %s", this.ToBitString, UNI31Layer2ModeTable(this));
+										UINT8 Spare:3 = FormatString("  (%s) %d", this.ToBitString, this);
+										UINT8 Q933use:2 = FormatString("(%s) %d", this.ToBitString, this);
+									};
+									UINT8 WindowSize = Value       // 6b
+									{
+										UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                     : "Ext not set");
+										UINT8 Value:7 = FormatString("(%s) %d", this.ToBitString, this);
+									};
+								};
+							case  16:
+								UINT8 UserSpecifiedLayer2ProtocolInfo = Value        // 6a
+								{
+									UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                 : "Ext not set");
+									UINT8 Value:7 = FormatString("(%s) %d", this.ToBitString, this);
+								};
+							};
+							// 7
+							UINT8 UserInfoLayer3Protocol = FormatString("%s, Layer3ID = %d", UNI31InfoLayer3ProtocolTable( Value ), Layer3ID)
+							{
+								UINT8 Ext:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                             : "Ext not set");
+								UINT8 Layer3ID:2 = FormatString("(%s) %d", this.ToBitString, this);
+								UINT8 Value:5 = FormatString("   (%s) %s", this.ToBitString, UNI31InfoLayer3ProtocolTable(this));
+							};
+						
+							switch(UserInfoLayer3Protocol.Value)
+							{
+								case 6:
+								case 7:
+								case 8:
+								_struct UNI31Layer3ModeInfors
+								{
+									UINT8 Mode = UNI31Layer3ModeTable(Value)           // 7a
+									{
+										UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                     : "Ext not set");
+										UINT8 Value:2 = FormatString("(%s) %s", this.ToBitString, UNI31Layer3ModeTable(this));
+										UINT8 Spare:5 = FormatString("(%s) %d", this.ToBitString, this);
+									
+									};
+									UINT8 DefaultPacketSize = UNI31DefaultPacketSizeTable(Value)       // 7b
+									{
+										UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                     : "Ext not set");
+										UINT8 Spare:3 = FormatString("(%s) %d", this.ToBitString, this);
+										UINT8 Value:4 = FormatString("(%s) %s", this.ToBitString, UNI31DefaultPacketSizeTable(this));
+									};
+									UINT8 PacketWindowSize = Value
+									{
+										UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                     : "Ext not set");
+										UINT8 Value:7 = FormatString("(%s) %d", this.ToBitString, this);
+									};
+								};
+						}
+					
+						switch(UserInfoLayer3Protocol.Value)
+						{
+							case 16:
+								UINT8 UserSpecifiedLayer3ProtocolInfo = Value        // 7a
+								{
+									UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                 : "Ext not set");
+									UINT8 Value:7 = FormatString("(%s) %d", this.ToBitString, this);
+								};
+						}
+					
+						switch(UserInfoLayer3Protocol.Value)
+						{
+							case 11:
+								_struct HDLCARMInfors
+								{
+									UINT16 InitialProtocolIdentifier = IPIBit8to2*2 + IPIbit1
+									{
+										UINT16 Ext0:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Ext0 set" 
+                                                                                                       : "Ext0 not set");
+										UINT16 IPIBit8to2:7 = FormatString("(%s)", this.ToBitString);
+										UINT16 Ext1:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Ext1 set" 
+                                                                                                       : "Ext1 not set");
+										UINT16 IPIBit1:1 = FormatString("   (%s)", this.ToBitString);
+										UINT16 Spare:6 = FormatString("     (%s) %d", this.ToBitString, this);
+									};
+									switch
+									{
+										case InitialProtocolIdentifier.IPIBit1 == 0 &&
+											 InitialProtocolIdentifier.IPIBit8to2 == 0x40:
+												_struct SNAPIDInfors
+												{
+													UINT8 SNAPID = Value
+													{
+														UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                                                     : "Ext not set");
+														UINT8 Value:2 = FormatString("(%s) %d", this.ToBitString, this);
+														UINT8 Spare:5 = FormatString("(%s) %d", this.ToBitString, this);
+													};
+													UINT24  OrganizationUniqueID;    // 8.1, 8.2, 8.3
+													UINT16 ProtocolID;            // 8.4, 8.5
+												};
+									}
+								}
+						};
+					};
+				//case 0x60:
+				//case 0x61:
+				case 0x62:
+					UINT8 BroadbandSendingCompleteIndication
+					{
+						UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                     : "Ext not set");
+						UINT8 Value:7 = FormatString("(%s) %s", this.ToBitString, this ? "Sending complete" 
+                                                                                       : "No complete");
+					};
+				case 0x63:
+					UINT8 BroadbandRepeatIndication
+					{
+						UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                     : "Ext not set");
+						UINT8 Spare:3 = FormatString("(%s) %d", this.ToBitString, this);
+						UINT8 Value:4 = FormatString("(%s) %s", this.ToBitString, (this==2) ? "Prioritized list for selecting one possibility" : "");
+					};
+				case 0x6c:
+					_struct CallingPartyNumber
+					{
+						UINT8 PlanID = FormatString("AddressNumberPlan: %s, TypeOfNumber: %s",
+													UNI31PlanIDTable(AddressNumberPlanId),
+													UNI31PartyNumberTypeTable(TypeOfNumber)
+													)
+						{
+							UINT8 Ext:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 TypeOfNumber:3 = FormatString("       (%s) %s", this.ToBitString, UNI31PartyNumberTypeTable(this));
+							UINT8 AddressNumberPlanId:4 = FormatString("(%s) %s", this.ToBitString, UNI31PlanIDTable(this));
+						};
+						UINT8 Indicator
+						{
+							UINT8 Ext:1 = FormatString("                  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 PresentationIndicator:2 = FormatString("(%s) %s", this.ToBitString, UNI31PID(this));
+							UINT8 Reserved:3 = FormatString("             (%s)", this.ToBitString);
+							UINT8 ScreeningIndicator:2 = FormatString("   (%s) %s", this.ToBitString, UNI31SID(this));
+						};
+					
+						//If the coding "international number/ISDN/telephony numbering plan
+						//(Recommendation E.164)" is used, the address is coded as IA5 characters
+						//according to the format specified in the numbering plan. If the coding
+						//"unknown/ATM Endsystem Address" is used, the address is coded as
+						//described in ISO 8348, Addendum 2, using the preferred binary encoding.
+						//switch( Identification.AddressNumberPlanId )
+						//{
+						//    case  1:UINT8 AddressDigits[ ElementLength - 2 ];
+						//    case  2:UINT8 ATMEndsystemAddressOcters[ ElementLength - 2 ];
+						//    default:UINT8 Data[ ElementLength - 2 ];
+						//};
+						
+						Asciistring(ElementLength - 2) ATMEndsystemAddress;
+					};
+				case 0x6d:
+					_struct CallingPartySubaddress
+					{
+						UINT8 Identification
+						{
+							UINT8 Ext:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 TypeofSubaddress:3 = FormatString("(%s) %s", this.ToBitString, UNI31SubaddressTable(this));
+							UINT8 OddEven:1 = FormatString("         (%s) %s", this.ToBitString, this ? "OddEven" : "Not OddEven");
+							UINT8 Spare:3 = FormatString("           (%s) %d", this.ToBitString, this);
+						};
+						//switch( Identification.type )
+						//{
+						//  case  0:UINT8 AddressDigits[ ElementLength - 1 ];
+						//  case  1:UINT8 ATMEndsystemAddressOcters[ ElementLength - 1 ];
+						//  default:UINT8 Data[ ElementLength - 1 ];
+						//}
+						Asciistring(ElementLength - 1) SubAddressInformation;
+					};
+				case 0x70:
+					_struct CalledPpartyNumber
+					{
+						UINT8 PlanID = FormatString("AddressNumberPlan: %s, TypeOfNumber: %s",
+													UNI31PlanIDTable(AddressNumberPlanId),
+													UNI31PartyNumberTypeTable(TypeOfNumber)
+													)
+						{
+							UINT8 Ext:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 TypeOfNumber:3 = FormatString("       (%s) %s", this.ToBitString, UNI31PartyNumberTypeTable(this));
+							UINT8 AddressNumberPlanId:4 = FormatString("(%s) %s", this.ToBitString, UNI31PlanIDTable(this));
+						};
+						//switch( PlanID.AddressNumberPlanId )
+						//{
+						//    case  1:UINT8 AddressDigits[ ElementLength - 1 ];
+						//    case  2:UINT8 ATMEndsystemAddressOcters[ ElementLength - 1 ];
+						//    default:UINT8 Data[ ElementLength - 1 ];
+						//}
+						Asciistring(ElementLength - 1) ATMEndsystemAddress;
+					}
+				case 0x71:
+					_struct CalledPartySubaddress
+					{
+						UINT8 SubAddress
+						{
+							UINT8 Ext:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Type:3 = FormatString("     (%s) %s", this.ToBitString, UNI31SubAddressTypeTable(this));
+							UINT8 Indicator:1 = FormatString("(%s) %s", this.ToBitString, this ? "Indicator" : "Not Indicator");
+							UINT8 Sparse:3 = FormatString("   (%s) %d", this.ToBitString, this);
+						};
+						UINT8 SubAddressInfo[ ElementLength - 1 ];
+					}
+				case 0x78:
+					_struct TransitNnetworkSelection
+					{
+						UINT8 Network
+						{
+							UINT8 Ext:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 IDType:3 = FormatString("(%s) %s", this.ToBitString, (this==2) ? "National network identification" : "");
+							UINT8 IDPlan:4 = FormatString("(%s) %s", this.ToBitString, this ? "Carrier Identification Code" : "");
+						};
+						UINT8 NetworkID[ ElementLength - 1 ];
+					}
+				case 0x79:
+					_struct RestartIndicator
+					{
+						UINT8 Class = UNI31InfoElement79ClassTable(Value)
+						{
+							UINT8 Ext:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Ext set" 
+                                                                                         : "Ext not set");
+							UINT8 Spare:4 = FormatString("(%s) %d", this.ToBitString, this);
+							UINT8 Value:3 = FormatString("(%s) %s", this.ToBitString, UNI31InfoElement79ClassTable(this));
+						};
+					}
+			}
+	}
+	
+	switch
+	{
+		case FrameLength > FrameOffset:
+			_struct UnhandledValue
+			{
+				//ReportParserError(ParserErrorProtocolClassPublic, "UNI31", "UNI31InfoElement ID Error") UNI31InfoElementIDError;
+				BLOB( FrameLength - FrameOffset ) UnknownData;
+			}
+	}
+
+}

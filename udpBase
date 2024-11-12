@@ -1,0 +1,528 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  User Datagram Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 768
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/31/2010
+//#
+//####
+[DefaultTimeOut = UDPConversationTimeout]
+Protocol UDP = FormatString("SrcPort = %s, DstPort = %s, Length = %d",
+							PortNameTable(SrcPort),
+							PortNameTable(DstPort),
+							TotalLength
+							)
+{
+	[Pair = Port, Property.SourcePort]
+	UINT16 SrcPort = PortNameTable(this);
+	[Pair = Port, Property.DestinationPort]
+	UINT16 DstPort = PortNameTable(this);
+	switch
+	{
+		case Property.SourceNetworkAddress == Global.IpConfig.LocalIpv4Address: 
+		case Property.SourceNetworkAddress == Global.IpConfig.LocalIpv6Address: 
+			[ Local.Address = Property.SourceNetworkAddress, Local.Port = SourcePort]
+			struct{};
+		case Property.DestinationNetworkAddress == Global.IpConfig.LocalIpv4Address:
+		case Property.DestinationNetworkAddress == Global.IpConfig.LocalIpv6Address:
+			[ Local.Address = Property.DestinationNetworkAddress, Local.Port = DestinationPort]
+			struct{};	    
+		default:
+			[ Local.Address = -1, Local.Port = -1]
+			struct{};
+	}
+
+	[
+		BuildConversationWithProcess
+		(
+			Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+			(Property.SourceNetworkAddress == Property.DestinationNetworkAddress && SourcePort < DestinationPort) ?
+				MakeByteArray(SourcePort, DestinationPort) :
+				MakeByteArray(DestinationPort, SourcePort), 0, Local.Address, Local.Port
+		),
+		Post.Conversation.ProcessName = GetProcessName(),
+		Post.Conversation.ProcessId = GetProcessId()
+	]
+	[Post.Conversation.ConversationDescription = FormatString("(%d - %d) ConvID = %d", SourcePort,DestinationPort, ConvID)]
+	[Property.UDPDirection = (Property.SourceNetworkAddress>Property.DestinationNetworkAddress)?1
+	:(Property.SourceNetworkAddress<Property.DestinationNetworkAddress)?-1:(Property.SourcePort>Property.DestinationPort)?1
+	:(Property.SourcePort<Property.DestinationPort)?-1:0]
+	[Property.UDPPayloadLength]
+	UINT16 TotalLength;
+	[Property.UDPChecksum]
+	UINT16 Checksum;
+	switch
+	{
+		case offset < frameLength:
+			[DataFieldFrameLength = ProtocolOffset + TotalLength]
+			[SocketIndex = (SourceNetworkAddress < DestinationNetworkAddress)
+				? MakeByteArray(SourceNetworkAddress,SourcePort,DestinationNetworkAddress,DestinationPort)
+				: MakeByteArray(DestinationNetworkAddress,DestinationPort,SourceNetworkAddress,SourcePort)]
+			UDPPayload(Property.SourcePort, Property.DestinationPort) UDPPayload;
+	}
+}
+
+struct UDPPayload(srcPort, destPort) = FormatString("SourcePort = %d, DestinationPort = %d", srcPort, destPort)
+{
+	[Local.UDPPort.AddToProperty(srcPort, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Local.UDPPort.AddToProperty(destPort, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+	switch(Local.UDPPort)
+	{
+		case   53:
+			DNS Dns;
+		case   67:
+		case   68:
+			DHCP Dhcp;
+		case   88:
+			[KerberosOnTCP = FALSE]
+			KerberosV5 Kerberos;
+		case  111:
+		case  845:
+		case  847:
+			switch
+			{
+				case UINT32(FrameData, Frameoffset + 4)== 0 || UINT32(FrameData, Frameoffset + 4)== 1:
+					SunRPC SunRPC;
+				default:
+					Blob(Framelength - FrameOffset) UDPPayloadData;
+			}
+		case  123:
+			SNTP SNTP;
+		case  137:
+			NbtNs Nbtns;
+		case  138:
+			NbtDS Nbtds;
+		case  161:
+			SNMP Snmp;
+		case  162:
+			SNMP SnmpTraps;
+		case  389:
+			//RFC 3352: Connection-less LDAP
+			[IsCldap = TRUE]
+			LDAP Cldap;
+		case  520:
+			RIP Rip;
+		case  500:
+		case  848:
+			//RFC 3948
+			switch
+			{
+				case frameLength - FrameOffset == 1 &&
+					 UINT8( Framedata, Offset ) == 0xFF &&
+					 Property.UDPChecksum == 0x0000:
+					UINT8 Payload = "NAT-Keepalive Packet Payload";
+				case Property.UDPChecksum == 0x0000:
+					ESP Esp;
+				default:
+					struct
+					{
+						switch(UINT32(FrameData, FrameOffset))
+						{
+							case 0x00000000:
+								UINT32 NonESPMarker;
+						}
+						switch
+						{
+							case UINT8(FrameData, FrameOffset + 18) >= 0xF3
+								&& UINT8(FrameData, FrameOffset + 18) <= 0xF6:
+								AuthIP AuthIP;
+							default:
+								IKE Ike;
+						}
+					}
+			};
+		case  546:
+			DHCPV6 Dhcpv6Client;
+		case  547:
+			DHCPV6 Dhcpv6Server;
+		case 554:
+			RTSP Rtsp;
+		default:
+			switch
+			{
+				// Since RWS and SOCKS can redirect traffic ports,
+				// we need to check that condition first before parsing anything with ports 1024 and above
+				case (Global.SocketProxy.ProxyProtocol$[Property.SocketIndex] == "WSP") && !WSP:
+					[WspOnTcp=FALSE]
+					WSP WSP;
+				//case Global.SocketProxy.ProxyProtocol$[SocketIndex] == "SOCKS":
+				//	[SocksOnTcp=FALSE]
+				//	SOCKS SOCKS;
+				
+				//HairPinning Teredo
+				case Global.TeredoPort$[MakeByteArray(SourceNetworkAddress, SourcePort)] && Local.UDPPort!=3544:
+				case Global.TeredoPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort)] && Local.UDPPort!=3544:
+					TEREDO HairPinTeredo;
+				
+				case Global.TeredoPortOverUDP$[MakeByteArray(Ipv4.SourceAddress,SourcePort)]:
+				case Global.TeredoPortOverUDP$[MakeByteArray(Ipv4.DestinationAddress,DestinationPort)]:
+					TEREDO TeredoOnRandomPort;
+
+				// Since TFTP starts on port 69 but then uses a random port for both the client and 
+				// the server, detect that here.
+				case Global.TftpData$[MakeByteArray(SourceNetworkAddress, SourcePort, DestinationNetworkAddress)]:
+				case Global.TftpData$[MakeByteArray(DestinationNetworkAddress, DestinationPort, SourceNetworkAddress )]:
+				case Local.UDPPort == 69:
+					TFTP Tftp;
+				
+				default:
+					switch (Local.UDPPort)
+					{
+						case  1434: 
+							Ssrp Ssrp;
+						case 1645: //Conflict with the "datametrics" service
+						case 1646: //Obsoleted
+						case 1812: //Officially assigned port number for RADIUS server
+						case 1813: //Accounting
+						case 3799: //Dynamic Authorization
+							RADIUS Radius;
+						case 1701:
+							L2TP L2tp;
+						// Self registered
+						//case 1745:
+						//	RWS RWS;
+						case 1755:
+							[MMSOnTCP = FALSE]
+							MMS MMS;
+						case 1801:
+							[MQQBPort = 1801, MQQBOnTcp = FALSE]
+							MQQB MQQB;
+						case 1900: 
+							HTTP http;
+						case 2049:
+							switch(UINT32(FrameData, Frameoffset + 4))
+							{
+								case 0:
+								case 1:
+									SunRPC SunRPC;
+								default:
+									Blob(Framelength - FrameOffset) UDPPayloadData;
+							}
+						case 3478:
+						 switch
+							{
+								case TurnMsgTypeTable(UINT16(FrameData, Frameoffset)) 
+									&& (Framelength - FrameOffset - 20) == UINT16(FrameData, FrameOffset + 2) :
+									TURN TURN;
+								default:
+									//Forward Data maybe RTP Data, add TurnForwarddata after RTP
+									Blob(Framelength - FrameOffset) TurnForwardData;
+							}
+						case 3527:
+							[MQQBPort = 3527]
+							MQQB MQQBPing;
+						case 3540:
+							PNRP Pnrp;
+						case 3702:
+							xmlparser SoapOverUDP;
+						case 3544:
+							[
+								Global.TeredoPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort)] = TRUE,
+								Global.TeredoPort$[MakeByteArray(SourceNetworkAddress, SourcePort)] = TRUE
+							]
+							TEREDO Teredo;
+						case 4500:
+							//RFC 3948
+							switch
+							{
+								case frameLength - FrameOffset == 1 &&
+									 UINT8( Framedata, Offset ) == 0xFF &&
+									 Property.UDPChecksum == 0x0000:
+									UINT8 Payload = "NAT-Keepalive Packet Payload";
+								case Property.UDPChecksum == 0x0000:
+									ESP Esp;
+								default:
+									struct
+									{
+										switch(UINT32(FrameData, FrameOffset))
+										{
+											case 0x00000000:
+												UINT32 NonESPMarker;
+										}
+										switch
+										{
+											case UINT8(FrameData, FrameOffset + 18) >= 0xF3
+												&& UINT8(FrameData, FrameOffset + 18) <= 0xF6:
+												AuthIP AuthIP;
+											default:
+												IKE Ike;
+										}
+									}
+							}
+						case 5004:
+							RTP Rtp;
+						case 5005:
+						switch
+						{
+							case Property.UDPPayloadLength>12:
+							switch
+							{
+								case ( UINT8( Framedata, Offset ) & 0xE0 ) == 0x80 &&	//1) RTCP version = 2; 3)P bit = 0
+								( UINT8( Framedata, Offset + 1 ) == 200 ||	//2) RTCP packet type = SR
+				 				UINT8( Framedata, Offset + 1 ) == 201 ) :	//2) RTCP packet type = RR
+								[RTCPEndOffset = FrameOffset + ( UINT16( FrameData, FrameOffset + 2 ) + 1 ) * 4]
+								switch
+								{
+									case Property.RTCPEndOffset == FrameLength :  struct _RtcpProtocol0{ RTCP Rtcp; }	//RTCP total length == packet length
+									case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+									[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+									switch
+									{
+										case Property.RTCPEndOffset == FrameLength : struct _RtcpProtocol1{ RTCP Rtcp; }	//RTCP total length == packet length
+										case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+											[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+											switch
+											{
+												case Property.RTCPEndOffset == FrameLength :
+												case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+													struct _RtcpProtocol2{ RTCP Rtcp; }
+												default:
+												Blob(Framelength - FrameOffset) UDPPayloadData1;
+											}
+										default:
+										Blob(Framelength - FrameOffset) UDPPayloadData2;
+									}
+									default:
+									Blob(Framelength - FrameOffset) UDPPayloadData3;
+								}
+								default:
+								Blob(Framelength - FrameOffset) UDPPayloadData4;
+							}
+						}
+					case 5060:
+						[Property.SipOnUdp = true]
+						SIP SIP;
+					case 2302:
+					case 6073:
+						DPDX dp;
+					case 58727:
+						TSAP Tsap;
+					case 5355:
+						LLMNR Llmnr;
+					default:
+						[Local.UDPRtpPayloadType = (UINT8(FrameData, FrameOffset + 1) & 0x7F)]
+						switch
+						{
+							case Conversation.RDPSndOnUDP:
+							case Property.UDPPayloadLength == 1032 && UINT8(FrameData, FrameOffset) == 6
+								&& UINT16(FrameData, FrameOffset + 2) == 0xFC03
+								&& UINT16(FrameData, FrameOffset + 6) == 0x0004:
+								[Conversation.RDPSndOnUDP = True]
+								RDP Rdp;
+								
+							case 
+								UINT8( Framedata, Offset ) == 0x04 &&
+								( FrameLength - Offset >= 80 ) &&
+								UINT8( Framedata, Offset + 1 ) <= 10 &&
+								( UINT8( Framedata, Offset + 3 ) & 0xF0 ) == 0 &&
+								( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&
+								UINT8( Framedata, Offset + 5 ) < 4 &&
+								UINT8( Framedata, Offset + 6 ) == 0 :
+									MSRPC MSRPC;
+							
+							case AsciiString( FrameData, Offset, 3 ) == "MSB":
+							case Conversation.MSBConversation == 1:
+								[Conversation.MSBConversation = 1] MSB MSB;
+							
+							case AsciiString( FrameData, Offset + 20, 4 ) == "play":
+								DirectPlay4 DirectPlay4;
+								
+							// Using SDP to detect RTP and RTCP streams
+							// dev note 2006-06-12
+							// RFC 3550 page 68
+							// RTP SHOULD use an even destination port number and the corresponding
+							// RTCP stream SHOULD use the next higher (odd) destination port number.
+							case Global.RTPPort$[MakeByteArray(SourceNetworkAddress, SourcePort)]:
+							case Global.RTPPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort)]:
+							case Global.SDPAddressTable$[MakeByteArray(IPv4.SourceAddress.ToString, property.SourcePort)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv4.DestinationAddress.ToString, property.DestinationPort)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv6.SourceAddress.ToString, property.SourcePort)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv6.DestinationAddress.ToString, property.DestinationPort)] == "RTP/AVP":	
+							switch
+							{
+								// Detect RTP
+								// RFC 3550
+								// A.1 RTP Data Header Validity Checks
+								// Only weak validity checks are possible on an RTP data packet 
+								// 1) RTP version field must equal 2
+								// 2) The payload type must be known, and in particular it must not be equal to SR or RR (don't need to check)
+								// 3) P bit check
+								// 4) X bit check
+								// 5) The length of the packet must be consistent with CC and payload type (if payloads have a known length).
+								case (UINT8(FrameData, FrameOffset) & 0xC0) == 0x80 && //1) RTP version = 2
+								( (UINT8(FrameData, FrameOffset) & 0x20) == 0x00 || //3) P bit not set
+									(UINT8(FrameData, FrameOffset) & 0x20) == 0x20 && //3) P bit set
+									FrameLength - FrameOffset - 12 - (UINT8(FrameData, FrameOffset) & 0x0F) * 4
+									> UINT8(FrameData, FrameLength - 1) //3) Padding Length is less than the total packet length minus the header size.
+									) &&
+								( (UINT8(FrameData, FrameOffset) & 0x10) == 0x00 || //4) X bit not set
+									(UINT8(FrameData, FrameOffset) & 0x10) == 0x10 && //4) X bit set
+										FrameLength - FrameOffset - 12 - (UINT8(FrameData, FrameOffset) & 0x0F) * 4-(4 + UINT16(FrameData, FrameOffset + 12 + (UINT8(FrameData, FrameOffset) & 0x0F) * 4 + 2)*4) 
+										>= UINT8(FrameData, FrameLength-1) //4) Padding Length is less than the total packet length minus the header size and the extension length.
+									) &&
+									(FrameOffset + 12 + (UINT8(FrameData, FrameOffset) & 0x0F) * 4) <= FrameLength //5) Check Length
+								&& // 2) payload type must not be equal to SR or RR 
+								!(( UINT8( Framedata, Offset ) & 0xE0 ) == 0x80 && ( UINT8( Framedata, Offset + 1 ) == 200 ||	UINT8( Framedata, Offset + 1 ) == 201 ))
+									&& // 2)The payload type must be known
+									 ((Local.UDPRtpPayloadType >=0 && Local.UDPRtpPayloadType <=19)
+									|| Local.UDPRtpPayloadType == 25
+									|| Local.UDPRtpPayloadType == 26
+									|| Local.UDPRtpPayloadType == 28
+									|| (Local.UDPRtpPayloadType >=31 && Local.UDPRtpPayloadType <=34)
+									|| (Local.UDPRtpPayloadType >=72 && Local.UDPRtpPayloadType <= 76)
+									|| (Local.UDPRtpPayloadType >=96 && Local.UDPRtpPayloadType <= 127)):
+										RTP Rtp;
+								default:
+									Blob(Framelength - FrameOffset) UDPPayloadData;
+							}
+							case Global.RTCPPort$[MakeByteArray(SourceNetworkAddress, SourcePort)]:
+							case Global.RTCPPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort)]:
+							case Global.SDPAddressTable$[MakeByteArray(IPv4.SourceAddress.ToString, property.SourcePort - 1)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv4.DestinationAddress.ToString, property.DestinationPort - 1)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv6.SourceAddress.ToString, property.SourcePort - 1)] == "RTP/AVP":
+							case Global.SDPAddressTable$[MakeByteArray(IPv6.DestinationAddress.ToString, property.DestinationPort - 1)] == "RTP/AVP":	
+							switch
+							{
+								case ( UINT8( Framedata, Offset ) & 0xE0 ) == 0x80 &&	//1) RTCP version = 2; 3)P bit = 0
+								( UINT8( Framedata, Offset + 1 ) == 200 ||	//2) RTCP packet type = SR
+				 				UINT8( Framedata, Offset + 1 ) == 201 ) :	//2) RTCP packet type = RR
+								[RTCPEndOffset = FrameOffset + ( UINT16( FrameData, FrameOffset + 2 ) + 1 ) * 4]
+								switch
+								{
+									case Property.RTCPEndOffset == FrameLength :  struct _RtcpProtocol0{ RTCP Rtcp; }	//RTCP total length == packet length
+									case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+									[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+									switch
+									{
+										case Property.RTCPEndOffset == FrameLength : struct _RtcpProtocol1{ RTCP Rtcp; }	//RTCP total length == packet length
+										case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+											[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+											switch
+											{
+												case Property.RTCPEndOffset == FrameLength :
+												case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+													struct _RtcpProtocol2{ RTCP Rtcp; }
+												default:
+													Blob(Framelength - FrameOffset) UDPPayloadData1;
+											}
+										default:
+										Blob(Framelength - FrameOffset) UDPPayloadData2;
+									}
+									default:
+									Blob(Framelength - FrameOffset) UDPPayloadData3;
+								}
+								default:
+								Blob(Framelength - FrameOffset) UDPPayloadData4;
+							}
+							case TurnMsgTypeTable(UINT16(FrameData, Frameoffset)) 
+								&& (Framelength - FrameOffset - 20) == UINT16(FrameData, FrameOffset + 2) :
+								TURN TURN;
+							
+							// Detect RTP
+							// RFC 3550
+							// A.1 RTP Data Header Validity Checks
+							// Only weak validity checks are possible on an RTP data packet 
+							// 1) RTP version field must equal 2
+							// 2) The payload type must be known, and in particular it must not be equal to SR or RR (don't need to check)
+							// 3) P bit check
+							// 4) X bit check
+							// 5) The length of the packet must be consistent with CC and payload type (if payloads have a known length).
+							case (UINT8(FrameData, FrameOffset) & 0xC0) == 0x80 && //1) RTP version = 2
+								( (UINT8(FrameData, FrameOffset) & 0x20) == 0x00 || //3) P bit not set
+									(UINT8(FrameData, FrameOffset) & 0x20) == 0x20 && //3) P bit set
+									FrameLength - FrameOffset - 12 - (UINT8(FrameData, FrameOffset) & 0x0F) * 4
+									> UINT8(FrameData, FrameLength - 1) //3) Padding Length is less than the total packet length minus the header size.
+								) &&
+								( (UINT8(FrameData, FrameOffset) & 0x10) == 0x00 || //4) X bit not set
+									(UINT8(FrameData, FrameOffset) & 0x10) == 0x10 && //4) X bit set
+									FrameLength - FrameOffset - 12 - (UINT8(FrameData, FrameOffset) & 0x0F) * 4-(4 + UINT16(FrameData, FrameOffset + 12 + (UINT8(FrameData, FrameOffset) & 0x0F) * 4 + 2)*4)
+									>= UINT8(FrameData, FrameLength-1) //4) Padding Length is less than the total packet length minus the header size and the extension length.
+								) &&
+								(FrameOffset + 12 + (UINT8(FrameData, FrameOffset) & 0x0F) * 4) <= FrameLength //5) Check Length
+								&& // 2) payload type must not be equal to SR or RR 
+								!(( UINT8( Framedata, Offset ) & 0xE0 ) == 0x80 && ( UINT8( Framedata, Offset + 1 ) == 200 ||	UINT8( Framedata, Offset + 1 ) == 201 ))
+								&& // 2)The payload type must be known
+								 ((Local.UDPRtpPayloadType >=0 && Local.UDPRtpPayloadType <=19)
+								|| Local.UDPRtpPayloadType  == 25
+								|| Local.UDPRtpPayloadType  == 26
+								|| Local.UDPRtpPayloadType  == 28
+								|| (Local.UDPRtpPayloadType >=31 && Local.UDPRtpPayloadType <=34)
+								|| (Local.UDPRtpPayloadType >=72 && Local.UDPRtpPayloadType <= 76)
+								|| (Local.UDPRtpPayloadType >=96 && Local.UDPRtpPayloadType <= 127)):
+									struct{RTP Rtp;}
+							
+							// Detect RTCP
+							// RFC 3550
+							// A.2 RTCP Header Validity Checks
+							// 1) RTP version field must equal 2
+							// 2) The first RTCP packet in the compound packet MUST always be a report packet - SR or RR
+							// 3) The padding bit (P) should be zero for the first packet of a compound RTCP packet
+							// 4) The length fields of the individual RTCP packets must add up to the overall length of the
+							//    compound RTCP packet as received.  This is a fairly strong check.
+							case ( UINT8( Framedata, Offset ) & 0xE0 ) == 0x80 &&	//1) RTCP version = 2; 3)P bit = 0
+								( UINT8( Framedata, Offset + 1 ) == 200 ||	//2) RTCP packet type = SR
+				 				UINT8( Framedata, Offset + 1 ) == 201 ) :	//2) RTCP packet type = RR
+								[RTCPEndOffset = FrameOffset + ( UINT16( FrameData, FrameOffset + 2 ) + 1 ) * 4]
+								switch
+								{
+									case Property.RTCPEndOffset == FrameLength :  struct _RtcpProtocol0{ RTCP Rtcp; }	//RTCP total length == packet length
+									case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+									[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+									switch
+									{
+										case Property.RTCPEndOffset == FrameLength : struct _RtcpProtocol1{ RTCP Rtcp; }	//RTCP total length == packet length
+										case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+											[RTCPEndOffset = Property.RTCPEndOffset + ( UINT16( FrameData, Property.RTCPEndOffset + 2 ) + 1 ) * 4]
+											switch
+											{
+												case Property.RTCPEndOffset == FrameLength :
+												case ( UINT8( Framedata, Property.RTCPEndOffset ) & 0xC0 ) == 0x80 :	//RTCP version == 2
+													struct _RtcpProtocol2{ RTCP Rtcp; }
+												default:
+												Blob(Framelength - FrameOffset) UDPPayloadData1;
+											}
+										default:
+										Blob(Framelength - FrameOffset) UDPPayloadData2;
+									}
+									default:
+									Blob(Framelength - FrameOffset) UDPPayloadData3;
+								}
+							
+							default:
+								// SIP, see RFC3261 8.1.1.7 Via
+								switch (AsciiStringTerm(FrameData,FrameOffset," "))
+								{
+									case "ACK": //RFC 3261
+									case "BYE": //RFC 3261
+									case "CANCEL": //RFC 3261
+									case "INFO": //RFC 2976
+									case "INVITE": //RFC 3261
+									case "MESSAGE": //RFC 3428
+									case "NOTIFY": //RFC 3265
+									case "OPTIONS": //RFC 3261
+									case "PRACK": //RFC 3262
+									case "PUBLISH": //RFC 3903
+									case "REFER": //RFC 3515
+									case "REGISTER": //RFC 3261
+									case "SUBSCRIBE": //RFC 3265
+									case "UPDATE": //RFC 3311
+									case "SIP/2.0": //Sip Response
+										[Property.SipOnUdp = true]
+										SIP SIP;
+									default:
+										BLOB(Property.UDPPayloadLength  - 8) UDPPayloadData;
+								}
+						}
+				}
+			}
+	}
+	switch
+	{
+		case Offset < FrameLength: BLOB(FrameLength - Offset) UnparsedData;
+	}
+}

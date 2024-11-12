@@ -1,0 +1,89 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  MSMQ over HTTP protocol
+//#
+//#  Details:                
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[property.HTTPPayloadType = "MSMQHTTP"]
+[RegisterBefore(HTTPPayloadData.WMLog,Msmqhttp,property.HTTPPayloadType == "MSMQHTTP" || Contains( AsciiStringTerm( FrameData, FrameOffset, "\r\n\r\n", FALSE ), "MSMQMessage" ))]
+Protocol MSMQHTTP
+{
+	while Conditions[FrameOffset < FrameLength]
+	{
+		switch
+		{
+			case Contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n\r\n", FALSE), MsmqMimeBoundaryVal):
+				_struct {
+					AsciiStringTerm("\r\n") MimeBoundary;
+					struct EncapsulatedMultiPart {
+						AsciiStringTerm("\r\n\r\n") MimeParam
+						{
+							[MSMQHTTPContentType]
+							AsciiStringTerm("\r\n") ContentType;
+							AsciiStringTerm("\r\n") ContentLength
+							{
+								AsciiStringTerm(": ") Param;
+								[MSMQHTTPContentLength = StringToNumber(Value)]
+								AsciiStringTerm("\r\n") Value;
+							}
+							AsciiStringTerm("\r\n") Param;
+						}
+						switch 
+						{
+							case MSMQHTTPContentLength > 0: // && MSMQHTTPContentType.Contains( "xml" ):
+							Blob(MSMQHTTPContentLength) Payload;
+							//XML XmlPayload;
+						}
+					}
+				}
+			default:
+				[MSMQHTTPPayload]
+				AsciiString (FrameLength - FrameOffset) MSMQHTTPPayLoad;
+		}
+	}
+}
+
+struct MsmqMimeBoundary
+{
+	switch 
+	{
+		case AsciiString(FrameData,Offset,1) == "\"":
+			[MsmqMimeBoundaryVal = "--" + Boundary]	// append "--" to Boundary
+			_struct QuoteBoundary {
+				AsciiStringTerm("\"") OpenQuote;
+				AsciiStringTerm("\"") Boundary; // fetch the boundary value
+				AsciiStringTerm(";") CloseQuote;
+			};
+		case AsciiString(FrameData,Offset,9) != "\"":
+			[MsmqMimeBoundaryVal = "--" + Boundary]	// append "--" to Boundary
+			AsciiStringTerm(";") Boundary;		// fetch the boundary value
+	}
+}
+
+[property.HTTPPayloadType = "MSMQHTTP"]
+[RegisterBefore(Http.Request.HeaderFields.ContentType,MsmqhttpContentType,property.HTTPPayloadType == "MSMQHTTP" || Contains( AsciiStringTerm( FrameData, FrameOffset, "\r\n\r\n", FALSE ), "MSMQMessage" ))]
+struct MSMQHTTPContentType
+{
+	AsciiStringTerm("\r\n") ContentType
+	{
+		AsciiStringTerm(";") ContentType;
+		while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) ]
+		{
+			DynamicSwitch AsciiStringTerm("=")
+			{
+				case " boundary":	
+					MsmqMimeBoundary MimeBoundary = FormatString("%s", MsmqMimeBoundaryVal);
+				case " num-args":
+					AsciiStringTerm("\r\n") NumArgs;
+				case " type":
+					AsciiStringTerm("\r\n") Type;
+			}
+		}
+	}
+}

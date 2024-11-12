@@ -1,0 +1,287 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - XML Paper Specification (XPS) Print Virtual Channel
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEXPS]: Remote Desktop Protocol: XML Paper Specification (XPS)Print Virtual Channel Extension
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+CONST RDPEXPSWaitForPrnPropsCallbackRsp = 1;
+CONST RDPEXPSWaitForDocPropsCallbackRsp = 2;
+
+// "XPSDR" Printer Driver Interface
+[DataTypeByteOrder = LittleEndian, conversation.RDPEXPSCallbackMVS$[FrameNumber] = conversation.RDPEXPSCallback]
+Protocol RDPEXPSPrintDriver = property.RDPEXPSPrintDriverDesc
+{
+	[local.FromServer = property.RDPEDYCServerManager]
+	UINT32 InterfaceID;
+	[property.RDPEXPSMessageId]
+	UINT32 MessageID;
+	switch
+	{
+		case InterfaceID == 0x00000000:
+			switch(local.FromServer)
+			{
+				case true:
+					[post.property.RDPEXPSPrintDriverDesc = FunctionID.ToString]
+					_struct FromServer
+					{
+						UINT32 FunctionID = RDPEXPSPrintDriverFunctionIDTable(this);
+						switch(FunctionID)
+						{
+							case 0x00000100:
+								UINT32 ClientPrinterId;
+//							case 0x00000101: no payload
+							case 0x00000102:
+								_struct ServerConvertDevmodeRequest
+								{
+									UINT32 fMode;
+									UINT32 cbDevmodeIn;
+									BLOB(cbDevmodeIn) DevmodeIn;
+									UINT32 cbDevmodeOut;
+									BLOB(cbDevmodeOut) DevmodeOut;
+									UINT32 cbProvided;
+								}
+//							case 0x00000103: no payload
+							case 0x00000104:
+								_struct ServerGetDeviceCapabilityRequest
+								{
+									UINT32 cbDevmodeIn;
+									BLOB(cbDevmodeIn) DevmodeIn;
+									UINT16 DeviceCap;
+									UINT32 InputBufferSize;
+								}
+							case 0x00000105:
+								_struct ServerDocumentPropertiesRequest
+								{
+									UINT32 fMode;
+									UINT64 hServerWindow;
+									UINT32 cbDevmodeIn;
+									BLOB(cbDevmodeIn) DevmodeIn;
+									UINT32 OutputDevModeSizeProvided;
+								}
+							case 0x00000106:
+								_struct ServerAsyncDocumentPropertiesRequest
+								{
+									[conversation.RDPEXPSCallback = RDPEXPSWaitForDocPropsCallbackRsp]
+									UINT32 fMode;
+									UINT64 hServerWindow;
+									UINT32 cbDevmodeIn;
+									BLOB(cbDevmodeIn) DevmodeIn;
+									UINT32 OutputDevModeSize;
+									UINT32 Reserved = FormatString("0x%08X (Must set to 0x00000001)", this);
+									
+									// Should not be used due to client to server traffic encryption
+									[conversation.RDPEXPSDocCallback$[Callback, property.RDPEXPSMessageId] = 0x00000106]
+									UINT32 Callback; 
+								}
+							case 0x00000107:
+								_struct ServerAsyncPrinterPropertiesRequest
+								{
+									[conversation.RDPEXPSCallback = RDPEXPSWaitForPrnPropsCallbackRsp]
+									UINT32 Flags = RDPEXPSServerPrinterPropertiesRequestFlagsTable(this);
+									UINT64 hServerWindow;
+									UINT32 Reserved = FormatString("%u (Must set to 0x00000001)", this);
+									
+									[conversation.RDPEXPSPrnCallback$[Callback, property.RDPEXPSMessageId] = 0x00000107]
+									UINT32 Callback;
+								}								
+							case 0x00000108:
+								_struct ServerPrinterPropertiesRequest
+								{
+									UINT32 Flags = RDPEXPSServerPrinterPropertiesRequestFlagsTable(this);
+									UINT64 hServerWindow;
+								}
+//							case 0x00000109: no payload
+//							case 0x0000010A: no payload
+							case 0x0000010B:
+								_struct ServerMoveDocumentPropertiesWindowRequest
+								{
+									UINT32 xPos;
+									UINT32 yPos;
+								}
+							case 0x0000010C:
+								_struct ServerGetDeviceAdjustmentRequest
+								{
+									UINT32 cbDevmodeIn;
+									BLOB(cbDevmodeIn) DevmodeIn;
+									UINT32 cbInBuffer;
+									BLOB(cbInBuffer) InBuffer;
+									UINT32 numInProps;
+									RDPEXPSPrinterProperty PrinterProperty[numInProps]; 
+								}								
+						}
+					}
+			}
+		case UINT32(FrameData, FrameOffset) == 0x00000001:
+			[post.property.RDPEXPSPrintDriverDesc = FunctionID.ToString]
+			UINT32 FunctionID = RDPEXPSPrintDriverFunctionIDTable(this);
+		
+		// 0x00000107 for _struct ServerAsyncPrinterPropertiesRequest
+		case conversation.RDPEXPSCallbackMVS$[FrameNumber] == RDPEXPSWaitForPrnPropsCallbackRsp && 
+				conversation.RDPEXPSPrnCallback$[RdpEXPSPrintDriver.InterfaceID, property.RDPEXPSMessageId] == 0x00000107:
+			[post.property.RDPEXPSPrintDriverDesc = "PRINTER_PROPS_CALLBACK_RSP"]
+			UINT32 Reserved = FormatString("0x%08x (Must set to 0x00000000)", this);
+		
+		// 0x00000106 for _struct ServerAsyncDocumentPropertiesRequest
+		case conversation.RDPEXPSCallbackMVS$[FrameNumber] == RDPEXPSWaitForDocPropsCallbackRsp &&
+				conversation.RDPEXPSDocCallback$[RdpEXPSPrintDriver.InterfaceID, property.RDPEXPSMessageId] == 0x00000106:
+			// 2.2.4.3.2.4 Server Document Properties Callback Response (DOC_PROPS_CALLBACK_RSP)
+			// for 2.2.4.3.2.3 Client Document Properties Callback Request (DOC_PROPS_CALLBACK_REQ) is encrypted
+			[post.property.RDPEXPSPrintDriverDesc = "DOC_PROPS_CALLBACK_RSP"]
+			UINT32 Reserved1 = FormatString("0x%08x (Must set to 0x00000000)", this);	
+	}
+}
+
+// "TSVCTKT" Printer Ticket Interface
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEXPSPrintTicket = RDPEXPSPrintTicketFunctionIDTable(FromServer.FunctionID)
+{
+	[local.FromServer = property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress? false: true]
+	[local.XpsInterafceID]
+	UINT32 InterfaceID;
+	UINT32 MessageID;
+	switch
+	{
+		case local.XpsInterafceID == 0x00000000:
+			switch(local.FromServer)
+			{
+				case true:
+					_struct FromServer
+					{
+//						[conversation.XpsFunctionID]
+						UINT32 FunctionID = RDPEXPSPrintTicketFunctionIDTable(this);				
+						switch(FunctionID)
+						{
+							case 0x00000100:
+								UINT32 ClientPrinterId;
+							case 0x00000101:
+								_struct ServerBindPrinterRequest
+								{
+									UINT32 ClientPrinterId;
+									UINT32 Version;
+								}
+//							case 0x00000102: no payload
+							case 0x00000103:
+								_struct ServerPrintTickettoDevmodeRequest
+								{
+									RDPEXPSXml PrintTicket;
+									UINT32 cbDevModeIn;
+									BLOB(cbDevModeIn) pDevModeIn;
+								}
+							case 0x00000104:
+								_struct ServerDevmodetoPrintTicketRequest
+								{
+									UINT32 cbDevModeIn;
+									BLOB(cbDevModeIn) pDevModeIn;
+									RDPEXPSXml PrintTicket;
+								}
+							case 0x00000106:
+							case 0x00000107:
+								RDPEXPSXml PrintTicket;
+						}
+					}
+			}
+	}
+}
+
+
+
+table RDPEXPSPrintTicketFunctionIDTable(value)
+{
+	switch(value)
+	{
+		case 0x00000100: "GET_SUPPORTED_VERSIONS_REQ";
+		case 0x00000101: "BIND_PRINTER_REQ";
+		case 0x00000102: "QUERY_DEV_NS_REQ";
+		case 0x00000103: "PRINT_TKT_TO_DEVMODE_REQ";
+		case 0x00000104: "DEVMODE_TO_PRINT_TKT_REQ";
+		case 0x00000105: "PRINT_CAPS_REQ";
+		case 0x00000106: "PRINT_CAPS_FROM_PRINT_TKT_REQ";
+		case 0x00000107: "VALIDATE_PRINT_TKT_REQ";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+table RDPEXPSPrintDriverFunctionIDTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "RIMCALL_RELEASE";
+		case 0x00000100: "INIT_PRINTER_REQ";
+		case 0x00000101: "GET_ALL_DEV_CAPS_REQ";
+		case 0x00000102: "CONVERT_DEVMODE_REQ";
+		case 0x00000103: "GET_DEFAULT_DEVMODE_REQ";
+		case 0x00000104: "GET_DEVICE_CAP_REQ";
+		case 0x00000105: "DOC_PROPERTIES_REQ";
+		case 0x00000106: "ASYNC_DOC_PROPS_REQ";	
+		case 0x00000107: "ASYNC_PRINTER_PROPS_REQ";
+		case 0x00000108: "PRINTER_PROPERTIES_REQ";
+		case 0x00000109: "CANCEL_ASYNC_DOC_PROPS_REQ";			
+		case 0x0000010A: "CANCEL_ASYNC_PRINTER_PROPS_REQ";
+		case 0x0000010B: "MOVE_DOC_PROPERTIES_REQ";	
+		case 0x0000010C: "MXDC_GETPDEV_ADJUSTMENT_REQ";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+table RDPEXPSFlagIsNullTable(caption, value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("%s field is present", caption);
+		case 0x01: FormatString("%s field is not present", caption);
+		default:
+			"Unknwon value";		
+	}
+}
+
+
+struct RDPEXPSXml
+{
+	UINT32 cbXmlSize;
+	XMLparser Xml;
+}
+
+table RDPEXPSServerPrinterPropertiesRequestFlagsTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "XPSREDIR_PRINTER_PROPERTIES_Flags_WITH_PERMISSION";
+		case 0x00000001: "XPSREDIR_PRINTER_PROPERTIES_Flags_NO_PERMISSION";
+		default:
+			"Unknown value";
+	}
+}
+
+table RDPEXPSPrinterPropertyTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000002: "pPropertyValue contains a 32-bit integer; cbPropertyValue is 4";
+		case 0x00000003: "pPropertyValue contains a 64-bit integer; cbPropertyValue is 8";
+		case 0x00000004: "pPropertyValue contains an 8-bit integer; cbPropertyValue is 1";
+		case 0x0000000A: "pPropertyValue contains a variable size buffer";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+struct RDPEXPSPrinterProperty
+{
+	UINT32 PropertyType = RDPEXPSPrinterPropertyTypeTable(this);
+	UINT32 cbPropertyName;
+	UnicodeString(cbPropertyName / 2) PropertyName;
+	UINT32 cbPropertyValue;
+	BLOB(cbPropertyValue) PropertyValue;
+}
+
+// --------------- RDPEXPS End ------------------

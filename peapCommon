@@ -1,0 +1,89 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Microsoft Protected Extensible Authentication Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      draft-josefsson-pppext-eap-tls-eap-02.txt
+//#                          draft-kamath-pppext-peapv0-00.txt
+//#  Microsoft References:   [MS-PEAP]: Protected Extensible Authentication Protocol (PEAP) Specification (10.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 12/08/2009
+//#                          Minor, 02/04/2010
+//#
+//####
+
+//The message(2.2.6   EAP Extensions Methods) is encrypted
+
+/**  PEAPv1 as described in draft-josefsson-pppext-eap-tls-eap-02.txt **/
+// Type 25
+Struct PeapData 
+{
+	[ Property.PEAPFlagVer ]
+	UINT8 FlagsVer 
+	{
+		[HasPeapTlsLength]
+		UINT8 L:1 = FormatString("      (%s) %s", this.ToBitString, this ? "TLS Length Included (1)" : "TLS Length Not Included (0)");
+		UINT8 M:1 = FormatString("      (%s) %s", this.ToBitString, this ? "More Fragments (1)" : "Last Fragment (0)");
+		[Post.Property.PEAPStart = FormatString("%s", S == 1 ? ",PEAP start":"")]
+		UINT8 S:1 = FormatString("      (%s) PEAP start (%d)", this.ToBitString, this);
+		UINT8 R1:1 = FormatString("     (%s) Reserved (must be zero) (%d)", this.ToBitString, this);
+		UINT8 R2:1 = FormatString("     (%s) Reserved (must be zero) (%d)", this.ToBitString, this);
+		UINT8 R3:1 = FormatString("     (%s) Reserved (must be zero) (%d)", this.ToBitString, this);
+		UINT8 Ver_R:1 = FormatString("  (%s) Reserved (must be zero) (%d)", this.ToBitString, this);
+		UINT8 Ver_V:1 = FormatString("  (%s) Version  (must be zero) (%d)", this.ToBitString, this);
+	};
+	
+	//PEAP Start Packet With Outer TLVs
+	switch
+	{
+		case Property.PEAPFlagVer == 0x20:
+			Blob( EAP.Length - 6 ) OuterTlvData;
+	}
+
+	//PEAP Packet
+	switch
+	{
+		case FrameOffset < EapEnd:
+			TLSData Data;
+	}
+}
+
+Struct TLSData
+{
+	switch 
+	{
+		case (HasPeapTlsLength):
+			[PeapTlsMessageLength]
+			UINT32 TlsMessageLength;
+	}
+	[
+		payloadstart(
+			EapCode, /* direction */
+			0, /* id */
+			0, /* sequence token */
+			0, /* next sequence token */
+			PeapTlsMessageLength, /* total payload length */
+			HasPeapTlsLength, /* is first */
+			0, /* is last */
+			RssmblyIndStartBit+RssmblyIndLengthBit	
+		)
+	]
+	switch (HasPeapTlsLength) 
+	{
+		case 0: Blob(EAP.Length-6) TlsContinuationData;
+		case 1: 
+			struct
+			{
+				[ DataFieldFrameLength = FrameOffset + PeapTlsMessageLength ]
+				SSLVersionSelector TLSData;
+				Switch
+				{
+					Case (EapEnd > FrameOffset) && (EapCode == 2):
+						Blob( EAP.Length - PeapTlsMessageLength - 10 ) OuterTlvData;
+				}
+			}
+	}
+}

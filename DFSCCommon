@@ -1,0 +1,303 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Distributed File System Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DFSC]: Distributed File System (DFS) Referral Protocol Specification (8.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/7/2010
+//#
+//####
+
+const DFSDfsPath = 1;
+const DFSDfsAlternatePath = 2;
+const DFSTargetPath = 3;
+const DFSSpecialName = 4;
+const DFSExpandedName = 5;
+
+Protocol DFSC = DfsProtocolSummary
+{
+	Switch( Property.SMBResponse )
+	{
+		Case FALSE:
+		_Struct ReqGetDFSReferral
+		{
+			UINT16 MaxReferralLevel;
+
+			[DfsProtocolSummary = FormatString( "Get DFS Referral Request, FileName: %s, MaxReferralLevel: %u", RequestFileName.ToString, MaxReferralLevel )]
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString RequestFileName = DFSCStringTable( this );
+		}
+
+		Case TRUE:
+		_Struct RespGetDFSReferral
+		{
+			UINT16 PathConsumed = FormatString( "%u bytes", this );
+
+			[DfsProtocolSummary = FormatString( "Get DFS Referral Response, NumberOfReferrals: %u", NumberOfReferrals )]
+			UINT16 NumberOfReferrals;
+
+			[DataFieldByteOrder = LittleEndian]
+			UINT32 ReferralHeaderFlags
+			{
+				UINT32 ReferalServers:1 = FormatString("(%s) - Elements In Referral Array %s Referral Servers", this.ToBitString, this ? "Are" : "Are Not" );
+				UINT32 StorageServers:1 = FormatString("(%s) - Elements In Referral Array %s Storage Servers", this.ToBitString, this ? "Are" : "Are Not" );
+				UINT32 TargetFailback:1 = FormatString("(%s) - Target Failback %s Enabled For This Namespace Root/Link", this.ToBitString, this ? "Is" : "Is Not" );
+				UINT32 unused:29 = FormatString("        (%s) - Unused", this.ToBitString );
+			}
+			DFSCReferralEntries( NumberOfReferrals ) ReferralEntries;
+		}
+	}
+}
+Table DfscServerTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "Link targets returned or sysvol referral response";
+		Case 0x0001: "Root targets returned";
+		Default: "unknown";
+	}
+}
+
+Table DFSCOffsetTable( Value, Offset )
+{
+	Switch( Value )
+	{
+		Case 0: FormatString( "%u (0x%X)", Value, Value );
+		Default:
+			FormatString( "%u (0x%X) Offset:0x%X", Value, Value, Value + Offset );
+	}
+}
+
+Table DFSCStringTable( String )
+{
+	Switch( String == "" )
+	{
+		Case True: "<empty>";
+		Default: String;
+	}
+}
+
+Table DFSCIndexStringTable( Index )
+{
+	Switch( Index > 0 )
+	{
+		Case True: FormatString( "Index:%d ", Index );
+		Default: "";
+	}
+}
+
+Table DFSCIndexEntryExistsTable( Index )
+{
+	Switch( Index )
+	{
+		Case -1: True;
+		Default: Index > 0;
+	}
+}
+Struct DFSCReferralV1 = "ShareName: " + ShareName.ToString
+{
+	UINT16 VersionNumber;
+	UINT16 Size;
+	UINT16 ServerType = FormatString( "%d (0x%X) %s", this, this, DfscServerTypeTable( this ) );
+	UINT16 ReferralEntryFlags;
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString ShareName;
+}
+
+Struct DFSCReferralV2 = FormatString( "Index:%d TTL:%s", DFSLoopCount, TimeToLive.ToString )
+{
+	[DFSOffset = FrameOffset]
+	[DFSLoopCount = DFSLoopCount + 1]
+	UINT16 VersionNumber;
+	UINT16 Size;
+	UINT16 ServerType = DfscServerTypeTable( this );
+	UINT16 ReferralEntryFlags;
+	UINT32 Proximity;
+	UINT32 TimeToLive = FormatString( "%u Seconds", this );
+	[
+		DFSTypeTable$[this + DFSOffset] = DFSDfsPath,
+		DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+	]
+	UINT16 DfsPathOffset = DFSCOffsetTable( this, DFSOffset );
+	[
+		DFSTypeTable$[this + DFSOffset] = DFSDfsAlternatePath,
+		DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+	]
+	UINT16 DfsAlternatePathOffset = DFSCOffsetTable( this, DFSOffset );
+	[
+		DFSTypeTable$[this + DFSOffset] = DFSTargetPath,
+		DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+	]
+	UINT16 TargetPathOffset = DFSCOffsetTable( this, DFSOffset );
+}
+
+Struct DFSCReferralV3 = FormatString( "Index:%d TTL:%s", DFSLoopCount, TimeToLive.ToString )
+{
+	[DFSOffset = FrameOffset]
+	[DFSLoopCount = DFSLoopCount + 1]
+	UINT16 VersionNumber;
+	UINT16 Size;
+	UINT16 ServerType = DfscServerTypeTable( this );
+	[DataFieldByteOrder = BigEndian]
+	UINT16 ReferralEntryFlags
+	{
+		UINT16 unused:6 = FormatString( "          (%s) - Unused", this.ToBitString);
+		UINT16 NameListReferral:1 = FormatString( "(%s) - This %s a trusted domain or DC list referral", this.ToBitString, this ? "is" : "is not" );
+	}
+	UINT32 TimeToLive = FormatString( "%u Seconds", this );
+
+	Switch( ReferralEntryFlags.NameListReferral )
+	{
+		Case 0:
+		Struct
+		{
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSDfsPath,
+				DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+			]
+			UINT16 DfsPathOffset = DFSCOffsetTable( this, DFSOffset );
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSDfsAlternatePath,
+				DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+			]
+			UINT16 DfsAlternatePathOffset = DFSCOffsetTable( this, DFSOffset );
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSTargetPath,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 NetworkAddressOffset = DFSCOffsetTable( this, DFSOffset );
+		}
+
+		Case 1:
+		Struct
+		{
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSSpecialName,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 SpecialNameOffset = DFSCOffsetTable( this, DFSOffset );
+			
+			UINT16 NumberOfExpandedNames;
+			
+			[
+				DFSCountTable$[this + DFSOffset] = NumberOfExpandedNames,
+				DFSTypeTable$[this + DFSOffset] = DFSExpandedName,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 ExpandedNameOffset = DFSCOffsetTable( this, DFSOffset );
+		}
+	}
+	Switch
+	{
+		Case Size >= 34: GUID (FALSE) ServiceSiteGUID;
+	}
+}
+
+Struct DFSCReferralV4 = FormatString( "Index:%d TTL:%s", DFSLoopCount, TimeToLive.ToString )
+{
+	[DFSOffset = FrameOffset]
+	[DFSLoopCount = DFSLoopCount + 1]
+	UINT16 VersionNumber = MUSTBeSetToTable(this,0);
+	UINT16 Size;
+	UINT16 ServerType = DfscServerTypeTable( this );
+	[DataFieldByteOrder = BigEndian]
+	UINT16 ReferralEntryFlags
+	{
+		UINT16 unused1:13 = FormatString( "            (%s) - Unused", this.ToBitString);
+		UINT16 TargetSetBoundary:1 = FormatString( "  (%s) - The target corresponding to this referral entry %s the first target of a target set.", this.ToBitString, this ? "is" : "is not" );
+		UINT16 NameListReferral:1 = FormatString( "   (%s) - This %s a trusted domain or DC list referral", this.ToBitString, this ? "is" : "is not" );
+		UINT16 unused2:1 = FormatString( "            (%s) - Unused", this.ToBitString);
+	}
+	UINT32 TimeToLive = FormatString( "%u Seconds", this );
+
+	Switch( ReferralEntryFlags.NameListReferral )
+	{
+		Case 0:
+		Struct
+		{
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSDfsPath,
+				DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+			]
+			UINT16 DfsPathOffset = DFSCOffsetTable( this, DFSOffset );
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSDfsAlternatePath,
+				DFSIndexTable$[this + DFSOffset] = DFSCIndexEntryExistsTable( DFSIndexTable$[this + DFSOffset] ) ? -1 : DFSLoopCount
+			]
+			UINT16 DfsAlternatePathOffset = DFSCOffsetTable( this, DFSOffset );
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSTargetPath,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 NetworkAddressOffset = DFSCOffsetTable( this, DFSOffset );
+		}
+
+		Case 1:
+		Struct
+		{
+			[
+				DFSTypeTable$[this + DFSOffset] = DFSSpecialName,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 SpecialNameOffset = DFSCOffsetTable( this, DFSOffset );
+			
+			UINT16 NumberOfExpandedNames;
+			
+			[
+				DFSCountTable$[this + DFSOffset] = NumberOfExpandedNames,
+				DFSTypeTable$[this + DFSOffset] = DFSExpandedName,
+				DFSIndexTable$[this + DFSOffset] = DFSLoopCount
+			]
+			UINT16 ExpandedNameOffset = DFSCOffsetTable( this, DFSOffset );
+		}
+	}
+	Switch
+	{
+		Case Size >= 34: GUID (FALSE) ServiceSiteGUID;
+	}
+}
+
+Struct DFSCReferralEntries( NumberOfReferrals ) = FormatString( "Version:%d", UINT16( FrameData, Offset ) )
+{
+	[DFSLoopCount = 0]
+	[DfsProtocolSummary = DfsProtocolSummary + FormatString( " VersionNumber: %d", UINT16( FrameData, Offset ) )]
+	Switch( UINT16( FrameData, Offset ) )
+	{
+		Case 1: DFSCReferralV1 ReferralV1[NumberOfReferrals];
+		Case 2: DFSCReferralV2 ReferralV2[NumberOfReferrals];
+		Case 3: DFSCReferralV3 ReferralV3[NumberOfReferrals];
+		Case 4: DFSCReferralV4 ReferralV4[NumberOfReferrals];
+	}
+	
+	While Data[ FrameOffset < FrameLength ]
+	{
+		[DataFieldByteOrder = LittleEndian]
+		Switch( DFSTypeTable$[FrameOffset] )
+		{
+			Case DFSDfsPath: UnicodeString DfsPath = DFSCIndexStringTable( DFSIndexTable$[FrameOffset] ) + DFSCStringTable( this );
+			Case DFSDfsAlternatePath: UnicodeString DfsAlternatePath = DFSCIndexStringTable( DFSIndexTable$[FrameOffset] ) + DFSCStringTable( this );
+			Case DFSTargetPath: UnicodeString TargetPath = FormatString( "Index:%d %s", DFSIndexTable$[FrameOffset], DFSCStringTable( this ) );
+			Case DFSSpecialName: UnicodeString SpecialName = FormatString( "Index:%d %s", DFSIndexTable$[FrameOffset], DFSCStringTable( this ) );
+			Case DFSExpandedName: 
+				Struct DCNameArray = FormatString( "Index:%d Count:%d", DFSIndexTable$[FrameOffset], DFSCountTable$[FrameOffset] )
+				{
+					[DFSLoopCount = DFSCountTable$[FrameOffset]]
+					While DCName[ DFSLoopCount > 0 ]
+					{
+						[DFSLoopCount = DFSLoopCount - 1]
+						UnicodeString DCName;
+					}
+				}
+			Default:
+				Struct unused
+				{
+					While skip[ !DFSTypeTable$[FrameOffset] ] { UINT8 pad; }
+				}
+		}
+	}
+}
+

@@ -1,0 +1,743 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Domain Name System Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1002, 1034, 1035, 1183, 1706, 1712, 1876, 1995, 2136, 2163,
+//#                          RFC 2230, 2535, 2538, 2645, 2671, 2672, 2845, 2874, 2930, 2931,
+//#                          RFC 3123, 3403, 3425, 3445, 3467, 3596, 3658, 3755, 3845
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/16/2009
+//#                          Minor, 12/25/2009
+//#
+//####
+
+Protocol DNSOverTCP = FormatString("TCPLength = %u", TCPLength)
+{
+	//# rfc 1035 page 32
+	//# 4.2.2. TCP usage
+	//# Messages sent over TCP connections use server port 53 (decimal).  The
+	//# message is prefixed with a two UINT8 length field which gives the message
+	//# length
+	UINT16 TCPLength;
+	DNS dns;
+}
+
+[DefaultTimeOut = DNSConversationTimeout]
+Protocol DNS = FormatString("QueryId = 0x%X, %s, %s %s",
+							QueryIdentifier,
+							DNSOpcodeTable(Flags.Opcode),
+							Flags.QR ?	
+								"Response - " + DNSRcodeAbbrTable(Flags.Rcode) + (AnswerCount > 0 ?
+									AnswerCount > 1 ? 
+										AnswerCount == 2 ?
+											FormatString(", %s, %s", Property.IPs[0], Property.IPs[1]) 
+											: FormatString(", %s, %s ...", Property.IPs[0], Property.IPs[1])
+										: FormatString(", %s", Property.IPs)
+									:
+									"")
+								: "Query",
+							Flags.QR == 0 && QuestionCount > 0 ? " for " + QRecord.ToString : ""
+							)
+{
+	
+	[
+		BuildConversationWithParent(QueryIdentifier),
+//		Post.Conversation.Parent.Parent.UdpCount = Conversation.Parent.Parent.UdpCount + 1,
+		Post.Conversation.ConversationDescription = FormatString("%s (QueryID: %d) ConvID = %d", Conversation.DNSName, QueryIdentifier,ConvID)
+	]
+	UINT16 QueryIdentifier;
+//	[conversation.Count = conversation.Count + 1]
+	UINT16 Flags = FormatString(" %s, Opcode - %s, %s%s%s%sRcode - %s",
+								QR ? "Response" : "Query",
+								DNSOpcodeTable(Opcode),
+								AA?"AA, ":"",
+								TC?"TC, ":"",
+								RD?"RD, ":"",
+								RA?"RA, ":"",
+								DNSRcodeTable(Rcode))
+	{
+		UINT16 QR:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Response" : "Query");
+		UINT16 Opcode:4 = FormatString("           (%s) %s %d",this.ToBitString,DNSOpcodeTable(this),this);
+		UINT16 AA:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Is authoritative"
+						   : "Not authoritative");
+		UINT16 TC:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Message truncated"
+						   : "Not truncated");
+		UINT16 RD:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Recursion desired"
+						   : "Recursion not desired");
+		UINT16 RA:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Recursive query support available"
+						   : "Recursive query support not available");
+		UINT16 Zero:1 = FormatString("             (%s) %d",this.ToBitString,this);
+		UINT16 AuthenticatedData:1 = FormatString("(%s) %s",this.ToBitString,this?"AuthenticatedData":"Not AuthenticatedData");
+		UINT16 CheckingDisabled:1 = FormatString(" (%s) %s",this.ToBitString,this?"CheckingDisabled":"Not CheckingDisabled");
+		UINT16 Rcode:4 = FormatString("            (%s) %s %d",this.ToBitString,DNSRcodeTable(this),this);
+	};
+	
+	UINT16 QuestionCount;
+	UINT16 AnswerCount;
+	UINT16 NameServerCount;
+	UINT16 AdditionalCount;
+
+	DNSQuestionRecord QRecord[QuestionCount];
+	DNSResourceRecord ARecord[AnswerCount];
+	DNSResourceRecord AuthorityRecord[NameServerCount];
+	DNSResourceRecord AdditionalRecord[AdditionalCount];
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength - FrameOffset) DataLeft;
+	}
+}
+Table DNSRcodeTable(code)
+{
+	switch
+	{
+		case code ==  0:"Success";
+		case code ==  1:"Format error";
+		case code ==  2:"Server failure";
+		case code ==  3:"Name Error";
+		case code ==  4:"Not Implemented";
+		case code ==  5:"Refused";
+		case code ==  6:"YXDomain. Name Exists when it should not";
+		case code ==  7:"YXRRSet. RR Set Exists when it should not";
+		case code ==  8:"NXRRSet. RR Set that should exist does not";
+		case code ==  9:"NotAuth. Server Not Authoritative for zone";
+		case code == 10:"NotZone. Name not contained in zone";
+		case code == 16:"BADVERS. Bad OPT Version/BADSIG. TSIG Signature Failure";
+		case code == 17:"BADKEY. Key not recognized";
+		case code == 18:"BADTIME. Signature out of time window";
+		case code == 19:"BADMODE. Bad TKEY Mode";
+		case code == 20:"BADNAME.Duplicate key name";
+		case code == 21:"BADALG.Algorithm not supported";
+		case code <= 15:"Reserved";
+		default         :FormatString("Unknown Code %d",code);
+	}
+}
+
+Table DNSRcodeAbbrTable(code)
+{
+	switch
+	{
+		case code ==  0:"Success";
+		case code ==  1:"Format error";
+		case code ==  2:"Server failure";
+		case code ==  3:"Name Error";
+		case code ==  4:"Not Implemented";
+		case code ==  5:"Refused";
+		case code ==  6:"YXDomain";
+		case code ==  7:"YXRRSet";
+		case code ==  8:"NXRRSet";
+		case code ==  9:"NotAuth";
+		case code == 10:"NotZone";
+		case code == 16:"BADVERS";
+		case code == 17:"BADKEY";
+		case code == 18:"BADTIME";
+		case code == 19:"BADMODE";
+		case code == 20:"BADNAME";
+		case code == 21:"BADALG";
+		case code <= 15:"Reserved";
+		default        :"Reserved";
+	}
+}
+
+Table DNSOpcodeTable(code)
+{
+	switch(code)
+	{
+		case  0:"QUERY (Standard query)";
+		case  1:"IQUERY (Inverse query)";
+		case  2:"STATUS (Server status request)";
+		case  3:"Reserved";
+		case  4:"Notify";
+		case  5:"Update";
+		default:"Reserved";
+	}
+}
+
+Table DNSTypeTable(type)
+{
+	switch(type)
+	{
+		case   1:"A, IPv4 address";
+		case   2:"NS, Authoritative name server";
+		case   3:"MD, Mail destination. (Obsolete use MX instead)";
+		case   4:"MF, Mail forwarder. (Obsolete use MX instead)";
+		case   5:"CNAME, Canonical name for an alias";
+		case   6:"SOA, Marks the start of a zone of authority";
+		case   7:"MB, Mailbox domain name";
+		case   8:"MG, Mail group member. (EXPERIMENTAL)";
+		case   9:"MR, Mail rename domain name";
+		case  10:"NULL, Null resource record";
+		case  11:"WKS, Well known service description";
+		case  12:"PTR, Domain name pointer";
+		case  13:"HINFO, Host information";
+		case  14:"MINFO, Mailbox or mail list information. (EXPERIMENTAL)";
+		case  15:"MX, Mail exchange";
+		case  16:"TXT, Text strings";
+		case  17:"RP, Responsible Person";
+		case  18:"AFSDB, AFS Data Base location";
+		case  19:"X25, X.25 PSDN address";
+		case  20:"ISDN, ISDN address";
+		case  21:"RT, Route Through";
+		case  22:"NSAP, NSAP address. NSAP style A record";
+		case  23:"NSAP-PTR";
+		case  24:"SIG, Security signature";
+		case  25:"KEY, Security key";
+		case  26:"PX, X.400 mail mapping information";
+		case  27:"GPOS, Geographical Position";
+		case  28:"AAAA, IPv6 Address";
+		case  29:"LOC, Location Information";
+		case  30:"NXT, Next Domain (obsolete)";
+		case  31:"EID, Endpoint Identifier";
+		case  32:"NIMLOC, Nimrod Locator/NB, NetBIOS general Name Service";
+		case  33:"SRV, Server Selection/NBSTAT, NetBIOS NODE STATUS";
+		case  34:"ATMA, ATM Address";
+		case  35:"NAPTR, Naming Authority Pointer";
+		case  36:"KX, Key Exchanger";
+		case  37:"CERT";
+		case  38:"A6";
+		case  39:"DNAME";
+		case  40:"SINK";
+		case  41:"OPT";
+		case  42:"APL";
+		case  43:"DS, Delegation Signer";
+		case  44:"SSHFP, SSH Key Fingerprint";
+		case  45:"IPSECKEY";
+		case  46:"RRSIG";
+		case  47:"NSEC";
+		case  48:"DNSKEY";
+		case 100:"UINFO";
+		case 101:"UID";
+		case 102:"GID";
+		case 103:"UNSPEC";
+		case 248:"ADDRS";
+		case 249:"TKEY";
+		case 250:"TSIG, Transaction Signature";
+		case 251:"IXFR, Incremental transfer";
+		case 252:"AXFR, A request for a transfer of an entire zone";
+		case 253:"MAILB, A request for mailbox-related records (MB, MG or MR)";
+		case 254:"MAILA, A request for mail agent RRs. Obsolete";
+		case 255:"A request for all records";
+		default :"Unknown DNSType";
+	}
+}
+
+Table DNSTypeAbbrTable(type)
+{
+	switch(type)
+	{
+		case   1:"Host Addr";
+		case   2:"NS";
+		case   3:"MD";
+		case   4:"MF";
+		case   5:"CNAME";
+		case   6:"SOA";
+		case   7:"MB";
+		case   8:"MG";
+		case   9:"MR";
+		case  10:"NULL";
+		case  11:"WKS";
+		case  12:"PTR";
+		case  13:"HINFO";
+		case  14:"MINFO";
+		case  15:"MX";
+		case  16:"TXT";
+		case  17:"RP";
+		case  18:"AFSDB";
+		case  19:"X25";
+		case  20:"ISDN";
+		case  21:"RT";
+		case  22:"NSAP";
+		case  23:"NSAP-PTR";
+		case  24:"SIG";
+		case  25:"KEY";
+		case  26:"PX";
+		case  27:"GPOS";
+		case  28:"AAAA";
+		case  29:"LOC";
+		case  30:"NXT";
+		case  31:"EID";
+		case  32:"NIMLOC";
+		case  33:"SRV";
+		case  34:"ATMA";
+		case  35:"NAPTR";
+		case  36:"KX";
+		case  37:"CERT";
+		case  38:"A6";
+		case  39:"DNAME";
+		case  40:"SINK";
+		case  41:"OPT";
+		case  42:"APL";
+		case  43:"DS";
+		case  44:"SSHFP";
+		case  45:"IPSECKEY";
+		case  46:"RRSIG";
+		case  47:"NSEC";
+		case  48:"DNSKEY";
+		case 100:"UINFO";
+		case 101:"UID";
+		case 102:"GID";
+		case 103:"UNSPEC";
+		case 248:"ADDRS";
+		case 249:"TKEY";
+		case 250:"TSIG";
+		case 251:"IXFR";
+		case 252:"AXFR";
+		case 253:"MAILB";
+		case 254:"MAILA";
+		case 255:"ALL";
+		default :"Unknown DNSType";
+	}
+}
+
+Table DNSClassTable(class)
+{
+	switch(class)
+	{
+		case   0:"Reserved";
+		case   1:"Internet";
+		case   2:"CSNET";
+		case   3:"Chaos";
+		case   4:"Hesiod";
+		case 254:"None";
+		case 255:"Any";
+		default :"Unknown DNSClass";
+	}
+}
+
+struct DNSQuestionRecord = FormatString("%s of type %s on class %s",QuestionName.ToString,DNSTypeAbbrTable(QuestionType),DNSClassTable(QuestionClass))
+{
+	[Conversation.DnsName]
+	DNSString QuestionName;
+	UINT16 QuestionType = FormatString("%s, %d(%#x)",DNSTypeTable(this),this,this);
+	UINT16 QuestionClass = FormatString("%s, %d(%#x)",DNSClassTable(this),this,this);
+};
+
+//#RFC 1035 page 13
+struct CharacterString = String
+{
+	UINT8 StringLength;
+	AsciiString(StringLength) String;
+}
+
+//#RFC 1002 page 12
+Table DNSNBFlagsTable(value)
+{
+	switch(value)
+	{
+		case  0:FormatString("B node");
+		case  1:FormatString("P node");
+		case  2:FormatString("M node");
+		case  3:FormatString("Reserved");
+		default:FormatString("Unknown DNSNBFlags");
+	}
+}
+
+//#RFC 2535 page 14
+Table DNSKeyRRAlgorithmTable(value)
+{
+	switch(value)
+	{
+		case   0:FormatString("Reserved %d", value);
+		case   1:FormatString("RSA/MD5 %d", value);
+		case   2:FormatString("Diffie-Hellman %d", value);
+		case   3:FormatString("DSA %d", value);
+		case   4:FormatString("reserved for elliptic curve crypto %d", value);
+		case 252:FormatString("reserved for indirect keys %d", value);
+		case 253:FormatString("private - domain name %d", value);
+		case 254:FormatString("private - OID %d", value);
+		default :FormatString("Reserved %d", value);
+	}
+}
+
+Table DNSTKeyModeTable(value)
+{
+	switch(value)
+	{
+		case   0:FormatString("Reserved %d", value);
+		case   1:FormatString("server assignment %d", value);
+		case   2:FormatString("Diffie-Hellman exchange %d", value);
+		case   3:FormatString("GSS-API negotiation %d", value);
+		case   4:FormatString("resolver assignment %d", value);
+		case   5:FormatString("key deletion %d", value);
+		default :FormatString("Reserved %d", value);
+	}
+}
+
+Table DNSTKeyErrorTable(value)
+{
+	switch
+	{
+		case               value ==  0:FormatString("No Error %d", value);
+		case value >= 1 && value <= 15:FormatString("a non-extended RCODE %d", value);
+		case               value == 16:FormatString("BADSIG(TSIG) %d", value);
+		case               value == 17:FormatString("BADKEY(TSIG) %d", value);
+		case               value == 18:FormatString("BADTIME(TSIG) %d", value);
+		case               value == 19:FormatString("BADMODE %d", value);
+		case               value == 20:FormatString("BADNAME %d", value);
+		case               value == 21:FormatString("BADALG %d", value);
+		default                       :FormatString("Unknown Error %d", value);
+	}
+}
+
+struct DNSResourceRecord = ResourceType == 0x29 ?
+									FormatString("Type: %s, %s", 
+										DNSTypeAbbrTable(ResourceType),
+										ResourceClass.ToString) :
+									FormatString("%s of type %s on class %s%s",
+										ResourceName.ToString,
+										DNSTypeAbbrTable(ResourceType),
+										DNSClassTable(ResourceClass),
+										Property.DNSResourceRecordValue ? ": " + Property.DNSResourceRecordValue : "")
+{
+	[Property.DNSResourceRecordValue = ""]
+	DNSString ResourceName;
+	[Property.DNSResourceType]
+	UINT16 ResourceType = FormatString("%s, %d(%#x)",DNSTypeTable(this),this,this);
+	UINT16 ResourceClass = ResourceType == 0x29 ? FormatString("Sender's largest UDP payload size: %d", this) : FormatString("%s, %d(%#x)",DNSClassTable(this),this,this);
+	UINT32 TimeToLive;
+	[DNSRREndOffset = offset + this + 2]
+	UINT16 ResourceDataLength;
+	switch
+	{
+		case ResourceDataLength > 0:
+			switch(ResourceType)
+			{
+				//#RFC 1035 1~16
+				case   1:
+					[
+						Global.NameTable$[IPAddress] = ResourceName,
+						IpAddressCount$[ResourceName] = IpAddressCount$[ResourceName] + 1,
+						Global.MultiIPAddress$[ResourceName] = IpAddressCount$[ResourceName] > 1 ? TRUE : FALSE,
+						Property.IPs.AddToProperty(this.ToString, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)
+					]
+					[Property.DNSResourceRecordValue = this.ToString]
+					IPv4Address IPAddress;
+				case   2:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString AuthoritativeNameServer;
+				case   3:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString MailDomainHost;
+				case   4:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString MailForwardingHost;
+				case   5:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString CName;
+				case   6:
+					[Property.DNSResourceRecordValue = this.ToString]
+					struct SOARData = FormatString("PrimaryNameServer: %s, AuthoritativeMailbox: %s", PrimaryNameServer, ResponsibleAuthoritativeMailbox)
+					{
+						DNSString PrimaryNameServer;
+						DNSString ResponsibleAuthoritativeMailbox;
+						UINT32 SerialNumber;
+						UINT32 RefreshInterval;
+						UINT32 RetryInterval;
+						UINT32 ExpirationLimit;
+						UINT32 MinimumTTL;
+					};
+				case   7:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString MailboxHost;
+				case   8:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString MailGroupMember;
+				case   9:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString MailBoxNewName;
+				case  10:
+					[Property.DNSResourceRecordValue = this.ToString]
+					AsciiString(ResourceDataLength) NullRData;
+				case  11:
+					[Property.DNSResourceRecordValue = this.ToString]
+					struct WKSRData = FormatString("Server: %s, Protocol: %s", server.ToString, ProtocolTypeTable(Protocol))
+					{
+						IPv4Address server;
+						UINT8 Protocol = ProtocolTypeTable(this);
+						BLOB(ResourceDataLength - 5) PortBitMap;
+					};
+				case  12:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString DomainNamePointer;
+				case  13:
+					[Property.DNSResourceRecordValue = this.ToString]
+					struct HInfoRData = FormatString("CPU: %s, OS: %s", CPU.ToString, OS.ToString)
+					{
+						CharacterString CPU;
+						CharacterString OS;
+					};
+				case  14:
+					struct MInfoRData
+					{
+						DNSString ResponsibleMailBox;
+						DNSString ErrorMailBox;
+					};
+				case  15:
+					struct MXRData
+					{
+						UINT16 preference;
+						DNSString ExchangeMailBox;
+					};
+				case  16:
+					[Property.DNSResourceRecordValue = this.ToString]
+					AsciiString(ResourceDataLength) TextRData;
+				//#RFC 1183 17~21
+				case  17:
+					struct RPRData
+					{
+						DNSString ResponsibleMailbox;
+						DNSString ErrorMailBox;
+					};
+				case  18:
+					struct AFSDBRData
+					{
+						UINT16 SubType;
+						DNSString HostName;
+					};
+				case  19:
+					[Property.DNSResourceRecordValue = this.ToString]
+					CharacterString PSDNAddress;
+				case  20:
+					struct ISDNRData
+					{
+						CharacterString ISDNAddress;
+						CharacterString SubAddress;
+					}
+				case  21:
+					struct RTRData
+					{
+						UINT16 Preference;
+						DNSString IntermediateHost;
+					}
+				//#rfc 1706 page 2
+				case  22:
+					switch(ResourceDataLength)
+					{
+						case 20:
+							struct GOSIPV2NSAP = FormatString("%02X.%04X.%02X.%06X.%04X.%04X.%04X.%02X%02X%02X%02X%02X%02X.%02X",
+															  AFI,IDI,DFI,AA,Reserved,RD,Area,ID[5],ID[4],ID[3],ID[2],ID[1],ID[0],Sel)
+							{
+								//47
+								UINT8 AFI = FormatString("Authority and Format Identifier is 0x%02X",this);
+								//0005
+								UINT16 IDI = FormatString("Initial Domain Identifier is 0x%04X",this);
+								UINT8 DFI = FormatString("Domain Specific Part Format Identifier is 0x%02X",this);
+								UINT24 AA = FormatString("Administrative Authority is 0x%06X",this);
+								UINT16 Reserved;
+								UINT16 RD = FormatString("Routing Domain Identifier is 0x%04X",this);
+								UINT16 Area = FormatString("Area Identifier is 0x%04X",this);
+								INT48 ID = FormatString("System Identifier is 0x%02X%02X%02X%02X%02X%02X",
+														this[5],this[4],this[3],this[2],this[1],this[0]);
+								UINT8 Sel = FormatString("NSAP Selector is 0x%02X",this);
+							};
+						default: BLOB(ResourceDataLength) NSAPRData;
+					};
+			
+				//#RFC 3445, 2535
+				case  25:
+					struct KEYRData
+					{
+						UINT16 flags = FormatString("%s",this & 0x80?"DNS Zone Key":"Not Zone Key");
+						UINT8 protocol = FormatString("%d %s",this, this==3?"":"(Eliminated Value)");
+						UINT8 algorithm = DNSKeyRRAlgorithmTable(this);
+						BLOB(ResourceDataLength - 4) publicKey;
+					};
+				//#RFC 2163 page 8
+				case  26:
+					struct PXRData
+					{
+						UINT16 preference;
+						DNSString MAP822;
+						DNSString MAPX400;
+					};
+				//#RFC 1712 page 3
+				//#? dev note 2005-5-17 Is each field end with a SPACE?
+				//# There is no limit imposed on the number of decimal places, although
+				//# the length of the encoded string is limited to 256 characters for
+				//# each field. It is also suggested that administrators limit their
+				//# entries to the minimum number of necessary characters in each field.
+		
+				case  27:
+					struct GPOSRData
+					{
+						AsciiStringTerm(" ") LONGITUDE;
+						AsciiStringTerm(" ") LATITUDE;
+						AsciiStringTerm(" ") ALTITUDE;
+					};
+				//# DNSv6
+				//#RFC 3596
+				//#A 128 bit IPv6 address is encoded in the data portion of an AAAA
+				//#resource record in network UINT8 order (high-order UINT8 first).
+				case  28:
+					[
+						Global.NameTable$[IPv6Address] = ResourceName,
+						IpAddressCount$[ResourceName] = IpAddressCount$[ResourceName] + 1,
+						Global.MultiIPAddress$[ResourceName] = IpAddressCount$[ResourceName] > 1 ? TRUE : FALSE,
+						Property.IPs.AddToProperty(this.ToString, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)
+					]
+					[Property.DNSResourceRecordValue = this.ToString]
+					IPv6Address IPv6Address;
+				//#RFC 1876
+				case  29:
+					struct LOCRData
+					{
+						UINT8 version;
+						UINT8 size = FormatString("%de%d centimeters",
+												 (this & 0xF0) >> 4, this & 0x0F);
+						UINT8 HORIZPRE = FormatString("%de%d centimeters",
+													 (this & 0xF0) >> 4, this & 0x0F);
+						UINT8 VERTPRE = FormatString("%de%d centimeters",
+													(this & 0xF0) >> 4, this & 0x0F);
+						UINT32 LONGITUDE;
+						UINT32 LATITUDE;
+						UINT32 ALTITUDE;
+					};
+				//#RFC 2535
+				case  30:
+					struct NXTDomainRData
+					{
+						DNSString NXTDomainName;
+						BLOB(DNSRREndOffset - offset) TypeBitMap;
+					};
+				//#RFC 1002 page 12
+				case  32:
+					struct NBRData
+					{
+						UINT16 NBFlags
+						{
+							UINT16 Reserved:13 = FormatString("(%s)",this.ToBitString);
+							UINT16 ONT:2 = FormatString("     (%s) %s",this.ToBitString,DNSNBFlagsTable(this));
+							UINT16 G:1 =  FormatString("       (%s) %s",this.ToBitString,this?"GROUP NetBIOS name":"UNIQUE NetBIOS name");
+						};
+						IPv4Address NBAddress;
+					};
+				//#RFC 2782, 2052
+				//#? dev note 2005-5-17
+				//#?  rfc 1002 page 27 the defination of NBSTAT
+				case  33:
+					struct SRVRData
+					{
+						UINT16 Priority;
+						UINT16 Weight;
+						UINT16 Port;
+						DNSString Target;
+					};
+				//#rfc 3403
+				case  35:
+					struct NAPTRRData
+					{
+						UINT16 Order;
+						UINT16 preference;
+						CharacterString Flags;
+						CharacterString Services;
+						CharacterString Regexp;
+						DNSString Replacement;
+					};
+				//#rfc 2230 page 8
+				case  36:
+					struct KXRData
+					{
+						UINT16 preference;
+						DNSString ExchangerName;
+					};
+				//#rfc 2538
+				case  37:
+					struct CERTRData
+					{
+						UINT16 Type = DNSKeyRRAlgorithmTable(this);
+						UINT16 KeyTag;
+						UINT8 Algorithm = DNSKeyRRAlgorithmTable(this);
+						BLOB(ResourceDataLength - 5)  CertificateOrCRL;
+					};
+				//#DNSv6
+				//#rfc 2874, need parse AddressSuffix in detail
+				case  38:
+					struct A6RData
+					{
+						UINT8 PrefixLen = FormatString("%d bits", this);        	
+						//0..16 octets
+						//There MUST be exactly enough octets in this field to
+						//contain a number of bits equal to 128 minus prefix length, with 0
+						//to 7 leading pad bits to make this field an integral number of octets.
+						BLOB((128-PrefixLen)%8>0 ? (128-PrefixLen)/8+1 : (128-PrefixLen)/8)  AddressSuffix;        	
+						//0..255 octets
+						DNSString PrefixName;
+					};
+				//#RFC 2672
+				case  39:
+					[Property.DNSResourceRecordValue = this.ToString]
+					DNSString Target;
+				//#rfc 2671
+				//#? an OPT RR is encoded in its RDATA and is
+				//#? structured as zero or more of the following
+				case  41:
+					struct OPTRData
+					{
+						UINT16 OptionCode;
+						UINT16 OptionLength;
+						BLOB(OptionLength)  OptionData;
+					};
+				//#rfc 3123
+				//#? The RDATA section consists of zero or more following items
+				case  42:
+					struct APLRData
+					{
+						UINT16 AddressFamily = AddressFamilyTable(this);
+						UINT8 Prefix;
+						UINT8 AFDLength
+						{
+							UINT8 N:1 = FormatString("        (%s) %s",this.ToBitString,this ? "'!' was given in the textual format"
+											 : "'!' was not given in the textual format");
+							UINT8 AFDLength:7 = FormatString("(%s) %d",this.ToBitString,this);
+						};
+						BLOB(AFDLength.AFDLength) AFDPart;
+					};
+				//#RFC 2930 page 4
+				case 249:
+					struct TKEYRData
+					{
+						DNSString Algorithm;
+						UNIXTIMESTAMP Inception;
+						UNIXTIMESTAMP Expiration;
+						UINT16 Mode = DNSTKeyModeTable(this);
+						UINT16 Error = DNSTKeyErrorTable(this);
+						UINT16 KeySize;
+						[ DataFieldFrameLength = FrameOffset + KeySize ]
+						BLOB((KeySize > FrameLength-FrameOffset) ? (FrameLength-FrameOffset) : KeySize) KeyData
+						{
+							switch
+							{
+								case Mode == 3: GssAPI GssAPI;
+								case Mode == 4: DHDomainParameters DhPublicNumber;
+							}
+						};
+						UINT16 OtherSize;
+						switch
+						{
+							case OtherSize>0:
+								BLOB(OtherSize) OtherData;
+						}
+					};
+				//#rfc 2845 page 4
+				case 250:
+					struct TSIGRData
+					{
+						DNSString AlgorithmName;
+						INT48 TimeSigned;
+						UINT16 Fudge;
+						UINT16 MACSize;
+						BLOB(MACSize) MAC;
+						UINT16 OriginalID;
+						UINT16 Error;
+						UINT16 OtherLen;
+						BLOB(OtherLen) OtherData;
+					};
+				default :
+					BLOB(ResourceDataLength) AdditionalResourceData;
+			}
+	}
+}

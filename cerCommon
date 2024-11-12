@@ -1,0 +1,849 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Corporate Error Reporting Version 1.0 Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-CER]: Corporate Error Reporting Version 1.0 Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+[RegisterBefore(FileTypeContent.FileData, CER,
+Property.SMBFileName.contains("\\count.txt")|| 
+Property.SMBFileName.contains("\\crash.log")|| 
+Property.SMBFileName.contains("\\hits.log"))]
+[RegisterBefore(FileTypeContent.FileData, CER,
+Property.SMBFileName.contains("\\policy.txt")|| 
+Property.SMBFileName.contains("\\status.txt")||
+Property.SMBFileName.contains("\\count.txt"))]
+
+Protocol CER = FormatString("%s; %s %s" ,Property.CERDescription,Property.CERReportType, Property.CERErrorSummary)
+{
+	[Property.CERDescription="CER protocol", Property.CERErrorSummary="", Property.CERReportType="", Property.CERParseContent=false]
+
+	// Switch on the file name taken from SMBFileName property to determine the MSMERX method
+	switch 
+	{
+		case (SMB.Command == 0x2F || SMB.Command == 0x2E) && contains(Property.SMBFileName, "\\count.txt"):
+			[(SMB.Command == 0x2F) ? Property.CERDescription = "Write to count.txt file":Property.CERDescription = "Read from count.txt file"]
+			struct CERCount = FormatString("%s", Property.CERReportType){
+				CERPath Path;
+				switch{
+					case Property.CERParseContent:
+						CERCountTxt Content = "count.txt";
+				}
+			}
+		case SMB.Command == 0x2F && contains(Property.SMBFileName, "\\crash.log"):
+			[Property.CERDescription = "Write to crash.log file"]
+			struct CERCrash = "Crash.txt path && tracking information"{
+				CERPath Path;
+				CERCrashLog Content = "crash.log";
+			}
+		case SMB.Command == 0x2F && contains(Property.SMBFileName, "\\hits.log"):
+			[Property.CERDescription = "Write to hits.log file"]
+			struct CERHits  = FormatString("%s", Property.CERReportType){
+				CERPath Path;
+				switch{
+					case Property.CERParseContent:
+					CERHitsLog Content = "hits.log";
+				}
+			}
+		case SMB.Command == 0x2E && contains(Property.SMBFileName, "\\policy.txt"):
+			[Property.CERDescription = "Read from policy.txt file"]
+			struct CERPolicy = "Policy.txt path && configuration settings"{
+				CERPath Path;
+				CERPolicyTxt Content = "policy.txt";}
+		case SMB.Command == 0x2E && contains(Property.SMBFileName, "\\status.txt"):
+			[Property.CERDescription = "Read form status.txt file"]
+			struct CERStatus = FormatString("%s", Property.CERReportType){
+				CERPath Path;
+				switch{
+					case Property.CERParseContent:
+					CERStatusTxt Content = "status.txt";
+				}
+			}
+		default:
+			  struct CERError = FormatString("SMBCommand = %s && FileName = %s", SMB.Command, Property.SMBFileName)
+			  {
+				  [Property.CERErrorSummary = "ERROR: Undefined file || operation"]		
+				  ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined file || operation") UndefineFileError; 
+			  }		
+	}
+}
+
+//Consume count.txt file content
+struct CERCountTxt = Local.summary 
+{
+	switch
+	{
+		case AsciiStringTerm(FrameData, FrameOffset,"=", false) == "Cabs Gathered":
+			struct CERCountTxtCabs 
+			{
+				[Local.summary  = Parameter]
+				AsciiStringTerm("=") Parameter;
+				CERIntegerCrlf(true) Value;
+			}
+		default:
+			 struct CERCountTxtError{
+				[Property.CERErrorSummary = "ERROR: Undefined parameter"]
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined parameter in hits.txt") UndefinedParameter;
+				[Local.summary  = Data]
+				AsciiStringTerm("\r\n") Data;					
+			}
+	}
+
+	switch
+	{	
+		case AsciiStringTerm(FrameData, FrameOffset, "=", false)== "Total Hits":
+			struct CERCountTxtHits
+			{
+				AsciiStringTerm("=") Parameter;
+				CERIntegerCrlf(false) Value;
+			}
+		default:
+			struct CERCountTxtError{ 
+				[Property.CERErrorSummary = "ERROR: Undefined parameter"]
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined parameter in hits.txt") UndefinedParameter; 
+				AsciiStringTerm("\r\n") Data;
+			}
+	}
+}
+
+// Consume && validate parameter value which format is (%d31-39 1*DIGIT)/"0" CRLF
+// Positive integer value || 0
+struct CERIntegerCrlf(isZeroAccepted) = FormatString("%s", Local.Value)
+{
+	[Local.Value =""]
+	[Local.Digit = CHAR(FrameData, FrameOffset)]
+	[Local.Iter = 0]
+	[Local.isInt = true]
+	[Local.FirstValue =1]
+
+	while [CERisDigit(Local.Digit)]{
+		[Local.Value = Local.Value + FormatString("%c", Local.Digit)]
+		switch{
+			case Local.Iter == 0 && Local.Digit ==0 && !isZeroAccepted:
+				[Local.isInt = false]
+				struct{}
+			case Local.Iter == 0:
+				[Local.FirstValue = Local.Digit]
+				struct{}
+			case Local.Iter !=0 && Local.FirstValue=="0":
+				[Local.isInt = false]
+				struct{}	
+		} 
+		[Local.Digit = CHAR(FrameData, FrameOffset+1)]
+		[Local.Iter = Local.Iter+1]
+		
+		DynamicSwitch AsciiString(1)
+		{
+			default: struct{}
+		};
+	}
+
+	//First character does not represent DIGIT value
+	switch{
+		case Local.Iter ==0:
+			[Property.CERErrorSummary = "ERROR: Invalid value. Invalid integer value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "MSMERX", "Invalid integer value") InvalidValue; 
+	}
+
+	//Validate CRLF
+	switch
+	{
+		case CHAR(FrameData, FrameOffset)=="\r" && CHAR(FrameData, FrameOffset+1)=="\n" && Local.isInt == true:
+			DynamicSwitch AsciiString(2)
+			{
+				default: struct{}
+			};
+		default:
+			[Local.Value = Local.Value + AsciiString(FrameData, FrameOffset,2)]
+			struct CERIntegerCrlfError
+			{
+				DynamicSwitch AsciiStringTerm("\r\n")
+				{
+					default: struct{}
+				};
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Incorect value, expected value format is positive integer (|| 0) CRLF") IncorrectParameterValue; 
+			}
+	}	
+}
+
+
+//Consume hits.log file content
+//Format: HitTime SP SP Date HTAB Machine HTAB User HTAB FileName CRLF
+struct CERHitsLog{
+	CERTime HitTime;
+	CERDate Date;
+	CERMachine Machine;
+	CERUser User;
+	CERFileName FileName; 
+}
+
+
+//Consume && validate: Check time format Hours:Minuts:Seconds SP SP
+//Hours   = 2DIGIT  ; 00-23
+//Minutes = 2DIGIT  ; 00-59
+//Seconds = 2DIGITS ; 00-59
+struct CERTime = Local.summary
+{
+	
+	[Local.Hours = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset, 2))) - 100]
+	[Local.Minutes = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset+3, 2))) - 100]
+	[Local.Seconds = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset+6, 2))) - 100]
+	
+	switch{ 
+		case (Local.Hours < 0) || (Local.Hours > 23)
+			|| (Local.Minutes < 0) || (Local.Minutes > 59)
+			|| (Local.Seconds < 0) || (Local.Seconds > 59):
+			struct CERTimeError{
+				[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid time value") InvalidValue; 
+				[Local.summary  = Data]
+				AsciiStringTerm("  ") Data;
+			}
+		case !(CHAR(FrameData, FrameOffSet+2)== ":")
+			|| !(CHAR(FrameData, FrameOffSet+5)== ":"):
+			struct CERTimeError{
+				[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Time invalid delimiter between Hours && Minuts || Minuts && Seconds") InvalidValue; 
+				[Local.summary  = Data]
+				AsciiStringTerm("  ") Data;
+			}
+		case (!(CHAR(FrameData, FrameOffSet+8)== " ") || !(CHAR(FrameData, FrameOffSet+9)== " ")):
+			struct CERTimeError{
+				[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid delimiter between time && date value") InvalidValue; 
+				[Local.summary  = Data]
+				AsciiStringTerm("  ") Data;
+			}
+		default: 
+			[Local.summary  = HitTime]
+			AsciiStringTerm("  ") HitTime;
+	}
+}
+
+//Consume && validate: Check date format Month:Day:Year HTAB
+//Month = 2DIGIT	;01-12
+//Day   = 2DIGIT	;01-28, 01-29, 01-30, 01-31 based on Month/Year
+//Year  = $DIGIT
+struct CERDate = Local.summary
+{
+	[Local.Month = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset, 2))) - 100]
+	[Local.Day = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset+3, 2))) - 100]
+	[Local.Year = StringToNumber(FormatString("1%s", AsciiString(FrameData, FrameOffset+6, 4))) - 10000]
+
+	switch{ 
+		case !CERisCorrectDate(Local.Day, Local.Month, Local.Year):
+				struct CERDateError
+				{
+					[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+					ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid data value") InvalidValue; 
+					[Local.summary  = Data]
+					AsciiStringTerm("\t") Data;
+				}
+		case (!(CHAR(FrameData, FrameOffSet+2)== "-")) 
+			|| (!(CHAR(FrameData, FrameOffSet+5)== "-")):
+				struct CERDateError{
+					[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+					ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid date delimiter beetwen Month && Day || Day && Year") InvalidValue; 
+					[Local.summary  = Data]
+					AsciiStringTerm("\t") Data;
+				}
+		case (!(CHAR(FrameData, FrameOffSet+10)== "\t")):
+				struct CERDateError{
+					[Property.CERErrorSummary = "ERROR: Invalid parameter value "]
+					ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid delimiter beetwen date && machine name") InvalidValue; 
+					[Local.summary  = Data]
+					AsciiStringTerm("\t") Data;
+				}
+		default: // Correct date format
+				[Local.summary  = Date]
+				AsciiStringTerm("\t") Date;
+
+	}
+}
+
+//Check if Month/Day/Year is a correct date
+table CERisCorrectDate(Day, Month, Year){
+	
+	switch{
+		case ((Month == 1 || Month == 3 || Month == 5 || Month == 7 || Month == 8 || Month == 10 || Month == 12) 
+			&& (Day >= 1 && Day <= 31)):
+		case ((Month == 4 || Month == 6 || Month == 9 || Month == 11) 
+			&& (Day >= 1 && Day <=  30)):
+		case (Month == 2 && !CERisLeap(Year) && (Day >=1 && Day <= 28)):
+		case (Month ==2 && CERisLeap(Year) && (Day >=1 && Day <=29)): 
+			true;
+		default: false;
+	}
+} 
+
+// Check if Year is a leap year
+table CERisLeap(Year){
+	switch{
+		case (Year%400 == 0): true;
+		case (Year%100 == 0): false; 
+		case (Year%4 == 0): true;
+		default: false;
+	}
+} 
+
+
+//Conusme && validate Machine; format:1*15 CHAR HTAB
+struct CERMachine = Local.summary
+{
+	[Local.startOffset = offset]
+	[Local.summary  = Machine]
+	AsciiStringTerm("\t",false) Machine;
+	[Local.valueLength = offset - Local.startOffset-1]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+
+	switch{
+		case (Local.valueLength < 1 || Local.valueLength > 15) || (Property.IsAsciiString == false):
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected value: 1*15CHAR ") InvalidParameterValue;
+	}
+}
+
+
+//Conusme && validate User; format:1*256CHAR HTAB
+struct CERUser = Local.summary 
+{
+	[Local.startOffset = offset]
+	[Local.summary  = User]
+	AsciiStringTerm("\t",false) User;
+	[Local.valueLength = offset - Local.startOffset-1]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	
+	switch{
+		case (Local.valueLength < 1 || Local.valueLength > 256) || (Property.IsAsciiString == false):
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected value: 1*256CHAR ") InvalidParameterValue;
+	}
+}
+
+//Conusme && validate FileName; format:1*260CHAR CRLF
+struct CERFileName = Local.summary 
+{
+	[Local.startOffset = offset]
+	[Local.summary  = FileName]
+	AsciiStringTerm("\r\n",false) FileName;
+	[Local.valueLength = offset - Local.startOffset-2]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	
+	switch{
+		case (Local.valueLength < 1 || Local.valueLength > 260) || (Property.IsAsciiString == false):
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected value: 1*260CHAR ") InvalidParameterValue;
+	}
+}
+
+//Conusme && validate ErrorSubPath; format 1*CHAR CRLF
+struct CERErrorSubPath = Local.summary
+{
+	[Local.startOffset = offset]
+	[Local.summary  = ErrorSubPath]
+	AsciiStringTerm("\r\n",false) ErrorSubPath;
+	[Local.valueLength = offset - Local.startOffset-2]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	
+	switch{
+		case (Local.valueLength < 1) || (Property.IsAsciiString == false):
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected value: 1*CHAR ") InvalidParameterValue;
+	}
+
+}
+
+struct CERBucket{
+	CERIntegerCrlf(false) Bucket; 
+}
+
+//Consume crash.log file content
+//Format: HitTime SP SP Date HTAB Machine HTAB User HTAB (Bucket / ErrorSubPath) CRLF
+struct CERCrashLog{
+	CERTime CrashTime;
+	CERDate Date;
+	CERMachine Machine;
+	CERUser User; 
+
+	switch{ 
+		case ! CERisDigit(AsciiString(FrameData, FrameOffset, 1)):
+			CERErrorSubPath ErrorSubPath; 
+		case ! AsciiStringTerm(FrameData, FrameOffset, "\r\n").contains("\t"):
+			CERBucket Bucket;			
+		default:
+			struct CERCrashLogError{
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined parameter in crash.log") UndefinedParameter; 
+				AsciiStringTerm("\r\n") Data;
+			}
+
+	}
+}
+
+//Consume && validate policy.txt file content
+struct CERPolicyTxt
+{
+	[Local.Data = AsciiStringTerm(FrameData, FrameOffset, "\r\n", true)]
+
+	while [(FrameLength - FrameOffset) > 0]
+	{
+		[Local.Parameter = AsciiStringTerm(FrameData, FrameOffset, "=")]
+		switch{
+			case Local.Parameter == "Tracking":
+				CERBooleanParameter Tracking;
+			case Local.Parameter == "Crashes per bucket":
+				CERCrashesperBucket CrashesPerBucket;
+			case Local.Parameter == "URLLaunch":
+				CERURLValue URLLaunch;
+			case Local.Parameter == "NoSecondLevelCollection":
+				CERBooleanParameter NoSecondLevelCollection;
+			case Local.Parameter == "NoFileCollection":
+				CERBooleanParameter NoFileCollection;
+			case Local.Parameter == "NoExternalURL":
+				CERBooleanParameter NoExternalURL;
+			case Local.Parameter == "FileTreeRoot":
+				CERFileTreeRoot FileTreeRoot;
+			default:			
+				[Property.CERErrorSummary = "ERROR: Undefined parameter"]
+				struct CERPolicyTxtError{
+					ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined parameter in policy.txt") UndefinedParameter; 
+					AsciiStringTerm("\r\n") Data;
+				}
+		}
+	}
+}
+
+//Consume configuration parameter && it's value. 
+//Check if value it is CERBooleanValue: YES, True, 1 ,NO, False, 0
+struct CERBooleanParameter = Local.summary
+{
+	[Local.summary  = Parameter]
+	AsciiStringTerm("=") Parameter;
+	[Local.startOffset = offset]
+	AsciiStringTerm("\r\n") Value;
+	[Local.valueLength = offset - Local.startOffset-2]
+	switch{
+		case CERBooleanValue(Value, Local.valueLength) == "Invalid value":
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected Boolean value: YES/NO, True/False, 1/0") InvalidParameterValue;
+	}
+}
+
+//Check if value is YES, True, 1 || NO, False, 0 - case insensitive
+table CERBooleanValue (value, len)
+{
+	switch {
+		case value =="1" || value =="0": true;
+		case len==2 && 
+		(AsciiString(value, 0, 1) =="N" || AsciiString(value, 0, 1) =="n") &&
+		(AsciiString(value, 2, 1) =="O" || AsciiString(value, 2, 1) =="o"): true;
+		case len==3 &&
+		(AsciiString(value, 0, 1) =="Y" || AsciiString(value, 0, 1) =="y") &&
+		(AsciiString(value, 2, 1) =="E" || AsciiString(value, 2, 1) =="e") &&
+		(AsciiString(value, 4, 1) =="S" || AsciiString(value, 4, 1) =="s"): true;
+		case len == 4 && 
+		(AsciiString(value, 0, 1) =="T" || AsciiString(value, 0, 1) =="t") &&
+		(AsciiString(value, 2, 1) =="R" || AsciiString(value, 2, 1) =="r") &&
+		(AsciiString(value, 4, 1) =="U" || AsciiString(value, 4, 1) =="u") &&
+		(AsciiString(value, 6, 1) =="E" || AsciiString(value, 6, 1) =="e"): true;
+		case len==5 &&
+		(AsciiString(value, 0, 1) =="F" || AsciiString(value, 0, 1) =="f") &&
+		(AsciiString(value, 2, 1) =="A" || AsciiString(value, 2, 1) =="a") &&
+		(AsciiString(value, 4, 1) =="L" || AsciiString(value, 4, 1) =="l") &&
+		(AsciiString(value, 6, 1) =="S" || AsciiString(value, 6, 1) =="s") &&
+		(AsciiString(value, 8, 1) =="E" || AsciiString(value, 8, 1) =="e"): true;
+		default: "Invalid value";
+	}
+}
+
+
+//Consume && validate status.txt file content
+struct CERStatusTxt = "Status.txt file content"{
+[Local.Data = AsciiStringTerm(FrameData, FrameOffset, "\r\n", true)]
+
+	while [(FrameLength - FrameOffset) > 0]
+	{
+		[Local.Parameter = AsciiStringTerm(FrameData, FrameOffset, "=")]
+		switch{
+			case Local.Parameter == "Tracking":
+				CERBooleanParameter Tracking;
+			case Local.Parameter == "Crashes per bucket":
+				CERCrashesPerBucket CrashesPerBucket;
+			case Local.Parameter == "URLLaunch":
+				CERURLValue URLLaunch;
+			case Local.Parameter == "NoSecondLevelCollection":
+				CERBooleanParameter NoSecondLevelCollection;
+			case Local.Parameter == "NoFileCollection":
+				CERBooleanParameter NoFileCollection;
+			case Local.Parameter == "NoExternalURL":
+				CERBooleanParameter NoExternalURL;
+			case Local.Parameter == "Bucket":
+				CERBucketValue Bucket;
+			case Local.Parameter == "iData":
+				CERBooleanParameter iData;
+			case Local.Parameter == "fDoc":
+				CERBooleanParameter fDoc;
+			case Local.Parameter == "RegKey":
+				CERRegKeyList RegKeyList;
+			case Local.Parameter == "WQL":
+				CERWqlKeyList WqlKeyList;
+			case Local.Parameter == "MemoryDump":
+				CERBooleanParameter MemoryDump;
+			case Local.Parameter == "GetFile":
+				CERGetFileValue FileList; 
+			case Local.Parameter == "GetFileVersion":
+				CERGetFileValue FileVersionList;
+			case Local.Parameter == "Response":
+				[Property.CERResponse = true ]
+				CERResponseValue Response;
+			case local.Parameter == "BucketTable":
+				CERBucketTable BucketTable;
+			default:			
+				[Property.CERErrorSummary = "ERROR: Undefined parameter"]
+				struct CERStatusTxtError{
+					ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Undefined parameter in status.txt") UndefinedParameter; 
+					AsciiStringTerm("\r\n") Data;
+				}
+		}
+	}
+}
+
+//Conusme && validate FileTreeRoot; format 1*CHAR CRLF
+struct CERFileTreeRoot{
+	AsciiStringTerm("=") Parameter;
+	[Local.startOffset = offset]
+	AsciiStringTerm("\r\n") Value;
+	[Local.valueLength = offset - Local.startOffset-2]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	
+	switch{
+		case Local.valueLength <1 || Local.valueLength>260 || Property.IsAsciiString == false:
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected value: UNC ") InvalidParameterValue;
+	}
+}
+
+//Consume && validate CrashesPerBucket parameter data
+struct CERCrashesPerBucket{
+	AsciiStringTerm("=") Parameter;
+	CERIntegerCrlf(true) Value;
+}
+
+struct CERBucketTable
+{
+	AsciiStringTerm("=") Parameter;
+	CERIntegerCrlf(true) Value;
+}
+
+//Consume && validate RegKeyList parameter data
+struct CERRegKeyList{
+	AsciiStringTerm("=") Parameter;
+	CERWqlRegFileList("REG KEY") Value; 
+}
+
+//Consume && validate WQLKeyList parameter data
+struct CERWqlKeyList{
+	AsciiStringTerm("=") Parameter;
+	CERWqlRegFileList("WQL") Value;
+}
+
+//Consume && validate FileKeyList parameter data
+struct CERGetFileValue{
+	AsciiStringTerm("=") Parameter;
+	CERWqlRegFileList("File") Value;
+}
+
+//Consume && validate Bucket parameter data
+struct CERBucketValue{
+	AsciiStringTerm("=") Parameter;
+	CERIntegerCrlf(false) Value;
+}
+
+//Consume && validate Response parameter data
+struct CERResponseValue{
+	[Property.CERResponse = true ]
+	AsciiStringTerm("=") Parameter;
+	[Local.startOffset = offset]
+	AsciiStringTerm("\r\n") Value;
+	[Local.valueLength = offset - Local.startOffset-2]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	
+	switch{
+		case Local.valueLength == 0 || Property.IsAsciiString == false:
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected values: 1/URL") InvalidParameterValue;
+	}
+}
+
+struct CERURLValue{
+	AsciiStringTerm("=") Parameter;
+	[Local.startOffset = offset]
+	AsciiStringTerm("\r\n") Value;
+	[Local.valueLength = offset - Local.startOffset-2]
+	[index = 0, Property.IsAsciiString = true, Maxloopcount = Local.valueLength]
+	while [index < Local.valueLength]
+	{
+		switch
+		{
+			case ( UINT8( Framedata, Local.startOffset + index ) & 0x80 ) == 0x80: 
+				[Property.IsAsciiString = false, index = Local.valueLength]struct{}
+			default:
+				[index = index + 1]struct{}
+		}
+	}
+	switch{
+		case Local.valueLength>0 && Property.IsAsciiString == false:
+			[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Parameter value is invalid, expected values: [URL] ") InvalidParameterValue;
+	}
+}
+
+
+
+//Check if Value is DIGIT = %x30-39 ; 0-9			
+table CERIsDigit(Value){
+
+	switch {
+		case (Value>="0" && Value <="9"):
+			1;
+		default:
+			0;
+	}
+}
+
+
+//table CERisCharString(value, index, length){
+	//switch{
+		//case index == (length - 1) && CERisChar(AsciiString(value, index, 1)): true;
+		//case CERisChar(AsciiString(value, index, 1)) && (index < length): CERisCharString(value, index + 1, length);
+		//default: false;	
+	//}
+//}
+
+
+table CERisChar(value){
+	switch{
+		case value>= 0x01 && value <= 0x7f: true;
+		default: false; 
+	}
+}
+
+
+struct CERWqlRegFileList(type){
+	[Local.Value =""]
+	[Local.WqlRegFileChar = CHAR(FrameData, FrameOffset)]
+	while [!(Local.WqlRegFileChar & 0x80)
+			&& (Local.WqlRegFileChar !="\r")]
+	{
+		switch
+		{	
+			case Local.WqlRegFileChar ==";":
+					[Local.WQLRegFileData = Local.Value]
+					[Local.Value = ""]
+					[Local.WqlRegFileChar = CHAR(FrameData, FrameOffset+1)]
+					CHAR Element = FormatString("%s: %s",type,Local.WQLRegFileData);
+			default:							
+				[Local.Value = Local.Value + FormatString("%c", Local.WqlRegFileChar)]
+				[Local.WqlRegFileChar = CHAR(FrameData, FrameOffset+1)]
+				DynamicSwitch AsciiString(1)
+				{
+					default: struct{}
+				};
+		}
+	}
+	
+	switch
+	{
+		case CHAR(FrameData, FrameOffset) == "\r" && CHAR(FrameData, FrameOffset+1) == "\n":
+			switch{
+				case Local.Value!="":
+					INT16 Element =FormatString("%s: %s",type,Local.Value);
+				default:
+					DynamicSwitch AsciiString(2){
+					default: struct{}
+					}
+			}
+		default:
+			struct CERWqlRegFileListError = FormatString("Unexpected character: %c ", Local.WqlRegFileChar)
+			{
+				[Property.CERErrorSummary= "ERROR: Invalid parameter value"]
+				CHAR CorectPart = FormatString("%s", Local.Value);
+				ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Incorect char in Wql") IncorrectParameterValue; 
+				DynamicSwitch AsciiStringTerm("\r\n"){
+					default: struct{}
+				}
+			}
+	}
+}
+
+// Validate folder structure
+struct CERFolderStructure(FileNameOffset)= FormatString("%s", Property.ValidBucketPath){
+	[Property.ValidBucketPath = "Invalid CER bucket path"]
+	[Local.Type = ""]
+	[Local.Path = Property.SMBFileName]
+	[Local._offset = FileNameOffset]
+	[Local.tmp = 0]
+	[Local.Count= 0]
+	[MaxLoopCount = 1000, DataFieldFrameOffset = 0]
+	while [UnicodeStringTerm(Local.Path,Local._offset+Local.tmp, "\\", true).contains("\\")]
+	{
+		[Local.Folder = UnicodeStringTerm(Local.Path,Local._offset+Local.tmp, "\\")]
+		[Local._offset = Local._offset + Local.tmp]
+		[Local.tmp = 0]
+		[Local.Count=Local.Count+1]
+		[MaxLoopCount = 1000, DataFieldFrameOffset = 0]
+		while [(UnicodeString(Local.Path,Local._offset+Local.tmp,1)!="\\")]
+		{
+			[Local.tmp = Local.tmp + 2]
+			struct{}
+		}
+		[Local.tmp = Local.tmp+2]
+		
+		switch{
+			case Local.Count ==1:
+				[Local.Folder1 = Local.Folder]
+				struct{}
+			case Local.Count ==2:
+				[Local.Folder2 = Local.Folder]
+				struct{}
+			case Local.Count ==3:
+				[Local.Folder3 = Local.Folder]
+				struct{}
+			case Local.Count ==4:
+				[Local.Folder4 = Local.Folder]
+				struct{}
+			case Local.Count ==5:	
+				[Local.Folder5 = Local.Folder]
+				struct{}
+		}
+	}
+
+	switch
+	{
+		case Local.Folder1 == "blue" && Local.Count==1:
+			[Property.CERReportType= "Kernel mode report"]
+			[Local.Type = "kernel"]
+			[Property.CERParseContent = true]
+			[Property.ValidBucketPath = "Valid CER bucket path"]
+			Struct KernelModeFolder = Local.Folder1{}
+		case Local.Folder == "shutdown" && Local.Count==1:
+			[Property.CERReportType= "Shutdown report"]
+			[Local.Type = "shutdown"]
+			[Property.CERParseContent = true]
+			[Property.ValidBucketPath = "Valid CER bucket path"]
+			Struct ShutdownReportsFolder = Local.Folder{}
+		case Local.count ==5:
+			[Property.CERReportType= "App fault || hang report"]	
+			[Local.Type = "crash"]
+			[Property.CERParseContent = true]
+			[Property.ValidBucketPath = "Valid CER bucket path"]
+			struct CERFolderStructureBucketSubPath = "Crash || hang bucket path"{	
+				Struct AppName = Local.Folder1{}
+				Struct AppVer = Local.Folder2{}
+				Struct ModName = Local.Folder3{}
+				Struct ModeVer = Local.Folder4{}
+	  			Struct Offset = Local.Folder5{}
+			}
+		default:
+			[Property.CERErrorSummary= "ERROR: Invalid path"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Incorrect CER file share folder structure") InvalidPath;			
+	}
+}
+
+struct CERPath = Local.Path 
+{
+[Local.Path = Property.SMBFileName]
+	switch{
+		case (UnicodeString(Local.Path, 0, 8) == "\\counts\\"):
+			struct CERPathCountFolderStructure{
+				Struct FileTypeFolder = UnicodeString(Local.Path,2,7){}
+				CERFolderStructure(16) BucketFolderStructure; 
+			}
+		case (UnicodeString(Local.Path, 0, 6) == "\\cabs\\"):
+			struct CERPathHitsFolderStructure{
+				Struct FileTypeFolder = UnicodeString(Local.Path,2,5){}
+				CERFolderStructure(12) BucketFolderStructure; 
+			}
+		case (UnicodeString(Local.Path, 0, 8) == "\\status\\"):
+			struct CERPathStatusFolderStructure{
+				Struct FileTypeFolder = UnicodeString(Local.Path,2,7){ }
+				CERFolderStructure(16) BucketFolderStructure; 
+			}
+		case (UnicodeString(Local.Path, 0,11) == "\\policy.txt"):
+			Struct PolicyFolder = FormatString("%s", UnicodeString(Local.Path, 0, 11)){
+			}
+		case UnicodeString(Local.Path, 0,10) == "\\crash.log":
+			Struct CrashFolder = FormatString("%s", UnicodeString(Local.Path, 0, 10)){
+			}
+		default:
+			[Property.CERErrorSummary= "ERROR: Invalid path"]
+			ReportParserError(ParserErrorProtocolClassMsOffice, "CER", "Invalid path") InvalidPath;			
+	}
+}
+

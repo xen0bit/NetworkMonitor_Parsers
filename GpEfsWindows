@@ -1,0 +1,290 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Encrypting File System Extension for Group Policy
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-GPEF]: Group Policy: Encrypting File System Extension (8.0.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 12/4/2009
+//#                          Minor, 11/18/2009
+//#
+//####
+
+Struct GPEFSInstruction = RegType == 0x0000 ? "" : GPEFSRegTypeTable(RegType) + ": " + property.RegValue
+{
+	[property.RegKeyPath]
+	UnicodeStringTerm(";") RegKeyPath;
+	[property.RegValue]
+	UnicodeStringTerm(";") RegValue = this == 0x0000? "Empty": this;
+	UINT32 RegType = this == 0x0000 ? "" : GPEFSRegTypeTable(this);
+	UnicodeStringTerm(";", true) Separator1;
+	[property.RegSize]
+	UINT32 RegSize;
+	UnicodeStringTerm(";", true) Separator2;
+	switch(RegType)
+	{
+		case 0x01:
+		case 0x02:
+			UnicodeString TemplateName;
+		case 0x03:
+			Switch(property.RegValue)
+			{
+				case "Blob":
+					GPEfSBlobCert(property.RegSize) BlobCerts;
+				case "EFSBlob":
+					GPEFSBlob BlobData;
+			}
+		case 0x04:
+			Switch(property.RegValue)
+			{
+				case "EfsConfiguration":
+					UINT32 Status = GPEFSStatusTable(this);
+				case "EfsOptions":
+					GPEfSOptions Options;
+				case "CacheTimeout":
+					UINT32 CacheTimeOut = FormatString("%d min(s)", this);
+				case "RSAKeyLength":
+					UINT32 RSAKeyLength = FormatString("%d (bits)", this);
+				Default:
+					UINT32 RegDword;
+			}
+		case 0x05:
+			[DataFieldByteOrder = BigEndian]
+			UINT32 RegDwordBig;
+		case 0x07:
+			[Property.GPEFSDataLength = FrameOffSet + property.RegSize]
+			While[FrameOffSet < Property.GPEFSDataLength]
+			{
+				UnicodeString TemplateName;
+			}
+		case 0x0B:
+			UINT64 RegQword;
+	}
+}
+
+//
+//	2.2.1.1.1.1   Certificate BLOB Properties
+//
+Struct GPEFSCertificateBlob = GPEFSPropertyIDTable(PropertyID)
+{
+	UINT32 PropertyID = GPEFSPropertyIDTable(this);
+	UINT32 Reserved = MustBeSetToTable(this,"0x00000001");
+	[Property.GPEFSCertificateBlobLength]
+	UINT32 Length;
+	switch(PropertyID)
+	{
+		case 2:
+			[property.KeyProvInfoFrameStart = FrameOffset]
+			GPEFSKeyPRovInfo KeyPRovInfo;
+		case 3:
+			BLOB(20) SHA1Hash;
+		case 4:
+			BLOB(16) MD5Hash;
+		case 6:
+			UINT32 KeySpec = MustBeSetToTable(this,"0x1");
+		case 9:
+			X509ExtKeyUsageSyntax ExtKeyUsage;
+		case 11:
+			UnicodeString FriendlyName;
+		case 13:
+			UnicodeString Desc;
+		case 15:
+			BLOB(20) SignHash;
+		case 20:
+			BLOB(20) KeyId;
+		case 21:
+			UnicodeString AutoEnroll;
+		case 22:
+			// The algorithm identifier for the public key
+			X509AlgorithmIdentifier PublicAlgPara;
+		case 24:
+			BLOB(16) IssuerPublicKeyMD5Hash;
+		case 25:
+			BLOB(16) SubjectPublicKeyMD5Hash;
+		case 27:
+			UNIXTIMESTAMP64 DateStamp;
+		case 28:
+			BLOB(16) IssuerSerialNumberMD5Hash;
+		case 29:
+			BLOB(16) SubjectNameMD5Hash;
+		default:
+			BLOB(property.GPEFSCertificateBlobLength) CertDataUnknown;
+	}
+}
+
+//
+//	2.2.1.1.1.1.1   KEY_PROV_INFO
+//
+Struct GPEFSKeyPRovInfo
+{
+	[Property.KeyProvInfoStart = FrameOffset]
+	UINT32 ContainerOffset;
+	UINT32 ProviderOffset;
+	UINT32 ProviderType = MustBeSetToTable(this,"0x00000001");
+	UINT32 Flags = FormatString("%d (Ignored by client)", this);
+	BLOB(8) Reserved;
+	UINT32 KeySpecification = MustBeSetToTable(this,"0x00000001");
+	
+	switch
+	{
+		case FrameOffset - Property.KeyProvInfoStart == ContainerOffset:
+			struct ContainerNameFirst
+			{
+				UnicodeString ContainerName;
+				BLOB(ProviderOffset - (FrameOffset - Property.KeyProvInfoStart)) Pads;
+				UnicodeString ProviderName;
+			}
+		case FrameOffset - Property.KeyProvInfoStart == ProviderOffset:
+			struct ProviderFirst
+			{
+				UnicodeString ProviderName;
+				BLOB(ContainerOffset - (FrameOffset - Property.KeyProvInfoStart)) Pads;
+				UnicodeString ContainerName;
+			}
+	}
+	[local.KeyProvInfoPadLength = property.KeyProvInfoFrameStart + property.GPEFSCertificateBlobLength - FrameOffset]
+	switch
+	{
+		case local.KeyProvInfoPadLength > 0:
+			BLOB(local.KeyProvInfoPadLength) Padding;
+	}
+}
+
+Struct GPEfSBlobCert(Length)
+{
+	[Property.EfSBlobCertEnd = FrameOffset + Length]
+	while [FrameOffset < Property.EfSBlobCertEnd]
+	{
+		Switch
+		{
+			Case UINT64(FrameData, FrameOffset) == 0x0000000100000020:
+				GPEFSCertificateBLOBEncoding CertificateBLOBEncoding;
+			Default:
+				GPEFSCertificateBlob CertificateBlob;
+		}
+	}
+}
+
+Struct GPEfSOptions
+{
+	UINT32 OptionsFlag
+	{
+		UINT32 EncryptDocs:1 = FormatString("   (%s) %s", this.ToBitString, this? "Encrypt the user's Documents folder and its contents.": "");
+		UINT32 SCCacheMode:1 = FormatString("   (%s) %s", this.ToBitString, this? "Derive a symmetric key from the private key, cache it in memory, and perform symmetric key operations with it instead of asymmetric key operations with the private and public keys on the smart card.": "");
+		UINT32 SelfSigned:1 = FormatString("    (%s) %s", this.ToBitString, this? "Allow users to use public keys associated with self-signed certificates for encryption.": "");
+		UINT32 Unused1:1 = FormatString("       (%s)", this.ToBitString);
+		UINT32 FlushTimeout:1 = FormatString("  (%s) %s", this.ToBitString, this? "Flush all per-user secrets and keying material from memory after an idle interval as specified in the EFS cache timeout option": "");
+		UINT32 FlushLock:1 = FormatString("     (%s) %s", this.ToBitString, this? "Flush all per-user secrets and keying material from memory whenever the user temporarily locks the session.":"");
+		UINT32 Unused2:2 = FormatString("       (%s)", this.ToBitString);
+		UINT32 SCRequired:1 = FormatString("    (%s) %s", this.ToBitString, this? "Reject attempts by users to create encrypted files or to encrypt existing files using keys not stored on a smart card.": "");
+		UINT32 PageFileEFS:1 = FormatString("   (%s) %s", this.ToBitString, this? "The system page file should be encrypted with EFS.": "");
+		UINT32 KeyBackup:1 = FormatString("     (%s) %s", this.ToBitString, this? "Remind users to back up their keys each time they change their EFS key.": "");
+		UINT32 Unused3:1 = FormatString("       (%s)", this.ToBitString);
+		UINT32 DisableECCKey:1 = FormatString(" (%s) %s", this.ToBitString, this? "Disallow the use of ECC keys for user and recovery keys.": "");
+		UINT32 EnableECCKey:1 = FormatString("  (%s) %s", this.ToBitString, this? "Allow the use of ECC keys for user and recovery keys.": "");
+		UINT32 Unused4:18 = FormatString("       (%s)", this.ToBitString);
+	};
+}
+
+//
+//	2.2.1.1.1.2   Certificate BLOB Encoding
+//
+Struct GPEFSCertificateBLOBEncoding = "X509Certificate"
+{
+	BLOB(8) Reserved = MustBeSetToTable(this,"0x0000000100000020");
+	[Property.GPEFSCertificateBLOBEncodingLength]
+	UINT32 Length;
+	X509Certificate Certificate;
+}
+
+//
+//	2.2.1.2.1   EfsBlob
+//
+Struct GPEFSBlob
+{
+	UINT32 Reserved = MustBeSetToTable(this, "0x00010001");
+	UINT32 KeyCount;
+	GPEFSKey Key[KeyCount];
+}
+
+//
+//	2.2.1.2.2   EfsKey
+//
+Struct GPEFSKey
+{
+	UINT32 Length1;
+	UINT32 Length2;
+	UINT32 SIDOffSet;
+	UINT32 Reserved1 = MustBeSetToTable(this,"0x00000002");
+	UINT32 CertificateLength;
+	UINT32 CertificateOffset;
+	BLOB(8) Reserved2;
+	Switch
+	{
+		case SIDOffSet > 0:
+			Blob(CertificateOffset - SIDOffset) SID;
+	}
+	X509Certificate Certificate;
+}
+
+Number UNIXTIMESTAMP64
+{
+	//0x19DB1DED53E8000 = Number of nano seconds from 1601 to 1970
+	Size = 8;
+	DisplayFormat = FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss tt} .%t{ffff} ", ( this * 10000000)  + 0x19DB1DED53E8000,  ( this * 10000000) + 0x19DB1DED53E8000 , ( this * 10000000)  + 0x19DB1DED53E8000  );
+}
+
+Table GPEFSPropertyIDTable(value)
+{
+	switch(value)
+	{
+		case 2: "KEY_PROV_INFO";
+		case 3: "SHA1_HASH";
+		case 4: "MD5_HASH";
+		case 5: "KEY_SPEC - AT_KEYEXCHANGE";
+		case 9: "ENHKEY_USAGE";
+		case 10: "NEXT_UPDATE_LOCATION";
+		case 11: "FRIENDLY_NAME";
+		case 13: "DESCRIPTION";
+		case 15: "SIGNATURE_HASH";
+		case 20: "KEY_IDENTIFIER";
+		case 21: "AUTO_ENROLL";
+		case 22: "PUBKEY_ALG_PARA";
+		case 24: "ISSUER_PUBLIC_KEY_MD5_HASH";
+		case 25: "SUBJECT_PUBLIC_KEY_MD5_HASH";
+		case 27: "DATE_STAMP";
+		case 28: "ISSUER_SERIAL_NUMBER_MD5_HASH";
+		case 29: "SUBJECT_NAME_MD5_HASH";
+		default:
+			"Unknown value";
+	}
+}
+
+Table GPEFSRegTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "REG_SZ";
+		case 0x02: "REG_EXPAND_SZ";
+		case 0x03: "REG_BINARY";
+		case 0x04: "REG_DWORD";
+		case 0x05: "REG_DWORD_BIG_ENDIAN";
+		case 0x07: "REG_MULTI_SZ";
+		case 0x0B: "REG_QWORD";
+		default: "Unknown Type";
+	}
+}
+
+Table GPEFSStatusTable(value)
+{
+	switch(value)
+	{
+		case 0: "EFS enabled on client";
+		case 1: "EFS disabled on client";
+		default:
+			"Unknown value";
+	}
+}

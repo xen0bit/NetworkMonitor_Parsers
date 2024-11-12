@@ -1,0 +1,563 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Real-Time Transport Control Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1889, 2032, 3350, 3611
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol RTCP = "RTCP compound packet - Number of packets = " + Property.RTCPPacketCount
+{
+	[Global.RTPPort$[MakeByteArray(SourceNetworkAddress, SourcePort - 1)] = true]
+	[Global.RTPPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort - 1)] = true]
+	[RTCPPacketCount = 0]
+	While Packets[ FrameOffset < FrameLength ]
+	{
+		[RTCPPacketCount = RTCPPacketCount + 1]
+		switch
+		{
+			default:
+			_struct RTCPPacket
+			{
+				Switch( UINT8( Framedata, Offset + 1 ) )
+				{
+					case 200: RTCPSenderReportPacket Sr;
+					case 201: RTCPReceiverReportPacket Rr;
+					case 202: RTCPSourceDescriptionPacket Sdes;
+					case 203: RTCPGoodbyePacket Bye;
+					case 204: RTCPApplicationDefinedPacket App;
+					case 205: RTCPNACKGenericMessage Nack;
+					//there is still a value called "PSFB   |  206  | Payload-specific FB message"
+					case 206: RTCPPLIMessagePacket Pli;
+					case 207: RTCPExtendedReportPacket Xr;
+					case 0: UINT32 NullOctets;	//A chunk with zero items (four null octets) is valid but useless.
+					Default:  ReportParserError(ParserErrorProtocolClassWindows, "RTCP", "Unknown Packet" ) ProtocolError;
+				}
+			}
+		}
+	}
+}
+
+Table RTCPPacketTypeTable( Value )
+{
+	Switch( Value )
+	{
+		case 192: "Full INTRA-frame request(FIR)";
+		case 193: "Negative Acknowledgement(NACK)";
+		case 200: "Sender Report RTCP packet(SR)";
+		case 201: "Receiver Report RTCP packet(RR)";
+		case 202: "Source Description RTCP packet(SDES)";
+		case 203: "Goodbye RTCP packet(BYE)";
+		case 204: "Application-defined RTCP packet(APP)";
+		case 205: "Generic RTP Feedback(RTPFB)";
+		//case 206: "Payload-specific(PSFB)";
+		case 206: "Payload-specific FB message(PLI)";
+		case 207: "RTCP Extension(XR)";
+		Default: "unknown";
+	}
+}
+
+// RFC 3550
+// A.2 RTCP Header Validity Checks
+// The padding bit (P) should be zero for the first packet of a
+// compound RTCP packet because padding should only be applied, if it
+// is needed, to the last packet.
+Struct RTCPSenderReportPacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	[Property.RTCPSenderReportPacketPerFrameOffset = Frameoffset]
+	UINT8 Version:2 = FormatString("(%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 ReportCount:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	UINT32 Ssrc;
+
+	UINT32 NTPTimestampMsw;
+	UINT32 NTPTimestampLsw;
+	INT32 RTPTimestamp;
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 SendersPacketCount;
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 SendersOctetCount;
+
+	RTCPReportBlock ReportBlock[ ReportCount ];
+	
+	while [FrameOffset - Property.RTCPSenderReportPacketPerFrameOffset < Length*4 + 4]
+	{
+		switch (UINT16(FrameData,FrameOffset))
+		{
+
+			default:			
+				Blob(Length*4+4 - (FrameOffset - Property.RTCPSenderReportPacketPerFrameOffset)) ProfileSpecificExtensions;
+		}
+	}
+
+}
+
+Struct RTCPReceiverReportPacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	[Property.RTCPReceiverReportPacketPerFrameOffset = Frameoffset]
+	UINT8 Version:2 = FormatString("  (%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 ReportCount:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	UINT32 Ssrc;
+
+	RTCPReportBlock ReportBlock[ ReportCount ];
+	
+	while [FrameOffset - Property.RTCPReceiverReportPacketPerFrameOffset < Length*4 + 4]
+	{
+		switch (UINT16(FrameData,FrameOffset))
+		{
+
+			default:			
+				Blob(Length*4+4 - (FrameOffset - Property.RTCPReceiverReportPacketPerFrameOffset)) ProfileSpecificExtensions;
+		}
+	}
+}
+
+Struct RTCPReportBlock
+{
+	UINT32 SsrcN;
+	UINT8 FractionLost;
+	UINT24 PacketsLost;
+	INT32 HighestSequence;
+	INT32 InterarrivalJitter;
+	INT32 LastSrTimestamp;
+	INT32 DelaySinceLastSr;
+}
+
+Struct RTCPSourceDescriptionPacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	UINT8 Version:2 = FormatString("  (%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 SourceCount:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	[Local.RTCPPacketEndOffset = FrameOffset + Length*4]
+
+	RTCPSourceDescription Description[ SourceCount ];
+	
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(Local.RTCPPacketEndOffset) Padding;
+	}
+}
+
+Table RTCPSdesItemTypeTable( Value )
+{
+	Switch( Value )
+	{
+		case 1: "CNAME";
+		case 2: "NAME";
+		case 3: "EMAIL";
+		case 4: "PHONE";
+		case 5: "LOC";
+		case 6: "TOOL";
+		case 7: "NOTE";
+		case 8: "PRIV";
+		Default: "unknown";
+	}
+}
+
+
+Struct RTCPSourceDescription = "Source Description"
+{
+	UINT32 SsrcCsrc;
+
+	while SdesItems[ !(UINT8( Framedata, Offset ) == 0) ]
+	{
+		switch (UINT8( Framedata, Offset ))
+		{
+			case 1:	RTCPSdesItemCName Cname;
+			case 2:	RTCPSdesItemName	Name;
+			case 3:	RTCPSdesItemEmail	Email;
+			case 4:	RTCPSdesItemPhone	Phone;
+			case 5:	RTCPSdesItemLoc		Loc;
+			case 6:	RTCPSdesItemTool	Tool;
+			case 7:	RTCPSdesItemNote	Note;
+			case 8:
+				switch
+				{
+					default:
+						RTCPSdesItemPRIV	Priv;
+				}
+		}
+	}
+	UINT8	Terminator;
+	Struct Pad //32-bit boundary
+	{
+		UINT8 Pad[ CurrentProtocolOffset % 4 ? 4 - CurrentProtocolOffset % 4 : 0 ];
+	}
+}
+
+
+struct RTCPSdesItemCName = CName
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) CName;	
+} 
+
+struct RTCPSdesItemName = Name
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Name;	
+} 
+
+struct RTCPSdesItemEmail = Email
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Email;	
+} 
+
+struct RTCPSdesItemPhone = Phone
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Phone;	
+} 
+
+struct RTCPSdesItemLoc = Loc
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Loc;	
+} 
+
+
+struct RTCPSdesItemTool = Tool
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Tool;	
+} 
+
+struct RTCPSdesItemNote = Note
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	MbcString( Length ) Note;	
+} 
+
+struct RTCPSdesItemPRIV = PrefixString + " " + ValueString
+{
+	UINT8	Type = RTCPSdesItemTypeTable( this );
+	UINT8	Length;
+	UINT8 PrefixLength;
+	MbcString( PrefixLength ) PrefixString;
+	MbcString( Length - PrefixLength ) ValueString;
+} 
+
+Struct RTCPGoodbyePacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	[local.RTCPPacketStartOffset = offset]
+	UINT8 Version:2 = FormatString("  (%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 SourceCount:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	[Local.RTCPPacketEndOffset = FrameOffset + Length*4]
+	UINT32 Ssrc[ SourceCount ];
+
+	UINT8 Lengthstring;
+	MbcString( Lengthstring ) ReasonForLeaving;
+
+	switch
+	{
+		case (Offset - local.RTCPPacketStartOffset) % 4 > 0:
+		 BLOB(4 - (Offset - local.RTCPPacketStartOffset) % 4) PadTo32BitBoundary;
+	}
+	
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(Local.RTCPPacketEndOffset) Padding;
+	}
+	
+	switch
+	{
+		case Local.RTCPPacketEndOffset - FrameOffset > 0:
+		Blob(Local.RTCPPacketEndOffset - FrameOffset)	Pad;
+	}
+}
+
+Struct RTCPApplicationDefinedPacket= FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	UINT8 Version:2 = FormatString("(%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 SubType:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	[Local.RTCPPacketEndOffset = FrameOffset + Length*4]
+
+	INT32 SsrcCsrc;
+	AsciiString(4) Name;
+
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(Local.RTCPPacketEndOffset) Padding;
+	}
+}
+
+//Generic Message for the NACK
+struct RTCPNACKGenericMessage = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	//start the Generic message--kind of feedback message
+	//VPFMT
+	UINT8 Version:2 = FormatString("(%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 FMT:4 = FormatString("    (%s) %s",this.toBitString,this);//1
+	UINT8 E:1 = FormatString("      (%s) %s",this.toBitString,this);
+	
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	[Local.RTCPPacketEndOffset = FrameOffset + Length*4]
+	UINT32 SSRCofPacketSender;
+	UINT32 SSRCofMediaSource;
+	UINT16 LostPacketID;
+	UINT16 LostPacketBitmask;
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(Local.RTCPPacketEndOffset) Padding;
+	}
+}
+
+//Payload-Specific Message
+struct RTCPPLIMessagePacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	//VPFMT
+	UINT8 Version:2 = FormatString("(%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 FMT:5 = FormatString("    (%s) %s",this.toBitString,this);
+	
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	[Local.RTCPPacketEndOffset = FrameOffset + Length*4]
+	UINT32 SSRCofPacketSender;
+	UINT32 SSRCofMediaSource;
+	switch(FMT)
+	{
+		case 1:
+			_struct PLI{}	
+		case 2:
+			SLIMsg SLI[Length - 2];
+		case 3:
+			struct RPSI
+			{
+				UINT8 PB;
+				UINT8 PayloadType
+				{
+					UINT8 O:1;
+					UINT8 PayloadType:7 = RTCPPacketTypeTable( this );
+				};
+				UINT32 NativeBitString;
+			};
+		case 15:
+			BLOB((Length-2)*4) AppData;
+		default:
+			_struct Reserved{};
+	}
+	
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(Local.RTCPPacketEndOffset) Padding;
+	}
+}
+
+struct SLIMsg
+{
+	UINT32 SLIMessage
+	{
+		UINT32 First:13;
+		UINT32 Numberous:13;
+		UINT32 PictureID:6;
+	};
+}
+
+// RFC 3611
+// RTP Control Protocol Extended Reports (RTCP XR)
+// The padding bit (P) should be zero for the first packet of a
+// compound RTCP packet because padding should only be applied, if it
+// is needed, to the last packet.
+Struct RTCPExtendedReportPacket = FormatString("%s, Length = %d", RTCPPacketTypeTable(PacketType), Length * 4+4)
+{
+	[Property.RTCPExtendedReportPacketPerFrameOffset = Frameoffset]
+	UINT8 Version:2 = FormatString("(%s) Version%d", this.ToBitString, this);
+	UINT8 Padding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Padding present" : "Padding not present");
+	UINT8 reserved:5 = FormatString("(%s) %s", this.ToBitString, this);
+	UINT8 PacketType = RTCPPacketTypeTable( this );
+	UINT16 Length = FormatString("%d bytes", this*4+4);
+	UINT32 Ssrc;
+	while [FrameOffset < Property.RTCPExtendedReportPacketPerFrameOffset + Length*4+4]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case 1: RTCPLossRLEReportBlock LossRLEReportBlock;
+			case 2: RTCPDuplicateRLEReportBlock DuplicateRLEReportBlock;
+			case 3: RTCPPacketReceiptTimesReportBlock PacketReceiptTimesReportBlock;
+			case 4: RTCPReceiverReferenceTimeReportBlock ReceiverReferenceTimeReportBlock;
+			case 5: RTCPDLRRReportBlock DLRRReportBlock;
+			case 6: RTCPStatisticsSummaryReportBlock StatisticsSummaryReportBlock;
+			case 7: RTCPVoIPMetricsReportBlock VoIPMetricsReportBlock;
+		}
+	}
+}
+
+Struct RTCPLossRLEReportBlock = FormatString("%s, Count = %d", RTCPExtendedReportBTTable(BT), BlockLength*4+4)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 TypeSpecific
+	{
+		UINT8 rsvd:4 = FormatString("(%s) %s", this.ToBitString, this );
+		UINT8 T:4 = FormatString("   (%s) %s", this.ToBitString, this?"There is thinning":"There is no thinning, and all packets are reported on" );
+	}
+	[Property.chunkcount = (this*4+4 - 12)/2]
+	UINT16 BlockLength = FormatString("%d bytes", this*4+4);
+	UINT32 SSRCofsource;
+	UINT16 beginseq;
+	UINT16 endseq;
+	UINT16 chunk[Property.chunkcount];
+}
+
+Struct RTCPDuplicateRLEReportBlock = FormatString("%s, Count = %d", RTCPExtendedReportBTTable(BT), BlockLength*4+4)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 TypeSpecific
+	{
+		UINT8 rsvd:4 = FormatString("(%s) %s", this.ToBitString, this );
+		UINT8 T:4 = FormatString("   (%s) %s", this.ToBitString, this?"There is thinning":"There is no thinning, and all packets are reported on" );
+	}
+	[Property.chunkcount = (this*4+4 - 12)/2]
+	UINT16 BlockLength = FormatString("%d bytes", this*4+4);
+	UINT32 SSRCofsource;
+	UINT16 beginseq;
+	UINT16 endseq;
+	UINT16 chunk[Property.chunkcount];
+}
+
+Struct RTCPPacketReceiptTimesReportBlock = FormatString("%s, Count = %d", RTCPExtendedReportBTTable(BT), BlockLength*4+4)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 TypeSpecific
+	{
+		UINT8 rsvd:4 = FormatString("(%s) %s", this.ToBitString, this );
+		UINT8 T:4 = FormatString("   (%s) %s", this.ToBitString, this?"There is thinning":"There is no thinning, and all packets are reported on" );
+	}
+	[Property.BlockCount = (this*4+4 - 12)/4]
+	UINT16 BlockLength = FormatString("%d bytes", this*4+4);
+	UINT32 SSRCofsource;
+	UINT16 beginseq;
+	UINT16 endseq;
+	UINT32 Receipttimeofpacket[Property.BlockCount];
+}
+
+Struct RTCPReceiverReferenceTimeReportBlock = FormatString("%s, BlockLength = %d", RTCPExtendedReportBTTable(BT), BlockLength)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 Reserved;
+	UINT16 BlockLength = MustBeSetToTable(this,"2");
+	UINT32 NTPtimestampmostsignificant;
+	UINT32 NTPtimestampleastsignificant;
+}
+
+Struct RTCPDLRRReportBlock = FormatString("%s, BlockLength = %d", RTCPExtendedReportBTTable(BT), BlockLength*4+4)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 Reserved;
+	[Property.BlockCount = (this*4+4 - 4)/12]
+	UINT16 BlockLength = FormatString("%d bytes", this*4+4);
+	RTCPSubblock Subblock[Property.BlockCount];
+}
+
+Struct RTCPSubblock
+{
+	UINT32 SSRC;
+	UINT32 LRR;
+	UINT32 DLRR;
+}
+
+Struct RTCPStatisticsSummaryReportBlock = FormatString("%s, BlockLength = %d", RTCPExtendedReportBTTable(BT), BlockLength)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 TypeSpecific
+	{
+		UINT8 L:1 = FormatString("		(%s) %s", this.ToBitString, this?"The lost_packets field contains a report":"The lost_packets field doesn't contain a report"  );
+		UINT8 D:1 = FormatString("		(%s) %s", this.ToBitString, this?"The dup_packets field contains a report":"The dup_packets field doesn't contain a report"  );
+		UINT8 J:1 = FormatString("		(%s) %s", this.ToBitString, this?"The min_jitter, max_jitter, mean_jitter, and dev_jitter fields all contain reports"
+		:"The min_jitter, max_jitter, mean_jitter, and dev_jitter fields don't contain reports"  );
+		UINT8 TOH:2 = FormatString(" (%s) %s", this.ToBitString, this?"The fields min_ttl_or_hl,max_ttl_or_hl, mean_ttl_or_hl, or dev_ttl_or_hl contain reports"
+		:"none of the fields min_ttl_or_hl,max_ttl_or_hl, mean_ttl_or_hl, or dev_ttl_or_hl contain reports" );
+		UINT8 rsvd:3 = FormatString("(%s) %s", this.ToBitString, this );
+	}
+	UINT16 BlockLength = MustBeSetToTable(this,"9");
+	UINT32 SSRCofsource;
+	UINT16 beginseq;
+	UINT16 endseq;
+	UINT32 lostpackets;
+	UINT32 duppackets;
+	UINT32 minjitter;
+	UINT32 maxjitter;
+	UINT32 meanjitter;
+	UINT32 devjitter;
+	UINT8 minttlorhl;
+	UINT8 maxttlorhl;
+	UINT8 meanttlorhl;
+	UINT8 devttlorhl;
+}
+
+Struct RTCPVoIPMetricsReportBlock = FormatString("%s, BlockLength = %d", RTCPExtendedReportBTTable(BT), BlockLength)
+{
+	UINT8 BT = RTCPExtendedReportBTTable(this);
+	UINT8 Reserved1;
+	UINT16 BlockLength = MustBeSetToTable(this,"8");
+	UINT32 SSRCofsource;
+	UINT8 lossrate;
+	UINT8 discardrate;
+	UINT8 burstdensity;
+	UINT8 gapdensity;
+	UINT16 burstduration;
+	UINT16 gapduration;
+	UINT16 roundtripdelay;
+	UINT16 endsystemdelay;
+	UINT8 signallevel;
+	UINT8 noiselevel;
+	UINT8 RERL;
+	UINT8 Gmin;
+	UINT8 Rfactor;
+	UINT8 extRfactor;
+	UINT8 MOSLQ;
+	UINT8 MOSCQ;
+	UINT8 RXconfig;
+	UINT8 reserved2;
+	UINT16 JBnominal;
+	UINT16 JBmaximum;
+	UINT16 JBabsmax;
+}
+
+Table RTCPExtendedReportBTTable(Value)
+{
+	switch(Value)
+	{
+		case 1:  "Loss RLE Report Block";
+		case 2:  "Duplicate RLE Report Block";
+		case 3:  "Packet Receipt Times Report Block";
+		case 4:  "Receiver Reference Time Report Block";
+		case 5:  "DLRR Report Block";
+		case 6:  "Statistics Summary Report Block";
+		case 7:  "VoIP Metrics Report Block";
+	}
+}

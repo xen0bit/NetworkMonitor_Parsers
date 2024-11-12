@@ -1,0 +1,2456 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Server Message Block Protocol v2
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SMB2]: Server Message Block (SMB) Version 2.0 Protocol Specification (16.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 04/13/2010
+//#
+//####
+
+////////////////****************************************************************////////////////
+////////////////************************ SMB2 Protocol *************************////////////////
+////////////////****************************************************************////////////////
+
+[ByteOrder = LittleEndian, DefaultTimeOut = SMBConversationTimeout, SMBSummary = ""]
+Protocol SMB2 = FormatString("%s %s %s ", Property.SMBOplockBreakAcknowledgment ? "A" : (Property.SMBOplockBreakNotification ? "N" : (SMBResponse ? "R":"C")), SMBErrorSummary,SMBSummary )
+{
+	AsciiString(4) SMBIdentifier = AsciiString(frameData,offset+1,3);
+	struct SMB2Header = FormatString("%s %s,TID=0x%04X, MID=0x%04X, PID=0x%04X, SID=0x%04X", SMBResponse ? "R":"C", SMB2CommandTable(Command),SMBTID,SMBMID,SMBPID,SMBSID)
+	{
+		UINT16	StructureSize;
+		UINT16	CreditCharge;
+		[SMBStatus]
+		UINT32  Status = FormatString("0x%X, Facility = %s, Severity = %s, Code = %s",
+										this,
+										SMBNTStatusFacilityValueTable(Facility),
+										SMBNTStatusSeverityValueTable(Severity),
+										SMBNTStatusCodeTable(Facility, Severity, Code)
+										)
+		{
+			UINT32 Code:16 = FormatString("    (%s) %s", this.ToBitString,
+													SMBNTStatusCodeTable(UINT16(FrameData, FrameOffset+2) & 0x1FFF, /* Facility */
+													(UINT16(FrameData, FrameOffset+2) & 0xE000) >> 14, /* Severity */
+													this) /* Code */
+                                		);
+			UINT32 Facility:12 = FormatString("(%s) %s", this.ToBitString, SMBNTStatusFacilityValueTable(this));
+			UINT32 N:1  = FormatString("       (%s)", this.ToBitString);
+			UINT32 Customer:1  = FormatString("(%s) %s", this.ToBitString, this ? "Customer Defined" : "NOT Customer Defined");
+			[SMBstatusSeverity,
+			 SMBErrorSummary = (Severity != 0) ? FormatString(" - NT Status: %s - %s, Code = %s",
+															SMBNTStatusFacilityTable(Facility),
+															SMBNTStatusSeverityTable(Severity),
+															SMBNTStatusCodeTable(Facility, Severity, Code)
+															)
+												 : ""]
+			UINT32 Severity:2  = FormatString("(%s) %s", this.ToBitString, SMBNTStatusSeverityValueTable(this));
+		};
+		[SMBCommand]
+		UINT16	Command = SMB2CommandTable(this);
+		UINT16	Credits;
+		UINT32	Flags = FormatString("0x%X", this)
+		{
+			[SMBResponse]
+			UINT32 ServerToRedir:1  = FormatString("(%s) %s (SMB2_FLAGS_SERVER_TO_REDIR)", this.ToBitString, this ? "Server to Client" : "Client to Server");
+			[SMBAsyncCommand]
+			UINT32 AsyncCommand:1  = FormatString(" (%s) %s (SMB2_FLAGS_ASYNC_COMMAND)", this.ToBitString, this ? "Command is asynchronous" : "Command is not asynchronous");
+			UINT32 Related:1  = FormatString("      (%s) %s (SMB2_FLAGS_RELATED_OPERATIONS)", this.ToBitString, this ? "Packet is part of compound message" : "Packet is single message");
+			UINT32 Signed:1  = FormatString("       (%s) %s (SMB2_FLAGS_SIGNED)", this.ToBitString, this ? "Packet is signed" : "Packet is not signed");
+			UINT32 Reserved4_27:24 = FormatString(" (%s)", this.ToBitString);
+			UINT32 DFS:1  = FormatString("          (%s) %s (SMB2_FLAGS_DFS_OPERATIONS)", this.ToBitString, this ? "Command is a DFS Operation" : "Command is not a DFS Operation");
+			UINT32 Reserved29_31:3  = FormatString("(%s)", this.ToBitString);
+		};
+		[MessageEnd = NextCommand > 0 ?  NextCommand + ProtocolOffset : FrameLength]
+		UINT32	NextCommand;
+		[SMBMID]
+		UINT64	MessageId;
+		switch(SMBAsyncCommand)
+		{
+			case 0:
+				_struct ID
+				{
+					[SMBPID]
+					UINT32	ProcessId;
+					[SMBTID]
+					UINT32	TreeId;
+				}
+			case 1:
+				[SMBAsyncId]
+				UINT64 AsyncId;
+		}
+		[SMBSID]
+		INT64	SessionId;
+		BLOB(16) Signature;
+	}; //# End of struct SMBHeader
+	[SMBSummary = SMBSummary + " " + SMB2CommandTable(SMBCommand)]
+	switch
+	{
+		case Property.SMBstatusSeverity == 3 && SMB2Header.Status.Code != 22: // Error Response <when code = 22,MORE_PROCESSING_REQUIRED>
+		case Property.SMBStatus == 0x8000002D: // STATUS_STOPPED_ON_SYMLINK
+		case SMB2Header.Status.Code == 20://EA_LIST_INCONSISTENT Error message
+		case Property.SMBAsyncCommand && Property.SMBStatus == 0x0103: // Interim Response for an Asynchronous Operation
+						[
+							SMBSummary = SMBSummary +  " " + ((Property.SMBAsyncCommand && Property.SMBStatus == 0x0103) ? " Interim Response":""),
+							SMBFileIDPersistent = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+							Property.SMBFileName = conversation.SMBFileNameTable$[SMBCommand != 0x5 /*CREATE*/ ? SMBFileIDPersistent : SMBMID],
+							BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+							SMBSummary = SMBSummary + FormatString("%s", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")
+						]
+				struct ErrorMessage
+				{
+					UINT16 StructureSize;
+					UINT16 Reserved;
+					UINT32 ByteCount;
+					switch
+					{
+						case ByteCount > 0:
+							switch(SMBStatus)
+							{
+								case 0x8000002D:
+									[ResponseFrameStart = FrameOffset]
+									struct SymbolicLinkErrorResponse
+									{
+											UINT32 SymLinkLength;
+											UINT32 SymLinkErrorTag;
+											UINT32 ReparseTag;
+											UINT16 ReparseDataLength;
+											UINT16 UnparsedPathLength;
+											UINT16 SubstituteNameOffset;
+											UINT16 SubstituteNameLength;
+											UINT16 PrintNameOffset;
+											UINT16 PrintNameLength;
+											UINT32 Flags = SMBSymbolicLinkErrorResponseTable(this);
+											struct PathBuffer = FormatString("SubstituteName : %s; PrintName : %s",UnicodeString(FrameData, FrameOffset + SubstituteNameOffset, SubstituteNameLength/2), UnicodeString(FrameData, FrameOffset + PrintNameOffset, PrintNameLength/2))
+											{
+												BLOB(SymLinkLength - 24) BufferData;
+											}
+									}
+								default:
+									UniCodeString(ByteCount/2) ErrorData;
+							}
+						default : 
+							UINT8 ErrorMessage;
+					}
+				}
+		
+		default:
+			switch ( SMBCommand )
+			{
+				case  0x0000:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestNegotiate CNegotiate;
+						case 1 :
+							SMB2ResponseNegotiate RNegotiate;
+					}
+				case  0x0001:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestSessionSetup CSessionSetup;
+						case 1 :
+							SMB2ResponseSessionSetup RSessionSetup;
+					}
+				case  0x0002:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestLogoff CLogoff;
+						case 1 :
+							SMB2ResponseLogoff RLogoff;
+					}
+				case  0x0003:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestTreeConnect CTreeConnect;
+						case 1 :
+							[SMBSummary = SMBAsyncCommand ? SMBSummary : SMBSummary + ", TID=" + SMBTID]
+							SMB2ResponseTreeConnect RTreeConnect;
+					}
+				case  0x0004:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[SMBSummary = SMBAsyncCommand ? SMBSummary : SMBSummary + ", TID=" + SMBTID]
+							SMB2RequestTreeDisconnect CTreeDisconnect;
+						case 1 :
+							SMB2ResponseTreeDisconnect RTreeDisconnect;
+					}
+				case  0x0005:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + FormatString("%s ", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")]
+							SMB2RequestCreate CCreate;
+						case 1 :
+							[Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X%s", SMBFileIDVolatile, Property.SMBFileName ? "(" + Property.SMBFileName + ")" : "")]
+							SMB2ResponseCreate RCreate;
+					}
+				case  0x0006:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X%s ", SMBFileIDVolatile, Property.SMBFileName ? "(" + Property.SMBFileName + ")" : "")]
+							SMB2RequestClose CClose;
+						case 1 :
+							[Post.SMBSummary = SMBSummary + FormatString("%s ", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")]
+							SMB2ResponseClose RClose;
+					}
+				case  0x0007:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X %s ", SMBFileIDVolatile, Property.SMBFileName ? " (" + Property.SMBFileName + ")" : "")]
+							SMB2RequestFlush CFlush;
+						case 1 :
+							SMB2ResponseFlush RFlush;
+					}
+				case  0x0008:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + ", " + CRead.Length + " bytes from offset " + CRead.Offset.ToString]
+							SMB2RequestRead CRead;
+						case 1 :
+							[Post.SMBSummary = SMBSummary + ", " + RRead.DataLength + " bytes read"]
+							SMB2ResponseRead RRead;
+					}
+				case  0x0009:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + ", " + CWrite.Length + " bytes at offset " + CWrite.Offset.ToString]
+							SMB2RequestWrite CWrite;
+						case 1 :
+							SMB2ResponseWrite RWrite;
+					}
+				case  0x000a:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + ", " + CLock.Locks.Length.ToString + " bytes at offset " + CLock.Locks.Offset.ToString]
+							SMB2RequestLock CLock;
+						case 1 :
+							SMB2ResponseLock RLock;
+					}
+				case  0x000b:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestIoCtl CIoCtl;
+						case 1 :
+							SMB2ResponseIoCtl RIoCtl;
+					}
+				case  0x000c:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestCancel CCancel;
+//						case 1 :
+//							SMB2ResponseCancel RCancel;
+					}
+				case  0x000d:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestEcho CEcho;
+						case 1 :
+							SMB2ResponseEcho REcho;
+					}
+				case  0x000e:
+					switch(SMBResponse)
+					{
+						case 0 :
+							[Post.SMBSummary = SMBSummary + ", File=" + CQueryDir.FileName]
+							SMB2RequestQueryDir CQueryDir;
+						case 1 :
+							SMB2ResponseQueryDir RQueryDir;
+					}
+				case  0x000f:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestChangeNotify CChangeNotify;
+						case 1 :
+							SMB2ResponseChangeNotify RChangeNotify;
+					}
+				case  0x0010:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestQueryInfo CQueryInfo;
+						case 1 :
+							// TODO: Persist FileInformationClass from request
+							// to enable us to parse response correctly
+							SMB2ResponseQueryInfo RQueryInfo;
+					}
+				case  0x0011:
+					switch(SMBResponse)
+					{
+						case 0 :
+							SMB2RequestSetInfo CSetInfo;
+						case 1 :
+							SMB2ResponseSetInfo RSetInfo;
+					}
+				case  0x0012:
+					switch (UINT16(FrameData,FrameOffset))
+					{
+						// The server MUST set this to 24 when Oplock Break Notification.
+						// The client MUST set this to 24 when Oplock Break Acknowledgement
+						case 0x18: 
+								switch(SMBResponse)
+								{
+									case 0 :
+										[Property.SMBOplockBreakAcknowledgment = true]
+										SMB2AcknowledgmentOplockBreak OplockBreakAck;
+									case 1 :
+										switch(SMBMID)
+										{
+											case 0xFFFFFFFFFFFFFFFF:
+												[Property.SMBOplockBreakNotification = true]
+												SMB2NotificationOplockBreak	OplockBreakNotice;
+											default:
+												SMB2ResponseOplockBreak OplockBreakResponse;
+										}
+								};
+						default:
+								switch(SMBResponse)
+								{
+									case 0 :
+										[Property.SMBOplockBreakAcknowledgment = true]
+										SMB2AcknowledgmentLeaseBreak	LeaseBreakAck;
+									case 1 :
+										switch(UINT16(FrameData,FrameOffset))
+										{
+											case 0x2C:
+												[Property.SMBOplockBreakNotification = true]
+												SMB2NotificationLeaseBreak	LeaseBreakNotice;
+											default:
+												SMB2ResponseLeaseBreak LeaseBreakResponse;
+										}
+								};
+					}
+			}		
+	}
+	switch
+	{
+		case MessageEnd > FrameOffset:
+			BLOB(MessageEnd - FrameOffset) padding;
+	}
+}
+
+////////////////////////////////////////////////////////////
+Table SMB2CommandTable(value)
+{
+	switch(value)
+	{
+		case 0x0000:  FormatString("NEGOTIATE (0x%x)", value);
+		case 0x0001:  FormatString("SESSION SETUP (0x%x)", value);
+		case 0x0002:  FormatString("LOGOFF (0x%x)", value);
+		case 0x0003:  FormatString("TREE CONNECT (0x%x)", value);
+		case 0x0004:  FormatString("TREE DISCONNECT (0x%x)", value);
+		case 0x0005:  FormatString("CREATE (0x%x)", value);
+		case 0x0006:  FormatString("CLOSE (0x%x)", value);
+		case 0x0007:  FormatString("FLUSH (0x%x)", value);
+		case 0x0008:  FormatString("READ (0x%x)", value);
+		case 0x0009:  FormatString("WRITE (0x%x)", value);
+		case 0x000A:  FormatString("LOCK (0x%x)", value);
+		case 0x000B:  FormatString("IOCTL (0x%x)", value);
+		case 0x000C:  FormatString("CANCEL (0x%x)", value);
+		case 0x000D:  FormatString("ECHO (0x%x)", value);
+		case 0x000E:  FormatString("QUERY DIRECTORY (0x%x)", value);
+		case 0x000F:  FormatString("CHANGE NOTIFY (0x%x)", value);
+		case 0x0010:  FormatString("QUERY INFORMATION (0x%x)", value);
+		case 0x0011:  FormatString("SET INFORMATION (0x%x)", value);
+		case 0x0012:  FormatString("OPLOCK BREAK (0x%x)", value);
+		default: FormatString("UNKNOWN (0x%x)", value);
+	}
+}
+
+
+////////////////////////////////////////////////////////////
+Table SMB2ShareFlags(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("Manual Caching (0x%x)", value);
+		case 0x10: FormatString("Auto Caching (0x%x)", value);
+		case 0x20: FormatString("VDO Caching (0x%x)", value);
+		case 0x30: FormatString("No Caching (0x%x)", value);
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+////////////////////////////////////////////////////////////
+Table SMB2ShareType(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("Disk (0x%x)", value);
+		case 0x02: FormatString("Pipe (0x%x)", value);
+		case 0x03: FormatString("Printer (0x%x)", value);
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+////////////////////////////////////////////////////////////
+Table SMB2ShareAccess(value)
+{
+	switch(value)
+	{
+		case 0x00000000: FormatString("No sharing (0x%08x)", value);
+		case 0x00000001: FormatString("Shared for Read (0x%08x)", value);
+		case 0x00000002: FormatString("Shared for Write (0x%08x)", value);
+		case 0x00000003: FormatString("Shared for Read/Write (0x%08x)", value);
+		case 0x00000004: FormatString("Shared for Delete (0x%08x)", value);
+		case 0x00000005: FormatString("Shared for Read/Delete (0x%08x)", value);
+		case 0x00000006: FormatString("Shared for Write/Delete (0x%08x)", value);
+		case 0x00000007: FormatString("Shared for Read/Write/Delete (0x%08x)", value);
+		default: FormatString("Unknown (0x%08x)", value);
+	}
+}
+
+////////////////////////////////////////////////////////////
+Table SMB2CreateAction(Value)
+{
+	switch(value)
+	{
+		case 0x00000000: FormatString("Superseded (0x%08x)", value);
+		case 0x00000001: FormatString("Opened (0x%08x)", value);
+		case 0x00000002: FormatString("Created (0x%08x)", value);
+		case 0x00000003: FormatString("OverWritten (0x%08x)", value);
+		case 0x00000004: FormatString("Exists (0x%08x)", value);
+		case 0x00000005: FormatString("Not Exist (0x%08x)", value);
+		default: FormatString("Unknown (0x%08x)", value);
+	}
+}
+Table SMB2CreateDispositionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: FormatString("(0x%08x) If the file already exists, supersede it. Otherwise, create the file. ", value);
+		case 0x00000001: FormatString("(0x%08x) If the file already exists, return success; otherwise, fail the operation. ", value);
+		case 0x00000002: FormatString("(0x%08x) If the file already exists, fail the operation; otherwise, create the file.", value);
+		case 0x00000003: FormatString("(0x%08x) Open the file if it already exists; otherwise, create the file. ", value);
+		case 0x00000004: FormatString("(0x%08x) Overwrite the file if it already exists; otherwise, fail the operation. ", value);
+		case 0x00000005: FormatString("(0x%08x) Overwrite the file if it already exists; otherwise, create the file. ", value);
+		default: FormatString("Unknown (0x%08x)", value);
+	}
+}
+
+////////////////////////////////////////////////////////////
+Table SMB2Method(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("Method buffered (0x%x)", value);
+		case 0x01: FormatString("Method input direct (0x%x)", value);
+		case 0x02: FormatString("Method output direct (0x%x)", value);
+		case 0x03: FormatString("Method neither (0x%x)", value);
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+
+////////////////////////////////////////////////////////////
+Table SMB2IoAccess(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("None (0x%x)", value);
+		case 0x01: FormatString("Read only (0x%x)", value);
+		case 0x02: FormatString("Write only (0x%x)", value);
+		case 0x03: FormatString("Read/Write (0x%x)", value);
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+Table SMB2DialectRevisionTable (value)
+{
+	switch (value)
+	{
+		case 0x0202: FormatString("(0x%x) - SMB 2.002 dialect revision number.", value);
+		case 0x0210: FormatString("(0x%x) - SMB 2.1 dialect revision number.", value);
+		case 0x02FF: FormatString("(0x%x) - SMB2 wildcard revision number.", value);
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+// NEGOTIATE
+struct SMB2RequestNegotiate
+{
+	UINT16	StructureSize;
+	UINT16	DialectCount;
+	UINT16	SecurityMode
+	{
+		UINT16 SMB2NEGOTIATESIGNINGENABLED:1 = FormatString(" (%s) %s", this.ToBitString, this ? "security signatures are enabled on the client." : "security signatures are not enabled on the client.");
+		UINT16 SMB2NEGOTIATESIGNINGREQUIRED:1 = FormatString("(%s) %s", this.ToBitString, this ? "security signatures are required by the client." : "security signatures are not required by the client.");
+		UINT16 Reserved:14 = FormatString("                    (%s) Reserved" , this.ToBitString);
+	};
+	UINT16	Reserved;
+	UINT32	Capabilities = FormatString("0x%X", this)
+	{
+		UINT32 DFS:1 = FormatString("              (%s) %s", this.ToBitString, this ? "DFS available" : "DFS unavailable");
+		UINT32 Reserved_bits1_31:31 = FormatString("(%s) Reserved" , this.ToBitString);  
+	};
+	[SMBSummary = SMBSummary + ", GUID=" + ClientGUID.ToString]
+	GUID (FALSE)	ClientGuid;
+	FILETIME	ClientStartTime;
+	UINT16	Dialects[DialectCount];
+}
+struct SMB2ResponseNegotiate
+{
+	UINT16	StructureSize;
+	UINT16	SecurityMode
+	{
+		UINT16 SMB2NEGOTIATESIGNINGENABLED:1 = FormatString(" (%s) %s", this.ToBitString, this ? "security signatures are enabled on the client." : "security signatures are not enabled on the client.");
+		UINT16 SMB2NEGOTIATESIGNINGREQUIRED:1 = FormatString("(%s) %s", this.ToBitString, this ? "security signatures are required by the client." : "security signatures are not required by the client.");
+		UINT16 Reserved:14 = FormatString("                    (%s) Reserved" , this.ToBitString);
+	};
+	UINT16	DialectRevision = SMB2DialectRevisionTable(this);
+	UINT16	Reserved;
+	[SMBSummary = SMBSummary + ", GUID=" + ServerGuid.ToString]
+	GUID (FALSE)	ServerGuid;
+	UINT32	Capabilities = FormatString("0x%X", this)
+	{
+		UINT32 DFS:1 = FormatString("                  (%s) %s", this.ToBitString, this ? "DFS available" : "DFS unavailable");
+		UINT32 LEASING:1 = FormatString("              (%s) %s", this.ToBitString, this ? "the server supports leasing" : "the leasing is not supported in the server");
+		UINT32 LargeMtu:1 = FormatString("             (%s) %s", this.ToBitString, this ? "the server supports multi-credit operations" : "the server is not supported multi-credit operations");
+		UINT32 Reserved_bits1_30:29 = FormatString("    (%s) Reserved" , this.ToBitString);
+	};
+	UINT32	MaxTransactSize;
+	UINT32	MaxReadSize;
+	UINT32	MaxWriteSize;
+	FILETIME	SystemTime;
+	FILETIME	ServerStartTime;
+	UINT16	SecurityBufferOffset;
+	UINT16	SecurityBufferLength;
+	UINT32	Reserved2;
+	switch
+	{
+		case CurrentProtocolOffset < SecurityBufferOffset:
+			BLOB(SecurityBufferOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	SMBSecurityBlob(SecurityBufferLength) securityBlob;
+}
+
+
+// Session setup
+struct SMB2RequestSessionSetup
+{
+	UINT16	StructureSize;
+	UINT8	VcNumber;
+	UINT8	SecurityMode
+	{
+		UINT8 SMB2NEGOTIATESIGNINGENABLED:1 = FormatString(" (%s) %s", this.ToBitString, this ? "security signatures are enabled on the client." : "security signatures are not enabled on the client.");
+		UINT8 SMB2NEGOTIATESIGNINGREQUIRED:1 = FormatString("(%s) %s", this.ToBitString, this ? "security signatures are required by the client." : "security signatures are not required by the client.");
+		UINT8 Reserved:6 = FormatString("                     (%s) Reserved" , this.ToBitString);
+	};
+	UINT32	Capabilities = FormatString("0x%X", this)
+	{
+		UINT32 DFS:1 = FormatString("              (%s) %s", this.ToBitString, this ? "DFS available" : "DFS unavailable");
+		UINT32 Reserved_bits1_31:31 = FormatString("(%s) Reserved", this.TobitString); 
+	};
+	UINT32	Channel;
+	UINT16	SecurityBufferOffset;
+	UINT16	SecurityBufferLength;
+	UINT64  PreviousSessionId;
+	switch
+	{
+		case CurrentProtocolOffset < SecurityBufferOffset:
+			BLOB(SecurityBufferOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	SMBSecurityBlob(SecurityBufferLength) securityBlob;
+}
+
+struct SMB2ResponseSessionSetup
+{
+	UINT16	StructureSize;
+	[SMBSummary = SMBSummary + ", SessionFlags=" + SessionFlags.ToString]
+	UINT16	SessionFlags = FormatString("0x%X", this)
+	{
+		UINT16 GU:1 = FormatString("               (%s) %s",this.TobitString, this ? "a guest user" : "NOT a guest user");
+		UINT16 NU:1 = FormatString("               (%s) %s",this.toBitString, this ? "a NULL user" : "NOT a NULL user");
+		UINT16 Reserved_bits2_15:14 = FormatString("(%s) Reserved", this.ToBitString);
+	}
+	UINT16	SecurityBufferOffset;
+	UINT16	SecurityBufferLength;
+	switch
+	{
+		case CurrentProtocolOffset < SecurityBufferOffset:
+			BLOB(SecurityBufferOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	SMBSecurityBlob(SecurityBufferLength) securityBlob;
+}
+
+
+// Logoff
+struct SMB2RequestLogoff
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+struct SMB2ResponseLogoff
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+
+// Tree connect
+struct SMB2RequestTreeConnect
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+	UINT16	PathOffset;
+	UINT16	PathLength;
+	switch
+	{
+		case CurrentProtocolOffset < PathOffset:
+			BLOB(PathOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	[SMBSummary = SMBSummary + ", Path=" + Path]
+	[Property.SMB2RequestTreeConnectPath = UnicodeString(FrameData, FrameOffset, PathLength/2)]
+	[conversation.SmbIsNotPipeConv = !Property.SMB2RequestTreeConnectPath.contains("IPC")]
+	UnicodeString(PathLength/2)	Path;
+}
+
+struct SMB2ResponseTreeConnect
+{
+	UINT16	StructureSize;
+	[conversation.SmbIsNotPipe$[property.SMBTID] = conversation.SmbIsNotPipeConv]
+	UINT8	ShareType = SMB2ShareType(this);
+	UINT8	Reserved;
+	UINT32	ShareFlags
+	{
+		UINT32 SHI1005_FLAGS_DFS:1 = FormatString("                        (%s) %s", this.ToBitString, this ? "The specified share is present in a Distributed File System (DFS) tree structure" : "The specified share is not present in a Distributed File System (DFS) tree structure");
+		UINT32 SHI1005_FLAGS_DFS_ROOT:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "The specified share is the root volume in a DFS tree structure" : "The specified share is not the root volume in a DFS tree structure");
+		UINT32 Reserved_bits3_4:2 = FormatString("                         (%s)", this.ToBitString);
+		UINT32 SHAREFLAGS_CACHING_TYPE:4 = FormatString("                  (%s) %s", this.ToBitString, SMB2ShareFlags(this));
+		UINT32 SHI1005_FLAGS_RESTRICT_EXCLUSIVE_OPENS:1 = FormatString("   (%s) %s", this.ToBitString, this ? "The specified share disallows exclusive file opens that deny reads to an open file" : "The specified share allows exclusive file opens that deny reads to an open file");
+		UINT32 SHI1005_FLAGS_FORCE_SHARED_DELETE:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Shared files in the specified share can be forcibly deleted" : "Shared files in the specified share can't be forcibly deleted");
+		UINT32 SHI1005_FLAGS_ALLOW_NAMESPACE_CACHING:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Clients are allowed to cache the namespace of the specified share" : "Clients aren't allowed to cache the namespace of the specified share");
+		UINT32 SHI1005_FLAGS_ACCESS_BASED_DIRECTORY_ENUM:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server will filter directory entries based on the access permissions of the client" : "The server will not filter directory entries based on the access permissions of the client");
+		UINT32 SHI1005_FLAGS_FORCE_LEVELII_OPLOCK:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The server will not issue exclusive caching rights on this share.":"The server will issue exclusive caching rights on this share.");
+		UINT32 SHI1005_FLAGS_ENABLE_HASH:1 = FormatString("                (%s) %s", this.ToBitString, this ? "The share supports hash generation for branch cache retrieval of data":"The share is not supported hash generation for branch cache retrieval of data");
+		UINT32 Reserved_bits13_32:18 = FormatString("                      (%s)", this.ToBitString);				
+	};
+	UINT32	Capabilities = FormatString("0x%X", this)
+	{
+		UINT32  Reserved_bits3_32:3 = FormatString("  (%s) Reserved", this.ToBitString);
+		UINT32	DFS:1 = FormatString("                (%s) %s", this.ToBitString, this ? "DFS available" : "DFS unavailable");
+		UINT32  Reserved_bits28_32:28 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+	SMB2AccessMask MaximalAccess;
+}
+
+// Tree Disconnect
+struct SMB2RequestTreeDisconnect
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+struct SMB2ResponseTreeDisconnect
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+
+// Create
+[DataTypeByteOrder=LittleEndian]
+struct SMB2AccessMask = FormatString("0x%X", UINT32(frameData, offset))
+{
+	UINT32 ReadData:1  = FormatString("            (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_READ_DATA (file & named pipe), FILE_LIST_DIRECTORY (directory)");
+	UINT32 WriteData:1  = FormatString("           (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_WRITE_DATA (file & named pipe), FILE_ADD_FILE (directory");
+	UINT32 AppendData:1  = FormatString("          (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_APPEND_DATA (file), FILE_ADD_SUBDIRECTORY (directory), FILE_CREATE_PIPE_INSTANCE (named pipe)");
+	UINT32 ReadEA:1  = FormatString("              (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_READ_EA (file & directory)");
+	UINT32 WriteEA:1  = FormatString("             (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_WRITE_EA (file & directory)");
+	UINT32 Execute:1  = FormatString("             (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_EXECUTE (file), FILE_TRAVERSE (directory)");
+	UINT32 Reserved_bit6:1  = FormatString("       (%s) Reserved" , this.ToBitString);
+	UINT32 ReadAttributes:1  = FormatString("      (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_READ_ATTRIBUTES (all)");
+	
+	UINT32 WriteAttributes:1  = FormatString("     (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "FILE_WRITE_ATTRIBUTES (all)");
+	UINT32 Reserved_bits9_15:7  = FormatString("   (%s) Reserved" , this.ToBitString);
+	
+	UINT32 Delete:1  = FormatString("              (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "DELETE (the right to delete the object)");
+	UINT32 ReadControl:1  = FormatString("         (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "READ_CONTROL (read the object's security descriptor NOT including SACL)");
+	UINT32 WriteDAC:1  = FormatString("            (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "WRITE_DAC (modify the DACL in the object's security descriptor)");
+	UINT32 WriteOwner:1  = FormatString("          (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "WRITE_OWNER (change the owner in the object's security descriptor)");
+	UINT32 Synchronize:1  = FormatString("         (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "SYNCHRONIZE (use the object for synchronization)");
+	UINT32 Reserved_bits21_23:3  = FormatString("  (%s) Reserved" , this.ToBitString);
+	
+	UINT32 AccessSystemSecurity:1  = FormatString("(%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "ACCESS_SYSTEM_SECURITY (get or set the SACL in an object's security descriptor)");
+	UINT32 MaximumAllowed:1  = FormatString("      (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "MAXIMUM_ALLOWED (all access rights valid for the caller)");
+	UINT32 Reserved_bits26_27:2  = FormatString("  (%s) Reserved" , this.ToBitString);
+	UINT32 GenericAll:1  = FormatString("          (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "GENERIC_ALL");
+	UINT32 GenericExecute:1  = FormatString("      (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "GENERIC_EXECUTE");
+	UINT32 GenericWrite:1  = FormatString("        (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "GENERIC_WRITE");
+	UINT32 GenericRead:1  = FormatString("         (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "GENERIC_READ");
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct SMB2CreateOptions = FormatString("0x%X", UINT32( frameData, offset ) )
+{
+  UINT32 FILE_DIRECTORY_FILE :1 = FormatString("           (%s) %s", this.ToBitString, this ? "Operation is on a directory" : "non-directory");
+  UINT32 FILE_WRITE_THROUGH :1 = FormatString("            (%s) %s", this.ToBitString, this ? "Data must be written to the file before operation is complete" : "non-write through");
+  UINT32 FILE_SEQUENTIAL_ONLY :1 = FormatString("          (%s) %s", this.ToBitString, this ? "Data must be written to the file sequentially" : "non-sequentially writing allowed");
+  UINT32 FILE_NO_INTERMEDIATE_BUFFERING :1 = FormatString("(%s) %s", this.ToBitString, this ? "Don't do intermediate buffering" : "intermediate buffering allowed");
+  UINT32 Reserved_bits4_5 :2 = FormatString("              (%s) %s", this.ToBitString, this ? "ignored by the server" : "NOT ignored by the server");
+  UINT32 FILE_NON_DIRECTORY_FILE :1 = FormatString("       (%s) %s", this.ToBitString, this ? "NOT be a directory file or this call MUST be failed" : "be a directory file");
+  UINT32 Reserved_bits7_8 :2 = FormatString("              (%s) Reserved", this.ToBitString);
+  UINT32 FILE_NO_EA_KNOWLEDGE :1 = FormatString("          (%s) %s", this.ToBitString, this ? "Client does not understand EA's" : "no EA knowledge bit is not set");
+  UINT32 Reserved_bits10 :1 = FormatString("               (%s) Reserved", this.ToBitString);
+  UINT32 FILE_RANDOM_ACCESS :1 = FormatString("            (%s) %s", this.ToBitString, this ? "accesses to the file can be random" : "accesses to the file can NOT be random");  
+  UINT32 FILE_DELETE_ON_CLOSE :1 = FormatString("          (%s) %s", this.ToBitString, this ? "the DesiredAccess field MUST include the DELETE flag" : "the DesiredAccess field MUST NOT include the DELETE flag");  
+  UINT32 Reserved_bits13 :1 = FormatString("               (%s) Reserved", this.ToBitString);
+  UINT32 FILE_OPEN_FOR_BACKUP_INTENT :1 = FormatString("   (%s) %s", this.ToBitString, this ? "the file is being opened for backup intent" : "the file is not being opened for backup intent");  
+  UINT32 FILE_NO_COMPRESSION :1 = FormatString("           (%s) %s", this.ToBitString, this ? "the file cannot be compressed" : "the file can be compressed");  
+  UINT32 Reserved_bits16_20 :4 = FormatString("            (%s) Reserved", this.ToBitString);
+  UINT32 FILE_RESERVE_OPFILTER :1 = FormatString("         (%s) %s", this.ToBitString, "Reserved. The client SHOULD set this bit to 0");  
+  UINT32 FILE_OPEN_REPARSE_POINT :1 = FormatString("       (%s) %s", this.ToBitString, this ? "open the reparse point itself" : "open the reparse the target that the reparse point references");  
+  UINT32 FILE_OPEN_NO_RECALL :1 = FormatString("           (%s) %s", this.ToBitString, this ? "the file should not be recalled from tertiary storage such as tape" : "the file should be recalled from tertiary storage such as tape");  
+  UINT32 FILE_OPEN_FOR_FREE_SPACE_QUERY :1 = FormatString("(%s) %s", this.ToBitString, this ? "Open file to query for free space" : "No file open to query for free space");  
+  UINT32 Reserved_bits23_31 :8 = FormatString("            (%s) %s", this.toBitString, "Reserved");
+}
+
+Table SMB2RequestOplockLevel(value)
+{
+	switch(value)
+	{
+		case 0x00:"SMB2_OPLOCK_LEVEL_NONE - No oplock is requested..";
+		case 0x01:"SMB2_OPLOCK_LEVEL_II - A level II oplock is requested..";
+		case 0x08:"SMB2_OPLOCK_LEVEL_EXCLUSIVE - An exclusive oplock is requested.";
+		case 0x09:"SMB2_OPLOCK_LEVEL_BATCH - A batch oplock is requested.";
+		case 0xFF:"SMB2_OPLOCK_LEVEL_LEASE - A lease is requested.";
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+Table SMB2ResponseOplockLevel(value)
+{
+	switch(value)
+	{
+		case 0x00:"SMB2_OPLOCK_LEVEL_NONE - No oplock was granted.";
+		case 0x01:"SMB2_OPLOCK_LEVEL_II - A level II oplock was  granted.";
+		case 0x08:"SMB2_OPLOCK_LEVEL_EXCLUSIVE - An exclusive oplock was granted.";
+		case 0x09:"SMB2_OPLOCK_LEVEL_BATCH - A batch oplock was granted.";
+		case 0xFF:"SMB2_OPLOCK_LEVEL_LEASE - A lease is requested.";
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+Table SMB2OplockLevelBreakNotificationTable(value)
+{
+	Switch(value)
+	{
+		case 0x00:"No oplock is available";
+		case 0x01:"Oplock Level II Notification";
+	}
+}
+
+Table SMB2OplockLevelBreakAcknowledgmentTable(value)
+{
+	Switch(value)
+	{
+		case 0x00:"Oplock Level None Acknowledgment";
+		case 0x01:"Oplock Level II Acknowledgment";
+	}
+}
+
+Table SMB2OplockLevelBreakResponseTable(value)
+{
+	Switch(value)
+	{
+		case 0x00:"Oplock Level None Response";
+		case 0x01:"Oplock Level II Response";
+	}
+}
+
+Table SMB2RequestCreateImpersonationLevel 
+{
+	switch(value)
+	{
+		case 0x00000000: "Anonymous - The client is anonymous to the server.";
+		case 0x00000001: "Identification - The server can obtain the client's identity, and the server can impersonate the client to perform access control list (ACL) checks.";
+		case 0x00000002: "Impersonation - The server can impersonate the client's security context while acting on behalf of the client.";
+		case 0x00000003: "Delegate - The server can impersonate the client's security context while acting on behalf of the client.";
+		default: FormatString("Unknown (0x%x)", value);
+	}
+}
+
+struct SMB2RequestCreate
+{
+	UINT16	StructureSize;
+	UINT8	SecurityFlags;
+	UINT8	RequestedOplockLevel = SMB2RequestOplockLevel(this);
+	UINT32	ImpersonationLevel = SMB2RequestCreateImpersonationLevel(this);
+	INT64	SmbCreateFlags;
+	UINT64	Reserved;
+	SMB2AccessMask	DesiredAccess;
+	FSCCFileAttributes	FileAttributes;
+	[SMBSummary = SMBSummary + FormatString(", Sh(%s%s%s%s)",
+						(READ == 0 && WRITE == 0 && DELETE == 0 ? "None":""),
+						(READ == 1 ? "R":""),
+						(WRITE == 1 ? "W":""),
+						(DELETE == 1 ? "D":""))]
+	UINT32	ShareAccess = SMB2ShareAccess(this)
+	{
+		UINT32	READ:1 = FormatString(" 	(%s) %s", this.ToBitString, this ? "Shared for Read" : "");
+		UINT32	WRITE:1 = FormatString("	(%s) %s", this.ToBitString, this ? "Shared for Write" : "");
+		UINT32	DELETE:1 = FormatString("	(%s) %s", this.ToBitString, this ? "Shared for Delete" : "");
+		UINT32	Reserved:29 = FormatString("	 (%s) Reserved", this.TobitString);
+	}
+	UINT32	CreateDisposition = SMB2CreateDispositionTable(this);
+	SMB2CreateOptions	CreateOptions;
+	UINT16	NameOffset;
+	UINT16	NameLength;
+	UINT32	CreateContextsOffset;
+	UINT32	CreateContextsLength;
+	switch
+	{
+		case CurrentProtocolOffset < NameOffset:
+			BLOB(NameOffset - CurrentProtocolOffset) NamePadding;
+	}
+	switch
+	{
+		case NameLength > 0:
+			UnicodeString (NameLength/2) Name;
+			
+	}
+	[	Property.SMBFileName = Name ? FormatString("%s@#%u", Name, FrameNumber + 1): FormatString("%s@#%u", NullFileName, FrameNumber + 1)]
+	[
+		Post.conversation.SMBFileNameTable$[SMBMID] = Property.SMBFileName,
+		Post.BuildConversationWithParent(Property.SMBFileName),
+		Post.Conversation.ConversationDescription = FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID),
+	]
+	switch
+	{
+		case CurrentProtocolOffset < CreateContextsOffset:
+			BLOB(CreateContextsOffset - CurrentProtocolOffset) ContextPadding;
+	}
+	[local.FirstContext = true]
+	while CreateContexts[MessageEnd > FrameOffset && CreateContextsLength > 0]
+	{
+		[Post.SMBSummary = SMBSummary +
+				   (local.FirstContext? ", ":"+") +
+				   ContextSummary,
+		 Post.local.FirstContext = false]
+		SMB2CreateContextRequest	Context;
+	}
+}
+
+[Post.ContextSummary = ContextName + (ContextDetail != "" ? FormatString("(%s)", ContextDetail): "")]
+struct SMB2CreateContextRequest=FormatString("%s,%s", ContextName, SMB2CreateContextNameTable(ContextName))
+{  
+	[CreateContextBaseOffset = FrameOffset, ContextDetail = ""]
+	UINT32 Next;  
+	UINT16 NameOffset;  
+	UINT16 NameSize;  
+	UINT16 Reserved;  
+	UINT16 DataOffset;  
+	UINT32 DataSize;  
+	switch
+	{
+		case FrameOffset < CreateContextBaseOffset + NameOffset:
+			BLOB(CreateContextBaseOffset + NameOffset - FrameOffset) NamePadding;
+	}
+	switch
+	{
+		case NameSize > 0 : 
+			[ContextName]
+			AsciiString(NameSize)  Name;
+	}
+
+	switch
+	{
+		case FrameOffset < CreateContextBaseOffset + DataOffset:
+			BLOB(CreateContextBaseOffset + DataOffset - FrameOffset) DataPadding;
+	}
+	switch
+	{
+		case DataSize > 0:
+			struct Context
+			{
+				switch 
+				{
+			
+					case ContextName == "DHnQ":
+						struct ECPRequestDurableHandle = FormatString( "Request Durable Handle" )
+						{
+							BLOB(CreateContextBaseOffset + DataOffset + DataSize - FrameOffset) DurableRequest;
+						}	
+					case ContextName == "DHnC":
+						struct ECPReconnectDurableHandle = FormatString( "Reconnect Durable handle" )
+						{
+							SMB2FileID FileID;
+						}
+			
+					case ContextName == "MxAc":
+						FILETIME Timestamp;
+					case ContextName == "ExtA":
+						FSCCFileFullEaInformationList FileFullEaInformation;
+					case ContextName == "SecD":
+						SecurityDescriptorRelative SecurityDescriptor;
+					case ContextName == "AlSi":
+						struct ECPAllocationSize = FormatString( "Allocation_Size" )
+						{
+							UINT64 AllocationSize;
+						}
+					case ContextName == "TWrp":
+						struct ECPTimeWarpToken = FormatString( "Open an earlier version file" )
+						{
+							FILETIME Timestamp;
+						}
+					case ContextName == "RqLs":
+						SMB2CreateLeaseRequest CreateRequestLease; 
+					default:
+						BLOB(CreateContextBaseOffset + DataOffset + DataSize - FrameOffset) UnparsedContextData;	
+				}
+				switch
+				{
+					case FrameOffset < CreateContextBaseOffset + Next:
+						BLOB(CreateContextBaseOffset + Next - FrameOffset) ContextPadding;
+				}
+			}
+	}	
+}
+
+[Post.ContextSummary = ContextName + (ContextDetail != "" ? FormatString("(%s)", ContextDetail): "")]
+struct SMB2CreateContextResponse=FormatString("%s,%s", ContextName, SMB2CreateContextNameTable(ContextName))
+{
+	[CreateContextBaseOffset = FrameOffset, ContextDetail = ""]
+	UINT32 Next;
+	UINT16 NameOffset;
+	UINT16 NameSize;
+	UINT16 Reserved;
+	UINT16 DataOffset;
+	UINT32 DataSize;
+	switch
+	{
+		case FrameOffset < CreateContextBaseOffset + NameOffset:
+			BLOB(CreateContextBaseOffset + NameOffset - FrameOffset) NamePadding;
+	}
+	switch
+	{
+		case NameSize > 0 : 
+			[ContextName]
+			AsciiString(NameSize)  Name;
+	}
+
+	switch
+	{
+		case FrameOffset < CreateContextBaseOffset + DataOffset:
+			BLOB(CreateContextBaseOffset + DataOffset - FrameOffset) DataPadding;
+	}
+	switch
+	{
+		case DataSize > 0:
+			struct Context
+			{
+				switch 
+				{
+			
+					case ContextName == "DHnQ":
+						struct ECPRequestDurableHandle = FormatString( "Request Durable Handle" )
+						{
+							UINT64 Reserved;
+						}
+					case ContextName == "MxAc":
+						struct ResponseMaximalAccess = FormatString( "Response Maximal Access" )
+						{
+							UINT32 QueryStatus;
+							SMB2AccessMask MaximalAccess;
+						}
+					case ContextName == "QFid":
+						struct QFidBuffer
+						{
+							BLOB(32) DiskIDBuffer;
+						}
+					case ContextName == "RqLs":
+							SMB2CreateLeaseResponse CreateRequestLease; 
+					default:
+						BLOB(CreateContextBaseOffset + DataOffset + DataSize - FrameOffset) UnparsedContextData;	
+				}
+				switch
+				{
+					case FrameOffset < CreateContextBaseOffset + Next:
+						BLOB(CreateContextBaseOffset + Next - FrameOffset) ContextPadding;
+				}
+			}
+	}	
+}
+Table SMB2CreateContextNameTable(ContextName)
+{
+	Switch(ContextName)
+	{
+		Case "DHnQ":"Create Durable Open Handle";
+		Case "DHnC":"Use Durable Open Handle";
+		Case "MxAc":"Maximal Access";
+		Case "ExtA":"contains the extended attributes";
+		Case "SecD":"contains a security descriptor";
+		Case "ALSi":"Contains Allocation Size";
+		Case "TWrp":"Open Early Version Using Time Stamp";
+		Case "QFid":"Request Unique File ID";
+		Case "RqLs":"Requesting a Lease";
+		default:
+			"Unknown ContextName";
+	}	
+}
+struct SMB2CreateLeaseRequest = FormatString("The requested lease state:0x08%X",LeaseState) 
+{
+	Blob(16) LeaseKey;
+	[ContextDetail = FormatString("%s%s%s%s",
+ 				      (READ == 1? "R":""),
+ 				      (HANDLE == 1? "H":""),
+ 				      (WRITE == 1? "W":""),
+ 				      (Reserved != 0? "U":""))]
+	UINT32 LeaseState
+	{
+		UINT32	READ:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A read caching lease is granted" : "");
+		UINT32	HANDLE:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A handle caching lease is granted" : "");
+		UINT32	WRITE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "A write caching lease is granted" : "");
+		UINT32	Reserved:29 = FormatString("    (%s) Reserved", this.TobitString);
+	}
+	UINT32 LeaseFlags;
+	UINT64 LeaseDuration;
+}
+
+struct SMB2CreateLeaseResponse = FormatString("The response lease state:0x08%X",LeaseState) 
+{
+	Blob(16) LeaseKey;
+	[ContextDetail = FormatString("%s%s%s%s",
+				      (READ == 1? "R":""),
+				      (HANDLE == 1? "H":""),
+				      (WRITE == 1? "W":""),
+				      (Reserved != 0? "U":""))]
+	UINT32 LeaseState
+	{
+		UINT32	READ:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A read caching lease is granted" : "");
+		UINT32	HANDLE:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A handle caching lease is granted" : "");
+		UINT32	WRITE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "A write caching lease is granted" : "");
+		UINT32	Reserved:29 = FormatString("    (%s) Reserved", this.TobitString);
+	}
+	UINT32 LeaseFlags
+	{
+		UINT32	Reserved1:1 = FormatString("    (%s) Reserved", this.TobitString);
+		UINT32	BREAK:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A break for the lease identified by the lease key is in progress" : "");
+		UINT32	Reserved:30 = FormatString("     (%s) Reserved", this.TobitString);
+	}
+	UINT64 LeaseDuration;
+}
+
+struct SMB2FileId = FormatString("Persistent: 0x%I64X, Volatile: 0x%I64X", Persistent, volatile)
+{
+	UINT64 Persistent;
+	[SMBFileIDVolatile]
+	UINT64 volatile;
+}
+
+struct SMB2ResponseCreate
+{
+	UINT16	StructureSize;
+	UINT8	OplockLevel = SMB2ResponseOplockLevel(this);
+	UINT8	Reserved;
+	UINT32	CreateAction = SMB2CreateAction(this);
+	FileTime	CreationTime;
+	FileTime	LastAccessTime;
+	FileTime	LastWriteTime;
+	FileTime	ChangeTime;
+	INT64	AllocationSize;
+	INT64	EndofFile;
+	FSCCFileAttributes	FileAttributes;
+	UINT32	Reserved2;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBMID],
+		Post.conversation.SMBFileNameTable$[SMBFileIDPersistent] = Property.SMBFileName,
+		//Post.conversation.SMBFileNameTable$[SMBAsyncCommand ? MakeByteArray( SMBAsyncId, SMBFileIDPersistent ) : MakeByteArray(SMBSID, SMBFileIDPersistent)] = Property.SMBFileName,
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	SMB2FileId	FileId;
+	UINT32	CreateContextsOffset;
+	UINT32	CreateContextsLength;
+	switch
+	{
+		case CurrentProtocolOffset < CreateContextsOffset:
+			BLOB(CreateContextsOffset - CurrentProtocolOffset) ContextPadding;
+	}
+	[local.FirstContext = true]
+	while CreateContexts[MessageEnd > FrameOffset]
+	{
+		[Post.SMBSummary = SMBSummary +
+ 				   (local.FirstContext? ", ":"+") +
+ 				   ContextSummary,
+ 		 Post.local.FirstContext = false]
+		SMB2CreateContextResponse	Context;
+	}
+}
+
+
+// Close
+struct SMB2RequestClose
+{
+	UINT16	StructureSize;
+	SMB2RequestClosePostQuery	Flags = formatstring("0x%X", UINT16( frameData, offset ));
+	UINT32	Reserved;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID)
+	]
+	SMB2FileId	FileId;
+}
+
+struct SMB2ResponseClose
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1, Disconnected),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	UINT16	StructureSize;
+	SMB2RequestClosePostQuery	Flags;
+	UINT32	Reserved;
+	FILETIME	CreationTime;
+	FILETIME	LastAccessTime;
+	FILETIME	LastWriteTime;
+	FILETIME	ChangeTime;
+	UINT64	AllocationSize;
+	UINT64	EndofFile;
+	FSCCFileAttributes	FileAttributes;
+}
+
+struct SMB2RequestClosePostQuery
+{
+	UINT16	Flags = POSTQUERY ? "Contain additional fields in response packet" : "Not Contain additional fields in response packet"
+	{
+		UINT16 POSTQUERY:1 = FormatString("        (%s) %s", this.ToBitString, this ? "set the attribute fields in the response" : "NOT use the values returned in the response");
+		UINT16 Reserved_bits1_15:15 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+}
+ 
+
+// Flush
+struct SMB2RequestFlush
+{
+	UINT16	StructureSize;
+	UINT16	Reserved1;
+	UINT32	Reserved2;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X", SMBFileIDVolatile)
+	]
+	SMB2FileId	FileId;
+}
+
+struct SMB2ResponseFlush    
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+// Read
+struct SMB2RequestRead
+{
+	UINT16	StructureSize;    
+	UINT8	Padding;
+	UINT8	Reserved;
+	UINT32	Length;
+	[conversation.SmbFileOffsetConv]
+	UINT64	Offset;
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X %s ",SMBFileIDVolatile, Property.SMBFileName ? " (" + Property.SMBFileName + ")" : "")
+	]
+	UINT32	MinimumCount;
+	UINT32	Channel;
+	UINT32	RemainingBytes;
+	UINT16	ReadChannelInfoOffset;
+	UINT16	ReadChannelInfoLength;
+	UINT8   Buffer;
+}
+
+struct SMB2ResponseRead
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + (Property.SMBFileName ? FormatString(", File=%s",Property.SMBFileName) : "")
+	]
+	[conversation.SmbFileOffsetMVS$[Framenumber] = conversation.SmbFileOffsetConv]
+	[property.SMBFileOffset = conversation.SmbFileOffsetMVS$[Framenumber]]
+	UINT16	StructureSize;
+	UINT8	DataOffset;
+	UINT8	Reserved;
+	[property.SmbFileFragmentLen]
+	UINT32	DataLength;
+	UINT32	DataRemaining;
+	UINT32	Reserved2;
+	switch
+	{
+		case CurrentProtocolOffset < DataOffset: 
+			BLOB(DataOffset - CurrentProtocolOffset) DataPadding;
+	}
+	switch
+	{
+		case DataLength > 0 :	
+			switch
+			{
+				case Property.SMBFileName.contains("MsFteWds"): MSWSP MSWSP;			
+				case UINT8( Framedata, Offset ) == 0x05 &&          // RPC Protocol Version = 5, Connection-oriented RPC
+					( UINT8( Framedata, Offset + 1 ) == 0 || UINT8( Framedata, Offset + 1 ) == 1 ) && // RPC minor version
+					( FrameLength - frameOffset >= 16 ) &&       // RPC connection-oriented header length
+					( UINT8( Framedata, Offset + 2 ) == 0 ||       // RPC ptype, connection-oriented packet types
+						UINT8( Framedata, Offset + 2 ) == 2 ||
+						UINT8( Framedata, Offset + 2 ) == 3 ||
+						UINT8( Framedata, Offset + 2 ) >= 11 && UINT8( Framedata, Offset + 2 ) <= 19 ) &&
+					( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+					UINT8( Framedata, Offset + 5 ) < 4 &&          // RPC floating point data representation, drep octet1
+					UINT8( Framedata, Offset + 6 ) == 0 &&         // RPC data representation drep octet2 & 3 m.b.z.
+					UINT8( Framedata, Offset + 7 ) == 0 :
+						[
+							PayloadStart(
+								NetworkDirection, /* direction */
+								0, //identifier
+								0, //sequence token
+								0, //next sequence
+								UINT16( FrameData, FrameOffset + 8 ), //total payload length
+								SMBStatus == 0x80000005, //is first
+								0, //is last
+								RssmblyIndStartBit+RssmblyIndLengthBit, 		//has start and end indication
+								0x0000, /* Properties... */
+								SMBResponse,
+								0x0000,
+								""
+								)
+						]
+						MSRPC MSRPC;
+				default: 
+					struct
+					{
+						[Local.SMBFileNameRemain = Property.SMBFileName]
+						[MaxLoopCount = 200]
+						while [Local.SMBFileNameRemain.ContainsBin(2, "5C")]
+						{
+							[Local.SMBFileNameRemain = UnicodeString(Local.SMBFileNameRemain, 2)]
+							struct{};
+						}
+						switch
+						{
+							case contains(Property.SMBFileName, "\\ci_skads"):
+								CIS CIS;
+							case Local.SMBFileNameRemain.containsBin(2, "2E")://It's not pipe data when include "." in the file name
+								switch
+								{
+									case conversation.Parent.SmbIsNotPipe$[property.SMBTID] || IsValueNone(conversation.Parent.SmbIsNotPipe$[property.SMBTID]):
+										[
+											PayloadStart(
+														NetworkDirection, /* direction */
+														0, /* id */
+														property.SMBFileOffset, /* sequence token */
+														property.SMBFileOffset + property.SmbFileFragmentLen, /* next sequence token */
+														0, /* total payload length */
+														property.SMBFileOffset == 0, /* is first */
+														0, /* is last */
+														RssmblyIndStartBit + RssmblyIndEndBit + RssmblySequenceBit,
+														0x0000,
+														SMBResponse,
+														0x0000,
+														Property.SMBFileName
+														)
+										]
+										[DataFieldFrameLength = FrameOffset + property.SmbFileFragmentLen]
+										switch
+										{
+											case property.SMBFileOffset == 0:
+												FileTypeContent FileTypeContent;
+											default:
+												blob(FrameLength - FrameOffset) ContinualData;
+										}
+									default:
+										BLOB(Property.SmbFileFragmentLen) Payload;
+								}
+							default:
+								BLOB(Property.SmbFileFragmentLen) PipePayload;
+						}
+					}
+			}
+	}
+}
+
+// Write
+struct SMB2RequestWrite
+{
+	UINT16	StructureSize;
+	UINT16	DataOffset;
+	[property.SmbFileFragmentLen]
+	UINT32	Length;
+	[property.SMBFileOffset]
+	UINT64	Offset;
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(" File=%s, FID=0x%I64X",Property.SMBFileName, SMBFileIDVolatile)
+	]
+	UINT32	Channel;
+	UINT32	RemainingBytes;
+	UINT16	WriteChannelInfoOffset;
+	UINT16	WriteChannelInfoLength;
+	UINT32	Flags
+	{
+		UINT32 WRITETHROUGH:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The write request should be written to persistent storage before the response is sent regardless of how the file was opened" : " ");
+		UINT32 Reserved_bits1_31:31 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+	switch
+	{
+		case CurrentProtocolOffset < DataOffset:
+			BLOB(DataOffset - CurrentProtocolOffset) DataPadding;
+	}
+	switch
+	{
+		case Length > 0:
+			switch
+			{
+				case Property.SMBFileName.contains("MsFteWds"): MSWSP MSWSP;
+				case UINT8( Framedata, FrameOffset ) == 0x05 &&          // RPC Protocol Version = 5, Connection-oriented RPC
+					( UINT8( Framedata, FrameOffset + 1 ) == 0 || UINT8( Framedata, FrameOffset + 1 ) == 1 ) && // RPC minor version
+					( FrameLength - frameOffset >= 16 ) &&       // RPC connection-oriented header length
+					( UINT8( Framedata, FrameOffset + 2 ) == 0 ||       // RPC ptype, connection-oriented packet types
+						UINT8( Framedata, FrameOffset + 2 ) == 2 ||
+						UINT8( Framedata, FrameOffset + 2 ) == 3 ||
+						UINT8( Framedata, FrameOffset + 2 ) >= 11 && UINT8( Framedata, FrameOffset + 2 ) <= 19 ) &&
+					( UINT8( Framedata, FrameOffset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+					UINT8( Framedata, FrameOffset + 5 ) < 4 &&          // RPC floating point data representation, drep octet1
+					UINT8( Framedata, FrameOffset + 6 ) == 0 &&         // RPC data representation drep octet2 & 3 m.b.z.
+					UINT8( Framedata, FrameOffset + 7 ) == 0 :
+						MSRPC MSRPC;
+				default:
+					struct
+					{
+						[Local.SMBFileNameRemain = Property.SMBFileName]
+						[MaxLoopCount = 200]
+						while [Local.SMBFileNameRemain.ContainsBin(2, "5C")]
+						{
+							[Local.SMBFileNameRemain = UnicodeString(Local.SMBFileNameRemain, 2)]
+							struct{};
+						}
+						switch
+						{
+							case contains(Property.SMBFileName, "\\ci_skads"):
+								CIS CIS;
+							case Local.SMBFileNameRemain.containsBin(2, "2E")://It's not pipe data when include "." in the file name
+								switch
+								{
+									case conversation.Parent.SmbIsNotPipe$[property.SMBTID] || IsValueNone(conversation.Parent.SmbIsNotPipe$[property.SMBTID]):
+										[
+											PayloadStart(
+														NetworkDirection, /* direction */
+														0, /* id */
+														property.SMBFileOffset, /* sequence token */
+														property.SMBFileOffset + property.SmbFileFragmentLen, /* next sequence token */
+														0, /* total payload length */
+														property.SMBFileOffset == 0, /* is first */
+														0, /* is last */
+														RssmblyIndStartBit + RssmblyIndEndBit + RssmblySequenceBit,
+														0x0000,
+														SMBResponse,
+														0x0000,
+														Property.SMBFileName
+														)
+										]
+										[DataFieldFrameLength = FrameOffset + property.SmbFileFragmentLen]
+										switch
+										{
+											case property.SMBFileOffset == 0:
+												FileTypeContent FileTypeContent;
+											default:
+												blob(FrameLength - FrameOffset) ContinualData;
+										}
+									default:
+										BLOB(Property.SmbFileFragmentLen) Payload;
+								}
+							default:
+								BLOB(Property.SmbFileFragmentLen) PipePayload;
+						}
+					}
+			}
+	}
+}
+
+struct SMB2ResponseWrite
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString("%s", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")
+	]
+	UINT16	StructureSize;
+	UINT16	Reserved;
+	UINT32	Count;
+	UINT32	Remaining;
+	UINT16	WriteChannelInfoOffset;
+	UINT16	WriteChannelInfoLength;
+}
+
+//2.2.31.1.1   SRV_COPYCHUNK
+struct SMB2IoCtlSrvCopyCHunkC
+{
+	UINT64 SourceOffset;
+	UINT64 TargetOffset;
+	UINT32 Length;
+	UINT32 Reserved;
+}
+struct SMB2RequestIoCtl
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+	[SMBIoCtoVal]
+	UINT32 CtlCode = FSCCCtlCodeTable(this);
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		(CtlCode != 0x00060194 && CtlCode != 0x00110018 && CtlCode !=0x00148118) ? BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1) : "",
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X", SMBFileIDVolatile)
+	]
+	
+	UINT32	InputOffset;
+	UINT32	InputCount;
+	UINT32	MaxInputResponse;
+	UINT32	OutputOffset;
+	UINT32	OutputCount;
+	UINT32	MaxOutputResponse;
+	UINT32	Flags = FormatString("(%s) %s",this.toBitString, this ? "FSCTL request":"IOCTL request");
+	UINT32	Reserved2;
+	switch
+	{
+		case CurrentProtocolOffset < InputOffset:
+			BLOB(InputOffset - CurrentProtocolOffset) InputPadding;
+	}
+	switch
+	{
+		case InputCount > 0:
+			switch
+			{
+				case Property.SMBFileName.contains("MsFteWds"): MSWSP MSWSP;
+				case UINT8( Framedata, Offset ) == 0x05 &&          // RPC Protocol Version = 5, Connection-oriented RPC
+					( UINT8( Framedata, Offset + 1 ) == 0 || UINT8( Framedata, Offset + 1 ) == 1 ) && // RPC minor version
+					( FrameLength - frameOffset >= 16 ) &&       // RPC connection-oriented header length
+					( UINT8( Framedata, Offset + 2 ) == 0 ||       // RPC ptype, connection-oriented packet types
+						UINT8( Framedata, Offset + 2 ) == 2 ||
+						UINT8( Framedata, Offset + 2 ) == 3 ||
+						UINT8( Framedata, Offset + 2 ) >= 11 && UINT8( Framedata, Offset + 2 ) <= 19 ) &&
+					( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+					UINT8( Framedata, Offset + 5 ) < 4 &&          // RPC floating point data representation, drep octet1
+					UINT8( Framedata, Offset + 6 ) == 0 &&         // RPC data representation drep octet2 & 3 m.b.z.
+					UINT8( Framedata, Offset + 7 ) == 0 :
+						MSRPC MSRPC;
+				case (UINT32( FrameData, Offset ) >= 200 && UINT32( FrameData, Offset ) <= 209) ||
+					 (UINT32( FrameData, Offset ) >= 230 && UINT32( FrameData, Offset ) <= 233) ||
+					  UINT32( FrameData, Offset ) == 215 ||
+					  UINT32( FrameData, Offset ) == 217 ||
+					  UINT32( FrameData, Offset ) == 225 ||
+					  UINT32( FrameData, Offset ) == 228 ||
+					  UINT32( FrameData, Offset ) == 236:
+						// 200-209, 215, 217, 225, 228, 230-233, 236
+					  CIS CIS;
+				default:
+					switch(SMBIoCtoVal)
+					{
+						case 0x001440F2:
+						case 0x001480F2:
+							struct SMB2IoCtlSrvCopyHunkCopyC
+							{
+								UINT32 SourceKey[6];
+								UINT32 ChunkCount;
+								UINT32 Reserved;
+								SMB2IoCtlSrvCopyCHunkC Chunk[ChunkCount];
+							}
+						case 0x001441bb:
+							struct SMB2IoCtlSrvReadHashReq
+							{
+								UINT32 HashType = SMB2IoCtlSrvReadHashTypeTable(this);
+								UINT32 HashVersion = SMB2IoCtlSrvReadHashVersionTable(this);
+								UINT32 HashRetrievalType = SMB2IoCtlSrvReadHashRetrievalTypeTable(this);
+								UINT32 Length;
+								UINT32 Offset;
+							}
+						case 0x001401D4:
+							struct SMB2NetworkResiliency
+							{
+								UINT32 Timeout;
+								UINT32 Reserved;
+							}
+						case 0x00060194:
+							DFSC Dfsc;
+						case 0x000900ac: 
+							FSCCFSCTLDeleteReparsePointRequest			   DeleteReparsePoint;
+						case 0x0009008f: 
+							FSCCFSCTLFindFilesBySidRequest				   FindFilesBySid;
+						case 0x00090073: 
+							FSCCFSCTLGetRetrievalPointersRequest		   GetRetrievalPointers;
+						case 0x0009002c: 
+							FSCCFSCTLIsPathnameValidRequest				   IsPathnameValid;
+						case 0x001400ec:
+							FSCCFSCTLLMRSetLinkTrackingInformationRequest  LMRSetLinkTrackingInformation;
+						case 0x0011c017:
+							FSCCFSCTLPipetransceiveRequest( InputCount )   Pipetransceive;
+						case 0x00110018:
+							FSCCFSCTLPipeWaitRequest                       PipeWait;
+						case 0x000940cf:
+							FSCCFSCTLQueryAllocatedRangesRequest           QueryAllocatedRanges;
+						case 0x0009c040:
+							FSCCFSCTLSetCompressionRequest                 SetCompression;
+						case 0x00098134:
+							FSCCFSCTLSetDefectManagementRequest            SetDefectManagement;
+						case 0x000900D7:
+							FSCCFSCTLSetEncryptionRequest                  SetEncryption;
+						case 0x00090098:
+							FSCCFSCTLSetObjectIDRequest                    SetObjectID;
+						case 0x000900bc:
+							FSCCFSCTLSetObjectIDExtendedRequest            SetObjectIDExtended;
+						case 0x000900a4:
+							FSCCFSCTLSetReparsePointRequest                SetReparsePoint;
+						case 0x000901B4:
+							FSCCFSCTLSetShortNameBehaviorRequest           SetShortNameBehavior;
+						case 0x000980c8:	
+							FSCCFSCTLSetZeroDataRequest                    SetZeroData;
+						case 0x00090100:
+							FSCCFSCTLSISCopyFileRequest                    SISCopyFile;
+						default:
+							BLOB(InputCount) InputData;
+					} 
+			}     
+	}          
+  switch    
+  {         
+  	case InputOffset > 0 && InputOffset + InputCount < OutputOffset:
+  		BLOB(OutputOffset - InputOffset - InputCount) OutputPadding;
+  }         
+  switch    
+  {         
+  	case OutputCount >0:
+  		BLOB(OutputCount) OutputData;
+  }         
+}           
+
+table SMB2IoCtlSrvReadHashTypeTable(value)
+{
+	switch (value)
+	{
+		case 0x01: FormatString("SRV_HASH_TYPE_PEER_DIST - the hash is requested for branch caching.");
+		default: FormatString("Undefined Value(%d)", value);
+	}
+}
+
+table SMB2IoCtlSrvReadHashVersionTable(value)
+{
+	switch (value)
+	{
+		case 0x01: FormatString("SRV_HASH_VER_1 - tBranch cache version 1");
+		default: FormatString("Undefined Value(%d)", value);
+	}
+}
+
+
+table SMB2IoCtlSrvReadHashRetrievalTypeTable(value)
+{
+	switch (value)
+	{
+		case 0x01: FormatString("SRV_HASH_RETRIEVE_HASH_BASED");
+		default: FormatString("Undefined Value(%d)", value);
+	}
+ 
+}
+            
+struct SMB2ResponseIoCtl
+{           
+	UINT16	StructureSize;
+	UINT16	Reserved;
+	[SMBIoCtoVal]
+	UINT32  CtlCode = FSCCCtlCodeTable(this);
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		(CtlCode != 0x00060194 && CtlCode != 0x00110018 && CtlCode !=0x00148118) ? BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1) : "",
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString("%s ", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")
+	]
+	UINT32	InputOffset;
+	UINT32	InputCount;
+	UINT32	OutputOffset;
+	UINT32	OutputCount;
+	UINT32	Flags;
+	UINT32	Reserved2;
+	switch
+	{
+		case CurrentProtocolOffset < InputOffset:
+			BLOB(InputOffset - CurrentProtocolOffset) InputPadding;
+	}
+	switch
+	{
+		case InputCount > 0:
+			BLOB(InputCount < MessageEnd - FrameOffset ? InputCount : MessageEnd - FrameOffset ) InputData;
+	}
+	switch
+	{
+  	case InputOffset > 0 && InputOffset + InputCount < OutputOffset:
+  		BLOB(OutputOffset - InputOffset - InputCount) OutputPadding;
+	}
+
+	switch
+	{
+		case OutputCount > 0 && FrameOffset < MessageEnd:
+			switch
+			{
+				case Property.SMBFileName.contains("MsFteWds"): MSWSP MSWSP;
+				case UINT8( Framedata, Offset ) == 0x05 &&          // RPC Protocol Version = 5, Connection-oriented RPC
+					( UINT8( Framedata, Offset + 1 ) == 0 || UINT8( Framedata, Offset + 1 ) == 1 ) && // RPC minor version
+					( FrameLength - frameOffset >= 16 ) &&       // RPC connection-oriented header length
+					( UINT8( Framedata, Offset + 2 ) == 0 ||       // RPC ptype, connection-oriented packet types
+						UINT8( Framedata, Offset + 2 ) == 2 ||
+						UINT8( Framedata, Offset + 2 ) == 3 ||
+						UINT8( Framedata, Offset + 2 ) >= 11 && UINT8( Framedata, Offset + 2 ) <= 19 ) &&
+					( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+					UINT8( Framedata, Offset + 5 ) < 4 &&          // RPC floating point data representation, drep octet1
+					UINT8( Framedata, Offset + 6 ) == 0 &&         // RPC data representation drep octet2 & 3 m.b.z.
+					UINT8( Framedata, Offset + 7 ) == 0 :
+						[PayloadStart(
+							NetworkDirection, //direction
+							property.SMBFileID,	//identifier
+							0, //sequence token
+							0, //next sequence
+							UINT16( FrameData, FrameOffset + 8 ), //total payload length
+							SMBStatus == 0x80000005, //is first
+							0, //is last
+							RssmblyIndStartBit+RssmblyIndLengthBit, 		//has start and end indication
+							0x0000,
+							SMBResponse,
+							0x0000,
+							""
+							)
+						]
+						MSRPC MSRPC;
+				case (UINT32( FrameData, Offset ) >= 200 && UINT32( FrameData, Offset ) <= 209) ||
+					 (UINT32( FrameData, Offset ) >= 230 && UINT32( FrameData, Offset ) <= 233) ||
+					  UINT32( FrameData, Offset ) == 215 ||
+					  UINT32( FrameData, Offset ) == 217 ||
+					  UINT32( FrameData, Offset ) == 225 ||
+					  UINT32( FrameData, Offset ) == 228 ||
+					  UINT32( FrameData, Offset ) == 236:
+						// 200-209, 215, 217, 225, 228, 230-233, 236
+					  CIS CIS;
+				default:
+					switch(SMBIoCtoVal)
+					{
+						case 0x001440F2:
+							struct SMB2IoCtlSrvCopyHunkCopyR
+							{
+								UINT32 ChunksWritten;
+								UINT32 ChunksBytesWritten;
+								UINT32 TotalBytesWritten;
+							}
+						case 0x00144064:
+							struct SMB2IoCtlSrvSnapshotArray
+							{
+								UINT32 NumberOfSnapshots;
+								UINT32 NumberOfSnapshotsReturned;
+								UINT32 SnapshotArraySize;
+								unicodeString(SnapshotArraySize/2) SnapShots;
+							}
+						case 0x00140078:
+							struct SMB2IoCtlSrvResumeKey
+							{
+								AsciiString(24) ResumeKey;
+								UINT32 ContextLength;
+								AsciiString(ContextLength > 4 ? ContextLength : 4) Context; 
+							}
+						case 0x001441bb:
+							struct SMB2IoCtlSrvReadHash
+							{
+								UINT64 NextOffset;
+								UINT32 BufferLength;
+								UINT32 Reserved;
+								switch
+								{
+									case CurrentProtocolOffset < NextOffset: 
+										BLOB(InputOffset - NextOffset) Padding;
+								}
+								AsciiString(BufferLength) Buffer;    
+							}
+						case 0x00060194:
+							DFSC Dfsc;
+						case 0x000900c0:
+							FSCCFSCTLCreateOrGetObjectIDResponse					CreateOrGetObjectID;
+						case 0x00090060:
+							FSCCFSCTLFilesystemGetStatisticsResponse				FilesystemGetStatistics;
+						case 0x0009008f:
+							FSCCFSCTLFindFilesBySidResponse							FindFilesBySid;
+						case 0x0009003c:
+							FSCCFSCTLGetCompressionResponse							GetCompression;
+						case 0x00090064:
+							FSCCFSCTLGetNtfsVolumeDataResponse						GetNtfsVolumeData;
+						case 0x0009009c: 
+							FSCCFSCTLGetObjectIDResponse							GetObjectID;
+						case 0x000900a8:
+							FSCCFSCTLGetReparsePointResponse						GetReparsePoint;
+						case 0x00090073:
+							FSCCFSCTLGetRetrievalPointersResponse					GetRetrievalPointers;
+						case 0x00090078:
+							FSCCFSCTLIsVolumeDirtyResponse							IsVolumeDirty;
+						case 0x001400e8:
+							FSCCFSCTLLMRGetLinkTrackingInformationResponse			LMRGetLinkTrackingInformation;
+						case 0x0011400c:
+							FSCCFSCTLPipePeekResponse								PipePeek;
+						case 0x0011c017:
+							FSCCFSCTLPipetransceiveResponse( OutputCount )			Pipetransceive;
+						case 0x00090058:
+							FSCCFSCTLQueryFatBPBResponse							QueryFatBPB;
+						case 0x000940cf:
+							FSCCFSCTLQueryAllocatedRangesResponse( OutputCount )	QueryAllocatedRanges;
+						case 0x00090138:
+							FSCCFSCTLQuerySparingInfoResponse               		QuerySparingInfo;
+						case 0x000900eb:
+							FSCCFSCTLReadFileUSNDataResponse                		ReadFileUSNData;
+						case 0x000900ef:
+							FSCCFSCTLWriteUSNCloseRecordResponse            		WriteUSNCloseRecord;
+						default:
+							BLOB(OutputCount) OutputData;
+					}
+			}
+	}
+}
+
+// Cancel
+struct SMB2RequestCancel
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+//struct SMB2ResponseCancel
+//{
+//	UINT16	Size;
+//	UINT16	Reserved;
+//}
+
+
+// Echo
+struct SMB2RequestEcho
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+struct SMB2ResponseEcho
+{
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+
+// Query Directory
+//struct SMB2FileDirectoryInformation // Class 1
+//{
+//	UINT32 NextEntryOffset;
+//	UINT32 FileIndex;
+//	INT64 CreationTime;
+//	INT64 LastAccessTime;
+//	INT64 LastWriteTime;
+//	INT64 ChangeTime;
+//	INT64 EndOfFile;
+//	INT64 AllocationSize;
+//	FSCCFileAttributes FileAttributes;
+//	UINT32 FileNameLength;
+//	UnicodeString FileName;
+//}
+
+struct SMB2RequestQueryDir = FormatString("%s%s", FSCCFileInforTable(FileInformationClass), FileNameLength > 0 ? ", FileName: " + FileName : "")
+{
+	UINT16	StructureSize;
+	[conversation.FileInfoType$[SMBMID] = FileInformationClass]
+	UINT8	FileInformationClass = FSCCFileInforTable(this);
+	UINT8	Flags
+	{
+		UINT8 RestartScans:1 = FormatString("     (%s) %s", this.ToBitString, this ? "The server may close and reopen the file(only reopened if the specified search hasn't changed.)" : "The server may NOT close and reopen the file ");
+		UINT8 ReturnSingleEntry:1 = FormatString("(%s) %s", this.ToBitString, this ? "Return the first entry of the search results" : "Return the All entries of the search results");
+		UINT8 IndexSpecified:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Return entries beginning at the byte number specified by FileIndex" : "Return All entries");
+		UINT8 Reserved_bit_3:1 = FormatString("   (%s) Reserved",this.ToBitString);
+		UINT8 Reopen:1 = FormatString("           (%s) %s", this.ToBitString, this ? "The server may close and reopen the file(reopened regardless of whether the specified search has changed.)" : "The server may NOT close and reopen the file");
+		UINT8 Reserved_bits5_7:3 = FormatString(" (%s) Reserved", this.ToBitString);
+	};
+	UINT32	FileIndex;
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X", SMBFileIDVolatile)
+	]
+	UINT16	FileNameOffset;
+	UINT16	FileNameLength;
+	UINT32	OutputBufferLength;
+	switch
+	{
+		case CurrentProtocolOffset < FileNameOffset:
+			BLOB(FileNameOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	switch
+	{
+		case FileNameLength > 0:
+			UnicodeString(FileNameLength/2)	FileName;
+	}
+}
+
+struct SMB2ResponseQueryDir
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString("%s ", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")
+	]
+	UINT16	StructureSize;
+	UINT16	OutputBufferOffset;
+	UINT32	OutputBufferLength;
+	// TODO: cast appropriately
+	switch
+	{
+		case CurrentProtocolOffset < OutputBufferOffset:
+			BLOB(OutputBufferOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	switch
+	{
+		case OutputBufferLength > 0:
+			SMB2FileInfo FileInfo;
+		default:
+			UINT8 Buffer;
+	}
+}
+
+// Change Notify
+struct SMB2RequestChangeNotify
+{
+	UINT16	StructureSize;
+	UINT16	Flags
+	{
+		UINT16 WatchTree:1 = FormatString("         (%s) %s", this.ToBitString, this ? "should be called recursively " : "should NOT be called recursively ");
+		UINT16 Reserved_bits1_15:15 = FormatString("(%s) Reserved", this.TobitString);
+	};
+	UINT32	OutputBufferLength;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID)
+	]
+	SMB2FileId	FileId;
+	UINT32	CompletionFilter = FormatString("0x%X", this)
+	{
+		UINT32 ChangeFileName:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Change File Name" : "NOT Change File Name");
+		UINT32 ChangeDIRName:1 = FormatString("     (%s) %s", this.TobitString, this ? "Change Dir Name" : "NOT Change Dir Name");
+		UINT32 ChangeAttributes:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Change Attributes" : "NOT Change Attributes");
+		UINT32 ChangeSize:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Change Size" : "NOT Change Size");
+		UINT32 ChangeLastWrite:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Change Last Write Time" : "NOT Change Last Write Time");
+		UINT32 ChangeLastAccess:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Change Last Access Time" : "NOT Change Last Access Time");
+		UINT32 ChangeCreation:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Change Create Time" : "NOT Change Create Time");
+		UINT32 ChangeEA:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Change Extended Attributes " : "NOT Change Extended Attributes");
+		                                            
+		UINT32 ChangeSecurity:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Change access control list (ACL) settings" : "NOT Change access control list (ACL) settings");
+		UINT32 ChangeStreamName:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Added a Named Stream" : "No Stream Added");
+		UINT32 ChangeStreamSize:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Change the size of the Named Stream" : "NOT Change the size of the Named Stream");
+		UINT32 ChangeStreamWrite:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Modify the Named Stream" : "NOT Modify the Named Stream");
+		UINT32 Reserved_bits12_31:20 = FormatString("(%s) Reserved", this.TobitString);
+	};
+	UINT32	Reserved;
+}
+struct SMB2ResponseChangeNotify
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1, Disconnected),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	
+	UINT16	StructureSize;
+	UINT16	OutputBufferOffset;
+	UINT32	OutputBufferLength;
+	switch
+	{
+		case OutputBufferLength > 0 && CurrentProtocolOffset < OutputBufferOffset:
+			BLOB(OutputBufferOffset - CurrentProtocolOffset) BufferPadding;
+	}
+	switch
+	{
+		case OutputBufferLength > 0:
+			struct FileInfoArray
+			{
+				SMB2FileNotifyInformation FileInfo;
+				while [FileNotifyInfoNextEntryOffset > 0]
+				{
+					[FileNotifyInfoNextEntryOffset = UINT32(FrameData, FrameOffset)]
+					SMB2FileNotifyInformation FileInfo;
+				}
+			}
+	}
+}
+
+Table SMB2ActionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: FormatString("(%d)ADDED: The file was added to the directory.",value);
+		case 0x00000002: FormatString("(%d)REMOVED: The file was removed from the directory.",value);
+		case 0x00000003: FormatString("(%d)MODIFIED: The file was modified.",value);
+		case 0x00000004: FormatString("(%d)RENAMED_OLD_NAME: The file was renamed, and this is the old name.",value);
+		case 0x00000005: FormatString("(%d)RENAMED_NEW_NAME: The file was renamed, and this is the new name.",value);
+		default: FormatString("Unknown ActionCode");
+	}
+}
+struct SMB2FileNotifyInformation
+{
+	[
+		FileNotifyInfoNextEntryOffset,
+		FileNotifiInfoStartOffset = FrameOffset
+	]
+	UINT32 NextEntryOffset;
+	UINT32 Action = SMB2ActionTable(this);
+	UINT32 FileNameLength;
+	UnicodeString(FileNameLength/2) FileName;
+	switch
+	{
+		case (FileNotifiInfoStartOffset + NextEntryOffset) > FrameOffset:
+			BLOB( FileNotifiInfoStartOffset + NextEntryOffset - FrameOffset) EntryPadding;
+	}
+}
+
+struct	SecurityInformation = FormatString("0x%X", UINT32(FrameData,FrameOffset))
+{
+	UINT32 OW:1 = FormatString("(%s) %s", this.ToBitString, this ? "OWNER_SECURITY_INFORMATION" : "NOT OWNER_SECURITY_INFORMATION");
+	UINT32 GR:1 = FormatString("(%s) %s", this.TobitString, this ? "GROUP_SECURITY_INFORMATION" : "NOT GROUP_SECURITY_INFORMATION");
+	UINT32 DA:1 = FormatString("(%s) %s", this.ToBitString, this ? "DACL_SECURITY_INFORMATION" : "NOT DACL_SECURITY_INFORMATION");
+	UINT32 SA:1 = FormatString("(%s) %s", this.ToBitString, this ? "SACL_SECURITY_INFORMATION" : "NOT SACL_SECURITY_INFORMATION");
+	UINT32 LA:1 = FormatString("(%s) %s", this.ToBitString, this ? "LABEL_SECURITY_INFORMATION" : "NOT LABEL_SECURITY_INFORMATION");
+	UINT32 Reserved_bits5_31:27 = FormatString("(%s) Reserved", this.ToBitString);
+}
+Table SMB2CQueryInfoInformationClassTable(InfoType, value)
+{
+	switch(InfoType)
+	{
+		case 0x01:
+			FSCCFileInforTable(value);
+		case 0x02:
+			FSCCFSInfoClassTable(value);
+		default:
+			FormatString("FileInfoClass");
+	}
+}
+// Query Information
+[Post.SMBSummary = SMBSummary + ", Class=" + FileInfoClass.ToString + FormatString(", FID=0x%I64X%s ", SMBFileIDVolatile, Property.SMBFileName ? "(" + Property.SMBFileName + ")" : "")]
+struct SMB2RequestQueryInfo
+{
+	UINT16	StructureSize;
+	[conversation.QueryInfoType$[SMBMID] = InfoType]
+	UINT8	InfoType = SMB2QueryInfoType(this);
+	[conversation.FileInfoType$[SMBMID] = FileInfoClass]
+	UINT8 FileInfoClass = SMB2CQueryInfoInformationClassTable(InfoType, this);
+	UINT32	OutputBufferLength;
+	UINT16	InputBufferOffset;
+	UINT16	Reserved;
+	UINT32	InputBufferLength;
+	SMB2AdditionalInformation AdditionalInformation = FormatString("0x%X", UINT32(FrameData,FrameOffset));
+	UINT32	Flags = FormatString("0x%X", this)
+	{
+		UINT32 RestartScan:1		=	FormatString("(%s) %s", this.ToBitString, this ? "Restart the scan for EAs from the beginning." : "");
+		UINT32 ReturnSingleEntry :1	=	FormatString("(%s) %s", this.ToBitString, this ? "Return a single EA entry in the caller's buffer." : "");   
+		UINT32 IndexSpecified :1	=	FormatString("(%s) %s", this.ToBitString, this ? "The caller has specified an EA index." : "");   
+		UINT32 Reserved_bits29_29:1	=	FormatString("(%s) Reserved", this.TobitString); 
+	};
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID)
+	]
+	SMB2FileId	FileId;
+	switch
+	{
+		case CurrentProtocolOffset < InputBufferOffset:
+			BLOB(InputBufferOffset - CurrentProtocolOffset) InputBufferPadding;
+	}
+	switch
+	{
+		case InputBufferLength > 0:
+			switch
+			{
+				case InfoType == 0x04:
+					struct SMB2QueryQuotaInfo
+					{
+						[QuotaInfoStartOffset = FrameOffset]
+						UINT8 ReturnSingle;
+						UINT8 RestartScan;
+						UINT16 Reserved;
+						UINT32 SidListLength;
+						UINT32 StartSidLength;
+						UINT32 StartSidOffset;
+						switch
+						{
+							case QuotaInfoStartOffset + StartSidOffset > FrameOffset:
+								BLOB(QuotaInfoStartOffset + StartSidOffset - FrameOffset) StartSidPadding;
+						}
+						switch
+						{
+							case SidListLength == 0:
+								switch
+								{
+									case StartSidLength > 0:
+										SID(false) Sid;
+								}
+							default:
+								FSCCFileGetQuotaInformationList SidList;
+						}
+					}
+				case InfoType == 1 && FileInfoClass == 15:
+					FSCCFileFullEaInformationList FullEaInformationList;
+				default:
+					BLOB(InputBufferLength) InputBufferData;
+			}
+		default:
+			UINT8 buffer;
+	}
+}
+Table SMB2QueryInfoType(value)
+{
+	switch(value)
+	{
+		case 0x01: "SMB2_0_INFO_FILE - File information is requested.";
+		case 0x02: "SMB2_0_INFO_FILESYSTEM - File system information is requested.";
+		case 0x03: "SMB2_0_INFO_SECURITY - Security information is requested.";
+		case 0x04: "SMB2_0_INFO_QUOTA - File system quota information is requested.";
+	}
+}
+struct SMB2ResponseQueryInfo
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+		Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		SMBSummary = SMBSummary + FormatString("%s ", Property.SMBFileName ? ", File=" + Property.SMBFileName : "")
+	]
+	UINT16	StructureSize;
+	UINT16	OutputBufferOffset;
+	UINT32	OutputBufferLength;
+	switch
+	{
+		case FrameOffset < OutputBufferOffset:
+			BLOB(OutputBufferOffset - FrameOffset) OutputBufferPadding;
+	}
+	switch
+	{
+		case OutputBufferLength > 0 :
+			switch(conversation.QueryInfoType$[SMBMID])
+			{
+				case 0x01:
+					// SMB2_0_INFO_FILE
+					SMB2FileInfo FileInfo;
+				case 0x02:
+					// SMB2_0_INFO_FILESYSTEM
+					SMB2FileSystemInfo FileSystemInfo;
+				case 0x03:
+					//SMB2_0_INFO_SECURITY
+					SecurityDescriptorRelative SecurityDescriptor;
+				case 0x04:
+					FSCCFileQuotaInformationList QuotaInformation;
+			}
+	}
+}
+
+struct SMB2FileInfo
+{
+	switch(conversation.FileInfoType$[SMBMID])
+	{
+		case 1:  FSCCFileDirectoryInformationList              FileDirectoryInformationList;                
+		case 2:  FSCCFileFullDirectoryInformationList          FileFullDirectoryInformationList;            
+		case 3:  FSCCFileBothDirectoryInformationList          FileBothDirectoryInformationList; 
+		case 4:  FSCCFileBasicInformation                      FileBasicInformation;                    
+		case 5:  FSCCFileStandardInformation                   FileStandardInformation;                 
+		case 6:  FSCCFileInternalInformation                   FileInternalInformation;                 
+		case 7:  FSCCFileEaInformation                         FileEaInformation;                       
+		case 8:  FSCCFileAccessInformation                     FileAccessInformation;                   
+		case 9:  FSCCFileNameInformation                       FileNameInformation;                     
+		case 10: FSCCFileRenameInformation                     FileRenameInformation;                   
+		case 11: FSCCFileLinkInformation                       FileLinkInformation;                     
+		case 12: FSCCFileNamesInformationList                  FileNamesInformationList;                    
+		case 13: FSCCFileDispositionInformation                FileDispositionInformation;              
+		case 14: FSCCFilePositionInformation                   FilePositionInformation;                 
+		case 15: FSCCFileFullEaInformationList                 FileFullEaInformationList;                   
+		case 16: FSCCFileModeInformation                       FileModeInformation;                     
+		case 17: FSCCFileAlignmentInformation                  FileAlignmentInformation;                
+		case 18: FSCCFileAllInformation                        FileAllInformation;                      
+		case 19: FSCCFileAllocationInformation                 FileAllocationInformation;               
+		case 20: FSCCFileEndOfFileInformation                  FileEndOfFileInformation;                
+		case 21: FSCCFileAlternateNameInformation              FileAlternateNameInformation;            
+		case 22: FSCCFileStreamInformationList                 FileStreamInformationList;                   
+		case 23: FSCCFilePipeInformation                       FilePipeInformation;                     
+		case 24: FSCCFilePipeLocalInformation                  FilePipeLocalInformation;                
+		case 25: FSCCFilePipeRemoteInformation                 FilePipeRemoteInformation;               
+		case 26: FSCCFileMailslotQueryInformation              FileMailslotQueryInformation;            
+		case 27: FSCCFileMailslotSetInformation                FileMailslotSetInformation;              
+		case 28: FSCCFileCompressionInformation                FileCompressionInformation;              
+		case 29: FSCCFileObjectIdInformation                   FileObjectIdInformation;                               
+		//case 31: FSCCFileMoveClusterInformation              FileMoveClusterInformation; - Windows file systems do not implement this file information class    
+		case 32: FSCCFileQuotaInformationList                  FileQuotaInformation;                    
+		case 33: FSCCFileReparsePointInformation               FileReparsePointInformation;             
+		case 34: FSCCFileNetworkOpenInformation                FileNetworkOpenInformation;              
+		case 35: FSCCFileAttributeTagInformation               FileAttributeTagInformation;             
+		//case 36: FSCCFileTrackingInformation                 FileTrackingInformation; - Serviced locally by IO manager and thus does not flow over the wire.                
+		case 37: FSCCFileIdBothDirectoryInformationList        FileIdBothDirectoryInformationList;
+		case 38: FSCCFileIdFullDirectoryInformationList        FileIdFullDirectoryInformationList;          
+		case 39: FSCCFileValidDataLengthInformation            FileValidDataLengthInformation;          
+		case 40: FSCCFileShortNameInformation                  FileShortNameInformation;                        
+		case 44: FSCCFileSfioReserveInformation                FileSfioReserveInformation;              
+		//case 45: FSCCFileSfioVolumeInformation               FileSfioVolumeInformation; - Windows file systems do not implement this file information class              
+		case 46: FSCCFileHardLinkInformation  				   FileHardLinkInformation;    
+		//case 48: FSCCFileNormalizedNameInformation           FileNormalizedNameInformation;- Windows file systems do not implement this file information class
+		case 50: FSCCFileIdGlobalTxDirectoryInformationList    FileIdGlobalTxDirectoryInformationList;
+		case 54: FSCCFileStandardLinkInformation	           FileStandardLinkInformation;
+	}
+}
+
+struct SMB2FileSystemInfo
+{
+	switch(conversation.FileInfoType$[SMBMID])
+	{
+		case 1:
+			FSCCFileFsVolumeInformation VolumeInformation;
+		case 2:
+			FSCCFileFsLabelInformation LabelInformation;
+		case 3:
+			FSCCFileFsSizeInformation SizeInformation;
+		case 4:
+			FSCCFileFsDeviceInformation DeviceInformation;
+		case 5:
+			FSCCFileFsAttributeInformation AttributeInformation;
+		case 6:
+			FSCCFileFsControlInformation ControlInformation;
+		case 7:
+			FSCCFileFsFullSizeInformation FullSizeInformation;
+		case 8:
+			FSCCFileFsObjectIdInformation ObjectIdInformation;
+		case 9:
+			FSCCFileFsDriverPathInformation DriverPathInformation;
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows, "SMB2", FormatString("SMB2: Unknown File System Info")) FileSystemInfoError;
+	}
+}
+
+// Set Information
+struct SMB2AdditionalInformation = FormatString("0x%X", this)
+{
+	switch(conversation.QueryInfoType$[SMBMID])
+	{
+		case 0x03:
+			SecurityInformation securityInformation;
+		default:
+			UINT32 AdditionalInformation = FormatString("0x%X", this)
+			{
+				UINT32 OWNER:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Owner Query" : "NOT Owner Query");
+				UINT32 GROUP:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Group Query" : "NOT Group Query");
+				UINT32 DACL:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Discretionary Access Control List Query" : "NOT Discretionary Access Control List Query");
+				UINT32 SACL:1 = FormatString("              (%s) %s", this.ToBitString, this ? "System Access Control List Query" : "NOT System Access Control List Query");
+				UINT32 LABEL:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Integrity Label Query" : "NOT Integrity Label Query");
+				UINT32 Reserved_bits5_31:27 = FormatString(" (%s) Reserved", this.TobitString);
+			};
+	}	
+}
+	
+[SMBSummary = SMBSummary + ", Class=" + FileInfoClass.ToString ]
+struct SMB2RequestSetInfo
+{
+	UINT16	StructureSize;
+	[conversation.QueryInfoType$[SMBMID] = InfoType]
+	UINT8  InfoType = SMB2SetInfoType(this);
+	[conversation.FileInfoType$[SMBMID] = FileInfoClass]
+	UINT8 FileInfoClass = SMB2CQueryInfoInformationClassTable(InfoType, this);
+	UINT32	BufferLength;
+	UINT16	BufferOffset;
+	UINT16	Reserved;
+	SMB2AdditionalInformation AdditionalInformation = FormatString("0x%X", UINT32(FrameData,FrameOffset));
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X", SMBFileIDVolatile)
+	]
+	switch
+	{
+		case FrameOffset < BufferOffset:
+			BLOB(BufferOffset - FrameOffset) BufferPadding;
+	}
+	switch
+	{
+		case BufferLength > 0 :
+			switch(conversation.QueryInfoType$[SMBMID])
+			{
+				case 0x01:
+					// SMB2_0_INFO_FILE
+					SMB2FileInfo FileInfo;
+				case 0x02:
+					// SMB2_0_INFO_FILESYSTEM
+					SMB2FileSystemInfo FileSystemInfo;
+				case 0x03:
+					//SMB2_0_INFO_SECURITY
+					SecurityDescriptorRelative SecurityDescriptor;
+				case 0x04:
+					//SMB2_0_INFO_QUOTA
+					FSCCFileQuotaInformationList QuotaInfoList;
+			}
+	}
+}
+Table SMB2SetInfoType(value)
+{
+	switch(value)
+	{
+		case 0x01: "File information will be set.";
+		case 0x02: "File system information will be set.";
+		case 0x03: "Security information will be set.";
+		case 0x04: "File system quota information is sought.";
+	}
+}
+	
+struct SMB2ResponseSetInfo
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	UINT16	StructureSize;
+}
+
+
+// Break oplock
+struct SMB2NotificationOplockBreak = SMB2OplockLevelBreakNotificationTable(OplockLevel)
+{
+	UINT16	StructureSize;
+	[Post.SMBSummary=SMBSummary+FormatString(", %s",SMB2OplockLevelBreakNotificationTable(this))]
+	UINT8	OplockLevel = SMB2OplockLevelBreakNotificationTable(this);
+	UINT8	Reserved;
+	UINT32	Reserved2;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X%s", SMBFileIDVolatile,Property.SMBFileName ? ", File=" + Property.SMBFileName + " " : "");
+	]
+	SMB2FileId	FileId;
+}
+
+struct SMB2AcknowledgmentOplockBreak = SMB2OplockLevelBreakAcknowledgmentTable(OplockLevel)
+{
+	UINT16	StructureSize;
+	[Post.SMBSummary=SMBSummary+FormatString(", %s",SMB2OplockLevelBreakAcknowledgmentTable(this))]
+	UINT8	OplockLevel = SMB2OplockLevelBreakAcknowledgmentTable(this);
+	UINT8	Reserved;
+	UINT32	Reserved2;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X%s", SMBFileIDVolatile,Property.SMBFileName ? ", File=" + Property.SMBFileName + " " : "");
+	]
+	SMB2FileId	FileId;
+}
+
+struct SMB2ResponseOplockBreak = SMB2OplockLevelBreakResponseTable(OplockLevel)
+{
+	UINT16	StructureSize;
+	[Post.SMBSummary=SMBSummary+FormatString(", %s",SMB2OplockLevelBreakResponseTable(this))]
+	UINT8	OplockLevel = SMB2OplockLevelBreakResponseTable(this);
+	UINT8	Reserved;
+	UINT32	Reserved2;
+	[
+		SMBFileIDPersistent = UINT64(FrameData,Offset),
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X%s", SMBFileIDVolatile,Property.SMBFileName ? ", File=" + Property.SMBFileName + " " : "");
+	]
+	SMB2FileId	FileId;
+}
+
+Struct SMB2LeaseBreakCurrentLeaseState = FormatString("0x%08X", LeaseState)
+{
+	UINT32 LeaseState
+	{
+		UINT32	READ:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A read caching lease is granted" : "");
+		UINT32	HANDLE:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A handle caching lease is granted" : "");
+		UINT32	WRITE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "A write caching lease is granted" : "");
+		UINT32	Reserved:29 = FormatString("    (%s) Reserved", this.TobitString);
+	}
+}
+
+struct SMB2NotificationLeaseBreak
+{
+	UINT16 StructureSize;
+	UINT16 Reserved;
+	UINT32 Flags = FormatString("0x%X", this)
+	{
+		UINT32	ACKRequired:1 = FormatString("		   (%s) %s", this.ToBitString, this ? "The Lease Break Acknowledgment is required." : "The Lease Break Acknowledgment is not required.");
+		UINT32  Reserved_bits31_31: 31 = FormatString("(%s) Reserved", this.TobitString);
+	};
+	Blob(16) LeaseKey;
+	SMB2LeaseBreakCurrentLeaseState CurrentLeaseState;
+	SMB2LeaseBreakCurrentLeaseState NewLeaseState = FormatString("%s", this == 0 ? "SMB2_LEASE_NONE":this.tostring);
+	UINT32 BreakReason;
+	UINT32 AccessMaskHint;
+	UINT32 ShareMaskHint;
+}
+
+struct SMB2AcknowledgmentLeaseBreak
+{
+	UINT16 StructureSize;
+	UINT16 Reserved;
+	UINT32 Flags;
+	Blob(16) LeaseKey;
+	UINT32 LeaseState = this == 0 ? "SMB2_LEASE_NONE,No lease is granted" : FormatString("0x%08X", this)
+	{
+		UINT32	READ:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A read caching lease is accepted" : "");
+		UINT32	HANDLE:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A handle caching lease is accepted" : "");
+		UINT32	WRITE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "A write caching lease is accepted" : "");
+		UINT32	Reserved:29 = FormatString("    (%s) Reserved", this.TobitString);
+	}
+	AsciiString(8) LeaseDuration; 
+}
+
+struct SMB2ResponseLeaseBreak
+{
+	UINT16 StructureSize;
+	UINT16 Reserved;
+	UINT32 Flags;
+	Blob(16) LeaseKey;
+	UINT32 LeaseState = this == 0 ? "SMB2_LEASE_NONE,No lease is granted" : FormatString("0x%08X", this)
+	{
+		UINT32	READ:1 = FormatString("        (%s) %s", this.ToBitString, this ? "A read caching lease is granted" : "");
+		UINT32	HANDLE:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A handle caching lease is granted" : "");
+		UINT32	WRITE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "A write caching lease is granted" : "");
+		UINT32	Reserved:29 = FormatString("    (%s) Reserved", this.TobitString);
+	}
+	AsciiString(8) LeaseDuration; 
+}
+
+// Lock
+struct SMB2Lock
+{
+	UINT64	Offset;
+	UINT64	Length;
+	UINT32	Flags = FormatString("0x%X", this)
+	{
+		UINT32	SharedLock:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Shared Lock" : "not Shared Lock");
+		UINT32	ExclusiveLock:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Exclusive Lock" : "not Exclusive Lock");
+		UINT32	Unlock:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Unlock" : "not Unlock");
+		UINT32  Reserved_bits3:1 = FormatString("     (%s) Reserved", this.TobitString);
+		UINT32	Fail:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Fail Immediately" : "dont Fail Immediately");
+		UINT32  Reserved_bits5_31: 27 = FormatString("(%s) Reserved", this.TobitString);
+	};
+	UINT32	Reserved;
+}
+
+struct SMB2RequestLock
+{
+	UINT16	StructureSize;
+	UINT16	LockCount;
+	UINT32	LockSequence;
+	SMB2FileId	FileId;
+	[
+		SMBFileIDPersistent = FileId.Persistent,
+		conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)] = SMBFileIDPersistent,
+		Post.Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		Post.BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+		Post.SMBSummary = SMBSummary + FormatString(", FID=0x%I64X", SMBFileIDVolatile)
+	]
+	SMB2Lock	Locks[LockCount];
+}
+
+struct SMB2ResponseLock
+{
+	[
+		conversation.SMBFileIDPersistentPerFrame$[FrameNumber] = conversation.SMBFileIDTable$[MakeByteArray(SMBSID, SMBMID)],
+		SMBFileIDPersistent = conversation.SMBFileIDPersistentPerFrame$[FrameNumber],
+		Property.SMBFileName = conversation.SMBFileNameTable$[SMBFileIDPersistent],
+		BuildConversationWithParent(Property.SMBFileName ? Property.SMBFileName : SMBFileIDPersistent != 0xFFFFFFFFFFFFFFFF ? SMBFileIDPersistent : -1),
+	 	Post.Conversation.ConversationDescription = Property.SMBFileName ? FormatString("(FileName: %s) ConvID = %d", Property.SMBFileName, ConvID) : FormatString("(FID: 0x%04X) ConvID = %d", SMBFileIDPersistent, ConvID),
+	]
+	UINT16	StructureSize;
+	UINT16	Reserved;
+}
+
+table SMBSymbolicLinkErrorResponseTable(value)
+{
+	switch(value)
+	{
+		case 0: "The substitute name is an absolute target path name";
+		case 1:"The substitute name is a path name relative to the directory containing the symbolic link";
+		default:FormatString("Undefined Value(%d)", value);
+	}
+}

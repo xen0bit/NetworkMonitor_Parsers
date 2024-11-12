@@ -1,0 +1,883 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Secure Sockets Layer (SSL)
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2246
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/12/2010
+//#                          Minor, 5/14/2010
+//#
+//####
+
+Protocol SSL = FormatString( "%s%s", Property.SSLSummary, (Property.SSLNeedReassemble)? " (needs reassembly)":"" )
+{
+	switch
+	{
+		case !conversation.SSL.Id:
+			[BuildConversationWithParent]
+			_struct _BuildSSLConversation{};
+	}
+	[
+		Conversation.SSLTotalLengthTempMVS$[Framenumber] = Conversation.SSLTotalLengthMVS,
+		Property.SSLTotalLength = Conversation.SSLTotalLengthTempMVS$[Framenumber],
+		Post.Conversation.SSLTotalLengthMVS = Property.SSLTotalLength
+	]
+	[
+		Conversation.SSLCurrentLengthTempMVS$[Framenumber] = Conversation.SSLCurrentLengthMVS,
+		Property.SSLCurrentLength = Conversation.SSLCurrentLengthTempMVS$[Framenumber],
+		Post.Conversation.SSLCurrentLengthMVS = Property.SSLCurrentLength
+	]
+	[ Property.SSLv3RecLayerCnt = 0 ]
+	[ PostAfter.Property.SSLCurrentLength = TCP.Flags.Push == 0 ? Property.SSLCurrentLength : (( Property.SSLCurrentLength + Offset - Property.SSLStartOffset ) == Property.SSLTotalLength ) ? 0 : Property.SSLCurrentLength + Offset - Property.SSLStartOffset ]
+	[ PostAfter.Property.SSLIsLast = TCP.Flags.Push == 0 ? Property.SSLIsLast : Property.SSLCurrentLength == 0 ? true : false ]
+	[
+		PostAfter.payloadstart(
+			NetworkDirection, /* direction */
+			0, /* id */
+			TCPSeqNumber, /* sequence token */
+			TCPNextSeqNumber, /* next sequence token */
+			0, /* total payload length */
+			Property.SSLIsFirst, /* is first */
+			Property.SSLIsLast, /* is last */
+			RssmblyIndStartBit + RssmblyIndEndBit + RssmblySequenceBit + RssmblySelfBit
+		)
+	]
+	_Struct
+	{
+		Switch
+		{
+			case (Property.SSLCurrentLength.IsValueNone || Property.SSLCurrentLength == 0) || ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x00 && UINT8( Framedata, Offset ) > 13 && UINT8( Framedata, Offset ) < 18):
+			[ Property.SSLIsFirst = true ]
+			_Struct {}
+		}
+		Switch
+		{
+		Case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x00 ):
+			While SslRecLayer[FrameLength - Offset > 0] 
+			{
+				[Property.SSLStartOffset = Offset]
+				[Property.SSLv3RecLayerCnt = Property.SSLv3RecLayerCnt + 1]
+				SSLv3RecordLayer SslV3RecordLayer;
+			}
+		Default:
+		[Property.SSLStartOffset = Offset]
+		_Struct
+		{
+			switch(UINT8( Framedata, Offset ) & 0x80)
+			{
+				Case 0x80:
+					[Property.SSLTotalLength = ( Property.SSLIsFirst ? (((UINT8( Framedata, Offset ) & 0x7f) << 8) | UINT8( Framedata, Offset + 1 ) + 2 ) : Property.SSLTotalLength )]
+					switch
+						{
+							Case Property.SSLIsFirst:
+								SSLv2RecordLayer SslV2RecordLayer;
+							Default:
+								[ Property.SSLSummary = Property.SSLSummary + "Continued Data: " + FormatString( "%d", ( Property.SSLCurrentLength + FrameLength - Offset ) > Property.SSLTotalLength ? Property.SSLTotalLength - Property.SSLCurrentLength : FrameLength - Offset ) + " Bytes" ]
+								[ Property.SSLCurrentLengthTemp = Property.SSLCurrentLength ]
+								BLOB( ( Property.SSLCurrentLengthTemp + FrameLength - Offset ) > Property.SSLTotalLength ? Property.SSLTotalLength - Property.SSLCurrentLengthTemp : FrameLength - Offset ) ContinuedSSLData;
+
+						}
+					
+				Case 0x00:
+					[Property.SSLTotalLength = ( Property.SSLIsFirst ? (((UINT8( Framedata, Offset ) & 0x3f) << 8) | UINT8( Framedata, Offset + 1 ) + 3 ) : Property.SSLTotalLength )]
+					switch
+					{
+						Case Property.SSLIsFirst:
+							SSLv2RecordLayer SslV2RecordLayer;
+						Default:
+							[ Property.SSLSummary = Property.SSLSummary + "Continued Data: " + FormatString( "%d", ( Property.SSLCurrentLength + FrameLength - Offset ) > Property.SSLTotalLength ? Property.SSLTotalLength - Property.SSLCurrentLength : FrameLength - Offset ) + " Bytes" ]
+							[ Property.SSLCurrentLengthTemp = Property.SSLCurrentLength ]
+							BLOB( ( Property.SSLCurrentLengthTemp + FrameLength - Offset ) > Property.SSLTotalLength ? Property.SSLTotalLength - Property.SSLCurrentLengthTemp : FrameLength - Offset ) ContinuedSSLData;
+					}
+			}
+		}
+	}
+	}
+	
+}
+
+[EmbeddedProtocol, Property.SSLSummary = " ", BuildConversationWithParent, Property.SSLVersionSelector = " "]
+Protocol SSLVersionSelector = Property.SSLVersionSelector
+{
+	[
+		Conversation.ConversationDescription = 
+		Conversation.SSL.ConversationDescription ? Conversation.SSL.ConversationDescription : 
+		(
+			(Property.SourcePort && Property.DestinationPort ? FormatString("(%u - %u) ", Property.SourcePort, Property.DestinationPort) : "") +
+			(FormatString("ConvID = %d", ConvID))
+		),
+		Conversation.SSLChangeCipherSpecTempMVS$[Framenumber] = Conversation.SSLChangeCipherSpecMVS$[Property.SourceNetworkAddress, Property.DestinationNetworkAddress],
+		Property.SSLMeetChangeCipherSpec = Conversation.SSLChangeCipherSpecTempMVS$[Framenumber],
+		Post.Conversation.SSLChangeCipherSpecMVS$[Property.SourceNetworkAddress, Property.DestinationNetworkAddress] = Property.SSLMeetChangeCipherSpec
+	]
+	Switch
+	{
+		Case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x00 ):
+		Case ( UINT8( Framedata, Offset + 3 ) == 0x03 && UINT8( Framedata, Offset + 4 ) == 0x00 ):
+		Case ( UINT8( Framedata, Offset + 3 ) == 0x03 && UINT8( Framedata, Offset + 4 ) == 0x01 ):
+			[Property.SSLVersionSelector = "Secure Sockets Layer (SSL) Payload Data"]SSL SSL;
+		Case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x01 ):
+		Case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x02 ):
+		Case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x03 ):
+		Case Conversation.TLSLayer == true:
+			[Property.SSLVersionSelector = "Transport Layer Security (TLS) Payload Data"]
+			[Conversation.TLSLayer = true]
+			TLS TLS;
+		Default:
+		switch
+		{
+			case TCP.Port == 1433:
+			case ProtocolBlock.Port == 1433:
+			while [FrameOffset + 8 <= FrameLength]
+			{
+				switch
+				{
+					case UINT8( Framedata, Offset ) == 0x53:
+						[Property.SSLVersionSelector = "Session Multiplex Protocol (SMP) Payload Data"]SMP Smp;
+					default:
+						[Property.SSLVersionSelector = "Tabular Data Stream (TDS) Payload Data"]TDS Tds;
+				}
+			}
+			Default: 
+				[Property.SSLVersionSelector = "Secure Sockets Layer (SSL) Payload Data"]SSL SSL;
+		}
+	}
+}
+
+Table SSLContentTypeTable( ContentType )
+{
+	Switch( ContentType )
+	{
+		Case 0x14:	"Cipher Change Spec";
+		Case 0x15:	"Encrypted Alert";
+		Case 0x16:	"HandShake:";
+		Case 0x17:	"SSL Application Data";
+		Default  :	"Unknown Content Type";
+	}
+}
+
+Table SSLHandShakeTypeTable( HandShakeType )
+{
+	Switch( HandShakeType )
+	{
+		Case 0x00:	"Hello Request(0x00)";
+		Case 0x01:	"ClientHello(0x01)";
+		Case 0x02:	"ServerHello(0x02)";
+		Case 0x0B:	"Certificate(0x0B)";
+		Case 0x0C:	"Server Key Exchange(0x0C)";
+		Case 0x0D:	"Certificate Request(0x0D)";
+		Case 0x0E:	"Server Hello Done(0x0E)";
+		Case 0x0F:	"Certificate Verify(0x0F)";
+		Case 0x10:	"Client Key Exchange(0x10)";
+		Case 0x14:	"Finished(0x14)";
+		Case 0x15:	"Certificate URL(0x15)";
+		Case 0x16:	"Certificate Status(0x16)";
+		Case 0x17:	"Supplemental Data Message(0x17)";
+		Default  :  "Encrypted Handshake Message";
+	}
+}
+
+Table SSLV2CipherSpecsTable( Cipher )
+{
+	Switch( Cipher )
+	{
+		Case 0x010080: "SSL_CK_RC4_128_WITH_MD5	";
+		Case 0x020080: "SSL_CK_RC4_128_EXPORT40_WITH_MD5";
+		Case 0x030080: "SSL_CK_RC2_128_CBC_WITH_MD5";
+		Case 0x040080: "SSL_CK_RC2_128_CBC_EXPORT40_WITH_MD5";
+		Case 0x050080: "SSL_CK_IDEA_128_CBC_WITH_MD5";
+		Case 0x060040: "SSL_CK_DES_64_CBC_WITH_MD5";
+		Case 0x0700C0: "SSL_CK_DES_192_EDE3_CBC_WITH_MD5";
+		Default      : TLSCipherSuitesTable(Cipher);
+    }
+}
+
+Table SSLV3CipherSuitesTable( Cipher )
+{
+	Switch( Cipher )
+	{
+		Case 0x0000: "SSL_NULL_WITH_NULL_NULL               { 0x00,0x00 }";
+		Case 0x0001: "SSL_RSA_WITH_NULL_MD5                 { 0x00,0x01 }";
+		Case 0x0002: "SSL_RSA_WITH_NULL_SHA                 { 0x00,0x02 }";
+		Case 0x0003: "SSL_RSA_EXPORT_WITH_RC4_40_MD5        { 0x00,0x03 }";
+		Case 0x0004: "SSL_RSA_WITH_RC4_128_MD5              { 0x00,0x04 }";
+		Case 0x0005: "SSL_RSA_WITH_RC4_128_SHA              { 0x00,0x05 }";
+		Case 0x0006: "SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5    { 0x00,0x06 }";
+		Case 0x0007: "SSL_RSA_WITH_IDEA_CBC_SHA             { 0x00,0x07 }";
+		Case 0x0008: "SSL_RSA_EXPORT_WITH_DES40_CBC_SHA     { 0x00,0x08 }";
+		Case 0x0009: "SSL_RSA_WITH_DES_CBC_SHA              { 0x00,0x09 }";
+		Case 0x000A: "SSL_RSA_WITH_3DES_EDE_CBC_SHA         { 0x00,0x0A }";
+
+		Case 0x000B: "SSL_DH_DSS_EXPORT_WITH_DES40_CBC_SHA  { 0x00,0x0B }";
+		Case 0x000C: "SSL_DH_DSS_WITH_DES_CBC_SHA           { 0x00,0x0C }";
+		Case 0x000D: "SSL_DH_DSS_WITH_3DES_EDE_CBC_SHA      { 0x00,0x0D }";
+		Case 0x000E: "SSL_DH_RSA_EXPORT_WITH_DES40_CBC_SHA  { 0x00,0x0E }";
+		Case 0x000F: "SSL_DH_RSA_WITH_DES_CBC_SHA           { 0x00,0x0F }";
+		Case 0x0010: "SSL_DH_RSA_WITH_3DES_EDE_CBC_SHA      { 0x00,0x10 }";
+		Case 0x0011: "SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA { 0x00,0x11 }";
+		Case 0x0012: "SSL_DHE_DSS_WITH_DES_CBC_SHA          { 0x00,0x12 }";
+		Case 0x0013: "SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA     { 0x00,0x13 }";
+		Case 0x0014: "SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA { 0x00,0x14 }";
+		Case 0x0015: "SSL_DHE_RSA_WITH_DES_CBC_SHA          { 0x00,0x15 }";
+		Case 0x0016: "SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA     { 0x00,0x16 }";
+
+		Case 0x0017: "SSL_DH_anon_EXPORT_WITH_RC4_40_MD5    { 0x00,0x17 }";
+		Case 0x0018: "SSL_DH_anon_WITH_RC4_128_MD5          { 0x00,0x18 }";
+		Case 0x0019: "SSL_DH_anon_EXPORT_WITH_DES40_CBC_SHA { 0x00,0x19 }";
+		Case 0x001A: "SSL_DH_anon_WITH_DES_CBC_SHA          { 0x00,0x1A }";
+		Case 0x001B: "SSL_DH_anon_WITH_3DES_EDE_CBC_SHA     { 0x00,0x1B }";
+		Case 0x001C: "SSL_FORTEZZA_DMS_WITH_NULL_SHA        { 0X00,0X1C }";
+		Case 0x001D: "SSL_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA{ 0x00,0x1D }";
+		Case 0x001E: "SSL_FORTEZZA_KEA_WITH_RC4_128_SHA		{ 0x00,0x1E }";
+		Default: SSLV2CipherSpecsTable( Cipher );
+	}
+}
+
+Table SSLClientCertificateTypeTable( Cert )
+{
+    Switch( Cert )
+    {
+		Case 0x01:	"RSA_SIGN(0x01)";
+		Case 0x02:	"DSS_SIGN(0x02)";
+		Case 0x03:	"RSA_FIXED_DH(0x03)";
+		Case 0x04:	"DSS_FIXED_DH(0x04)";
+		Case 0x05:	"RSA_EPHEMERAL_DH(0x05)";
+		Case 0x06:	"DSS_EPHEMERAL_DH(0x06)";
+		Case 0x14:	"FORTEZZA_DMS(0x14)";
+        Case 0x40:  "ECDSA_SIGN(0x40)";
+        Case 0x41:  "RSA_FIXED_ECDH(0x41)";
+        Case 0x42:  "ECDSA_FIXED_ECDH(0x42)";
+		Default  :  "Unknown Client Certificate";
+    }
+}
+
+//
+//rfc 4366	2.3 Hello Extensions
+//
+Table SSLExtensionTypeTable( Extn )
+{
+    Switch( Extn )
+    {
+        Case 0x0000: "Server Name(0x0000)";
+        Case 0x0001: "Max Fragment Length(0x0001)";
+        Case 0x0002: "Client Certificate URL(0x0002)";
+        Case 0x0003: "Trusted CA Keys(0x0003)";
+        Case 0x0004: "Truncated HMAC(0x0004)";
+        Case 0x0005: "Status Request(0x0005)";
+        Case 0x0006: "User Mapping(0x0006)";
+        Case 0x000A: "Elliptic Curves(0x000A)";
+        Case 0x000B: "EC Point Formats(0x000B)";
+        Case 0x000C: "Srp(0x000C)";
+        Case 0x000D: "Signature Algorithms(0x000D)";
+        Case 0x000E: "Use Srtp(0x000E)";
+        Case 0x0023: "SessionTicket TLS(0x0023)";
+        Case 0xFF01: "Renegotiation Info(0xFF01)";
+		Default    : "Unknown Extension Type";
+    }
+}
+
+Table SSLServerNameTypes( NameType )
+{
+    switch( NameType )
+    {
+        case 0:     "Host Name (0)";
+        default:    FormatString("Unknown Name Type (%u)",NameType );
+    }
+}
+
+Table SSLCertificateStatusTypeTable( Status )
+{
+    Switch( Status )
+    {
+        Case 0x01: "OCSP Response(0x01)";
+        Default  : "Unknown Status Type";
+    }
+}
+
+Struct SSLVersion = TLSVersionTable( Major , Minor )
+{
+	UINT8	Major;
+	UINT8	Minor;
+}
+
+Struct SSLRandom
+{
+    UNIXTIMESTAMP TimeStamp;
+	BLOB( 28 )	RandomBytes;
+}
+
+Struct SSLExtension = ExtensionType.ToString
+{
+    UINT16 ExtensionType = SSLExtensionTypeTable( this );
+    UINT16 ExtensionLength;
+    [ExtensionEnd = Offset + ExtensionLength]
+    Switch( ExtensionType)
+    {
+		case 0x0000:
+		struct
+			{
+				switch
+				{
+					case Property.ClientHelloExtension:
+						_struct
+						{
+								//RFC 4366, sec 3.1
+								[NameListEnd = Offset + this]
+								UINT16                  NameListLength;
+								while ServerNameList[ Offset < NameListEnd ]
+								{
+									UINT8                   NameType = SSLServerNameTypes(this);
+									UINT16                  NameLength;
+									AsciiString(NameLength) ServerName;
+								}
+						}
+				}
+			}
+
+        Case 0x000A:
+		_Struct
+		{
+			UINT16 CurvesLength;
+	        While NamedCurveList[ Offset < ExtensionEnd ] {            
+	        	UINT16 NamedCurve = TLSNamedCurveTable( this );
+	        }
+		}
+
+        Case 0x000B:
+		_Struct
+		{
+			UINT8 ECPointLength;
+	        While ECPointFormatList[ Offset < ExtensionEnd ]
+	        {
+	            UINT8 ECPointFormat = TLSEcPointFormatTable( this );
+	        }
+		}
+
+        Default: BLOB( ExtensionLength ) Data;
+    }    
+}
+
+Struct SSLv2Header
+{
+	[PostAfter.Property.SSLNeedReassemble = (FrameLength < FrameOffset + Property.DataLength)]
+	switch(UINT8( Framedata, Offset ) & 0x80)
+	{		
+		Case 0x80:		
+		[Property.DataLength = ((UINT8( Framedata, Offset ) & 0x7f) << 8) | UINT8( Framedata, Offset + 1 )]
+		struct
+		{
+			UINT16 Length = FormatString( "%d (0x%0X)", Property.DataLength, Property.DataLength);
+		}
+		
+		Case 0x00:
+		[Property.DataLength = ((UINT8( Framedata, Offset ) & 0x3f) << 8) | UINT8( Framedata, Offset + 1 )]		
+		struct
+		{
+			UINT16 Length = FormatString( "%d (0x%0X)", Property.DataLength, Property.DataLength);
+			UINT8 Padding = FormatString( "%d (0x%0X)", UINT8( Framedata, Offset ),  UINT8( Framedata, Offset ));
+		}
+	}
+}
+
+Table SSLv2HandShakeTypeTable( HandShakeType )
+{
+	Switch( HandShakeType )
+	{
+		Case 0x00:	"Error";
+		Case 0x01:	"ClientHello (0x01)";
+		Case 0x02:	"Client Master Key (0x02)";
+		Case 0x03:	"Client Finished";
+		Case 0x04:	"ServerHello (0x04)";
+		Case 0x05:	"Server Verify";
+		Case 0x06:	"Server Finished";
+		Case 0x07:    "Request Certificate";
+		Case 0x08:    "Client Certificate";
+		Default:      "Encrypted Application Data";	
+	}
+}
+
+[Property.SSLSummary = "SSLv2RecordLayer, "]
+Struct SSLv2RecordLayer
+{	
+	SSLv2Header Header;
+	
+	[ Conversation.IsEncryptedTempMVS$[framenumber] = Conversation.IsEncrypted ]
+	Switch(Conversation.IsEncryptedTempMVS$[framenumber] && MediaType != 0xFFFA)
+	{
+		Case  true:
+			[Property.SSLSummary = Property.SSLSummary + "Encrypted Application Data"]
+			SSLApplicationData(Property.DataLength) EncryptedData;
+		Default:
+			Switch( UINT8( Framedata, Offset ))
+			{
+				Case 0x00:	SSLErrorV2		  	  Error;
+				Case 0x01:	SSLClientHelloV2     	 ClientHello;
+				Case 0x02:	
+					[Conversation.IsEncrypted = true]
+					SSLClientMasterKeyV2	  ClientMasterKey;
+				Case 0x03:	SSLClientFinishedV2  	 ClientFinished;
+				Case 0x04:	ServerHelloV2     	 ServerHello;
+				Case 0x05:	SSLServerVerifyV2    	 ServerVerify;
+				Case 0x06:	SSLServerFinishedV2  	 ServerFinished;
+				Case 0x07:    SSLRequestCertificateV2   RequestCertificate;
+				Case 0x08:    SSLClientCertificateV2    ClientCertificate;
+				Default  :		
+					[Property.SSLSummary = Property.SSLSummary + "Encrypted Application Data"]
+					SSLApplicationData(Property.DataLength) EncryptedData;
+			}  
+	}
+}
+
+Struct SSLApplicationData(DataLength)
+{
+	switch
+	{
+		case MediaType == 0xFFFA:
+			switch (DecryptedPayloadHeader.Port)
+			{
+				case 636:
+					LDAP LDAPs;
+				case 443:
+					HTTP HTTPs;
+				case 563:
+					NNTP NNTPs;
+				case 465:
+					SMTP SMTPs;
+				case 995:
+					POP3 POP3s;
+				case 993:
+					IMAP IMAPs;
+			}
+		case Property.IsLDAPOverSSL:
+			LDAP LDAPOverSSL;
+		case Property.IsLDAPGlobalCatalogOverSSL:
+			LDAP MSFTGCOverSSL;
+		default:
+			BLOB( DataLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : DataLength ) SSLApplicationData;
+	}
+}
+
+Struct SSLv3RecordLayer = "SSLv3 Rec Layer-" + FormatString("%d ",Property.SSLv3RecLayerCnt) + SSLContentTypeTable( ContentType )
+{
+	[
+		SSLRecordLayerType,
+		Post.Property.SSLSummary = Property.SSLSummary + (Property.SSLSummary.Contains("SSLv3") ? "; ":"") + "SSLv3 Rec Layer-" + FormatString("%d ",Property.SSLv3RecLayerCnt) + SSLContentTypeTable( ContentType )
+	]
+	UINT8	ContentType = SSLContentTypeTable( this );
+	[Post.Property.SSLVersion="SSLV3"]
+	SSLVersion	Version;
+	[DataFieldByteOrder = BigEndian, RecordLayerLength = this,
+	 PostAfter.Property.SSLNeedReassemble = (FrameLength < FrameOffset + this)]
+	[Property.SSLTotalLength = this + 5]
+	UINT16	Length;
+	[SSLHSOffset1 = FrameOffset]
+	Switch ( SSLRecordLayerType )
+	{
+		Case 0x14: 
+			[Property.SSLMeetChangeCipherSpec = true]
+			SSLChangeCipherSpec ChangeCipherSpec;
+		Case 0x15: BLOB( Length ) EncryptedData; // SSLAlert
+		Case 0x16: SSLHandShake(Length) SSLHandshake;
+		Case 0x17: SSLApplicationData(Length) ApplicationData;
+	}
+
+}
+
+Struct SSLChangeCipherSpec {
+    UINT8 ChangeCipherSpecValue;
+}
+
+Struct SSLHandShake(TotalLength) = "SSL HandShake " + Property.SSLHandShakeType
+{
+	Switch (Property.SSLMeetChangeCipherSpec == true && MediaType != 0xFFFA)
+	{
+		Case true:
+			[Property.SSLSummary = Property.SSLSummary + " Encrypted Handshake Message.", Property.TLSSummary = Property.TLSSummary + " Encrypted Handshake Message."] BLOB( RecordLayerLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : RecordLayerLength ) EncryptedHandshakeMessage;
+		Default:
+			While HandShake[ FrameOffset - SSLHSOffset1 < RecordLayerLength ]
+			{
+				[SSLHandShakeType = this.ToString]
+				UINT8 HandShakeType = SSLHandShakeTypeTable( this );
+				Switch ( HandShakeType )
+				{
+					Case 0x00:
+					Case 0x01:
+					Case 0x02:
+					Case 0x0B:
+					Case 0x0C:
+					Case 0x0D:
+					Case 0x0E:
+					Case 0x0F:
+					Case 0x10:
+					Case 0x14:
+					Case 0x15:
+					Case 0x16:
+					Case 0x17:
+					Case 0xFF:
+					Struct
+					{
+						[DataFieldByteOrder = BigEndian, HandshakeLength = this ]
+						UINT24	Length;
+						[HandshakeEndOffset = Offset + HandshakeLength]
+						Switch ( HandShakeType )
+						{
+							Case 0x00: [Property.SSLSummary = Property.SSLSummary + " Hello Request.", Property.TLSSummary = Property.TLSSummary + " Hello Request."]BLOB ( TotalLength - 1 > FrameLength - FrameOffset ? FrameLength - FrameOffset : TotalLength - 1  ) HelloRequest;
+							Case 0x01: [Property.SSLSummary = Property.SSLSummary + " Client Hello.", Property.TLSSummary = Property.TLSSummary + " Client Hello."]SSLClientHello ClientHello;
+							Case 0x02: [Property.SSLSummary = Property.SSLSummary + " Server Hello.", Property.TLSSummary = Property.TLSSummary + " Server Hello."]SSLServerHello ServerHello;
+							Case 0x0B: [Property.SSLSummary = Property.SSLSummary + " Certificate.", Property.TLSSummary = Property.TLSSummary + " Certificate."]SSLCertificate Cert;
+							Case 0x0C: [Property.SSLSummary = Property.SSLSummary + " Server Key Exchange.", Property.TLSSummary = Property.TLSSummary + " Server Key Exchange."]BLOB ( Length ) ServerKeyExchange;
+							Case 0x0D: [Property.SSLSummary = Property.SSLSummary + " Certificate Request.", Property.TLSSummary = Property.TLSSummary + " Certificate Request."]SSLCertificateRequest CertRequest;
+							Case 0x0E: [Property.SSLSummary = Property.SSLSummary + " Server Hello Done.", Property.TLSSummary = Property.TLSSummary + " Server Hello Done."]
+										Switch {
+											Case FrameLength - Offset > 0: BLOB ( Length > FrameLength - FrameOffset ? FrameLength - FrameOffset : Length ) ServerHelloDone;
+										}
+							Case 0x0F: [Property.SSLSummary = Property.SSLSummary + " Certificate Verify.", Property.TLSSummary = Property.TLSSummary + " Certificate Verify."]BLOB ( Length ) CertificateVerify;
+							Case 0x10: [Property.SSLSummary = Property.SSLSummary + " Client Key Exchange.", Property.TLSSummary = Property.TLSSummary + " Client Key Exchange."]BLOB ( Length ) ClientKeyExchange;
+							Case 0x14: [Property.SSLSummary = Property.SSLSummary + " Finished.", Property.TLSSummary = Property.TLSSummary + " Finished."]BLOB ( Length ) Finished;
+							Case 0x16: [Property.SSLSummary = Property.SSLSummary + " Certificate Status.", Property.TLSSummary = Property.TLSSummary + " Certificate Status."]SSLCertificateStatus CertStatus;
+							Case 0x17: [Property.SSLSummary = Property.SSLSummary + " Supplemental Data Message.", Property.TLSSummary = Property.TLSSummary + " Supplemental Data Message."]SSLSupplementalDataMsg SupplementalData;
+
+						}
+					}
+		       
+					Default: [Property.SSLSummary = Property.SSLSummary + " Encrypted Handshake Message.", Property.TLSSummary = Property.TLSSummary + " Encrypted Handshake Message."] BLOB( TotalLength - 1 > FrameLength - FrameOffset ? FrameLength - FrameOffset : TotalLength - 1 ) EncryptedHandshakeMessage;
+				}
+			}
+	}
+}
+
+Struct SSLClipherSuite=SSLV3CipherSuitesTable(Cipher)
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT16 Cipher;
+}
+
+Struct SSLCipherSpecs = SSLV2CipherSpecsTable( CipherSpec )
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT24 CipherSpec;
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLClientHelloV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	SSLVersion	Version;
+	UINT16 CipherSpecLength = FormatString( "%d", this );
+	UINT16 SessionIDLength;
+	UINT16 ChallengeLength = FormatString( "%d", this );
+    Switch ( CipherSpecLength )
+	{
+		Case 0x00 : Struct{};
+		Default : SSLCipherSpecs Ciphers[CipherSpecLength / 3];
+	}
+
+    Switch ( SessionIDLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( SessionIDLength )	SessionID;
+	}
+
+    Switch ( ChallengeLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( ChallengeLength )	Challenge;
+	}
+}
+
+Struct SSLClientHello = Version.ToString 
+{
+	SSLVersion Version;
+	SSLRandom	RandomBytes;
+	UINT8	SessionIDLength;
+	Switch ( SessionIDLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( SessionIDLength )	SessionID;
+	}
+	[DataFieldByteOrder = BigEndian]
+	UINT16	CipherSuitesLength = FormatString( "%d", this );
+	Switch ( CipherSuitesLength )
+	{
+		Case 0x00 : Struct{};
+		Default:
+		Struct
+		{
+			Switch(Property.SSLVersion)
+			{
+				Case "TLS":
+				TLSCipherSuite TLSCipherSuites[CipherSuitesLength / 2];
+				Case "SSLV3":
+				SSLClipherSuite SSLCipherSuites[CipherSuitesLength / 2];
+			}
+		}
+	}
+	UINT8 CompressionMethodsLength;
+	UINT8 CompressionMethods[1];
+	[DataFieldByteOrder = BigEndian]
+	UINT16 ExtensionsLength;
+	[ExtnOffset = Offset + ExtensionsLength]
+	While Extns[ Offset < ExtnOffset] {
+		[Property.ClientHelloExtension = True]
+		SSLExtension ClientHelloExtension;
+	}
+}
+
+Table SSLCertificateType( Type )
+{
+    Switch( Type )
+    {
+        Case 0x01: "X.509 Certificate";
+        Default  : "Unknown Certificate Format";
+    }
+}
+
+Table SSLAuthenticationType( Type )
+{
+    Switch( Type )
+    {
+        Case 0x01: "SSL_AT_MD5_WITH_RSA_ENCRYPTION Authentication";
+        Default  : "Unknown Authentication Format";
+    }
+}
+
+Table SSLErrorTypeV2( Type )
+{
+    Switch( Type )
+    {
+        Case 0x0001: "SSL_PE_NO_CIPHER";
+		Case 0x0002: "SSL_PE_NO_CERTIFICATE";
+		Case 0x0004: "SSL_PE_BAD_CERTIFICATE";
+		Case 0x0006: "SSL_PE_UNSUPPORTED_CERTIFICATE_TYPE";
+        Default  : "Unknown Authentication Format";
+    }
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct ServerHelloV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	[ SessionIDHit == 0 ? Conversation.IsEncrypted = false : Conversation.IsEncrypted = true]
+	UINT8 SessionIDHit = FormatString("Session ID Hit: %s", this ? "TRUE" : "FALSE");
+	UINT8 CertificateType = FormatString("Certificate Type: %s", SSLCertificateType(this));
+	SSLVersion Version;
+	UINT16 CertificateLength = FormatString(  "%d (0x%0X)", this, this);
+	UINT16 CipherSpecLength = FormatString(   "%d (0x%0X)", this, this);
+	UINT16 ConnectionIDLength = FormatString( "%d (0x%0X)", this, this);
+	
+	Switch ( CertificateLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( CertificateLength )	Certificate;
+	}
+	Switch ( CipherSpecLength )
+	{
+		Case 0x00 : Struct{};
+		Default : SSLCipherSpecs Ciphers[CipherSpecLength / 3];
+	}
+    Switch ( ConnectionIDLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( ConnectionIDLength )	ConnectionID;
+	}
+}
+
+Struct SSLServerHello
+{
+	SSLVersion Version;
+	SSLRandom	RandomBytes;
+	UINT8	SessionIDLength;
+	Switch ( SessionIDLength )
+	{
+		Case 0x00 : Struct{};
+		Default : BLOB( SessionIDLength ) SessionID;
+	}
+	Switch(Property.SSLVersion)
+	{
+		Case "TLS":
+			UINT16	TLSCipherSuite = TLSCipherSuitesTable( this );
+		Case "SSLV3":
+			UINT16	SSLCipherSuite = SSLV3CipherSuitesTable( this );
+	}
+	UINT8 CompressionMethods[1];
+    Switch
+    {
+        Case Offset < HandshakeEndOffset:
+        _Struct
+        {
+            UINT16 ExtensionsLength;
+            [ExtensionOffset = Offset + ExtensionsLength]
+            While Extensions[ Offset < ExtensionOffset] {
+                SSLExtension ServerHelloExtension;
+            }
+        }
+    }	
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLClientMasterKeyV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	SSLCipherSpecs CipherSpec;
+	UINT16 ClearKeyDataLength;
+	UINT16 EncryptedKeyDataLength;
+	UINT16 KeyArgumentLength;
+	Switch ( ClearKeyDataLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( ClearKeyDataLength )	ClearData;
+	}
+	Switch ( EncryptedKeyDataLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( EncryptedKeyDataLength )	EncryptedKey;
+	}
+	Switch ( KeyArgumentLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( KeyArgumentLength )	KeyArgument;
+	}
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLClientFinishedV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	BLOB (Property.DataLength - 1) ConnectionID;
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLServerFinishedV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	BLOB (Property.DataLength - 1) SessionID;
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLServerVerifyV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	BLOB (Property.DataLength - 1) ChallengeData;
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLClientCertificateV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	UINT8 CertificateType = FormatString("Certificate Type: %s", SSLCertificateType(this));
+    UINT16 CertificateLength = FormatString(  "%d (0x%0X)", this, this);
+	UINT16 ResponseLength = FormatString(   "%d (0x%0X)", this, this);	
+	Switch ( CertificateLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( CertificateLength )	Certificate;
+	}
+	Switch ( ResponseLength )
+	{
+		Case 0x00 : Struct{};
+		Default : Blob( ResponseLength )	ResponseData;
+	}
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLRequestCertificateV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	UINT8 AuthenticationType = FormatString("Authentication Type: %s", SSLAuthenticationType(this));
+	BLOB( Property.DataLength - 2 ) CertificateChallengeData;
+}
+
+[Property.SSLSummary = Property.SSLSummary + HandShakeMessageType.ToString]
+Struct SSLErrorV2
+{
+	UINT8 HandShakeMessageType = SSLv2HandShakeTypeTable( this );
+	UINT16 ErrorType = FormatString("Error Type: %s", SSLErrorTypeV2(this));
+}
+
+Struct SSLCert
+{
+    UINT24 CertificateLength;
+    X509Certificate X509Cert;
+}
+
+Struct SSLCertificate
+{
+    UINT24 CertLength;
+    [CertificateOffset = FrameOffset + CertLength]
+    While Certs[ FrameOffset < CertificateOffset ] {
+        SSLCert Certificates;
+    }
+}
+
+Struct SSLClientCertificateType = SSLClientCertificateTypeTable( CertType )
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT8 CertType;
+}
+
+Struct SSLCertificateRequest
+{
+    UINT8 CertificatesNum;
+    SSLClientCertificateType CertificateTypes[ CertificatesNum ];
+    [SslDistinguishedNameEnd = Offset + CertificateAuthorityLength]
+    UINT16 CertificateAuthorityLength;
+    While DistinguishedNames[ Offset < SslDistinguishedNameEnd ] { 
+	    UINT16 DistinguishedNameLength;
+	    X509DistinguishedName DistinguishedName;
+    }
+}
+
+Struct SSLOcspResponse
+{
+    UINT24 OCSPResponseLength;
+    OCSPResponse OCSPResponseData;
+}
+
+Struct SSLCertificateStatus
+{
+    UINT8 CertificateStatusType = SSLCertificateStatusTypeTable( this );
+    Switch( CertificateStatusType )
+    {
+        Case 0x01: SSLOcspResponse OcspResponse;
+        Default:
+        Struct 
+        {
+            UINT24 Length;
+            BLOB( Length ) CertificateStatusData;
+        }
+    }
+}
+
+Struct SSLUpnDomainHint
+{
+    UINT16 UserPrincipalNameLength;
+    AsciiString (UserPrincipalNameLength) UserPrincipalName;
+    UINT16 DomainNameLength;
+    AsciiString (DomainNameLength) DomainName;
+}
+
+Struct SSLUserMappingData
+{
+    UINT16 UserMappingDataList;
+    UINT8 UserMappingVersion = TLSUserMappingTypeTable( this );
+    UINT16 UserMappingLength;
+    Switch( UserMappingVersion )
+    {
+        Case 0x40: SSLUpnDomainHint DomainHint;
+    }
+}
+
+Struct SSLSupplementalDataMsg = FormatString( "Message Size: %d", SupplementalDataEntry )
+{
+    UINT24 SupplementalDataEntry;
+    UINT16 SupplementalDataType = TLSSupplementalDataTypeTable( this );
+    UINT16 SupplementalDataLength;
+    Switch (SupplementalDataType)
+    {
+        Case 0x00: SSLUserMappingData UsrMappingData;
+    } 
+}

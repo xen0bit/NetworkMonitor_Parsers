@@ -1,0 +1,1465 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Hyper Text Transfer Protocol v1.1
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1945, 2616, 2617, 2660, 2818
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 4/23/2010
+//#
+//####
+
+const HTTPTransferTypeConnectionClose = 0;
+const HTTPTransferTypeChunkedEncoding = 1;
+const HTTPTransferTypeContentLength = 2;
+const HTTPTransferTypeNoPayload = 3;
+
+[DefaultTimeOut = HTTPConversationTimeout] 
+[Property.HTTPDescription = HTTP.ToString]  
+Protocol HTTP = FormatString("%s%s%s%s%s", 
+							Property.HttpSummary, 
+							Property.HttpAuthenticationSummary ? 
+								(Property.HTTPAuthenticateCount >  1 ?	"Using Multiple Authetication Methods, see frame details" : 
+																		", Using " + Property.HttpAuthenticationSummary + " Authentication") : "",
+							Property.HttpAuthorizationSummary ? 
+								(Property.HTTPAuthorizationCount > 1 ?	"Using Multiple Authorization Methods, see frame details" : 
+																		", Using " + Property.HttpAuthorizationSummary + " Authorization") : "",
+							
+							
+							Property.HTTPSummaryType, 
+							Property.SoHSummary ? ", SOH:" + Property.SoHSummary : "")
+{	
+	//
+	// HTTPPayload would be useful to provide a way for folks to search HTTP payloads
+	// Sample filter: HTTPPayload.contains("Microsoft.com")
+	//
+	[Property.HTTPPayload = AsciiString(FrameData, FrameOffset, FrameLength - FrameOffset)]
+	
+	//
+	// Build conversation for HTTP
+	// Notes: Since HTTP can self-reassembled, so we should ditect if HTTP conversation exist before build HTTP conversation
+	//
+	switch
+	{
+		case !conversation.HTTP.Id:
+			[BuildConversationWithParent]
+			_struct _BuildHTTPConversation{};
+	}
+	[
+		Post.Conversation.ConversationDescription
+			= Conversation.http.ConversationDescription ? Conversation.http.ConversationDescription
+			: (HttpCommand ? FormatString("(%s)", HttpCommand + " " + (HttpUriDll ? HttpUriDll : HttpUriLocation ? HttpUriLocation :HttpUri)) : "")
+			+ (FormatString(" ConvID = %d", ConvID))
+	]
+	//
+	// Save Content Type and Uri Location as per frame property
+	//
+	[
+		Conversation.HttpContentTypeTable$[FrameNumber] = Conversation.HttpCurrentContentType, 
+		Conversation.HttpUriLocationTable$[FrameNumber] = Conversation.HttpCurrentUriLocation,
+		Conversation.HttpSOAPActionTable$[FrameNumber] = Conversation.HttpCurrentSOAPAction,
+		Conversation.HttpUserAgentTable$[FrameNumber] = Conversation.HttpUserAgents,
+		Conversation.HttpHttpHostTable$[FrameNumber] = Conversation.HttpCurrentHost,
+		Property.HttpContentType = Conversation.HttpContentTypeTable$[FrameNumber],
+		Property.HttpUriLocation = Conversation.HttpUriLocationTable$[FrameNumber],
+		Property.HttpSOAPAction = Conversation.HttpSOAPActionTable$[FrameNumber],
+		Property.HttpUserAgent = Conversation.HttpUserAgentTable$[FrameNumber],
+		Property.HttpHost = Conversation.HttpHttpHostTable$[FrameNumber],
+		Post.Conversation.HttpCurrentContentType = Property.HttpContentType,
+		Post.Conversation.HttpCurrentUriLocation = Property.HttpUriLocation,
+		Post.Conversation.HttpCurrentSOAPAction = Property.HttpSOAPAction,
+		Post.Conversation.HttpUserAgents = Property.HttpUserAgent,
+		Post.Conversation.HttpCurrentHost = Property.HttpHost
+	]
+	[
+		Conversation.HTTPPayloadTypeTable$[FrameNumber] = Conversation.HTTPCurrentPayloadType,
+		property.HTTPPayloadType = Conversation.HTTPPayloadTypeTable$[FrameNumber],
+		post.Conversation.HTTPCurrentPayloadType = property.HTTPPayloadType
+	]
+	[
+		Conversation.HTTPContentEncodingTable$[FrameNumber] = Conversation.HTTPCurrentContentEncoding$[NetworkDirection],
+		property.HttpContentEncoding = Conversation.HTTPContentEncodingTable$[FrameNumber],
+		post.Conversation.HTTPCurrentContentEncoding$[NetworkDirection] = Property.HttpContentEncoding
+	]
+	[	post.Property.IfNotRsmHttp = (	Property.IfNotRsmHttp || 
+										Property.HttpCommand == "RPC_CONNECT" || 
+										Property.HttpCommand == "RPC_IN_DATA" || 
+										Property.HttpCommand == "RPC_OUT_DATA" || 
+										Property.HttpContentType.contains("application/rpc"))]
+	//
+	// Reassemble HTTP segments
+	// 1. Connection = Close: Reassemble when TCP conversation is closed
+	// 2. Ignor ContentLength for WMHTTP, Don't reassemble WMHTTP at HTTP layer
+	// 3. Reassemble Chunked HTTP frames only with IsFirst Flag
+	// Note: HttpTotalLength is only valid when ContentLength is present (not for WMHTTP)
+	//
+	[
+		Property.ChunkedSizeTerm.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		Property.ChunkedSizeTerm.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		
+		Conversation.HTTPTransferTypeTable$[FrameNumber] = Conversation.HTTPCurrentTransferType$[NetworkDirection],
+		Property.HTTPTransferType = Conversation.HTTPTransferTypeTable$[FrameNumber], 
+		
+		Post.Property.IfNotRsmHttp = 
+			Property.IfNotRsmHttp ||
+			Property.HTTPTransferType == HTTPTransferTypeNoPayload ||
+			Property.HTTPContentType.Contains("application/x-wms-pushstart"), 
+			
+		Post.Conversation.HTTPCurrentTransferType$[NetworkDirection] = Property.HTTPTransferType
+	]
+	[
+		Conversation.HTTPTotalLenTable$[FrameNumber] = Conversation.HTTPTotalLenConver$[Networkdirection],
+		property.HttpTotalLength = Conversation.HTTPTotalLenTable$[FrameNumber],
+		post.Conversation.HTTPTotalLenConver$[Networkdirection] = property.HttpTotalLength
+	]
+	[
+		Post.Property.HTTPIsFirst = Property.IfNotRsmHttp 
+									|| (	IsValueNone(Property.HttpTotalLength) 
+											&& Property.HTTPTransferType != HTTPTransferTypeConnectionClose	) ? TRUE : Property.HTTPIsFirst,
+		Post.Property.HTTPIsLast = Property.IfNotRsmHttp || HighestReassembledProtocol == "http" || Property.IsChunkEnd 
+									|| (	IsValueNone(Property.HttpTotalLength) 
+											&& Property.HTTPTransferType != HTTPTransferTypeConnectionClose	) ? TRUE : Property.TcpFlagFin,
+		Post.PayloadStart(
+			NetworkDirection, /* direction */
+			0, //identifier
+			0, //sequence token
+			0, //next sequence
+			Property.HttpTotalLength, //total payload length
+			Property.HTTPIsFirst, //is first
+			Property.HTTPIsLast, //is last
+			// If provide ContentLength: has start, length and self indication
+			// If use Connection:Close: has start, end and self indication
+			RssmblyIndStartBit + RssmblySelfBit
+				+ ( Property.HTTPTransferType == HTTPTransferTypeConnectionClose || Property.TcpFlagFin || Property.IfNotRsmHttp || Property.IsChunkEnd || IsValueNone(Property.HttpTotalLength)?
+					 RssmblyIndEndBit : RssmblyIndLengthBit)
+		)
+	]
+	
+	//Set Property.CompleteFrame to true for all the complete http frames
+	[Property.HTTPFrameLength = FrameLength - FrameOffset]
+	[Post.Property.CompleteFrame = Property.HTTPTransferType == HTTPTransferTypeConnectionClose || Property.TcpFlagFin || Property.IfNotRsmHttp || Property.IsChunkEnd || IsValueNone(Property.HttpTotalLength) ? 
+			(Property.TCPIsFirst && Property.TCPIsLast) : (Property.HttpTotalLength == Property.HTTPFrameLength)]
+
+	while [frameoffset < framelength]
+	{
+		struct
+		{
+		//
+		// The type of HTTP packet is determined by the first several charecters in HTTP header
+		//
+		[Property.HTTPIsFirst = false,Property.IsChunkEnd = false]
+		switch (AsciiStringTerm(FrameData,FrameOffset," "))
+		{
+			case "GET":
+			case "PUT":
+			case "HEAD":
+			case "POST":
+			case "TRACE":
+			case "PATCH":
+			case "DELETE":
+			case "UNLINK":
+			case "CONNECT":
+			case "OPTIONS":
+			case "CCM_POST":
+			case "RPC_CONNECT":
+			case "RPC_IN_DATA":
+			case "RPC_OUT_DATA":
+			case "SSTP_DUPLEX_POST":
+
+			// MC-APDSU
+			case "MERGE":
+
+			// MS-SSDP 
+			case "NOTIFY":
+			case "M-SEARCH":
+			
+			// RFC2518
+			Case "COPY":
+			Case "LOCK":
+			Case "MOVE":
+			Case "MKCOL":
+			Case "SEARCH":
+			Case "UNLOCK":
+			Case "PROPFIND":
+			Case "PROPPATCH":
+			Case "GETLIB":
+			case "SUBSCRIBE":
+				//
+				// The client is requesting data rom the server.
+				// The HTTP request packet has two headers. The first header has a fixed set of
+				// fields always in the same order (similar to a structure). The second header
+				// is a set of self describing fields.
+				//
+				[
+					Conversation.HttpIsRequestConv$[NetworkDirection]= true,
+					Property.HTTPIsFirst = true,
+					Property.HttpContentType = "NetmonNull",
+					Local.HttpInitialNull = Local.HttpInitialNull,
+					property.HttpTotalLength  = Local.HttpInitialNull
+				]
+				[property.HTTPPayloadType = ""]
+				[conversation.HttpHeaderParsed = true]
+				_struct Request
+				{
+					//
+					// Fixed HTTP request fields. The fields are separated by spaces.
+					// The last field is terminated by the '\r\n' character sequence.
+					//
+					[Property.HttpCommand]
+					AsciiStringTerm(" ") Command;
+					
+					[
+						Property.HttpUri,
+						Post.Property.HttpSummary = "Request, " + Command + " " + (Property.HttpUriDll ? Property.HttpUriDll : Property.HttpUriLocation ? Property.HttpLocationShort + Property.HttpUriParameters:Property.HttpUri),
+						Post.Property.HttpSummary =  ( Command == "RPC_IN_DATA" ) ? Property.HttpSummary + ", CL_ESTABLISH_IBP" :
+											( Command == "RPC_OUT_DATA" ) ? Property.HttpSummary + ", CL_ESTABLISH_OBP" :
+											Property.HttpSummary
+					]
+					[Property.OFP_Type = "URL"]
+					AsciiStringTerm(" ") URI
+					{
+						switch(Command)
+						{
+							case "RPC_IN_DATA":
+							case "RPC_OUT_DATA":
+								_struct RpcUrl
+								{
+									[conversation.RpcOverHttp = TRUE, Property.HttpUriDll]
+									AsciiStringTerm ("?") DLL;
+									AsciiStringTerm (":") ServerName;
+									AsciiStringTerm (" ") ServerPort;
+								}
+							case "SSTP_DUPLEX_POST":
+								[Conversation.SSTPCommand = true]
+								AsciiString SSTPUri;
+							default:
+								_struct Uri
+								{
+									[Property.HttpUriLocation, Property.FrontPageSet=0]
+									AsciiStringTerm("?") Location;
+									
+									[DataFieldByteOrder = littleendian]
+									[Property.HttpLocationShort = Unicodestring(Property.HttpUriLocation, 0, 100)]
+									struct{}
+									
+									switch
+									{
+										case FrameOffset < FrameLength:
+										[Property.HttpUriParameters = ", Query:" + AsciiStringTerm(FrameData,FrameOffset," ")]
+										struct Parameters
+										{
+											switch
+											{
+												case Location.Contains("_vti_bin/shtml.dll/_vti_rpc"):
+												case Location.Contains("_vti_bin/_vti_aut/author.dll"):
+												case Location.Contains("_vti_bin/_vti_adm/admin.dll"):
+												// owssvr.dll messages will be handled by MS-FPSEOE parser (self registering)
+												// case Location.Contains("_vti_bin/owssvr.dll"):
+												case Location.Contains("/asmx.dll"):
+												case Location.Contains("/x-vermeer-rpc"):
+													[EmbeddedProtocol,Property.FrontPageSet=1]
+													FPSE FrontPage;
+												case AsciiStringTerm(FrameData, FrameOffset, " ").Contains("createexe"):
+													struct
+													{
+														[Property.CreateExe]
+														AsciiStringTerm("&") CreateExe;
+														WPRNClientInfo WPRNClientInfo;
+													};
+												default:
+													while Fields[ !(UINT8( FrameData, FrameOffset - 1 ) == 0x20) && !(UINT8( FrameData, FrameOffset ) == 0x20) ]
+													{
+														DynamicSwitch AsciiStringTerm("=")
+														{
+															// DRMV1 License request Parameters
+															case "ask":
+																AsciiStringTerm("&") Ask;
+															case "TC":
+																AsciiStringTerm ("&") TC;
+															case "content_guid":
+																AsciiStringTerm ("&") ContentGuid;
+															case "db_guid":
+																AsciiStringTerm ("&") DBGuid;
+															case "challenge":
+																[Property.DrmVerFlag = DrmVer1, Property.DrmPacketType = DrmLicenseRequest]
+																AsciiStringTerm ("&") Challenge
+																{
+																	DRM DRMV1;
+																};
+															case "DRMVer":
+																AsciiStringTerm ("&") DrmVersion;
+															case "embedded":
+																AsciiStringTerm ("&") Embedded;
+															// Other Parameters
+															default:
+																AsciiStringTerm ("&") DefaultName;
+														}
+													}
+											}
+										}; // end of parameters
+									}
+								}; // end of Uri
+						}
+					}; // end of AsciiStringTerm(" ") URI
+					
+					[Property.HttpVersion]
+					[Property.HTTPTransferType = HTTPTransferTypeNoPayload]
+					AsciiStringTerm("\r\n") ProtocolVersion;
+					//
+					// Next are the self describing fields.
+					// The self describing fields contain the name of the field followed by the
+					// value of the field.  The end of the field name is indicated by a colon and
+					// a space (": "). The end of the field value is indicated by a carriage return
+					// and a new line ("\r\n"). The list of self describing fields (fields names and
+					// values) is terminated by a "\r\n" i.e. (0xd 0xa)
+					//
+					while HeaderFields[ !(UINT16( FrameData, FrameOffset ) == 0x0D0A) && FrameOffset < FrameLength]
+					{
+						[Property.HttpHeaderName.AddToProperty(AsciiStringTerm(FrameData, FrameOffset,":"), ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+						DynamicSwitch AsciiStringTerm(":")
+						{
+							case "Host":
+								[Property.HttpHost]
+								AsciiStringTerm("\r\n") Host;
+							case "ContentType":
+							case "Content-Type":
+								[Property.HttpContentType = !Property.HttpContentType || HttpContentTypePriorityTable(Property.HttpContentType) <= HttpContentTypePriorityTable(AsciiStringTerm(FrameData, FrameOffset,"\r\n")) ? AsciiStringTerm(FrameData, FrameOffset,"\r\n") : Property.HttpContentType]
+								switch
+								{	
+									default:
+										[Property.MimeMediaType = AsciiStringTerm(Framedata, FrameOffset, "/").contains( "multipart") ? "multipart" : "" ]
+										HttpContentType ContentType;
+								}
+
+							case "Connection":
+								AsciiStringTerm("\r\n") Connection;
+							case "ProxyConnection":
+							case "Proxy-Connection":
+								AsciiStringTerm("\r\n") ProxyConnection;
+								
+							case "ContentLength":
+							case "Content-Length":
+								[
+									Property.HTTPTransferType = 
+										Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding ? Property.HTTPTransferType :
+										HTTPTransferTypeContentLength
+								]
+								[Property.HttpContentLength = StringToNumber(ContentLength)]
+								[Post.Property.HttpSummary = Property.HttpSummary + (((Property.HttpCommand == "RPC_IN_DATA" || Property.HttpCommand == "RPC_OUT_DATA") && Property.HttpContentLength <= 0x10) ? " - ECHO_REQUEST" : "")]
+								AsciiStringTerm("\r\n") ContentLength;
+								
+							case "TransferEncoding":
+							case "Transfer-Encoding":
+								[Property.HTTPTransferType = this.Contains("chunked") ? HTTPTransferTypeChunkedEncoding : Property.HTTPTransferType]
+								AsciiStringTerm("\r\n") TransferEncoding;
+								
+							case "UserAgent":
+							case "User-Agent":
+								[Property.HttpUserAgent, Conversation.WMSPStream = this.contains("NSPlayer/") || this.Contains("NSServer/") || this.Contains("WMCacheProxy/")]
+								AsciiStringTerm("\r\n") UserAgent;
+							case "AcceptAuth":
+							case "Accept-Auth":
+								AsciiStringTerm("\r\n") AcceptAuth
+								{
+									while [UINT8(FrameData, FrameOffset) == 0x20]
+									{
+										CHAR WhiteSpace;
+									};
+									switch (AsciiStringTerm(FrameData,FrameOffset," "))
+									{
+										case "Passport1.4":
+											[Property.PassportPacketType = PPAcceptAuth]
+											Passport Passport;
+									};
+								};
+							case "ProxyAuthenticate":
+							case "Proxy-Authenticate":
+								 HttpAuthenticate ProxyAuthenticate;
+								
+
+							case "Authorization":
+								HTTPAuthorization Authorization;
+								
+							case "Proxy-Authorization":
+								 HTTPAuthorization ProxyAuthorization;
+								
+							case "Pragma":
+								AsciiStringTerm("\r\n") Pragma
+								{
+									[Property.HttpPragma = AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+									switch
+									{
+										case Property.HttpPragma.contains(","):
+											while Pragmas[frameOffset < frameLength]
+											{
+												[Property.HttpPragmaIterm = AsciiStringTerm(FrameData, FrameOffset, ",")]
+												switch
+												{
+													case Property.HttpPragmaIterm.contains("\""):
+														_struct httpPragmaIterm_backslash
+														{
+															DynamicSwitch AsciiStringTerm("=")
+															{
+																default:
+																	AsciiStringTerm("\",") DefaultName = AsciiStringTerm(FrameData, FrameOffset + 1, "\"");
+															};
+														}
+													case Property.HttpPragmaIterm.contains("="):
+														_struct httpPragmaIterm_equal
+														{												
+															DynamicSwitch AsciiStringTerm("=")
+															{
+																case "version11-enabled":
+																case " version11-enabled":
+																case "  version11-enabled":
+																	[conversation.WMSP1Point1 = Version11Enabled.contains("1") ? TRUE : FALSE]
+																	AsciiStringTerm(",") Version11Enabled;
+																default:
+																	AsciiStringTerm(",") DefaultName;
+															};
+														}
+													default:
+														_struct httpPragmaIterm_comma
+														{												
+															DynamicSwitch AsciiStringTerm(",")
+															{
+																default:
+																	AsciiString(0) DefaultName;
+															};
+														}
+												};
+											};
+										case Property.HttpPragma.contains("="):
+											DynamicSwitch AsciiStringTerm("=")
+											{
+												case "version11-enabled":
+												case " version11-enabled":
+												case "  version11-enabled":
+													[conversation.WMSP1Point1 = Version11Enabled.contains("1") ? TRUE : FALSE]
+													AsciiStringTerm(",") Version11Enabled;
+												default:
+													AsciiStringTerm(",") DefaultName;
+											};								
+									};
+								};
+							case "SOAPAction":
+								[
+									post.Property.HttpContentType = (Property.HttpSOAPAction.Contains("http://microsoft.com/DRM/") && HttpContentTypePriorityTable(Property.HttpContentType) <= HttpContentTypePriorityTable("NetmonRMS")) ? "NetmonRMS" : Property.HttpContentType,
+									post.Property.HttpContentType = (Property.HttpSOAPAction.Contains("batchrequest") && HttpContentTypePriorityTable(Property.HttpContentType) <= HttpContentTypePriorityTable("batchrequest")) ? "batchrequest" : Property.HttpContentType
+								]
+								AsciiStringTerm("\r\n") SOAPAction
+								{
+									while [ String(FrameData, FrameOffset, Ascii, 1) == " " ]
+									{
+										DynamicSwitch String(Ascii, 1)
+										{
+											default: struct{}
+										};
+									}
+									switch
+									{
+										case (UINT8( FrameData, FrameOffset ) == 0x22):
+											struct
+											{
+												// Start Quote
+												[Local.Quote = String(FrameData, FrameOffset, Ascii, 1)]
+												DynamicSwitch String(Ascii, 1)
+												{
+													default: struct{}
+												};
+												
+												[Property.HttpSOAPAction = this]
+												StringTerm(Ascii, Local.Quote, true, false, false) Value; 
+												
+												// End Quote
+												DynamicSwitch String(Ascii, 1)
+												{
+													default: struct{}
+												};
+											}
+										default:
+											[Property.HttpSOAPAction = this]
+											AsciiStringTerm("\r\n") DefaultValue;
+									}
+								}
+							//wprn
+							Case "Cookie":
+								AsciiStringTerm ( "\r\n" ) Cookie
+								{
+									while Cookies [!(UINT16( FrameData, FrameOffset ) == 0x0D0A) && FrameOffset < FrameLength]
+									{
+										DynamicSwitch AsciiStringTerm("=")
+										{
+										   default:
+											  AsciiStringTerm(";") DefaultName;
+
+										}
+									}
+								};
+							default:
+								AsciiStringTerm("\r\n") DefaultName;
+						};
+					}
+					//
+					// End of the selfdescribing data field header
+					//
+					switch
+					{
+						case FrameOffset < FrameLength && UINT16(FrameData, FrameOffset) == 0x0D0A:
+							[Property.HttpTotalLength = Property.HTTPTransferType == HTTPTransferTypeContentLength ? currentProtocolOffset + 2 + Property.HttpContentLength : Property.HttpTotalLength]
+							UINT16 HeaderEnd = "CRLF";
+						default:
+							BLOB(Framelength - FrameOffset) UncompletedHttpHeader = "May need reassemble";
+					}
+				};
+			
+			default:
+				switch
+				{
+					case AsciiString(FrameData,FrameOffset,5) == "Http/":
+					case AsciiString(FrameData,FrameOffset,11) == "Secure-HTTP":
+						[Conversation.HttpIsResponseConv$[NetworkDirection]= true]
+						[Property.HTTPIsFirst = true]
+						[property.HttpContentEncoding = ""]
+						[Local.HttpInitialNull = Local.HttpInitialNull]
+						[property.HttpTotalLength  = Local.HttpInitialNull]
+						[conversation.HttpHeaderParsed = true]
+						_struct Response
+						{
+							//
+							// Fixed HTTP response fields. The fields are separated by spaces. The last field
+							// is terminated by a \r\n sequence.
+							//
+							[DataFieldByteOrder = littleendian]
+							[Property.HttpLocationShort = Unicodestring(Property.HttpUriLocation, 0, 100)]
+							struct{}
+
+							[Property.HttpProtocolVersion]
+							[Post.Property.HTTPTransferType = HttpVersion.Contains("1.0") ? HTTPTransferTypeConnectionClose : HTTPTransferTypeNoPayload]
+							AsciiStringTerm(" ") ProtocolVersion;
+							[Property.HttpStatusCode]
+							AsciiStringTerm(" ") StatusCode = FormatString("%s, %s", this, HTTPStatusCodeTable(this));
+							[Property.HttpSummary = "Response, " + ProtocolVersion.ToString +", Status: " + HTTPStatusCodeTable(StatusCode) + ", URL: " + Property.HttpLocationShort]
+							[Property.HttpStatusReason]
+							AsciiStringTerm("\r\n") Reason;
+							
+							
+							//
+							// Next are the self describing fields. The self describing fields contain the name
+							// of the field follow by the value of the field.  The end of the field name is
+							// indicated by a colon and a space (": "). The end of the field value is indicated
+							// by a carriage return and a new line ("\r\n"). The list of self describing fields
+							// (fields names and values) is terminated by a "\r\n" i.e. (0xd 0xa)
+							//
+							while HeaderFields[ !(UINT16( FrameData, FrameOffset ) == 0x0D0A) && FrameOffset < FrameLength]
+							{
+								DynamicSwitch AsciiStringTerm(":")
+								{
+									case "Host":
+										[Property.HttpHost]
+										AsciiStringTerm("\r\n") Host;
+									case "ContentType":
+									case "Content-Type":
+										[Property.HttpRequestContentType = Property.HttpContentType]
+										[
+											Property.HttpContentType = ( !Property.HttpContentType || HttpContentTypePriorityTable(Property.HttpContentType) <= HttpContentTypePriorityTable(AsciiStringTerm(FrameData, FrameOffset,"\r\n"))) ? AsciiStringTerm(FrameData, FrameOffset,"\r\n") : Property.HttpContentType, 
+											post.Property.HttpSummary = Property.HttpSummary + (ContentType.contains ("application/rpc") ? ", ECHO RESPONSE" : ""),
+										]
+										[Property.HttpContentType = Property.HttpRequestContentType == "BatchRequest" && Contains(AsciiStringTerm(FrameData, FrameOffset,"\r\n"), "xml") ? "BatchRequest" : Property.HttpContentType]
+										[Property.MimeMediaType = AsciiStringTerm(Framedata, FrameOffset, "/").contains( "multipart") ? "multipart" : "" ]
+										HttpContentType ContentType;
+									case "Connection":
+										[
+											Property.HTTPTransferType = 
+												Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding ? Property.HTTPTransferType:
+												this.Contains("close") ? HTTPTransferTypeConnectionClose :
+												Property.HTTPTransferType == HTTPTransferTypeContentLength ? Property.HTTPTransferType : 
+												HTTPTransferTypeNoPayload
+										]
+										AsciiStringTerm("\r\n") Connection;
+									case "ProxyConnection":
+									case "Proxy-Connection":
+										[
+											Property.HTTPTransferType = 
+												Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding ? Property.HTTPTransferType:
+												this.Contains("close") ? HTTPTransferTypeConnectionClose :
+												Property.HTTPTransferType == HTTPTransferTypeContentLength ? Property.HTTPTransferType : 
+												HTTPTransferTypeNoPayload
+										]
+										AsciiStringTerm("\r\n") ProxyConnection;
+										
+									case "ContentLength":
+									case "Content-Length":
+										[
+											Property.HTTPTransferType = 
+												Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding ? Property.HTTPTransferType :
+												Property.HTTPTransferType == HTTPTransferTypeConnectionClose ? Property.HTTPTransferType:
+												HTTPTransferTypeContentLength
+										]
+										[Property.HttpContentLength = StringToNumber(ContentLength)]
+										AsciiStringTerm("\r\n") ContentLength;
+										
+									case "TransferEncoding":
+									case "Transfer-Encoding":
+										[Property.HTTPTransferType = this.Contains("chunked") ? HTTPTransferTypeChunkedEncoding : Property.HTTPTransferType]
+										AsciiStringTerm("\r\n") TransferEncoding;
+										
+									case "AuthenticationInfo": 
+									case "Authentication-Info": 
+										AsciiStringTerm("\r\n") AuthenticationInfo
+										{
+											while [UINT8(FrameData, FrameOffset) == 0x20]
+											{
+												CHAR WhiteSpace;
+											};
+											switch (AsciiStringTerm(FrameData,FrameOffset," "))
+											{
+												case "Passport1.4":
+													[Property.PassportPacketType = PPAuthenticationInfo]
+													Passport Passport;
+											}
+										};
+									case "ProxyAuthenticate":
+									case "Proxy-Authenticate":
+
+										HttpAuthenticate ProxyAuthenticate;
+										
+									case "WWWAuthenticate":
+									case "WWW-Authenticate":
+										[Property.HttpWwwAuthenticate = AsciiStringTerm(FrameData, FrameOffSet, "\r\n")]
+										HttpAuthenticate WWWAuthenticate;
+										
+									case "PassportConfig":
+									case "Passport-Config":
+										AsciiStringTerm("\r\n") PassportConfig
+										{
+											while [UINT8(FrameData, FrameOffset) == 0x20]
+											{
+												CHAR WhiteSpace;
+											};
+											switch (AsciiStringTerm(FrameData,FrameOffset,"="))
+											{
+												case "ConfigVersion":
+													[Property.PassportPacketType = PPPassportConfig]
+													Passport Passport;
+											}
+										};
+									case "PassportURLs":
+										AsciiStringTerm("\r\n") PassportURLs
+										{
+											while [UINT8(FrameData, FrameOffset) == 0x20]
+											{
+												CHAR WhiteSpace;
+											};
+											switch (AsciiStringTerm(FrameData,FrameOffset,"="))
+											{
+												case "ConfigVersion":
+													[Property.PassportPacketType = PPPassportURLs]
+													Passport Passport;
+											}
+										};
+									case "Pragma":
+										AsciiStringTerm("\r\n") Pragma
+										{
+											[Property.HttpPragma = AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+											switch
+											{
+												case Property.HttpPragma.contains(","):
+													while Pragmas[frameOffset < frameLength]
+													{
+														[Property.HttpPragmaIterm = AsciiStringTerm(FrameData, FrameOffset, ",")]
+														switch
+														{
+															case Property.HttpPragmaIterm.contains("\""):
+																_struct httpPragmaIterm_backslash
+																{
+																	DynamicSwitch AsciiStringTerm("=")
+																	{
+																		default:
+																			AsciiStringTerm("\",") DefaultName = AsciiStringTerm(FrameData, FrameOffset + 1, "\"");
+																	};
+																}
+															case Property.HttpPragmaIterm.contains("="):
+																_struct httpPragmaIterm_equal
+																{														
+																	DynamicSwitch AsciiStringTerm("=")
+																	{
+																		default:
+																			AsciiStringTerm(",") DefaultName;
+																	};
+																}
+															default:
+																_struct httpPragmaIterm_comma
+																{														
+																	DynamicSwitch AsciiStringTerm(",")
+																	{
+																		default:
+																			AsciiString(0) DefaultName;
+																	};
+																}
+														};
+													};
+												case Property.HttpPragma.contains("="):
+													DynamicSwitch AsciiStringTerm("=")
+													{
+														default:
+															AsciiStringTerm(",") DefaultName;
+													};								
+											};
+										};
+										
+									case "HCEP-SoHR":
+										AsciiStringTerm("\r\n") HCEPSoHR
+										{
+											while [UINT8( Framedata, Offset ) == 0x20]
+											{
+												Char WhiteSpace;
+											}
+											HCEPSoHR HCEPSoHR;
+										};
+									case "Server":
+										[Property.HttpServer]
+										AsciiStringTerm("\r\n") Server;
+									case "X-Powered-By":
+										[Property.HttpXPoweredBy]
+										AsciiStringTerm("\r\n") XPoweredBy;
+									case "X-AspNet-Version":
+										[Property.HttpXAspNetVersion]
+										AsciiStringTerm("\r\n") XAspNetVersion;
+									case "Location":
+										[Property.HttpRedirectionLocation]
+										AsciiStringTerm("\r\n") Location;
+									case "SharePointError":
+										[Property.HttpSharePointError]
+										AsciiStringTerm("\r\n") SharePointError;
+									Case "Date":
+										[Property.HttpDate]
+										AsciiStringTerm ( "\r\n" ) Date;
+									case "Content-Encoding":
+										[Property.HttpContentEncoding]
+										AsciiStringTerm ( "\r\n" ) ContentEncoding;
+									default:
+										AsciiStringTerm("\r\n") DefaultName;
+								}
+							}
+							
+							switch
+							{
+								case FrameOffset < FrameLength && UINT16(FrameData, FrameOffset) == 0x0D0A:
+									[Property.HttpTotalLength = Property.HTTPTransferType == HTTPTransferTypeContentLength ? currentProtocolOffset + 2 + Property.HttpContentLength : Property.HttpTotalLength]
+									UINT16 HeaderEnd = "CRLF";
+								default:
+									BLOB(Framelength - FrameOffset) UncompletedHttpHeader = "May need reassemble";
+							}
+						}
+				}
+		}
+		
+		[Property.SoapAction = Property.HttpSOAPAction]
+		[Property.ActionURI = Property.HttpSOAPAction]
+		[DataFieldByteOrder = littleendian]
+		[Property.HttpLocationShort = Unicodestring(Property.HttpUriLocation, 0, 100)]
+		[Property.HttpIsRequest = Conversation.HttpIsRequestConv$[NetworkDirection]]
+		[Property.HttpIsResponse = Conversation.HttpIsResponseConv$[NetworkDirection]]
+		struct{}
+
+		//
+		// HTTP payload
+		//
+		[Local.IpConversationKey = Property.SourceNetworkAddress < Property.DestinationNetworkAddress ?
+								MakeByteArray(Property.SourceNetworkAddress,Property.DestinationNetworkAddress) :
+								MakeByteArray(Property.DestinationNetworkAddress,Property.SourceNetworkAddress)]
+		[Local.TcpConversationKey = Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+								(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+									Property.SourcePort < Property.DestinationPort
+								) ?
+								MakeByteArray(Property.SourcePort, Property.DestinationPort) :
+								MakeByteArray(Property.DestinationPort, Property.SourcePort)]
+		[Property.HttpSummary = (FrameOffset == ProtocolOffset) ? "HTTP Payload, URL: "+Property.HttpLocationShort : Property.HttpSummary]
+		switch
+		{
+			case FrameOffset < FrameLength:
+				switch
+				{
+					// Check if this is a valid hex value
+					case Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding && StringToNumber("0x" + StringTerm(FrameData, FrameOffset, AsCii, Property.ChunkedSizeTerm, true, false)) > 0:
+					case Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding && UINT24(FrameData, frameOffset) == 0x300D0A:
+					case Property.HTTPTransferType == HTTPTransferTypeChunkedEncoding && UINT16(FrameData,FrameOffset) == 0x0D0A:
+						//
+						// RFC 2068 section 3.6 Transfer Codings
+						//
+						_struct ChunkedPayload
+						{
+							while ChunkBody[frameOffset < frameLength && !(UINT24(FrameData, frameOffset) == 0x300D0A) && !(UINT16(FrameData, frameOffset) == 0x0D0A)]
+							{
+								AsciiStringTerm("\r\n") chunkSize = Property.ChunkedSize
+								{
+									switch
+									{
+										case contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), ";"):
+											_struct ChunkSizeWithExt
+											{
+												[Property.ChunkedSize = StringToNumber("0x" + AsciiStringTerm(FrameData, FrameOffset,";"))]
+												AsciiStringTerm(";") Size = Property.ChunkedSize;
+												while ChunkExtensions[frameOffset < frameLength]
+												{
+													switch
+													{
+														case contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), ";"):
+															switch
+															{
+																case contains(AsciiStringTerm(FrameData, FrameOffset, ";"), "="):
+																	DynamicSwitch AsciiStringTerm("=")
+																	{
+																		default: AsciiStringTerm(";") DefaultName;
+																	};
+																default:
+																	AsciiStringTerm(";") ChunkExtention;
+															}
+														default:
+															switch
+															{
+																case contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), "="):
+																	DynamicSwitch AsciiStringTerm("=")
+																	{
+																		default: AsciiStringTerm("\r\n") DefaultName;
+																	};
+																default:
+																	AsciiStringTerm("\r\n") ChunkExtention;
+															}
+													}
+												}
+											}
+										default:
+											struct
+											{
+												//[ChunkedSize = StringToNumber("0x" + AsciiStringTerm(FrameData, FrameOffset,"\r\n"))]
+												[
+													Property.ChunkedSizeStr = AsciiStringTerm(FrameData, FrameOffset,"\r\n"),
+													DataFieldByteOrder = LittleEndian,
+													Property.ChunkedSize = StringToNumber("0x" + UnicodeStringTerm(Property.ChunkedSizeStr, 0," "))
+												]
+												struct{}
+		  		
+												AsciiStringTerm("\r\n") Size = Property.ChunkedSize;
+											}
+									}
+								};
+								[DataFieldFrameLength = FrameOffset + Property.ChunkedSize]
+								[Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber, FrameOffset] =
+								IsvalueNone(Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber, FrameOffset]) ?
+								conversation.HttpHeaderParsed : 0 ]
+								switch
+								{
+									case ((FrameOffset < FrameLength) && Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber, FrameOffset]):
+										HTTPPayloadData ChunkPayload;
+									case FrameOffset < FrameLength:
+										Blob(FrameLength - FrameOffset) ChunkPayloadContinuation;
+								}
+								switch
+								{
+									case UINT16(FrameData, frameOffset) == 0x0D0A:
+										AsciiStringTerm("\r\n") FooterEnd = "CRLF";
+								};
+							};
+							switch
+							{
+								case UINT24(FrameData, frameOffset) == 0x300D0A:
+									[Property.IsChunkEnd = true]
+									AsciiStringTerm("\r\n") ChunkEnd;
+							}
+							
+							while ChunkHeaderFields[ !(UINT16( FrameData, FrameOffset ) == 0x0D0A) && FrameOffset < FrameLength]
+							{
+								DynamicSwitch AsciiStringTerm(":")
+								{
+									default: AsciiStringTerm("\r\n") DefaultName;
+								};
+							}
+							switch
+							{
+								case UINT16(FrameData, frameOffset) == 0x0D0A:
+									AsciiStringTerm("\r\n") FooterEnd = "CRLF";
+							}
+						}
+					case Property.MimeMediaType == "multipart":
+						[Property.IsPayloadMineBody = true]
+						MimeBody MimeBody;
+					case ((Conversation.SSLConversation && FrameNumber > Conversation.SSLStartFrame) || 
+						 IsSslRecordTable(Property.SslRcdByte, Property.SslProtoWord)) && !DecryptedPayloadHeader:
+						[Conversation.SSLConversation = true]
+						[Conversation.SSLStartFrame = IsValueNone(Conversation.SSLStartFrame) ? FrameNumber : Conversation.SSLStartFrame]
+						SSLVersionSelector TLSSSLData;
+					default:
+		
+		
+						[Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber] =
+								IsvalueNone(Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber]) ?
+								conversation.HttpHeaderParsed : Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber] ]
+
+						switch 
+						{
+							case Global.HttpHeaderParsedMVS$[Local.IpConversationKey, Local.TcpConversationKey, Property.TcpSeqNumber]:
+								[Property.HttpPayloadEndOffset = Property.HTTPTransferType == HTTPTransferTypeConnectionClose || !Property.HTTPIsFirst? FrameLength : FrameOffset + Property.HttpContentLength]
+								[DataFieldFrameLength = Property.HTTPTransferType == HTTPTransferTypeConnectionClose || !Property.HTTPIsFirst? FrameLength : FrameOffset + Property.HttpContentLength]
+								HTTPPayloadData payload;
+							default:
+								Struct HttpIncompletePayload
+								{
+									While Body[FrameOffset < FrameLength]
+									{
+										AsciiStringTerm("\r\n") HTTPPayloadLine;
+									}
+								}
+						}
+
+				}
+			default:
+				_struct defaultname{};
+		}
+		Switch
+		{
+			case Property.HttpPayloadEndOffset > FrameLength && FrameLength > FrameOffset:
+				blob(FrameLength - FrameOffset) PartialPayloadData = "May need reassemble";
+		}
+		}
+	}
+}
+
+// RFC2616 page40~41
+Table HTTPStatusCodeTable(value)
+{
+	switch (value)
+	{
+		case "100": "Continue.";
+		case "101": "Switching protocols";
+		case "200": "Ok";
+		case "201": "Created";
+		case "202": "Accepted";
+		case "203": "Non-authoritive information";
+		case "204": "No content";
+		case "205": "Reset content";
+		case "206": "Partial content";
+		case "226": "IM used";
+		case "300": "Multiple choices";
+		case "301": "Moved permanently";
+		case "302": "Moved temporarily";
+		case "303": "See other";
+		case "304": "Not modified";
+		case "305": "Use proxy";
+		case "307": "Temporary Redirect";
+		case "400": "Bad request";
+		case "401": "Unauthorized";
+		case "402": "Payment required";
+		case "403": "Forbidden";
+		case "404": "Not found";
+		case "405": "Method not allowed";
+		case "406": "Not acceptable";
+		case "407": "Proxy authentication required";
+		case "408": "Request timeout";
+		case "409": "Conflict";
+		case "410": "Gone";
+		case "411": "Length required";
+		case "412": "Precondition failed";
+		case "413": "Request entity too large";
+		case "414": "Request URI too large";
+		case "415": "Unsupported media type";
+		case "416": "Requested range not satisfiable";
+		case "417": "Expectation Failed";
+		case "426": "Upgrade Required";
+		case "500": "Internal server error";
+		case "501": "Not implemented";
+		case "502": "Bad gateway";
+		case "503": "Service unavailable";
+		case "504": "Gateway timeout";
+		case "505": "HTTP version not supported";
+		default   : "UNHANDLED HTTP Status Code";
+	}
+}
+
+[Property.OFP_Type = "PAYLOAD"]
+struct HTTPPayloadData = FormatString ("HttpContentType = %s", Property.HttpContentType)
+{
+	// Except RPCHttp WMSP FPSE WMHttp RMS ,Http body first fragment that contain other protocols will be parser , rest fragments will be blob.
+	[conversation.HttpHeaderParsed = TCP.Flags.Push == 0x1 || IsValueNone(TCP.Flags.Push) ? false : conversation.HttpHeaderParsed]
+
+	switch
+	{
+		// Detect contained protocol by HTTPContentType
+		
+		case Property.HttpUserAgent.Contains("MS .NET Remoting"):
+			DotNETRemotingHttpChannel DotNETRemotingHttpChannel;
+		case Property.HTTPContentType.Contains("NetmonRMS"): //NetmonRMS is Netmon defined
+		case Property.HTTPContentType.Contains("application/dime"):
+			switch 
+			{
+				case Property.HTTPPayload.Contains("<?xml"):
+					[conversation.HttpHeaderParsed = true]
+					RMS RMS;
+				default:
+					[Property.HttpSummary = "[RMS Related]" + Property.HttpSummary, Property.RMSRelated = true]
+					AsciiString (FrameLength - FrameOffset) HttpPayload;	
+			}
+		// This part parse a html payload
+		case Property.HttpContentType.Contains( "html" ):
+			switch 
+			{
+				case AsciiString(FrameData,FrameOffset,17) == "<LICENSERESPONSE>":
+					_struct DrmLicResp
+					{
+						AsciiStringTerm(">", TRUE) DrmLicRespElement;
+						AsciiStringTerm(">", TRUE) DrmVersionElement;
+						// DRMV7 or DRMV11 license response
+						AsciiStringTerm("==") DrmLicResponse
+						{
+							[Property.DrmVerFlag = DrmVer7, Property.DrmPacketType = DrmLicenseResponse]
+							DRM DRM;
+						}
+						AsciiStringTerm(">", TRUE) DrmVersionEndElement;
+						AsciiStringTerm(">", TRUE) DrmLicRespEndElement;
+					}
+				case Property.HttpProtocolVersion.Contains("Http"):
+					While HtmlElements[FrameOffset < FrameLength] 
+					{
+						[Property.HtmlElementValue]
+						AsciiStringTerm(">", TRUE) HtmlElement;
+						switch
+						{
+							case HtmlElement.Contains("LICENSERESPONSE"):
+								// DRMV7 or DRMV11 license response
+								_struct DrmLicResp
+								{
+									AsciiStringTerm(">", TRUE) DrmVersionElement;
+									// DRMV7 or DRMV11 license response
+									AsciiStringTerm("==") DrmLicResponse
+									{
+										[Property.DrmVerFlag = DrmVer7, Property.DrmPacketType = DrmLicenseResponse]
+										DRM DRM;
+									}
+									AsciiStringTerm(">", TRUE) DrmVersionEndElement;
+									AsciiStringTerm(">", TRUE) DrmLicRespEndElement;
+								}
+							case HtmlElement.Contains("<script "):
+								AsciiStringTerm("</Script>") Scripts
+								{
+									While Scripts[FrameOffset < FrameLength]
+									{
+										AsciiStringTerm("\r\n") Script
+										{
+											switch
+											{
+												case HtmlElement.Contains("Language=\"VBScript\""):
+												case HtmlElement.Contains("Language=\"JavaScript\""):
+													switch
+													{
+														case AsciiStringTerm(FrameData, FrameOffset, "\r\n").contains("StoreLicense(\""):
+															_struct DrmLicense
+															{
+																AsciiStringTerm("(\"") HtmlElement;
+																switch
+																{
+																	case AsciiString(FrameData,FrameOffset,17) == "<LICENSERESPONSE>":
+																		// DRMV7 or DRMV11 license response
+																		_struct DrmLicResp
+																		{
+																			AsciiStringTerm(">", TRUE) DrmLicRespElement;
+																			AsciiStringTerm(">", TRUE) DrmVersionElement;
+																			// DRMV7 or DRMV11 license response
+																			AsciiStringTerm("==") DrmLicResponse
+																			{
+																				[Property.DrmVerFlag = DrmVer7, Property.DrmPacketType = DrmLicenseResponse]
+																				DRM DRM;
+																			}
+																			AsciiStringTerm(">", TRUE) DrmVersionEndElement;
+																			AsciiStringTerm(">", TRUE) DrmLicRespEndElement;
+																		}
+																	case AsciiString(FrameData,FrameOffset,10) == "AAEAAHUAAA":
+																		// DRMV1 license response
+																		[Property.DrmVerFlag = DrmVer1, Property.DrmPacketType = DrmLicenseResponse]
+																		DRM DRMV1;
+																}
+															}
+													}
+											}
+										}
+									}
+								}
+						}
+					}
+				default:
+					AsciiString (FrameLength - FrameOffset) HtmlPayload;
+			}
+			
+		// Detect contained protocol by HttpUriLocation
+		// FrontPage Server Extentions
+		case Property.HttpUriLocation.Contains("_vti_bin/shtml.dll/_vti_rpc"):
+		case Property.HttpUriLocation.Contains("_vti_bin/_vti_aut/author.dll"):
+		case Property.HttpUriLocation.Contains("_vti_bin/_vti_adm/admin.dll"):
+		// owssvr.dll messages will be handled by MS-FPSEOE parser (self registering)
+		// case Property.HttpUriLocation.Contains("_vti_bin/owssvr.dll"):
+		case Property.HttpUriLocation.Contains("/asmx.dll"):
+		case Property.HttpUriLocation.Contains("/x-vermeer-rpc"):
+			FPSE FrontPage;
+		case Property.HTTPContentType.Contains("application/x-www-form-urlencoded"):
+			switch (AsciiString(FrameData, FrameOffset, 11))
+			{
+				case "wa=wsignin1":
+					ADFS ADFS;
+				default:
+					while [FrameOffset < FrameLength]
+					{
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							case "nonsilent":
+								AsciiStringTerm("&") NonSilent;
+							case "challenge":
+								// HttpCommand should be Post
+								// DRMV7 or DRMV11 license request
+								// <LICENSEREQUEST version="2.0.0.0"
+								// AsciiString(FrameData,FrameOffset,88) == "PABMAEkAQwBFAE4AUwBFAFIARQBRAFUARQBTAFQAIAB2AGUAcgBzAGkAbwBuAD0AIgAyAC4AMAAuADAALgAwACIA"
+								[Property.DrmVerFlag = DrmVer7, Property.DrmPacketType = DrmLicenseRequest]
+								AsciiString (FrameLength - FrameOffset) DrmPayload
+								{
+									DRM Drm;
+								};
+							default:
+								AsciiStringTerm("&") DefaultName;
+						};
+					}
+			}
+		case Property.HTTPContentType.Contains("application/x-ns-proxy-autoconfig"):
+			while [FrameOffset < FrameLength]
+			{
+				AsciiStringTerm("\r\n") AutoConfig;
+			}
+		
+		case Property.HTTPContentType.Contains("application/ocsp-request"):
+		case Property.HTTPContentType.Contains("application/ocsp-response"):
+			OCSP OCSP;
+		//ADTG
+		case AsciiStringTerm(FrameData, FrameOffset, "\r\n\r\n").contains("Content-Type:") && 
+			( Property.HttpUriLocation.Contains("/msadc/msadcs.dll/RDSServer.DataFactory") ||
+				Property.HttpUriLocation.Contains("/msadc/msadcs.dll/AdvancedDataFactory")):
+			ADTG ADTG;
+		//Mime
+		case Property.MimeMediaType == "multipart" || Property.HTTPContentType.Contains("message/rfc822"):
+			[Property.IsPayloadMineBody = true]
+			Mime Mime;
+		// The following cases detect XML payloads
+		// 1. Detect XML by ContentType
+		case Property.HttpContentType.Contains( "xml" ):
+		// 2. Detect SOAP
+		//case HTTPContentType.Contains("application/soap+xml"): // Dup with case above
+		case Contains( AsciiStringTerm( FrameData, frameoffset, ">"), "http://www.w3.org/2003/05/soap-envelope" ): 
+		case Property.HTTPContentType.Contains("batchrequest"):
+		// 3. Detect contained XML payload by Ports (DPWS)
+		case SourcePort == 5357 || DestinationPort == 5357:
+		// 4. Detect XML by look ahead
+		// There may be a \r\n before xml payload
+		// Max length of BOM: 4
+		// 11 = 2 + 4 + 5
+		// 9 = 2 + 4/2 + 5
+		case AsciiString( FrameData, Offset, 11 ).contains("<?xml"):
+		case ContainsBin(FrameData, 2, "3c 00 3f 00 78 00 6d 00 6c 00", 0, 22):
+			XMLParser_struct Xml;
+		case Property.HTTPContentType.Contains("application/healthcertificate-request"):
+			CertificationRequest CertificationRequest;
+		case Property.HTTPContentType.Contains("application/healthcertificate-response"):
+			[Property.PKCS7PayloadX509Certificate=1]
+			PKCS7 PKCS7;
+		case Property.HttpContentType.Contains("application/x-wms-pushstart"):
+			[conversation.HttpHeaderParsed = true]
+			WMHttp WmHttp;
+		case Property.HttpContentType.Contains("application/x-wms-getcontentinfo"):
+			UINT8 PadByte;
+		// Detect contained protocol by HttpUserAgent
+		case Property.HttpContentType.Contains("application/vnd.ms.wms-hdr.asfv1"):
+		case Property.HttpContentType.Contains("application/x-mms-framed"):
+		//case Property.HttpUserAgent.contains("NSPlayer/"):
+		case Conversation.WMSPStream:
+			struct
+			{
+				while [String(FrameData, FrameOffset, Ascii, 1) == " "
+					|| String(FrameData, FrameOffset, Ascii, 1) == "\t"
+					|| String(FrameData, FrameOffset, Ascii, 1) == "\n"
+					|| String(FrameData, FrameOffset, Ascii, 1) == "\r"]
+				{
+					DynamicSwitch String(Ascii, 1)
+					{
+						default: struct{}
+					};
+				}
+				switch
+				{
+					case Property.HTTPContentType.Contains("application/x-wms-LogStats") && Property.HttpIsRequest && Property.HttpCommand == "POST":
+						WMLOG WMLOG;
+					case String(FrameData, FrameOffset, Ascii, 1) == "<":
+						XMLParser_struct WmsXmlPayload;
+					default:
+						[Conversation.HttpHeaderParsed = true]
+						WMSP Wmsp;
+				};
+			}
+		// Detect contained protocol by HttpCommand
+		case Property.HttpCommand == "RPC_IN_DATA" && Property.HttpContentLength <= 0x10:
+		case Property.HttpCommand == "RPC_OUT_DATA" && Property.HttpContentLength <= 0x10:
+			BLOB(Property.HttpContentLength) EchoRequestMessageBody;
+				
+		// Detect contained protocol by Lookahead
+		case AsciiString (FrameData,frameoffset,14) == "ncacn_http/1.0":
+		case conversation.RpcOverHttp && UINT24( FrameData, FrameOffset ) == 0x050014:
+		case 
+				// RPC Protocol Version = 5, RPC minor version = 0, RPC ptype = 0x14, 
+				// PFC_FIRST_FRAG and PFC_LAST_FRAG MUST be present in all RTS PDUs, and all other PFC flags MUST NOT be present.
+				UINT32( FrameData, FrameOffset ) == 0x05001403
+				&&
+				// The packed_drep MUST indicate little-endian integer and floating-pointer byte order, IEEE float-point format representation, and ASCII character format
+				( UINT8( Framedata, Offset + 4 ) & 0x11 ) == 0x10 && UINT8( Framedata, Offset + 5 ) == 0
+				&&
+				// The auth_length MUST be set to 0
+				UINT8( Framedata, Offset + 10 ) == 0	
+				&&
+				// The call_id MUST be set to 0 by senders and MUST be 0 on receipt
+				UINT32( FrameData, FrameOffset + 12 ) == 0 :
+		case 
+				// RPC Protocol Version = 5, Connection-oriented RPC
+				UINT8( Framedata, Offset ) == 0x05
+				&&
+				// RPC minor version
+				( UINT8( Framedata, Offset + 1 ) == 0  ||  UINT8( Framedata, Offset + 1 ) == 1 )
+				&& 
+				// RPC connection-oriented header length
+				( FrameLength - FrameOffset >= 16)
+				&&
+				 // RPC ptype, connection-oriented packet types
+				( UINT8( Framedata, Offset + 2 ) == 0  ||  UINT8( Framedata, Offset + 2 ) == 2  ||  UINT8( Framedata, Offset + 2 ) == 3  ||
+				( UINT8( Framedata, Offset + 2 ) >= 11  &&  UINT8( Framedata, Offset + 2 ) <= 19))
+				&&
+				// RPC integer and character data representation, drep octet0
+				( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0
+				&&
+				// RPC floating point data representation, drep octet1
+				UINT8( Framedata, Offset + 5 ) < 4
+				&&
+				// RPC data representation drep octet2 & 3 m.b.z.
+				UINT8( Framedata, Offset + 6 ) == 0  &&  UINT8( Framedata, Offset + 7 ) == 0 :
+			[Property.IfNotRsmHttp = true,conversation.HttpHeaderParsed = true]
+			RPCHTTP Rpchttp;
+		case AsciiString(FrameData,FrameOffset,10) == "challenge=":
+		case AsciiString(FrameData,FrameOffset,22) == "nonsilent=0&challenge=":
+			[Property.DrmVerFlag = DrmVer7, Property.DrmPacketType = DrmLicenseRequest]
+			struct DrmPayV7load
+			{
+				AsciiStringTerm("challenge=", true) DrmPayloadStartElement;
+				AsciiString (FrameLength - FrameOffset) HtmlDrmPayload
+				{
+					DRM DRM;
+				};
+			}
+		case AsciiString( FrameData, Offset, 4 ) == "MSCF":
+			BLOB(FrameLength - FrameOffset) CabinetFile;
+		case Property.HttpContentType.Contains("video/x-ms-asf"):
+			ASF ASF;
+		case Property.HttpContentType.Contains("application/x-javascript"):
+			While [FrameOffset < FrameLength]
+			{
+				AsciiStringTerm("\r\n") JavaScript;
+			}
+		default:
+			While Body[FrameOffset < FrameLength]
+			{
+				AsciiStringTerm("\r\n") HTTPPayloadLine;
+			}
+	}
+}
+
+
+[DataTypeEncoding=1]
+struct BasicAuthRealm = Realm
+{
+	AsciiString Realm
+	{
+		AsciiStringTerm(":") UserId;
+		AsciiString PassWord;
+	};
+}
+
+[DataTypeEncoding=1]
+struct HCEPSoHR
+{
+	SOH HCEPSoHR;
+}
+
+Struct HttpAuthenticate = Property.HTTPAuthenticateData
+{
+	AsciiStringTerm("\r\n") Authenticate
+	{
+		while [UINT8(FrameData, FrameOffset) == 0x20]
+		{
+			CHAR WhiteSpace;
+		};
+	
+		[Property.HTTPAuthenticateData = UINT8(FrameData, FrameOffset) == 0x20 ? 
+			AsciiStringTerm(FrameData, FrameOffset, " ") : 
+			AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+		[Property.HTTPAuthenticateCount = Property.HTTPAuthenticateCount + 1]
+		[Property.HTTPAuthenticationSummary = Property.HTTPAuthenticateData]
+		switch (AsciiStringTerm(FrameData,FrameOffset," "))
+		{
+			case "Passport1.4":
+				Passport Passport;
+			case "Negotiate":
+			case "Nego2":
+				struct NegotiateAuthorization
+				{
+					AsciiStringTerm(" ") Scheme;
+					[
+						Property.HTTPAuthenticationSummary = "GSS-API",
+						Property.NLMPCurrentProtocol = "http",
+						GssApiBase64 = TRUE
+					]
+					GssAPI GssAPI;
+				}
+			case "Basic":
+				struct BasicAuthenticate
+				{
+					AsciiStringTerm(" ") Scheme;
+					BasicAuthRealm Realm;
+				}
+			case "Digest":
+				struct DigestAuthenticate
+				{
+					AsciiStringTerm(" ") Digest;
+					Digest DigestData;
+				}
+			default:
+			AsciiStringTerm("\r\n") AuthenticateData;
+		};
+	};
+};
+struct HTTPAuthorization = Property.HTTPAuthorizationData
+{
+	AsciiStringTerm("\r\n") Authorization
+	{
+		while [UINT8(FrameData, FrameOffset) == 0x20]
+		{
+			CHAR WhiteSpace;
+		};
+		
+		[Property.HTTPAuthorizationData = AsciiStringTerm(FrameData, FrameOffset, " ")]
+		[Property.HTTPAuthorizationCount = Property.HTTPAuthorizationCount + 1]
+		[Property.HTTPAuthorizationSummary = Property.HTTPAuthorizationData]
+		switch (AsciiStringTerm(FrameData,FrameOffset," "))
+		{	
+			case "Passport1.4":
+				[Property.PassportPacketType = PPAuthorization]
+				Passport Passport;
+			case "Basic":
+				struct BasicAuthorization
+				{
+					AsciiStringTerm(" ") Scheme;
+					BasicAuthRealm Realm;
+				}
+			case "Negotiate":
+			case "Nego2":
+				struct NegotiateAuthorization
+				{
+					AsciiStringTerm(" ") Scheme;
+					[
+						Property.HTTPAuthorizationSummary = "GSS-API",
+						Property.NLMPCurrentProtocol = "http",
+						GssApiBase64 = TRUE
+					]
+					GssAPI GssAPI;
+				}
+			case "Digest":
+				struct DigestAuthentication
+				{
+					AsciiStringTerm(" ") Digest;
+					Digest DigestData;
+				}
+			default:
+				AsciiStringTerm("\r\n") AuthorizationData;
+		};
+	};
+};	
+
+Table HttpContentTypePriorityTable(Type)
+{
+	switch
+	{
+		case Type.contains("application/dime"): 2;
+		case Type.contains("NetmonRMS"): 1;
+		case Type.contains("NetmonNull"): -1;
+		default: 0;
+	}
+}
+
+
+struct HttpContentType = AsciiStringTerm(FrameData, FrameOffset, "\r\n")
+{
+	[
+		Local.SubTypeTerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		Local.SubTypeTerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+	]
+	AsciiStringTerm("\r\n") MediaType
+	{
+		switch
+		{
+			case AsciiStringTerm(FrameData, FrameOffset, "\r\n").Contains(";"):
+				struct
+				{
+					AsciiStringTerm(";") MainType;
+					while Parameters[ !(UINT16( FrameData, Offset ) == 0x0D0A) ]
+					{
+						While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09
+								|| UINT8(FrameData, FrameOffset) == 0x0d || UINT8(FrameData, FrameOffset) == 0x0a]
+						{
+							DynamicSwitch AsciiString(1)
+							{
+								default: struct{}
+							};
+						}
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							case "boundary":
+								struct
+								{
+									MimeBoundary MimeBoundary;
+									switch
+									{
+										case AsciiString(FrameData, FrameOffset, 1) == ";":
+											DynamicSwitch AsciiString(1)
+											{
+												default: struct{}
+											};
+									}
+								}
+							case "action":
+								struct
+								{
+									[Local.Quote = AsciiString(FrameData, FrameOffset, 1)]
+									DynamicSwitch AsciiString(1)
+									{
+										default: struct{}
+									};
+									
+									[Property.HttpSOAPAction]
+									StringTerm(Ascii, Local.Quote, true, false, false) Value; 
+									
+									DynamicSwitch AsciiString(1)
+									{
+										default: struct{}
+									};
+								}
+							default:
+								AsciiStringTerm(Local.SubTypeTerminator) DefaultName;
+						}
+					}
+				}
+		}
+	}
+}

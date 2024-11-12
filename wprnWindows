@@ -1,0 +1,97 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Web Point'N'Print Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WPRN]: Web Point-and-Print Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[property.HTTPPayloadType = "WPRN"]
+[RegisterAfter(HTTPPayloadData.FrontPage, WPRN,
+				property.HTTPPayloadType == "WPRN" || HttpUriLocation.Contains( ".webpnp" ) || contains(Property.CreateExe,"createexe"))]
+[RegisterBefore(HTTP.defaultname, WPRN,
+				property.HTTPPayloadType == "WPRN" || HttpUriLocation.Contains( ".webpnp" ) || contains(Property.CreateExe,"createexe"))]
+Protocol WPRN = FormatString("%s%s", 
+								Property.HttpSummary, 
+								Property.NTLMSSPAuthentication ? ", Using NLMP Authentication" : ""
+							  )
+{
+	switch
+	{
+		Case FrameOffset < FrameLength:
+			Switch
+			{
+				Case Property.HTTPContentType.Contains( "application/octet-stream" ):
+					struct{
+					BLOB (FrameLength - FrameOffset) WPRNPayLoad;}
+				Default:
+					struct{
+					AsciiString (FrameLength - FrameOffset) WPRNPayLoad;}
+			}
+	}
+}
+
+Table WPRNMajorVersionTable( Version )
+{
+	Switch( Version )
+	{
+		case 3: "Windows NT 3.51";
+		case 4: "Windows 95, Windows 98, Windows Me, or Windows NT 4.0";
+		case 5: "Windows 2000, Windows XP, or Windows Server 2003";
+		case 6: "Windows Vista";
+		Default : "Invalid Major Version";
+	}
+}
+
+Table WPRNMinorVersionTable( Version )
+{
+	Switch( Version )
+	{
+		Case 0x0 : "Windows 95, Windows NT 4.0, Windows 2000, or Windows Vista";
+		Case 0x1 : "Windows XP";
+		Case 0x2 : "Windows Server 2003";
+		Case 0xA : "Windows 98";
+		Case 0x33: "Windows NT 3.51";
+		Case 0x5A: "Windows Me";
+		Default  : "Invalid Minor Version";
+	}
+}
+
+Table WPRNPlatformTable( Platform )
+{
+	Switch( Platform )
+	{
+		Case 0: "Windows NT x86";
+		Case 1: "Windows IA64";
+		Case 2: "Windows x64";
+		Default : "Invalid Platform";
+	}
+}
+
+Table WPRNClientProcArchTable( Arch )
+{
+	Switch( Arch )
+	{
+		Case 0: "Intel";
+		Case 6: "IA64";
+		Case 9: "AMD64";
+		Default : "Invalid Client Architecture";
+	}
+}
+//
+Struct WPRNClientInfo = FormatString("%s V%u.%u, %s Processor", 
+		WPRNPlatformTable( ((property.WPRNClientInfoNum & 0x0000ff00) >> 8) ),
+		(property.WPRNClientInfoNum & 0xff000000) >> 24,
+		(property.WPRNClientInfoNum & 0x00ff0000) >> 16,
+		WPRNClientProcArchTable( (property.WPRNClientInfoNum & 0x000000ff)) )
+{
+	
+	[Post.property.WPRNClientInfoNum = StringToNumber(ClientInfoStr)]
+	AsciiStringTerm ( " " ) ClientInfoStr;
+}

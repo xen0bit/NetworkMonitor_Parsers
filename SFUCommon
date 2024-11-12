@@ -1,0 +1,90 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Kerberos Network Authentication Service v5
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 4120 (1510) Kerberos v5
+//#                          RFC 3961 Encryption & Checksums
+//#                          RFC 4556 Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)
+//#  Microsoft References:   [MS-SFU]: Kerberos Protocol Extensions: Service for User and Constrained Delegation Protocol Specification (1.8.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/17/2009
+//#
+//####
+
+//  Private
+
+Struct SFUKrbPaS4UX509User
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	SFUKrbS4UUserID S4UUserID;
+	AsnBerInfo Tag1;
+	KrbChecksum Checksum;
+}
+
+Struct SFUKrbS4UUserID
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger Nonce;
+	Switch
+	{
+		Case (UINT8(FrameData, Offset) == 0xA1): 
+		Struct
+		{
+			AsnBerInfo Tag1;
+			KrbPrincipalName Cname;
+		}
+	}
+	AsnBerInfo Tag2;
+	KrbRealm Crealm;
+	Switch
+	{
+		Case (UINT8(FrameData, Offset) == 0xA3): 
+		Struct
+		{
+			AsnBerInfo Tag3;
+			Struct SubjectCertificate = Certificate.ToString
+			{
+				AsnBerInfo OctetStringHeader;
+				X509Certificate Certificate;
+			}
+		}
+	}
+	Switch
+	{
+		Case (UINT8(FrameData, Offset) == 0xA4): 
+		Struct
+		{
+			AsnBerInfo Tag4;
+			Struct S4UOptions = Options.ToString
+			{
+				AsnBerInfo S4UOptionsHeader;
+				Switch {
+					Case Property.LengthValue  > 4:
+					UINT8 Padding[ Property.LengthValue - 4 ];
+				}
+				UINT32 Options = FormatString( "0x%08X - %s", this, ( this == 0x40000000 ? "This option causes the KDC to check logon hour restrictions for the user" : (this == 0x20000000 ? "KERB_S4U_OPTIONS_use_reply_key_usage" : "Unknown Options" ) ) );
+			}
+		}
+	}
+}
+
+// Public
+Struct SFUKrbPaForUser 
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbPrincipalName UserName;
+	AsnBerInfo Tag1;
+	KrbRealm Realm;
+	AsnBerInfo Tag2;
+	KrbChecksum Checksum;
+	AsnBerInfo Tag3;
+	//AuthPackage MUST be set to the string, "Kerberos"
+	AsnBerOctetString AuthPackage;
+}

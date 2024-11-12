@@ -1,0 +1,938 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NT LAN Manager (NTLM) Authentication Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-NLMP]: NT LAN Manager (NTLM) Authentication Protocol Specification (14.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 2/4/2010
+//#                          Minor, 2/8/2010
+//#
+//####
+
+/******************************************************************************************/
+//NLMP PROTOCOL
+/******************************************************************************************/
+[
+	DataTypeEncoding = AsciiString(FrameData, FrameOffset, 10) == "TlRMTVNTUA" ? 1 : 0,
+	DataTypeByteOrder = LittleEndian, 
+	Post.Property.AuthSummary = Property.NTLMSSPSummary
+]
+Protocol NLMP = FormatString("%s", Property.ParserError == 1 ? Property.ParserErrorMessage : Property.NTLMSSPSummary)
+{
+	[Property.NTLMSSPMessageOffset = FrameOffset]
+	AsciiStringTerm ("\0") Signature;
+	UINT32 MessageType = NLMPMessageTypeTable (this);
+
+	[Post.Property.NTLMSSPSummary = Property.NTLMSSPCommandSummary, Property.NTLMSSPFieldCount = 0, Property.NTLMSSPPayloadOffset = 0]
+	Switch( MessageType ) 
+	{
+		Case 0x00000001:
+		_Struct NLMPNegotiateMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM NEGOTIATE MESSAGE"]
+			NLMPNegotiateFlags NegotiateFlags;
+			[
+				Property.NTLMSSPWorkstationDomainLength = this.Length,
+				Property.NTLMSSPWorkstationDomainOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString DomainNameFields;
+			[
+				property.NTLMSSPWorkstationNameLength = this.Length,
+				Property.NTLMSSPWorkstationNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString WorkstationFields;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion ) 
+					{
+						Case 1:
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion )
+					{
+						Case 1:
+							NLMPVersion Version;
+					}
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case property.NTLMSSPWorkstationNameLength > 0 && Property.NTLMSSPWorkstationNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation Name: " + WorkstationName.ToString]
+						AsciiString( property.NTLMSSPWorkstationNameLength ) WorkstationName;
+
+					Case Property.NTLMSSPWorkstationDomainLength > 0 && Property.NTLMSSPWorkstationDomainOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation Domain: " + WorkstationDomain.ToString]
+						AsciiString( Property.NTLMSSPWorkstationDomainLength ) WorkstationDomain;
+						
+					Default:
+						Struct Pad
+						{
+							While Skip
+							[ 
+								( FrameOffset != Property.NTLMSSPWorkstationNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPWorkstationDomainOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+
+		Case 0x00000002:
+		_Struct NLMPChallengeMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM CHALLENGE MESSAGE"]
+			[
+				Property.NTLMSSPTargetNameLength = this.Length,
+				Property.NTLMSSPTargetNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString TargetNameFields;
+			NLMPNegotiateFlags NegotiateFlags;
+			ArrayAsHex(8) ServerChallenge;
+			Blob(8) Reserved;
+			[
+				Property.NTLMSSPTargetInfoLength = this.Length,
+				Property.NTLMSSPTargetInfoOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString TargetInfoFields;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion ) 
+					{ 
+						Case 1: 
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion ) 
+					{ 
+						Case 1: 
+							NLMPVersion Version;
+					}
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case Property.NTLMSSPTargetNameLength > 0 && Property.NTLMSSPTargetNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								UnicodeString( Property.NTLMSSPTargetNameLength / 2 ) TargetNameString;
+							Default:
+								AsciiString( Property.NTLMSSPTargetNameLength ) TargetNameStringA;
+						}
+
+					Case Property.NTLMSSPTargetInfoLength > 0 && Property.NTLMSSPTargetInfoOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						NLMPAvPairs AvPairs;
+						
+					Default:
+						Struct Pad
+						{
+							While Skip
+							[ 
+								( FrameOffset != Property.NTLMSSPTargetNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPTargetInfoOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+
+		Case 0x00000003:
+		_Struct NLMPAuthenticateMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM AUTHENTICATE MESSAGE"]
+			[
+				Property.NTLMSSPLmChallengeLength = this.Length,
+				Property.NTLMSSPLmChallengeOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString LmChallengeResponseFields;
+			[
+				Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + (this.Length == 24 ? "Version:v1" :"Version:v2"),
+				Property.NTLMSSPNtChallengeLength = this.Length,
+				Property.NTLMSSPNtChallengeOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString NtChallengeResponseFields;
+			[
+				Property.NTLMSSPDomainNameLength = this.Length,
+				Property.NTLMSSPDomainNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString DomainNameFields;
+			[
+				Property.NTLMSSPUserNameLength = this.Length,
+				Property.NTLMSSPUserNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString UserNameFields;
+			[
+				Property.NTLMSSPWorkstationLength = this.Length,
+				Property.NTLMSSPWorkstationOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString WorkstationFields;
+			[
+				Property.NTLMSSPSessionKeyLength = this.Length,
+				Property.NTLMSSPSessionKeyOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString EncryptedRandomSessionKeyFields;
+			NLMPNegotiateFlags NegotiateFlags;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion ) 
+					{
+						Case 1:
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion )
+					{
+						Case 1:
+							NLMPVersion Version;
+					}
+			}
+			
+			[Property.MICPresent = false]
+			[Local.CurrentAvPairOffset = Property.NTLMSSPNtChallengeOffset + 44]
+			[MaxLoopCount = 100]
+			while [!(UINT16(FrameData, Local.CurrentAvPairOffset) == 0)]
+			{
+					[Post.Local.CurrentAvPairOffset = Local.CurrentAvPairOffset + UINT16(FrameData, Local.CurrentAvPairOffset + 2) + 4]
+					switch 
+					{
+							case UINT16(FrameData, Local.CurrentAvPairOffset) == 6 && (UINT32(FrameData, Local.CurrentAvPairOffset + 4) & 0x00000002) == 0x00000002:
+									[Property.MICPresent = true]
+									struct {};
+					}
+			}
+			
+			//MIC
+			Switch
+			{
+					Case Property.MICPresent:
+							ArrayAsHex( 16 ) MessageIntegrityCheck;
+					Case Property.NTLMSSPPayloadOffset >= Offset + 16:
+							ArrayAsHex( 16 ) MessageIntegrityCheckNotPresent;
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case Property.NTLMSSPDomainNameLength > 0 && Property.NTLMSSPDomainNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Domain: " + DomainNameString.ToString]
+								[Property.NTLMDomainName = DomainNameString.ToString]
+								UnicodeString( Property.NTLMSSPDomainNameLength / 2 ) DomainNameString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Domain: " + DomainNameStringA.ToString]
+								[Property.NTLMDomainName = DomainNameStringA.ToString]
+								AsciiString( Property.NTLMSSPDomainNameLength ) DomainNameStringA;
+					}
+
+					Case Property.NTLMSSPUserNameLength > 0 && Property.NTLMSSPUserNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", User: " + UserNameString.ToString]
+								[Property.NTLMUserName = UserNameString.ToString]
+								UnicodeString( Property.NTLMSSPUserNameLength / 2 ) UserNameString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", User: " + UserNameStringA.ToString]
+								[Property.NTLMUserName = UserNameStringA.ToString]
+								AsciiString( Property.NTLMSSPUserNameLength ) UserNameStringA;
+						}
+
+					Case Property.NTLMSSPWorkstationLength > 0 && Property.NTLMSSPWorkstationOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation: " + WorkstationString.ToString]
+								UnicodeString( Property.NTLMSSPWorkstationLength / 2 ) WorkstationString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation: " + WorkstationStringA.ToString]
+								AsciiString( Property.NTLMSSPWorkstationLength ) WorkstationStringA;
+						}
+
+					Case Property.NTLMSSPLmChallengeLength > 0 && Property.NTLMSSPLmChallengeOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case NegotiateFlags.NegotiateNTLM2 && Property.NTLMSSPLmChallengeLength == 24:	// LM_RESPONSE_LENGTH
+								NLMPLmv2Response LmChallengeResponseStruct;
+							Case Property.NTLMSSPLmChallengeLength > 0:
+								ArrayAsHex( Property.NTLMSSPLmChallengeLength ) LmChallengeResponseString;
+
+						}
+
+					Case Property.NTLMSSPNtChallengeLength > 0 && Property.NTLMSSPNtChallengeOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case Property.NTLMSSPNtChallengeLength > 24:
+								[DataFieldFrameLength = FrameOffset + Property.NTLMSSPNtChallengeLength]
+								NLMPV2Response NTLMV2ChallengeResponse;
+							Case Property.NTLMSSPNtChallengeLength > 0:
+								ArrayAsHex( Property.NTLMSSPNtChallengeLength ) NTLMV1ChallengeResponse;
+						}
+
+					Case Property.NTLMSSPSessionKeyLength > 0 && Property.NTLMSSPSessionKeyOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						ArrayAsHex( Property.NTLMSSPSessionKeyLength ) SessionKeyString;
+					
+					Default:
+						Struct Pad
+						{
+							While Skip[ 
+								( FrameOffset != Property.NTLMSSPLmChallengeOffset ) &&
+								( FrameOffset != Property.NTLMSSPNtChallengeOffset ) &&
+								( FrameOffset != Property.NTLMSSPDomainNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPUserNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPWorkstationOffset ) &&
+								( FrameOffset != Property.NTLMSSPSessionKeyOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+		Default: ReportParserError(ParserErrorProtocolClassWindows, "NLMP", "Unknown Method" ) ProtocolError;
+	}
+}
+
+[
+	DataTypeEncoding = AsciiString(FrameData, FrameOffset, 10) == "TlRMTVNTUA" ? 1 : 0,
+	DataTypeByteOrder = LittleEndian, 
+	Post.Property.AuthSummary = Property.NTLMSSPSummary
+]
+Struct NLMP_struct = FormatString("%s", Property.ParserError == 1 ? Property.ParserErrorMessage : Property.NTLMSSPSummary)
+{
+	[Property.NTLMSSPMessageOffset = FrameOffset]
+	AsciiStringTerm ("\0") Signature;
+	UINT32 MessageType = NLMPMessageTypeTable (this);
+
+	[Post.Property.NTLMSSPSummary = Property.NTLMSSPCommandSummary, Property.NTLMSSPFieldCount = 0, Property.NTLMSSPPayloadOffset = 0]
+	Switch( MessageType ) 
+	{
+		Case 0x00000001:
+		_Struct NLMPNegotiateMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM NEGOTIATE MESSAGE"]
+			NLMPNegotiateFlags NegotiateFlags;
+			[
+				Property.NTLMSSPWorkstationDomainLength = this.Length,
+				Property.NTLMSSPWorkstationDomainOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString DomainNameFields;
+			[
+				property.NTLMSSPWorkstationNameLength = this.Length,
+				Property.NTLMSSPWorkstationNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString WorkstationFields;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion ) 
+					{
+						Case 1:
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion )
+					{
+						Case 1:
+							NLMPVersion Version;
+					}
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case property.NTLMSSPWorkstationNameLength > 0 && Property.NTLMSSPWorkstationNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation Name: " + WorkstationName.ToString]
+						AsciiString( property.NTLMSSPWorkstationNameLength ) WorkstationName;
+
+					Case Property.NTLMSSPWorkstationDomainLength > 0 && Property.NTLMSSPWorkstationDomainOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation Domain: " + WorkstationDomain.ToString]
+						AsciiString( Property.NTLMSSPWorkstationDomainLength ) WorkstationDomain;
+						
+					Default:
+						Struct Pad
+						{
+							While Skip
+							[ 
+								( FrameOffset != Property.NTLMSSPWorkstationNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPWorkstationDomainOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+
+		Case 0x00000002:
+		_Struct NLMPChallengeMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM CHALLENGE MESSAGE"]
+			[
+				Property.NTLMSSPTargetNameLength = this.Length,
+				Property.NTLMSSPTargetNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString TargetNameFields;
+			NLMPNegotiateFlags NegotiateFlags;
+			ArrayAsHex(8) ServerChallenge;
+			Blob(8) Reserved;
+			[
+				Property.NTLMSSPTargetInfoLength = this.Length,
+				Property.NTLMSSPTargetInfoOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString TargetInfoFields;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion )
+					{ 
+						Case 1: 
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion ) 
+					{ 
+						Case 1: 
+							NLMPVersion Version;
+					}
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case Property.NTLMSSPTargetNameLength > 0 && Property.NTLMSSPTargetNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								UnicodeString( Property.NTLMSSPTargetNameLength / 2 ) TargetNameString;
+							Default:
+								AsciiString( Property.NTLMSSPTargetNameLength ) TargetNameStringA;
+						}
+
+					Case Property.NTLMSSPTargetInfoLength > 0 && Property.NTLMSSPTargetInfoOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						NLMPAvPairs AvPairs;
+						
+					Default:
+						Struct Pad
+						{
+							While Skip
+							[ 
+								( FrameOffset != Property.NTLMSSPTargetNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPTargetInfoOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+
+		Case 0x00000003:
+		_Struct NLMPAuthenticateMessage 
+		{
+			[Property.NTLMSSPCommandSummary = "NTLM AUTHENTICATE MESSAGE"]
+			[
+				Property.NTLMSSPLmChallengeLength = this.Length,
+				Property.NTLMSSPLmChallengeOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString LmChallengeResponseFields;
+			[
+				Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + (this.Length == 24 ? "Version:v1" :"Version:v2"),
+				Property.NTLMSSPNtChallengeLength = this.Length,
+				Property.NTLMSSPNtChallengeOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString NtChallengeResponseFields;
+			[
+				Property.NTLMSSPDomainNameLength = this.Length,
+				Property.NTLMSSPDomainNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString DomainNameFields;
+			[
+				Property.NTLMSSPUserNameLength = this.Length,
+				Property.NTLMSSPUserNameOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString UserNameFields;
+			[
+				Property.NTLMSSPWorkstationLength = this.Length,
+				Property.NTLMSSPWorkstationOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString WorkstationFields;
+			[
+				Property.NTLMSSPSessionKeyLength = this.Length,
+				Property.NTLMSSPSessionKeyOffset = Property.NTLMSSPMessageOffset + this.BufferOffset,
+				Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount + ( this.Length ? 1 : 0 ),
+				Property.NTLMSSPPayloadOffset = ( this.Length != 0 && this.BufferOffset != 0 && ( Property.NTLMSSPPayloadOffset == 0 || Property.NTLMSSPPayloadOffset > Property.NTLMSSPMessageOffset + this.BufferOffset )) ? Property.NTLMSSPMessageOffset + this.BufferOffset : Property.NTLMSSPPayloadOffset
+			]
+			NLMPString EncryptedRandomSessionKeyFields;
+			NLMPNegotiateFlags NegotiateFlags;
+
+			Switch
+			{
+				Case Property.NTLMSSPPayloadOffset >= Offset + 8:
+					Switch ( Property.NegotiateVersion ) 
+					{
+						Case 1:
+							NLMPVersion Version;
+						Default:
+							ArrayAsHex( 8 ) VersionNotPresent;
+					}
+				Case Property.NTLMSSPPayloadOffset == 0:
+					Switch ( Property.NegotiateVersion )
+					{
+						Case 1:
+							NLMPVersion Version;
+					}
+			}
+			
+			[Property.MICPresent = false]
+			[Local.CurrentAvPairOffset = Property.NTLMSSPNtChallengeOffset + 44]
+			[MaxLoopCount = 100]
+			while [!(UINT16(FrameData, Local.CurrentAvPairOffset) == 0)]
+			{
+					[Post.Local.CurrentAvPairOffset = Local.CurrentAvPairOffset + UINT16(FrameData, Local.CurrentAvPairOffset + 2) + 4]
+					switch 
+					{
+							case UINT16(FrameData, Local.CurrentAvPairOffset) == 6 && (UINT32(FrameData, Local.CurrentAvPairOffset + 4) & 0x00000002) == 0x00000002:
+									[Property.MICPresent = true]
+									struct {};
+					}
+			}
+			
+			//MIC
+			Switch
+			{
+					Case Property.MICPresent:
+							ArrayAsHex( 16 ) MessageIntegrityCheck;
+					Case Property.NTLMSSPPayloadOffset >= Offset + 16:
+							ArrayAsHex( 16 ) MessageIntegrityCheckNotPresent;
+			}
+
+			While Payload[ Property.NTLMSSPFieldCount > 0 ]
+			{
+				Switch
+				{
+					Case Property.NTLMSSPDomainNameLength > 0 && Property.NTLMSSPDomainNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Domain: " + DomainNameString.ToString]
+								UnicodeString( Property.NTLMSSPDomainNameLength / 2 ) DomainNameString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Domain: " + DomainNameStringA.ToString]
+								AsciiString( Property.NTLMSSPDomainNameLength ) DomainNameStringA;
+					}
+
+					Case Property.NTLMSSPUserNameLength > 0 && Property.NTLMSSPUserNameOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", User: " + UserNameString.ToString]
+								UnicodeString( Property.NTLMSSPUserNameLength / 2 ) UserNameString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", User: " + UserNameStringA.ToString]
+								AsciiString( Property.NTLMSSPUserNameLength ) UserNameStringA;
+						}
+
+					Case Property.NTLMSSPWorkstationLength > 0 && Property.NTLMSSPWorkstationOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case (NegotiateFlags.NegotiateUnicode == 1 && NegotiateFlags.NegotiateOEM == 0):
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation: " + WorkstationString.ToString]
+								UnicodeString( Property.NTLMSSPWorkstationLength / 2 ) WorkstationString;
+							Default:
+								[Property.NTLMSSPCommandSummary = Property.NTLMSSPCommandSummary + ", Workstation: " + WorkstationStringA.ToString]
+								AsciiString( Property.NTLMSSPWorkstationLength ) WorkstationStringA;
+						}
+
+					Case Property.NTLMSSPLmChallengeLength > 0 && Property.NTLMSSPLmChallengeOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case NegotiateFlags.NegotiateNTLM2 && Property.NTLMSSPLmChallengeLength == 24:	// LM_RESPONSE_LENGTH
+								NLMPLmv2Response LmChallengeResponseStruct;
+							Case Property.NTLMSSPLmChallengeLength > 0:
+								ArrayAsHex( Property.NTLMSSPLmChallengeLength ) LmChallengeResponseString;
+
+						}
+
+					Case Property.NTLMSSPNtChallengeLength > 0 && Property.NTLMSSPNtChallengeOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						Switch
+						{
+							Case Property.NTLMSSPNtChallengeLength > 24:
+								[DataFieldFrameLength = FrameOffset + Property.NTLMSSPNtChallengeLength]
+								NLMPV2Response NTLMV2ChallengeResponse;
+							Case Property.NTLMSSPNtChallengeLength > 0:
+								ArrayAsHex( Property.NTLMSSPNtChallengeLength ) NTLMV1ChallengeResponse;
+						}
+
+					Case Property.NTLMSSPSessionKeyLength > 0 && Property.NTLMSSPSessionKeyOffset == FrameOffset:
+						[Property.NTLMSSPFieldCount = Property.NTLMSSPFieldCount - 1]
+						ArrayAsHex( Property.NTLMSSPSessionKeyLength ) SessionKeyString;
+					
+					Default:
+						Struct Pad
+						{
+							While Skip[ 
+								( FrameOffset != Property.NTLMSSPLmChallengeOffset ) &&
+								( FrameOffset != Property.NTLMSSPNtChallengeOffset ) &&
+								( FrameOffset != Property.NTLMSSPDomainNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPUserNameOffset ) &&
+								( FrameOffset != Property.NTLMSSPWorkstationOffset ) &&
+								( FrameOffset != Property.NTLMSSPSessionKeyOffset )
+							]
+							{ UINT8 byte; }
+						}
+				}
+			}
+		}
+		Default: ReportParserError(ParserErrorProtocolClassWindows, "NLMP", "Unknown Method" ) ProtocolError;
+	}
+}
+
+/******************************************************************************************/
+//NLMP STRUCTURES
+/******************************************************************************************/
+
+Struct NLMPString = FormatString( "Length: %d, Offset: %d", Length, BufferOffset )
+{
+	UINT16  Length;
+	UINT16  MaximumLength;
+	UINT32  BufferOffset;
+}
+
+//
+//	2.2.2.1   AV_PAIR
+//
+Struct NLMPAvPair = (AvLen > 0) ? Property.NTLMSSPAvValue + " (" + NLMPAvSummaryTable(AvId) + ")" : FormatString( "NULL" )
+{
+	[Property.NLMPAvId]
+	UINT16 AvId = FormatString( "0x%04X %s - %s", this, NLMPAvIdTable( this ), NLMPAvSummaryTable( this ) );
+	UINT16 AvLen;
+	Switch
+	{
+		Case (AvLen > 0):
+			Switch(AvId)
+			{
+				Case 1:
+				Case 2:
+				Case 3:
+				Case 4:
+				Case 5:// Windows XP and beyond
+				Case 9:
+					[Property.NTLMSSPAvValue]
+					UnicodeString( AvLen / 2 ) UnicodeValue;
+				Case 6:
+					[Property.NTLMSSPAvValue]
+					UINT32 ExtendedFlags;
+				Case 7:// Windows Vista and beyond
+					[Property.NTLMSSPAvValue]
+					FILETIME ServerTime;
+				Case 8:
+					Struct Restrictions
+					{
+						UINT32 Size;
+						UINT32 Z4 = MustBeSetToTable(this, 0x00000000);
+						UINT32 IntegrityLevel
+						{
+							UINT32 Reserved:31 =FormatString("(%s)", this.ToBitString);
+							UINT32 I:1 =FormatString("       (%s) %s", this.ToBitString,this ? "Recipient should apply the integrity level encoded below" : "Recipient shouldn't apply the integrity level encoded below");
+						}
+						[Property.NTLMSSPAvValue]
+						UINT32 SubjectIntegrityLevel;
+						ArrayAsHex( 32 ) MachineID;
+					}
+				Case 10:
+					BLOB(AvLen)MsvChannelBindings;
+				Default:
+					ReportParserError(ParserErrorProtocolClassWindows, "NLMP", "Unknown AvId" ) ProtocolError;
+			}
+	}
+}
+
+Struct NLMPAvPairs = FormatString("%d pairs",Property.NLMPPairsCount)
+{
+	[Property.NLMPAvId = TRUE,Property.NLMPPairsCount = 0]
+	While [Property.NLMPAvId]
+	{
+		[Property.NLMPPairsCount = Property.NLMPPairsCount + 1]
+		NLMPAvPair AvPair;
+	}
+}
+
+//
+//	2.2.2.9.1   NTLMSSP_MESSAGE_SIGNATURE
+//
+[DataTypeByteOrder = LittleEndian]
+Struct NLMPMessageSignature = FormatString( "Version: %d", Version )
+{
+	UINT32 Version;
+	switch(Conversation.NegotiateNTLM2Table$[Property.NLMPCurrentProtocol])
+	{
+		case 1:
+		 UINT8 Checksum[8];
+		case 0:
+			struct
+			{
+				UINT8 RandomPad[4];
+				UINT8 Checksum[4];
+			}
+	}
+	UINT32 SeqNum;
+}
+
+//
+//	2.2.2.5   NEGOTIATE
+//
+Struct NLMPNegotiateFlags = FormatString( "0x%08X (%s)", UINT32(FrameData,Offset), Property.FlagSummary )
+{
+	UINT32 NegotiateUnicode:1 = FormatString("                (%s) %s", this.ToBitString, this ? "The choice of character set encoding MUST be UNICODE." : "The choice of character set encoding is NOT UNICODE.");
+	UINT32 NegotiateOEM:1 = FormatString("                    (%s) %s", this.ToBitString, this ? "The choice of character set MUST be OEM" : "The choice of character set is NOT OEM");
+	UINT32 RequestTarget:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "TargetName MUST be supplied." : "Does not request that TargetName be supplied.");
+	UINT32 Reserved1:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 NegotiateSign:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "Requests session key negotiation for message signatures." : "Does NOT request session key negotiation for message signatures.");
+	[Conversation.NLMPNegotiateSeal]
+	UINT32 NegotiateSeal:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "Requests session key negotiation for message confidentiality." : "Does NOT request session key negotiation for message confidentiality.");
+	UINT32 NegotiateDatagram:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Requests datagram-oriented (connectionless) authentication." : "Does NOT request datagram-oriented (connectionless) authentication.");
+	UINT32 NegotiateLMKey:1 = FormatString("                  (%s) %s", this.ToBitString, this ? "Requests LAN Manager (LM) session key computation." : "Does NOT request LAN Manager (LM) session key computation.");
+	UINT32 Reserved2:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 NegotiateNTLM:1 = FormatString("                   (%s) %s", this.ToBitString, this ? "Requests usage of the NTLM v1 session security protocol." : "Does NOT request usage of the NTLM v1 session security protocol.");
+	UINT32 NegotiateNTOnly:1 = FormatString("                 (%s) %s", this.ToBitString, this ? "LM authentication is not allowed and only NT authentication is used." : "LM authentication is allowed");
+	UINT32 AnonymousConnections:1 = FormatString("            (%s) %s", this.ToBitString, this ? "The connection SHOULD be anonymous" : "The connection SHOULD not be anonymous");
+	UINT32 NegotiateOEMDomainSupplied:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The domain name is provided." : "The domain name is NOT provided.");
+	UINT32 NegotiateOEMWorkstationSupplied:1 = FormatString(" (%s) %s", this.ToBitString, this ? "The Workstation field is present." : "The Workstation field is NOT present.");
+	UINT32 Reserved4:1 = FormatString("                       (%s)", this.ToBitString);
+	[Conversation.NLMPNegotiateAlwaysSign]
+	UINT32 NegotiateAlwaysSign:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Requests the presence of a signature block on all messages." : "Does NOT request the presence of a signature block on all messages.");
+	UINT32 TargetTypeDomain:1 = FormatString("                (%s) %s", this.ToBitString, this ? "TargetName MUST be a domain name." : "TargetName is NOT a domain name.");
+	UINT32 TargetTypeServer:1 = FormatString("                (%s) %s", this.ToBitString, this ? "TargetName MUST be a server name." : "TargetName is NOT a server name");
+	UINT32 Reserved10:1 = FormatString("                      (%s)", this.ToBitString);
+	[Conversation.NegotiateNTLM2Table$[Property.NLMPCurrentProtocol]]
+	UINT32 NegotiateNTLM2:1 = FormatString("                  (%s) %s", this.ToBitString, this ? "Requests usage of the NTLM v1 using the extended session security." : "Does NOT request usage of the NTLM v1 using the extended session security.");
+	UINT32 NegotiateIdentify:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Requests an identify level token." : "Does NOT request an identify level token.");
+	UINT32 Reserved5:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 RequestNonNTSessionKey:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Requests the usage of the LMOWF." : "Does NOT request the usage of the LMOWF.");
+	UINT32 NegotiateTargetInfo:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Requests extended information about the server authentication realm to be sent as AV_PAIR in the TargetInfo payload" : "Does NOT request extended information.");
+	UINT32 Reserved6:1 = FormatString("                       (%s)", this.ToBitString);
+	[Property.NegotiateVersion = this]
+	UINT32 NegotiateVersion:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Requests the protocol version number." : "Does NOT request the protocol version number.");
+	UINT32 Reserved7:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 Reserved8:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 Reserved9:1 = FormatString("                       (%s)", this.ToBitString);
+	UINT32 Negotiate128:1 = FormatString("                    (%s) %s", this.ToBitString, this ? "Requests 128-bit session key negotiation." : "Does NOT request 128-bit session key negotiation.");
+	UINT32 NegotiateKeyExch:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Requests an explicit key exchange." : "DOes NOT request an explicit key exchange.");
+	[
+	Property.FlagSummary =
+	(NegotiateNTLM2 ? "NTLM v2" : (NegotiateNTLM ? "NTLM v1" : (NegotiateNTOnly ? "NT":"LM")))
+	+ ", "
+	+ (Negotiate128 ? "128-bit encryption" : (Negotiate56 ? "56-bit encryption" : "No encryption"))
+	+ ", "
+	+ (NegotiateAlwaysSign
+		? (NegotiateSeal ? "Always Sign & Seal" : "Always Sign")
+		: (NegotiateSign ? (NegotiateSeal ? "Sign & Seal" : ", Sign") : "No Sign or Seal"))
+	]
+	UINT32 Negotiate56:1 = FormatString("                     (%s) %s", this.ToBitString, this ? "Requesting 56-bit encryption" : "Not requesting 56-bit encryption");
+}
+
+//
+//	2.2.2.10   VERSION
+//
+Struct NLMPVersion = FormatString( "Windows %d.%d Build %d NLMPv%d", ProductMajorVersion, ProductMinorVersion, ProductBuild, NTLMRevisionCurrent )
+{
+	UINT8 ProductMajorVersion = NLMPProductMajorVersionTable(this);
+	UINT8 ProductMinorVersion = NLMPProductMinorVersionTable(this);
+	UINT16 ProductBuild;
+	UINT24 Reserved;
+	UINT8 NTLMRevisionCurrent = NLMPNTLMRevisionCurrentTable(this);
+}
+
+/******************************************************************************************/
+//NLMP MESSAGE STRUCTURES
+/******************************************************************************************/
+struct NLMPLmv2Response = Response.ToString + ChallengeFromClient.ToString 
+{
+	ArrayAsHex(16)  Response;
+	ArrayAsHex(Property.NTLMSSPLmChallengeLength - 16) ChallengeFromClient;
+}
+
+Struct NLMPV2Response = Response.ToString
+{
+	ArrayAsHex(16) Response;
+	UINT8 ResponseVersion;
+	UINT8 HiResponseVersion;
+	UINT8 Z1[6];
+	FILETIME Time;
+	ArrayAsHex(8) ClientChallenge; 
+	UINT8 Z2[4];
+	NLMPAvPairs AvPairs;
+	switch
+	{
+		case FrameLength > FrameOffset:
+			Blob (FrameLength - FrameOffset) Padding;
+	}
+}
+
+/******************************************************************************************/
+//NLMP TABLE
+/******************************************************************************************/
+Table NLMPProductMajorVersionTable(value)
+{
+	Switch(value)
+	{
+		case 0x05: "WINDOWS_MAJOR_VERSION_5 - The major version of the Windows operating system is 0x05.";
+		case 0x06: "WINDOWS_MAJOR_VERSION_6 - The major version of the Windows operating system is 0x06.";
+		Default: "Unknown Value" + FormatString("%d", value);
+	}
+}
+
+Table NLMPProductMinorVersionTable(value)
+{
+	Switch(value)
+	{
+		case 0x00: "WINDOWS_MINOR_VERSION_0 - The minor version of the Windows operating system is 0x00.";
+		case 0x01: "WINDOWS_MINOR_VERSION_1 - The minor version of the Windows operating system is 0x01.";
+		case 0x02: "WINDOWS_MINOR_VERSION_2 - The minor version of the Windows operating system is 0x02.";
+		Default: "Unknown Value" + FormatString("%d", value);
+	}
+}
+
+Table NLMPNTLMRevisionCurrentTable(value)
+{
+	Switch(value)
+	{
+		case 0x0F: "NTLMSSP_REVISION_W2K3 - Version 15 of the NTLMSSP is in use.";
+		Default: "Unknown Value" + FormatString("%d", value);
+	}
+}
+
+Table NLMPMessageTypeTable( value ) 
+{
+	Switch( value ) 
+	{
+		Case 0x00000001 : "Negotiate Message (0x00000001)";
+		Case 0x00000002 : "Challenge Message (0x00000002)";
+		Case 0x00000003 : "Authenticate Message (0x00000003)";
+	}
+}
+
+Table NLMPAvSummaryTable( value )
+{
+	Switch( value ) 
+	{
+		Case 0x0000 : "End of list";
+		Case 0x0001 : "Server NetBIOS computer name";
+		Case 0x0002 : "Server NetBIOS domain name";
+		Case 0x0003 : "The fully qualified domain name (FQDN (1)) of the computer.";
+		Case 0x0004 : "The FQDN (2) of the domain.";
+		Case 0x0005 : "The FQDN (2) of the forest.";
+		Case 0x0006 : "Server configuration";
+		Case 0x0007 : "Server local time";
+		Case 0x0008 : "Token restrictions";
+		Case 0x0009 : "The SPN of the target server";
+		Case 0x00A : "A channel bindings hash";
+	}
+}
+
+Table NLMPAvIdTable( value ) 
+{
+	Switch( value ) 
+	{
+		Case 0x0000 : "MsvAvEOL";
+		Case 0x0001 : "MsvAvNbComputerName";
+		Case 0x0002 : "MsvAvNbDomainName";
+		Case 0x0003 : "MsvAvDnsComputerName";
+		Case 0x0004 : "MsvAvDnsDomainName";
+		Case 0x0005 : "MsvAvDnsTreeName";
+		Case 0x0006 : "MsvAvFlags";
+		Case 0x0007 : "MsvAvTimestamp";
+		Case 0x0008 : "MsAvRestrictions";
+		Case 0x0009 : "MsvAvTargetName";
+		Case 0x00A : "MsvChannelBindings";
+	}
+}

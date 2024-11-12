@@ -1,0 +1,100 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Key Exchange
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-IKEE]: Internet Key Exchange Protocol Extensions: Protocol SpecificationVersion 0.06 (9.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/11/2009
+//#
+//####
+
+//
+// Fragment Payload
+//
+[RegisterBefore(IKE.Payloads.PrivateUse, Fragment, property.IKENextPayload == 0x84)]
+[RegisterBefore(AuthIP.Payloads.PrivateUse, Fragment, property.IKENextPayload == 0x84)]
+[Property.IKEPayloads = Property.IKEPayloads | IKE_FRAGMENT]
+struct IKEEFragmentPayload=FormatString("Next Payload = %s, FragID = %d, FragNo = %d, Length = %d",
+										  IKEPayloadTable(NextPayload),
+										  FragmentID,
+										  FragmentNumber,
+										  PayloadLength
+										 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	//Reserved MUST be set to zero
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT16 FragmentID;
+	UINT8 FragmentNumber;
+	UINT8 Flags = L ? "The Last Fragmentation" : "NOT the Last Fragmentation"
+	{
+		//Reserved MUST be set to zero
+		UINT8 Reserved:7 = FormatString("(%s)",this.ToBitString);
+		UINT8 L:1 = FormatString("       (%s) %s",this.ToBitString,this ? "the Last Fragmentation"
+						 : "NOT the Last Fragmentation");
+	};
+	[PayloadStart(
+			(SourcePort-DestinationPort)>0?1:(SourcePort==DestinationPort)?0:-1, /* direction */
+			FragmentID, /* id */
+			FragmentNumber, /* sequence token */
+			FragmentNumber + 1, /* next sequence token */
+			0, /* total payload length */
+			FragmentNumber == 1, /* is first */
+			Flags.L, /* is last */
+	        RssmblyIndStartBit+RssmblyIndEndBit+RssmblySequenceBit 		//has start and end indication
+			)
+	]
+	switch(FragmentNumber)
+	{
+		case 1:
+			switch
+			{
+				case UINT8(FrameData, FrameOffset + 18) >= 0xF3
+					&& UINT8(FrameData, FrameOffset + 18) <= 0xF6:
+						[EmbeddedProtocol]
+						AuthIP AuthIP;
+				default:
+					[EmbeddedProtocol]
+					IKE Ike;
+			}
+		default:
+			Blob(PayloadLength - 8 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 8) FragmentData;
+	};
+}
+
+Table IKEEIdIpv6CgaIdentificationTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0xFA: "ID_IPV6_CGA";
+		Default: "Unknown";
+	}
+}
+
+UnsignedNumber UINT128
+{
+	Size = 16;
+	DisplayFormat = FormatString( "%I64u (0x%I64X)", this, this );
+}
+
+[RegisterBefore(IKEv2NotifyPayload.MsgCount, NotityStatus, 0x2000)]
+[RegisterBefore(IKENotificationPayload.NotificationData, NotityStatus, 0x9C43)]
+[RegisterBefore(AuthIPNotificationPayload.NotificationData, NotityStatus, 0x9C43)]
+struct IKEENotifyStatus
+{
+	UINT32 NotifyStatus = WinErrorCodeNameTable(this);
+}
+
+[RegisterBefore(IKENotificationPayload.NotificationData, NotifyDosCookie, 0x9C44)]
+[RegisterBefore(AuthIPNotificationPayload.NotificationData, NotifyDosCookie, 0x9C44)]
+struct IKEENotifyDosCookie
+{
+	cookie NotifyDosCookie;
+}
+

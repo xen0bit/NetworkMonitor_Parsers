@@ -1,0 +1,120 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Group Policy: Scripts Extension Encoding
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-GPSCR]: Group Policy: Scripts Extension Encoding (4.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/10/2009
+//#                          Minor, 11/2/2009
+//#
+//####
+[RegisterBefore( FileTypeContent.FileData,GPSCR, Contains(property.SmbFileName, "scripts.ini"))]
+[RegisterBefore( FileTypeContent.FileData,GPSCR, Contains(property.SmbFileName, "psscripts.ini"))]
+Protocol GPSCR
+{
+	[Property.GPSSCREncode=Property.SMBUnicode]
+	Switch
+	{
+		Case (UINT16(FrameData, FrameOffset) == 0xFFFE||UINT16(FrameData, FrameOffset) ==0xFEFF)&&(FrameOffset<FrameLength):
+			Struct UTF16BOMHeader
+			{
+				[Property.GPSSCREncode=1]
+				BLOB(2) UTF16BOM;
+				BLOB(4) BOMEnder;
+			}
+		Case UINT16(FrameData, FrameOffset) == 0xEFBBBF&&(FrameOffset<FrameLength):
+		Struct UTF8BOMHeader
+			{
+				[Property.GPSSCREncode=2]
+				BLOB(3) UTF8BOM;
+				BLOB(4) BOMEnder;
+			}
+	}
+	While[FrameOffset<FrameLength]
+	{
+		Switch
+		{
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false),"Logoff"):
+				Struct GPSCRLogoffSection=FormatString("SectionName=%s",this.SectionName.sectionName)
+				{
+					GPSCRSectionName SectionName=FormatString("%s",SectionName.sectionName);
+					GPSCRSectionBody SectionContext;
+				}
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "Logon"):
+				Struct GPSCRLogonSection=FormatString("SectionName=%s",this.SectionName.sectionName)
+				{
+					GPSCRSectionName SectionName=FormatString("%s",SectionName.sectionName);
+					GPSCRSectionBody SectionContext;
+				}
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "ScriptsConfig"):
+				Struct GPSCRScriptsConfigSection=FormatString("SectionName=%s",this.SectionName.sectionName)
+				{
+					GPSCRSectionName SectionName=FormatString("%s",SectionName.sectionName);
+					GPSCRSectionBody SectionContext;
+				}
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "Startup"):
+				Struct GPSCRSStartupSection=FormatString("SectionName=%s",this.SectionName.sectionName)
+				{
+					GPSCRSectionName SectionName=FormatString("%s",SectionName.sectionName);
+					GPSCRSectionBody SectionContext;
+				}
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "Shutdown"):
+				Struct GPSCRShutdownSection=FormatString("SectionName=%s",this.SectionName.sectionName)
+				{
+					GPSCRSectionName SectionName=FormatString("%s",SectionName.sectionName);
+					GPSCRSectionBody SectionContext;
+				}
+			default:
+				Struct
+				{
+					ReportParserWarning("GPSCR","Invalid GPSCR Context") ProtocolWarning;
+					Blob(FrameLength -FrameOffset) GPSCRBlobData;
+				}
+		}
+	}
+}
+
+Struct GPSCRSectionName
+{
+	Switch
+		{
+			Case contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "]"):
+				Struct 
+				{
+					while [ FrameLength > FrameOffset && String(FrameData, FrameOffset,Property.GPSSCREncode , 1) =="["]
+					{
+						DynamicSwitch String(Property.GPSSCREncode, 1)
+						{
+							default: struct{}
+						};
+					}
+					StringTerm(Property.GPSSCREncode,"]",true,false,true) sectionName;
+					while [ FrameLength > FrameOffset && String(FrameData, FrameOffset,Property.GPSSCREncode , 2) =="\r\n"]
+					{
+						DynamicSwitch String(Property.GPSSCREncode, 2)
+						{
+							default: struct{}
+						};
+					}
+				}
+		}
+}
+
+Struct GPSCRSectionBody
+{
+	While[contains(StringTerm(FrameData,FrameOffset,Property.GPSSCREncode, "\r\n", true, false, false), "=")]
+	{
+			Struct
+			{
+					DynamicSwitch StringTerm(Property.GPSSCREncode,"=",true,false,true)
+					{
+					   default:
+						  StringTerm(Property.GPSSCREncode,"\r\n",true,false,true) DefaultName;
+					}
+			}
+	}
+}

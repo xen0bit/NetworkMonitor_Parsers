@@ -1,0 +1,1608 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Lightweight Directory Access Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2222, 2251, 2252, 2253, 2254, 2255, 2256, 2589,
+//#                          RFC 2829, 2830, 2831, 2891, 2969, 3377, 4532
+//#                          draft-armijo-ldap-dirsync-01
+//#                          draft-ietf-ldapext-ldapv3-vlv-08
+//#                          http://www.iana.org/assignments/ldap-parameters
+//#  Microsoft References:   [MS-ADTS]:Active Directory Technical Specification (9.0)
+//#                          [MS-CRTD]: Certificate Templates Protocol Specification
+//#                          [MS-GPOL]: Group Policy: Core Protocol Specification
+//#                          [MS-TAIL]: Telephony API Internet Locator Service Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/25/2010
+//#
+//####
+
+[DefaultTimeOut = LDAPConversationTimeout]
+Protocol LDAP = Property.IsLDAPOverSSL ? "Encrypted Over SSL":
+				Property.IsLDAPGlobalCatalogOverSSL ? "Global Catalog Encrypted Over SSL":
+				Property.GssAPISeal <> 0xFFFF || (LDAPSASLBuffer && Conversation.NLMPNegotiateAlwaysSign) ?
+				FormatString("%s%sGSS-API Encrypted Payload",
+							Property.IsCldap ? "(CLDAP)" : "",
+							Property.LDAPGlobalCatalog ? "Global Catalog, " : ""):
+				FormatString("%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+							Property.IsCldap ? "(CLDAP)" : "",
+							Property.LDAPGlobalCatalog ? "Global Catalog, " : "",
+							Property.LDAPSicilyBindResponse ? "Sicily " : "",
+							Property.LDAPOperationSummary,
+							Property.LDAPMessageID ? FormatString(", MessageID: %d", Property.LDAPMessageID) : "",
+							Property.LDAPVersion ? ", Version: " + Property.LDAPVersion : "",
+							Property.ResultStatus ? ", Status: " + Property.ResultStatus : "",
+							Property.BaseDN ? ", BaseObject: " + Property.BaseDN : "",
+							Property.SearchScope ? ", SearchScope: " + Property.SearchScope : "",
+							Property.SearchAlias ? ", SearchAlias: " + Property.SearchAlias : "",
+							Property.GPGUID ? ", GROUP POLICY: " + Property.GPGUID : "",
+							Property.ParserWarning == 1 ? ", " + Property.ParserWarningMessage : "",
+							Property.LDAPAbandonMessageID ? ", AbandonMessageID: " + LDAPAbandonMessageID : "",
+							Property.LDAPModifyObjectString ? ", Object: " + Property.LDAPModifyObjectString : "")
+{
+	//
+	// Build Conversation for LDAP
+	//
+	switch
+	{
+		case !Conversation.LDAP.ID:
+			[BuildConversationWithParent] struct{};
+	}
+
+	//
+	// LDAP over SSL is encrypted
+	//
+	switch
+	{
+		case Property.IsLDAPOverSSL:
+		case Property.IsLDAPGlobalCatalogOverSSL:
+			BLOB(FrameLength - FrameOffset) EncryptedData;
+	}
+	
+	//
+	// LDAP frame may start with a continuation part of the previous LDAP frame
+	// This part calculate the length of the continuation data
+	//
+	switch
+	{
+		case !Property.IsCldap:
+			[Conversation.LdapParserEndSeqNumberTable$[FrameNumber + 1] = Conversation.LdapParserEndSeqNumber$[TCPDirection]] struct{};
+	}
+	
+	[
+		Post.PayloadStart(
+			NetworkDirection, /*direction */
+			0, /* id */
+			0, /* sequence token */
+			0, /* next sequence token */
+			0, /* total payload length */
+			Property.IsCldap ? true : Property.LdapCompleteStart, /* is first */
+			Property.IsCldap ? true : Property.LdapCompleteEnd, /* is last */
+			RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+		)
+	]
+	
+	[
+		Post.Conversation.ConversationDescription = 
+			( Conversation.LDAPAuthenticationType ? ( FormatString("(AuthType: %s) ", Conversation.LDAPAuthenticationType) ) : "") +
+			( FormatString("ConvID = %d", ConvID) )
+	]
+	//
+	// Main part, repeatedly parse the LDAP body
+	//
+	While /* LDAPParsers */[ FrameOffset < FrameLength - 4]
+	{
+		switch
+		{
+			case !Property.IsCldap
+				&& IsValueNone(Conversation.LdapParserIsStartSeqNumber$[MakeByteArray(Property.NetworkDirection, Property.TCPSeqNumber)])
+				&& Conversation.LdapParserEndSeqNumberTable$[FrameNumber + 1] > Property.TCPSeqNumber
+				&& !(UINT32(FrameData, FrameOffset) == (FrameLength - FrameOffset - 4))
+				&& FrameOffset == ProtocolOffset:
+				[Property.LdapCompleteStart = false]
+				[Property.LdapCompleteEnd = (Conversation.LdapParserEndSeqNumberTable$[FrameNumber + 1] <= FrameLength - FrameOffset + Property.TCPSeqNumber ) ? true : false]
+				[Property.LDAPContinuationLength = (Conversation.LdapParserEndSeqNumberTable$[FrameNumber + 1] - Property.TCPSeqNumber) > (FrameLength - FrameOffset) ? (FrameLength - FrameOffset) : (Conversation.LdapParserEndSeqNumberTable$[FrameNumber + 1] - Property.TCPSeqNumber) ]
+				[PostAfter.LDAPOperationSummary = (FrameOffset == FrameLength) ? FormatString("Continuation Data, Length = %d", Property.LDAPContinuationLength) : Property.LDAPOperationSummary]
+				Blob(Property.LDAPContinuationLength) ContinueData;
+			
+			case UINT8( Framedata, Offset ) == 0x30:
+				[Property.LDAPOffsetofLength = ((UINT8( Framedata, Offset + 1 ) & 0x80) == 0x80) ? 2 : 1]
+				[Property.LDAPLengthofLength = ((UINT8( Framedata, Offset + 1 ) & 0x80) == 0x80) ? (UINT8( Framedata, Offset + 1 ) & 0x7f) : 1]
+				[Property.LDAPValueOfLength = Integer(FrameData, FrameOffset + Property.LDAPOffsetofLength, Property.LDAPLengthofLength)]
+				[Property.LdapCompleteStart = (FrameOffset == ProtocolOffset) ? true : Property.LdapCompleteStart]
+				[Property.LdapCompleteEnd = ( FrameLength - FrameOffset >= Property.LDAPValueOfLength + 1 + ((Property.LDAPOffsetofLength == 1) ? 1 : (1 + Property.LDAPLengthofLength))) ? true : false]
+				[Conversation.LdapParserEndSeqNumber$[TCPDirection] = Property.TCPSeqNumber + CurrentProtocolOffset + Property.LDAPValueOfLength + 1 + ((Property.LDAPOffsetofLength == 1) ? 1 : (1 + Property.LDAPLengthofLength))]
+				[Conversation.LdapParserIsStartSeqNumber$[MakeByteArray(Property.NetworkDirection, Property.TCPSeqNumber)] = (FrameOffset == ProtocolOffset) ? true : Conversation.LdapParserIsStartSeqNumber$[MakeByteArray(Property.NetworkDirection, Property.TCPSeqNumber)]]
+				LDAPMessage LDAPMessage;
+			
+			case UINT32(FrameData, FrameOffset) >= (FrameLength - FrameOffset - 4) && (FrameOffset == ProtocolOffset):
+				struct
+				{
+					switch
+					{
+						case !(ConvID > 0):
+							ReportParserWarning( "LDAP", "May not parsed correctly when conversation off") ParserWarning;
+					}
+					[Property.LdapCompleteStart = (FrameOffset == ProtocolOffset) ? true : Property.LdapCompleteStart]
+					[Conversation.LdapParserIsStartSeqNumber$[MakeByteArray(Property.NetworkDirection, Property.TCPSeqNumber)] = (FrameOffset == ProtocolOffset) ? true : Conversation.LdapParserIsStartSeqNumber$[MakeByteArray(Property.NetworkDirection, Property.TCPSeqNumber)]]
+					LDAPSASLBuffer LDAPSASLBuffer;
+				}
+			
+			default:
+				Blob(frameLength - FrameOffset) UnhandledData;
+		}
+	}
+	
+	//
+	// There maybe a rail padding byte in the trail
+	//
+	switch
+	{
+		case ( 1 == (FrameLength - FrameOffset) ):
+			UINT8 Pad;
+		case ( 1 < (FrameLength - FrameOffset) ):
+			Blob(frameLength - FrameOffset) UnhandledData;
+	}
+}
+//http://www.iana.org/assignments/ldap-parameters
+Table LDAPOperationTable(value)
+{
+	switch(value)
+	{
+		case  0:  "Bind Request";
+		case  1:  "Bind Response";
+		case  2:  "Unbind Request";
+		case  3:  "Search Request";
+		case  4:  "Search Result Entry";
+		case  5:  "search Result Done";
+		case  6:  "Modify Request";
+		case  7:  "Modify Response";
+		case  8:  "Add Request";
+		case  9:  "Add Response";
+		case 10:  "Del Request";
+		case 11:  "Del Response";
+		case 12:  "Modify RDN Request";
+		case 13:  "Modify RDN Response";
+		case 14:  "Compare Request";
+		case 15:  "Compare Response";
+		case 16:  "Abandon Request";
+		case 17:  "Reserved";
+		case 18:  "Reserved";
+		case 19:  "Search Result Reference";
+		case 20:  "Reserved";
+		case 21:  "Reserved";
+		case 22:  "Reserved";
+		case 23:  "Extended Request";
+		case 24:  "Extended Response";
+		case 25:  "Intermediate Response";
+		default:  "Unknown Operation";
+	}
+}
+
+//http://www.iana.org/assignments/ldap-parameters
+Table LDAPResultTable(value)
+{
+	switch
+	{
+		case value ==   0:  "Success";
+		case value ==   1:  "Operations Error";
+		case value ==   2:  "Protocol Error";
+		case value ==   3:  "TimeLimit Exceeded";
+		case value ==   4:  "SizeLimit Exceeded";
+		case value ==   5:  "Compare False";
+		case value ==   6:  "Compare True";
+		case value ==   7:  "Auth Method Not Supported";
+		case value ==   8:  "Strong Auth Required";
+		case value ==   9:  "Reserved(partial Results)";
+		case value ==  10:  "Referral";
+		case value ==  11:  "Admin Limit Exceeded";
+		case value ==  12:  "Unavailable Critical Extension";
+		case value ==  13:  "Confidentiality Required";
+		case value ==  14:  "Sasl Bind In Progress";
+		case value ==  16:  "No Such Attribute";
+		case value ==  17:  "Undefined Attribute Type";
+		case value ==  18:  "Inappropriate Matching";
+		case value ==  19:  "Constraint Violation";
+		case value ==  20:  "Attribute Or Value Exists";
+		case value ==  21:  "Invalid Attribute Syntax";
+		case value >=  22 &&
+			 value <=  31:  "Reserved";
+		case value ==  32:  "No Such Object";
+		case value ==  33:  "Alias Problem";
+		case value ==  34:  "Invalid DN Syntax";
+		case value ==  35:  "Reserved(isLeaf)";
+		case value ==  36:  "Alias Dereferencing Problem";
+		case value >=  37 &&
+			 value <=  47:  "Reserved";
+		case value ==  48:  "Inappropriate Authentication";
+		case value ==  49:  "Invalid Credentials";
+		case value ==  50:  "Insufficient Access Rights";
+		case value ==  51:  "Busy";
+		case value ==  52:  "Unavailable";
+		case value ==  53:  "Unwilling To Perform";
+		case value ==  54:  "Loop Detect";
+		case value >=  55 &&
+			 value <=  63:  "Reserved";
+		case value ==  64:  "Naming Violation";
+		case value ==  65:  "Object Class Violation";
+		case value ==  66:  "Not Allowed On Non Leaf";
+		case value ==  67:  "Not Allowed On RDN";
+		case value ==  68:  "Entry Already Exists";
+		case value ==  69:  "Object Class Mods Prohibited";
+		case value ==  70:  "Results Too Large(CLDAP)";
+		//rfc 2251
+		case value ==  71:  "Affects Multiple DSAs";
+		// draft-ietf-ldapext-ldapv3-vlv-08
+		case value ==  76:  "virtual List View Error";
+		case value >=  72 &&
+			 value <=  79:  "Reserved";
+		case value ==  80:  "Other";
+		case value >=  81 &&
+			 value <=  90:  "Reserved(APIs)";
+		case value >=  91 &&
+			 value <=  112:  "Reserved(LDAPAPIs)";
+		case value == 113:  "Lcup Resources Exhausted";
+		case value == 114:  "Lcup Security Violation";
+		case value == 115:  "Lcup Invalid Data";
+		case value == 116:  "Lcup Unsupported Scheme";
+		case value == 117:  "Lcup Reload Required";
+		case value == 118:  "Canceled";
+		case value == 119:  "No Such Operation";
+		case value == 120:  "Too Late";
+		case value == 121:  "Cannot Cancel";
+		case value == 122:  "Assertion Failed";
+		default:            "Unknown result";
+	}
+}
+
+Table LDAPFilterTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00: "And";
+		case  0x01: "Or";
+		case  0x02: "Not";
+		case  0x03: "Equality Match";
+		case  0x04: "SubStrings";
+		case  0x05: "Greater or Equal";
+		case  0x06: "Less or Equal";
+		case  0x07: "Present";
+		case  0x08: "Approximate Match";
+		case  0x09: "Extensible Match";
+		default   : "Invalid Filter";
+	}
+}
+
+Table LDAPModifyOperationTable(value)
+{
+	switch(value)
+	{
+		case  0: "Add";
+		case  1: "Delete";
+		case  2: "Replace";
+		default: "Unhandled operation";
+	}
+}
+Table LDAPScopedAttribute( value )
+{
+	switch ( value )
+	{
+		case  0: FormatString(" success (%d)", value );
+		case 21: FormatString(" invalidAttributeSyntax (%d)", value );
+		case 53: FormatString(" unwillingToPerform (%d)", value );
+		case 71: FormatString(" affectsMultipleDSAs (%d)", value );
+		default: FormatString(" unknown (%d)", value );
+	}
+}
+
+Table LDAPSortOdersTable(OrdingRuleOID)
+{
+	switch(OrdingRuleOID)
+	{
+		case "1.2.840.113556.1.4.1461": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Afrikaans");
+		case "1.2.840.113556.1.4.1462": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Albanian");
+		case "1.2.840.113556.1.4.1463": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Saudi Arabia");
+		case "1.2.840.113556.1.4.1464": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Iraq");
+		case "1.2.840.113556.1.4.1465": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Egypt");
+		case "1.2.840.113556.1.4.1466": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Libya");
+		case "1.2.840.113556.1.4.1467": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Algeria");
+		case "1.2.840.113556.1.4.1468": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Morocco");
+		case "1.2.840.113556.1.4.1469": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Tunisia");
+		case "1.2.840.113556.1.4.1470": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Oman");
+		case "1.2.840.113556.1.4.1471": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Yemen");
+		case "1.2.840.113556.1.4.1472": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Syria");
+		case "1.2.840.113556.1.4.1473": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Jordan");
+		case "1.2.840.113556.1.4.1474": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Lebanon");
+		case "1.2.840.113556.1.4.1475": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Kuwait");
+		case "1.2.840.113556.1.4.1476": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: UAE");
+		case "1.2.840.113556.1.4.1477": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Bahrain");
+		case "1.2.840.113556.1.4.1478": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Arabic: Qatar");
+		case "1.2.840.113556.1.4.1479": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Armenian");
+		case "1.2.840.113556.1.4.1480": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Assamese");
+		case "1.2.840.113556.1.4.1481": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Azeri: Latin");
+		case "1.2.840.113556.1.4.1482": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Azeri: Cyrillic");
+		case "1.2.840.113556.1.4.1483": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Basque");
+		case "1.2.840.113556.1.4.1484": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Belarussian");
+		case "1.2.840.113556.1.4.1485": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Bengali");
+		case "1.2.840.113556.1.4.1486": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Bulgarian");
+		case "1.2.840.113556.1.4.1487": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Burmese");
+		case "1.2.840.113556.1.4.1488": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Catalan");
+		case "1.2.840.113556.1.4.1489": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Taiwan");
+		case "1.2.840.113556.1.4.1490": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: PRC");
+		case "1.2.840.113556.1.4.1491": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Hong Kong SAR");
+		case "1.2.840.113556.1.4.1492": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Singapore");
+		case "1.2.840.113556.1.4.1493": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Macau SAR");
+		case "1.2.840.113556.1.4.1494": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Croatian");
+		case "1.2.840.113556.1.4.1495": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Czech");
+		case "1.2.840.113556.1.4.1496": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Danish");
+		case "1.2.840.113556.1.4.1497": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Dutch");
+		case "1.2.840.113556.1.4.1498": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Dutch:Belgium");
+		case "1.2.840.113556.1.4.1499": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: United States");
+		case "1.2.840.113556.1.4.1500": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: United Kingdom");
+		case "1.2.840.113556.1.4.1665": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Australia");
+		case "1.2.840.113556.1.4.1666": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Canada");
+		case "1.2.840.113556.1.4.1667": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: New Zealand");
+		case "1.2.840.113556.1.4.1668": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Ireland");
+		case "1.2.840.113556.1.4.1505": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: South Africa");
+		case "1.2.840.113556.1.4.1506": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Jamaica");
+		case "1.2.840.113556.1.4.1507": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Caribbean");
+		case "1.2.840.113556.1.4.1508": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Belize");
+		case "1.2.840.113556.1.4.1509": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English:Trinidad");
+		case "1.2.840.113556.1.4.1510": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Zimbabwe");
+		case "1.2.840.113556.1.4.1511": FormatString("%s, Sort Order: %s", OrdingRuleOID, "English: Philippines");
+		case "1.2.840.113556.1.4.1512": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Estonian");
+		case "1.2.840.113556.1.4.1513": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Faeroese");
+		case "1.2.840.113556.1.4.1514": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Persian");
+		case "1.2.840.113556.1.4.1515": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Finnish");
+		case "1.2.840.113556.1.4.1516": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: France");
+		case "1.2.840.113556.1.4.1517": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: Belgium");
+		case "1.2.840.113556.1.4.1518": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: Canada");
+		case "1.2.840.113556.1.4.1519": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: Switzerland");
+		case "1.2.840.113556.1.4.1520": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: Luxembourg");
+		case "1.2.840.113556.1.4.1521": FormatString("%s, Sort Order: %s", OrdingRuleOID, "French: Monaco");
+		case "1.2.840.113556.1.4.1522": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Georgian");
+		case "1.2.840.113556.1.4.1523": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German: Germany");
+		case "1.2.840.113556.1.4.1524": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German: Switzerland");
+		case "1.2.840.113556.1.4.1525": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German: Austria");
+		case "1.2.840.113556.1.4.1526": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German: Luxembourg");
+		case "1.2.840.113556.1.4.1527": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German: Liechtenstein");
+		case "1.2.840.113556.1.4.1528": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Greek");
+		case "1.2.840.113556.1.4.1529": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Gujarati");
+		case "1.2.840.113556.1.4.1530": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Hebrew");
+		case "1.2.840.113556.1.4.1531": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Hindi");
+		case "1.2.840.113556.1.4.1532": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Hungarian");
+		case "1.2.840.113556.1.4.1533": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Icelandic");
+		case "1.2.840.113556.1.4.1534": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Indonesian");
+		case "1.2.840.113556.1.4.1535": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Inukitut");
+		case "1.2.840.113556.1.4.1536": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Italian:Italy");
+		case "1.2.840.113556.1.4.1537": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Italian:Switzerland");
+		case "1.2.840.113556.1.4.1538": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Japanese");
+		case "1.2.840.113556.1.4.1539": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Kannada");
+		case "1.2.840.113556.1.4.1540": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Kashmiri Arabic");
+		case "1.2.840.113556.1.4.1541": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Kashmiri");
+		case "1.2.840.113556.1.4.1542": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Kazakh");
+		case "1.2.840.113556.1.4.1543": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Khmer");
+		case "1.2.840.113556.1.4.1544": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Kirghiz");
+		case "1.2.840.113556.1.4.1545": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Konkani");
+		case "1.2.840.113556.1.4.1546": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Korean");
+		case "1.2.840.113556.1.4.1547": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Korean:Johab");
+		case "1.2.840.113556.1.4.1548": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Latvian");
+		case "1.2.840.113556.1.4.1549": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Lithuanian");
+		case "1.2.840.113556.1.4.1550": FormatString("%s, Sort Order: %s", OrdingRuleOID, "F.Y.R.O. Macedonian");
+		case "1.2.840.113556.1.4.1551": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Malaysian");
+		case "1.2.840.113556.1.4.1552": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Malay Brunei Darussalam");
+		case "1.2.840.113556.1.4.1553": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Malayalam");
+		case "1.2.840.113556.1.4.1554": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Maltese");
+		case "1.2.840.113556.1.4.1555": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Manipuri");
+		case "1.2.840.113556.1.4.1556": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Marathi");
+		case "1.2.840.113556.1.4.1557": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Nepali:Nepal");
+		case "1.2.840.113556.1.4.1558": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Norwegian:Bokmal");
+		case "1.2.840.113556.1.4.1559": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Norwegian:Nynorsk");
+		case "1.2.840.113556.1.4.1560": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Oriya");
+		case "1.2.840.113556.1.4.1561": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Polish");
+		case "1.2.840.113556.1.4.1562": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Portuguese:Brazil");
+		case "1.2.840.113556.1.4.1563": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Portuguese:Portugal");
+		case "1.2.840.113556.1.4.1564": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Punjabi");
+		case "1.2.840.113556.1.4.1565": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Romanian");
+		case "1.2.840.113556.1.4.1566": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Russian");
+		case "1.2.840.113556.1.4.1567": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Sanskrit");
+		case "1.2.840.113556.1.4.1568": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Serbian:Cyrillic");
+		case "1.2.840.113556.1.4.1569": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Serbian:Latin");
+		case "1.2.840.113556.1.4.1570": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Sindhi:India");
+		case "1.2.840.113556.1.4.1571": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Slovak");
+		case "1.2.840.113556.1.4.1572": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Slovenian");
+		case "1.2.840.113556.1.4.1573": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: SpainTraditional Sort");
+		case "1.2.840.113556.1.4.1574": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Mexico");
+		case "1.2.840.113556.1.4.1575": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: SpainModern Sort");
+		case "1.2.840.113556.1.4.1576": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Guatemala");
+		case "1.2.840.113556.1.4.1577": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Costa Rica");
+		case "1.2.840.113556.1.4.1578": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Panama");
+		case "1.2.840.113556.1.4.1579": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Dominican Republic");
+		case "1.2.840.113556.1.4.1580": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Venezuela");
+		case "1.2.840.113556.1.4.1581": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Colombia");
+		case "1.2.840.113556.1.4.1582": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Peru");
+		case "1.2.840.113556.1.4.1583": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Argentina");
+		case "1.2.840.113556.1.4.1584": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Ecuador");
+		case "1.2.840.113556.1.4.1585": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Chile");
+		case "1.2.840.113556.1.4.1586": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Uruguay");
+		case "1.2.840.113556.1.4.1587": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Paraguay");
+		case "1.2.840.113556.1.4.1588": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Bolivia");
+		case "1.2.840.113556.1.4.1589": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: El Salvador");
+		case "1.2.840.113556.1.4.1590": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Honduras");
+		case "1.2.840.113556.1.4.1591": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Nicaragua");
+		case "1.2.840.113556.1.4.1592": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Spanish: Commonwealth of Puerto Rico");
+		case "1.2.840.113556.1.4.1593": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Swahili: Kenya");
+		case "1.2.840.113556.1.4.1594": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Swedish");
+		case "1.2.840.113556.1.4.1595": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Swedish: Finland");
+		case "1.2.840.113556.1.4.1596": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Tamil");
+		case "1.2.840.113556.1.4.1597": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Tatar: Tatarstan");
+		case "1.2.840.113556.1.4.1598": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Telugu");
+		case "1.2.840.113556.1.4.1599": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Thai");
+		case "1.2.840.113556.1.4.1600": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Turkish");
+		case "1.2.840.113556.1.4.1601": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Ukrainian");
+		case "1.2.840.113556.1.4.1602": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Urdu: Pakistan");
+		case "1.2.840.113556.1.4.1603": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Urdu: India");
+		case "1.2.840.113556.1.4.1604": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Uzbek: Latin");
+		case "1.2.840.113556.1.4.1605": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Uzbek: Cyrillic");
+		case "1.2.840.113556.1.4.1606": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Vietnamese");
+		case "1.2.840.113556.1.4.1607": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Japanese: XJIS");
+		case "1.2.840.113556.1.4.1608": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Japanese: Unicode");
+		case "1.2.840.113556.1.4.1609": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Big5");
+		case "1.2.840.113556.1.4.1610": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: PRCP");
+		case "1.2.840.113556.1.4.1611": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: Unicode");
+		case "1.2.840.113556.1.4.1612": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: PRC");
+		case "1.2.840.113556.1.4.1613": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Chinese: BOPOMOFO");
+		case "1.2.840.113556.1.4.1614": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Korean: KSC");
+		case "1.2.840.113556.1.4.1615": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Korean: Unicode");
+		case "1.2.840.113556.1.4.1616": FormatString("%s, Sort Order: %s", OrdingRuleOID, "German Phone Book");
+		case "1.2.840.113556.1.4.1617": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Hungarian: Default");
+		case "1.2.840.113556.1.4.1618": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Hungarian: Technical");
+		case "1.2.840.113556.1.4.1619": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Georgian: Traditional");
+		case "1.2.840.113556.1.4.1620": FormatString("%s, Sort Order: %s", OrdingRuleOID, "Georgian: Modern");
+		default: FormatString("%s, Sort Order: Unknown sorts", OrdingRuleOID);
+	}
+}
+
+Table LDAPControlOidsTable( value )
+{
+	switch ( value )
+	{
+		//RFC 2696
+		case "1.2.840.113556.1.4.319":   FormatString("%s (LDAP_PAGED_RESULT_OID_STRING)", value );
+		
+		//The following two OID come from RFC 2891
+		case "1.2.840.113556.1.4.473":   FormatString("%s (LDAP_SERVER_SORT_OID)", value );
+		case "1.2.840.113556.1.4.474":   FormatString("%s (LDAP_SERVER_RESP_SORT_OID)", value );
+		
+		case "1.2.840.113556.1.4.521":   FormatString("%s (LDAP_SERVER_CROSSDOM_MOVE_TARGET_OID)", value );
+		case "1.2.840.113556.1.4.529":   FormatString("%s (LDAP_SERVER_EXTENDED_DN_OID)", value );
+		case "1.2.840.113556.1.4.619":   FormatString("%s (LDAP_SERVER_LAZY_COMMIT_OID)", value );
+		case "1.2.840.113556.1.4.801":   FormatString("%s (LDAP_SERVER_SD_FLAGS_OID)", value );
+		case "1.2.840.113556.1.4.802":   FormatString("%s (LDAP_SERVER_RANGE_OPTION_OID)", value );
+		case "1.2.840.113556.1.4.841":   FormatString("%s (LDAP_SERVER_DIRSYNC_OID)", value );
+		case "1.2.840.113556.1.4.970":   FormatString("%s (LDAP_SERVER_GET_STATS_OID)", value );
+		case "1.2.840.113556.1.4.1338":  FormatString("%s (LDAP_SERVER_VERIFY_NAME_OID)", value );
+		case "1.2.840.113556.1.4.1340":  FormatString("%s (LDAP_SERVER_SEARCH_OPTIONS_OID)", value );
+		case "1.2.840.113556.1.4.1341":  FormatString("%s (LDAP_SERVER_RODC_DCPROMO_OID)", value );
+		case "1.2.840.113556.1.4.1504":  FormatString("%s (LDAP_SERVER_ASQ_OID)", value );
+		case "1.2.840.113556.1.4.1852":  FormatString("%s (LDAP_SERVER_QUOTA_CONTROL_OID)", value );
+		case "1.2.840.113556.1.4.1907":  FormatString("%s (LDAP_SERVER_SHUTDOWN_NOTIFY_OID)", value );
+		case "1.2.840.113556.1.4.1948":  FormatString("%s (LDAP_SERVER_FORCE_UPDATE_OID)", value );
+		case "1.2.840.113556.1.4.1974":  FormatString("%s (LDAP_SERVER_RANGE_RETRIEVAL_NOERR_OID)", value );
+		case "1.2.840.113556.1.4.2026":  FormatString("%s (LDAP_SERVER_INPUT_DN)", value );
+		case "2.16.840.1.113730.3.4.9":  FormatString("%s (LDAP_CONTROL_VLVREQUEST)", value );
+		case "2.16.840.1.113730.3.4.10": FormatString("%s (LDAP_CONTROL_VLVRESPONSE)", value );
+		
+		//When sending the following controls to the DC,the controlValue field of the Control structure is omitted.
+		case "1.2.840.113556.1.4.417":   FormatString("%s (LDAP_SERVER_SHOW_DELETED_OID)", value );
+		case "1.2.840.113556.1.4.528":   FormatString("%s (LDAP_SERVER_NOTIFICATION_OID)", value );
+		case "1.2.840.113556.1.4.805":   FormatString("%s (LDAP_SERVER_TREE_DELETE_OID)", value );
+		case "1.2.840.113556.1.4.1339":  FormatString("%s (LDAP_SERVER_DOMAIN_SCOPE_OID)", value );
+		case "1.2.840.113556.1.4.1413":  FormatString("%s (LDAP_SERVER_PERMISSIVE_MODIFY_OID)", value );
+		
+		//The following two OID come from MS-ADTS
+		case "1.2.840.113556.1.4.2064":  FormatString("%s (LDAP_SERVER_SHOW_RECYCLED_OID)", value );
+		case "1.2.840.113556.1.4.2065":  FormatString("%s (LDAP_SERVER_SHOW_DEACTIVATED_LINK_OID)", value );
+		default:                         FormatString("%s", value );
+	}
+}
+
+//		RFC 2891
+//      SortKeyList ::= SEQUENCE OF SEQUENCE {
+//                 attributeType   AttributeDescription,
+//                 orderingRule    [0] MatchingRuleId OPTIONAL,
+//                 reverseOrder    [1] BOOLEAN DEFAULT FALSE }
+
+struct LDAPSortKey
+{
+	AsnBerInfo SequenceHeader;
+	[LDAPSortKeyEndOffset = FrameOffset + Property.LengthValue]
+	AsnBerOctetString attributeType;
+	switch
+	{
+		case ( FrameOffset < LDAPSortKeyEndOffset ) &&
+			( ( UINT8( Framedata, Offset ) & 0x1F ) == 0x00 ) :
+			AsnBerOctetString orderingRule = LDAPSortOdersTable(orderingRule.OctetStream);
+	}
+	// Detect whether it is Universal and Boolean type.
+	switch
+	{
+	    case ( FrameOffset < LDAPSortKeyEndOffset ) && 
+	    	 ( ( UINT8( Framedata, Offset ) & 0x1F ) == 0x01 ):
+	         AsnBerBoolean reverseOrder;
+	}
+}
+
+
+Table LDAPSortResultTable(result)
+{
+	switch(result)
+	{
+		case 0 : FormatString("(0)success - results are sorted");
+		case 1 : FormatString("(1)operationsError - server internal failure");
+		case 3 : FormatString("(3)timeLimitExceeded - timelimit reached before sorting was completed");
+		case 8 : FormatString("(8)strongAuthRequired - refused to return sorted results via insecure protocol");
+		case 11: FormatString("(11)adminLimitExceeded - too many matching entries for the server to sort");
+		case 16: FormatString("(16)noSuchAttribute - unrecognized attribute type in sort key");
+		case 18: FormatString("(18)inappropriateMatching - unrecognized or inappropriate matching rule in sort key");
+		case 50: FormatString("(50)insufficientAccessRights - refused to return sorted results to this client");
+		case 51: FormatString("(51)busy - too busy to process");
+		case 53: FormatString("(53)unwillingToPerform - unable to sort");
+		case 80: FormatString("(80)other");
+		default: FormatString("(%d) - unkown result", result);
+	}
+}
+/*
+reference rfc2251, page 18
+Controls ::= SEQUENCE OF Control
+Control ::= SEQUENCE {
+					 controlType             LDAPOID,
+					 criticality             BOOLEAN DEFAULT FALSE,
+					 controlValue            OCTET STRING OPTIONAL }
+*/
+
+/*-------------------------------------------------------------------------
+reference rfc2696, page 2
+pagedResultsControl ::= SEQUENCE {
+		controlType     1.2.840.113556.1.4.319,
+		criticality     BOOLEAN DEFAULT FALSE,
+		controlValue    searchControlValue
+}
+
+The searchControlValue is an OCTET STRING wrapping the BER-encoded
+version of the following SEQUENCE:
+
+realSearchControlValue ::= SEQUENCE {
+		size            INTEGER (0..maxInt),
+								-- requested page size from client
+								-- result set size estimate from server
+		cookie          OCTET STRING
+}
+
+-------------------------------------------------------------------------*/
+struct Controls
+{
+	AsnBerInfo ControlsHeader;
+	[Property.ControlsEndOffset = FrameOffset + Property.LengthValue]
+	while controls[FrameOffset < Property.ControlsEndOffset&&FrameOffset < Property.LDAPParserEndOffset]
+	{		
+		AsnBerInfo ControlHeader;
+		[Property.DataFieldFrameLength = FrameOffset + Property.LengthValue]
+		struct
+		{
+			[Post.ControlOid = ControlType.OctetStream]
+			AsnBerOctetString ControlType = LDAPControlOidsTable(ControlType.OctetStream);
+			switch
+			{
+				case FrameLength > FrameOffset && ( UINT8( Framedata, Offset ) & 0x1F ) == 1: 
+					AsnBerBoolean Criticality;
+			}
+			switch
+			{
+				case Property.DataFieldFrameLength > FrameOffset: 
+					struct	// Control Value
+					{
+						AsnBerInfo ControlValueHeader;
+						switch 
+						{
+							case Property.LengthValue > 0:
+								[Property.DataFieldFrameLength = FrameOffset + Property.LengthValue]
+								switch ( ControlOid )
+								{
+									//The LDAP control value will be Register here from ADTS.npl
+									default:
+										BLOB(Property.DataFieldFrameLength - FrameOffset) UnknownControlValue;
+								}
+						}
+					}
+			}
+		}
+	}
+}
+
+// rfc2251
+struct LDAPResult = FormatString("%s%s%s", "Status: " + ResultStatus,
+                                           ", MatchedDN: " + MatchedDN.ToString,
+                                           ", ErrorMessage: " + ErrorMessage.ToString)
+{
+	[ResultStatus = this.ToString]
+	AsnBerEnumerated ResultCode = LDAPResultTable(Property.AsnIntValue);
+	AsnBerOctetString MatchedDN;
+	AsnBerOctetString ErrorMessage;
+	switch
+	{
+		case FrameOffset < FrameLength && ( UINT8( Framedata, Offset ) & 0x1F ) == 0x03:
+			struct Referral = Property.URL
+			{
+				AsnBerInfo ReferralHeader;
+				[ReferralEndOffset = FrameOffset + Property.LengthValue, URL = ""]
+				while urls[ FrameOffset < Property.ReferralEndOffset]
+				{
+					[URL = Property.URL + this.ToString]
+					AsnBerOctetString URL;
+				}
+			};
+	}
+}
+
+/*struct LDAPReferralServer
+{
+	while option[ FrameOffset < Property.LDAPReferralServerEndOffset ]
+	{
+		AsnBerIdentifier Tag1;
+		AsnBerLength Length;
+		switch
+		{
+			case Property.LengthValue > 0: AsciiString(Property.LengthValue) ReferralServer;
+		}
+	}
+}*/
+
+struct LDAPAbandonRequest = MessageID.ToString
+{
+	[LDAPAbandonMessageID]
+	AsnBerVariableInteger(Property.LengthValue) MessageID;
+}
+
+Table LDAPBindAuthMethodTable(value)
+{
+	switch(value)
+	{
+		case  0: "simple";
+		case  1: "krbv42LDAP";
+		case  2: "krbv42DSA";
+		case  3: "sasl";
+		case  9: "sicilyPackageDiscovery";
+		case 10: "sicilyNegotiate";
+		case 11: "sicilyResponse";
+		default: FormatString("0x%02X", value);
+	}
+}
+
+struct LDAPBindRequest = FormatString("Version:%d%s, %s", LDAPVersion, ", Name:" + Name.ToString, authentication.ToString)
+{
+	[post.LDAPVersion = AsnIntValue]
+	AsnBerInteger Version;
+	AsnBerOctetString Name;
+	AuthenticationChoice Authentication;
+}
+
+[
+	Property.DIGESTUserName = "",
+	Property.DIGESTURI = ""
+]
+struct AuthenticationChoice = FormatString("%s%s%s%s%s%s%s", 
+							Property.KrbPrincipalNameString ? "PrincipalName: " + Property.KrbPrincipalNameString + ", " : "",
+							Property.NTLMUserName ? "UserName: " + Property.NTLMUserName + ", " : "",
+							Property.NTLMDomainName ? "DomainName: " + Property.NTLMDomainName + ", " : "",
+							Property.DIGESTUserName ? "UserName: " + Property.DIGESTUserName + ", " : "",
+							Property.LDAPSimpleUserName ? "UserName: " + Property.LDAPSimpleUserName + ", " : "",
+							AuthenticationTypeHeader.ToString,
+							Property.DIGESTURI ? ", URI: " + Property.DIGESTURI : "")
+{
+	[Post.Property.LDAPAuthType = Property.Tag, Post.Conversation.LDAPAuthenticationType = LDAPBindAuthMethodTable(Property.Tag)]
+	AsnBerInfo AuthenticationTypeHeader = FormatString("Authentication type = %s",LDAPBindAuthMethodTable(Property.Tag));
+	switch(Property.LDAPAuthType)
+	{
+		case 0:
+			[ Property.LDAPSimpleUserName = This.Tostring ]
+			AsciiString(Property.LengthValue) SimpleAuthentication;
+		case 3:
+			[DataFieldFrameLength = FrameOffset + Property.LengthValue]
+			LDAPSaslCredentials Credentials;
+		case 9:
+		case 10:
+		case 11:
+			[Conversation.LDAPSicilyAuthentication = TRUE]
+			NLMP_struct NLMP;
+		default:
+			AsciiString(Property.LengthValue) ReservedAuthentication;
+	}
+}
+
+struct LDAPSaslCredentials
+{
+	[conversation.LdapAuthMechanism = this.OctetStream]
+	AsnBerOctetString Mechanism;
+	LDAPSaslCreds(Mechanism.OctetStream) Credentials;
+}
+
+struct LDAPSaslCreds(Mechanism)
+{
+	switch(Mechanism)
+	{
+		case "EXTERNAL":
+			struct ExternalCredentials
+			{
+				AsnBerOctetString Credentials;
+			}
+		case "Ntlmssp":
+			struct NtlmSSPCredentials
+			{
+				AsnBerInfo Header;
+				NLMP_struct NLMP;
+			}
+		case "DIGEST-MD5":
+			struct DigestCredentials
+			{
+				AsnBerInfo Header;
+				Digest DigestData;
+			}
+		case "GSS-API":
+			struct GssApiCredentials
+			{
+				AsnBerInfo Header;
+				[DataFieldFrameLength = FrameOffset + Property.LengthValue]
+				GssApiKrb5 Kerberos;
+			}
+		case "GSS-SPNEGO":
+			struct GSSSpnegoCredentials
+			{
+				AsnBerInfo Header;
+				[DataFieldFrameLength = FrameOffset + Property.LengthValue]
+				GssApi GssApi;
+			}
+		default:
+			AsnBerOctetString Credentials;
+	}
+}
+
+
+//RFC 2251 page 25
+Table LDAPSizeLimitTable(value)
+{
+	switch(value)
+	{
+		case  0: "No Limit";
+		default: FormatString("%d entries", value);
+	}
+}
+
+//RFC 2251 page 25
+Table LDAPTimeLimitTable(value)
+{
+	switch(value)
+	{
+		case  0: "No Limit";
+		default: FormatString("%d seconds", value);
+	}
+}
+
+Table LDAPSearchRequestScopeTable( value )
+{
+	switch( value )
+	{
+		case  0: "base Object";
+		case  1: "singleLevel";
+		case  2: "WholeSubtree";
+		default: FormatString("Undefined scope(%d)",value);
+	}
+}
+
+Table LDAPSearchRequestAliasTable( value )
+{
+	switch( value )
+	{
+		case  0: "neverDerefAliases";
+		case  1: "derefInSearching";
+		case  2: "derefFindingBaseObj";
+		case  3: "derefAlways";
+		default: FormatString("Undefined alias(%d)",value);
+	}
+}
+
+struct LDAPSearchRequest = FormatString("%s%s%s",
+                                        "BaseDN: " + BaseDN,
+                                        ", SearchScope: "+ SearchScope,
+                                        ", SearchAlias: " + SearchAlias)
+{
+	[BaseDN = this.ToString]
+	AsnBerOctetString BaseObject;
+	[SearchScope = this.ToString]
+	AsnBerEnumerated Scope = LDAPSearchRequestScopeTable(Property.AsnIntValue);
+	[SearchAlias = this.ToString]
+	AsnBerEnumerated Alias = LDAPSearchRequestAliasTable(Property.AsnIntValue);
+	AsnBerInteger SizeLimit = LDAPSizeLimitTable(Property.AsnIntValue);
+	AsnBerInteger TimeLimit = LDAPTimeLimitTable(Property.AsnIntValue);
+	AsnBerBoolean TypesOnly;
+	[FilterLayer = 0, FilterLogicalSummary = ""]
+	LDAPFilter Filter;
+	AttributeSelection Attributes;
+}
+
+Table GpGuid1Table( guid )
+{
+	switch
+	{
+		case guid.contains("{25537BA6-77A8-11D2-9B6C-0000F8080861}"): "{Folder Redirection}";
+		default: "";
+	}
+}
+
+Table GpGuid2Table( guid )
+{
+	switch
+	{
+		case guid.contains("{35378EAC-683F-11D2-A89A-00C04FBBCFA2}"): "{Registry/Admin Templates}";
+		default: "";
+	}
+}
+
+Table GpGuid3Table( guid )
+{
+	switch
+	{
+		case guid.contains("{3610eda5-77ef-11d2-8dc5-00c04fa31a66}"): "{Microsoft Disk Quota}";
+		default: "";
+	}
+}
+
+Table GpGuid4Table( guid )
+{
+	switch
+	{
+		case guid.contains("{426031c0-0b47-4852-b0ca-ac3d37bfcb39}"): "{QoS Packet Scheduler}";
+		default: "";
+	}
+}
+
+Table GpGuid5Table( guid )
+{
+	switch
+	{
+		case guid.contains("{42B5FAAE-6536-11d2-AE5A-0000F87571E3}"): "{Scripts}";
+		default: "";
+	}
+}
+
+Table GpGuid6Table( guid )
+{
+	switch
+	{
+		case guid.contains("{827D319E-6EAC-11D2-A4EA-00C04F79F83A}"): "{Security}";
+		default: "";
+	}
+}
+
+Table GpGuid7Table( guid )
+{
+	switch
+	{
+		case guid.contains("{A2E30F80-D7DE-11d2-BBDE-00C04F86AE3B}"): "{Internet Explorer Branding}";
+		default: "";
+	}
+}
+
+Table GpGuid8Table( guid )
+{
+	switch
+	{
+		case guid.contains("{B1BE8D72-6EAC-11D2-A4EA-00C04F79F83A}"): "{EFS Recovery}";
+		default: "";
+	}
+}
+
+Table GpGuid9Table( guid )
+{
+	switch
+	{
+		case guid.contains("{c6dc5466-785a-11d2-84d0-00c04fb169f7}"): "{Software Installation}";
+		default: "";
+	}
+}
+
+Table GpGuidATable( guid )
+{
+	switch
+	{
+		case guid.contains("{e437bc1c-aa7d-11d2-a382-00c04f991e27}"): "{IP Security}";
+		default: "";
+	}
+}
+
+Table GPExtensionGUIDTable( guid )
+{
+	switch
+	{
+		default:
+			GpGuid1Table(guid)+
+			GpGuid2Table(guid)+
+			GpGuid3Table(guid)+
+			GpGuid4Table(guid)+
+			GpGuid5Table(guid)+
+			GpGuid6Table(guid)+
+			GpGuid7Table(guid)+
+			GpGuid8Table(guid)+
+			GpGuid9Table(guid)+
+			GpGuidATable(guid);
+	}
+}
+
+Table LDAPDCCapabilitiesTable( value )
+{
+	switch ( value )
+	{
+		case "1.2.840.113556.1.4.800":  FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_OID)", value );
+		case "1.2.840.113556.1.4.1791": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_LDAP_INTEG_OID)", value );
+		case "1.2.840.113556.1.4.1670": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V51_OID)", value );
+		case "1.2.840.113556.1.4.1880": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_ADAM_DIGEST)", value );
+		case "1.2.840.113556.1.4.1851": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_ADAM_OID)", value );
+		case "1.2.840.113556.1.4.1920": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_PARTIAL_SECRETS_OID)", value );
+		case "1.2.840.113556.1.4.1935": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V61_OID)", value );
+		//The following OID come from MS-ADTS
+		case "1.2.840.113556.1.4.2080": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V61_R2_OID)", value );
+		default:                        FormatString("%s", value );
+	}
+}
+
+
+//     AttributeSelection ::= SEQUENCE OF selector LDAPString
+struct AttributeSelection = Property.AttributeSelectionSummary
+{
+	AsnBerInfo AttributeSelectionHeader;
+	[Property.AttributeSelectionEndOffset = FrameOffset + Property.LengthValue, Property.AttributeSelectionSummary = ""]
+	while /*AttributeValues*/[ FrameOffset < Property.AttributeSelectionEndOffset ]
+	{
+		[Post.Property.AttributeSelectionSummary = Property.AttributeSelectionSummary + "( " + this.ToString + " )"]
+		[Post.Property.GPGUID = Property.GPGUID.Contains(GPExtensionGUIDTable(this.OctetStream)) ? Property.GPGUID : Property.GPGUID + GPExtensionGUIDTable(this.OctetStream)]
+		AsnBerOctetString Attribute = LDAPDCCapabilitiesTable(Attribute.OctetStream);
+	}
+}
+
+struct LDAPSearchResponse = ObjectName.ToString
+{
+	AsnBerOctetString ObjectName;
+	PartialAttributeList Attributes;
+}
+
+struct LDAPNetlogonAttribute = NetLogonAttribute.ToString
+{
+	AsnBerInfo NetlogonAttributeHeader;
+	[DataFieldFrameLength = FrameOffset + property.LengthValue, EmbeddedProtocol]
+	Netlogon NetlogonAttribute;
+}
+
+struct LDAPSDRAttribute = SecurityDescriptorRelative.ToString
+{
+	AsnBerInfo SDRAttributeHeader;
+	[DataFieldByteOrder = LittleEndian, DataFieldFrameLength = FrameOffset + property.LengthValue]
+	SecurityDescriptorRelative SecurityDescriptorRelative;
+}
+
+//     AttributeValue ::= OCTET STRING
+//     PartialAttribute ::= SEQUENCE {
+//             type       AttributeDescription,
+//             vals       SET OF value AttributeValue }
+struct PartialAttribute = Property.PartialAttributeSummary
+{
+	[Property.PartialAttributeSummary = ""]
+	[Property.AttributeValuesSummary = ""]
+	AsnBerInfo PartialAttributeHeader;
+	[Post.Property.PartialAttributeType = Type.OctetStream]
+	AsnBerOctetString Type;
+
+	AsnBerInfo AttributeValuesHeader;
+	[Property.PartialAttributeEndOffset = FrameOffset + Property.LengthValue]
+	[Post.Property.PartialAttributeSummary = Property.PartialAttributeType + "=" + Property.AttributeValuesSummary]
+	while /*AttributeValues*/[ FrameOffset < Property.PartialAttributeEndOffset ]
+	{	
+		switch(Property.PartialAttributeType)
+		{
+			case "netlogon":
+				[Post.Property.AttributeValuesSummary = Property.AttributeValuesSummary + "( " + this.ToString + " )"]
+				LDAPNetlogonAttribute NetlogonAttribute;
+			case "NTSecurityDescriptor":
+				[Post.Property.AttributeValuesSummary = Property.AttributeValuesSummary + "( " + this.ToString + " )"]
+				LDAPSDRAttribute SDRAttribute;			
+			default:
+				[Post.Property.AttributeValuesSummary = Property.AttributeValuesSummary + "( " + this.ToString + " )"]
+				[Post.Property.GPGUID = Property.GPGUID.Contains(GPExtensionGUIDTable(this.OctetStream)) ? Property.GPGUID : Property.GPGUID + GPExtensionGUIDTable(this.OctetStream)]
+				AsnBerOctetString Attribute = LDAPDCCapabilitiesTable(Attribute.OctetStream);
+	
+		}
+	}
+}
+
+struct PartialAttributeList = FormatString("%d Partial Attributes", Property.PartialAttributeCount)
+{
+	AsnBerInfo SequenceHeader;
+	[Property.PartialAttributeCount = 0]
+	[PartialAttributeListEndOffset = FrameOffset +  Property.LengthValue]
+	while /*PartialAttributes*/[ FrameOffset < Property.PartialAttributeListEndOffset ]
+	{
+		[Property.PartialAttributeCount = Property.PartialAttributeCount + 1]
+		PartialAttribute PartialAttribute;
+	}
+}
+
+struct LDAPModifyRequest = FormatString("Object: %s", Object.ToString)
+{
+	[LDAPModifyObjectString = Object.ToString]
+	AsnBerOctetString Object;
+	switch
+	{
+		case property.LDAPModifyObjectString.contains("cn=IPSEC"):
+			IPSecModifyGPExtension IPSecLoopSeq;
+		default:
+			ModifyLoopSeq LoopSeq;
+	}
+}
+
+struct ModifyLoopSeq
+{
+	AsnBerInfo OuterSequenceHeader;
+	[ModifyLoopSeqEndOffset = FrameOffset + Property.LengthValue]
+	while option[ FrameOffset < Property.ModifyLoopSeqEndOffset ]
+	{
+		struct Modification = FormatString("<%s> %s",
+										LDAPModifyOperationTable(Property.AsnIntValue),
+                                        Modification.ToString)
+		{
+			AsnBerInfo InnerSequence;
+			AsnBerEnumerated Operation = FormatString("%s, %d(0x%X)", LDAPModifyOperationTable(Property.AsnIntValue), Property.AsnIntValue, Property.AsnIntValue);
+			PartialAttribute Modification;
+		}
+	}
+}
+
+struct LDAPCompareRequest = FormatString("Entry: %s", Entry.ToString)
+{
+	AsnBerOctetString Entry;
+	AsnBerInfo AVAHeader;
+	AsnBerOctetString AttributeDescription;
+	AsnBerOctetString AssertionValue;
+}
+
+struct LDAPSearchResponseFull
+{
+	AsnBerInfo ResponseFullHeader;
+	[LoopEntriesEndOffset = FrameOffset + Property.LengthValue]
+	LoopEntries Entries;
+}
+
+struct LoopEntries
+{
+	while option[ FrameOffset < Property.LoopEntriesEndOffset]
+	{
+		AsnBerOctetString Entry;
+		//#? not sure about the default case for this switch
+		switch ( Property.Tag )
+		{
+			case  5:
+				LDAPResult SearchResultDone;
+			case  4:
+				LDAPSearchResponse SearchResponseEntry;
+			case 19:
+				LDAPSearchResponseReference SearchResponseReference;
+		}
+	}
+}
+
+Table LDAPExtendedOperationNameTable( value )
+{
+	switch ( value )
+	{
+		//The requestValue field is omitted
+		case "1.2.840.113556.1.4.1781": FormatString("%s (LDAP_SERVER_FAST_BIND_OID)", value );
+		//RFC 2831, The requestValue field is absent
+		case "1.3.6.1.4.1.1466.20037": FormatString("%s (LDAP_SERVER_START_TLS_OID)", value );
+		//RFC 2589
+		case "1.3.6.1.4.1.1466.101.119.1": FormatString("%s (LDAP_TTL_REFRESH_OID)", value );
+		//RFC 4532, absent requestValue field
+		case "1.3.6.1.4.1.4203.1.11.3": FormatString("%s (LDAP_SERVER_WHO_AM_I_OID)", value );
+		default: FormatString("%s", value );
+	}
+}
+
+
+//The requestValue field will contain as a value the DER-encoding of
+//   the following ASN.1 data type:
+//
+//        SEQUENCE {
+//                entryName  [0] LDAPDN,
+//                requestTtl [1] INTEGER
+//        }
+struct LDAPExtendedTtlRefreshRequest
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerOctetString entryName;
+	AsnBerInteger requestTtl;
+}
+
+
+struct LDAPExtendedRequest = FormatString("RequestName: %s", RequestName.ToString)
+{
+	AsnBerOctetString RequestName = LDAPExtendedOperationNameTable(RequestName.OctetStream);
+	switch(RequestName.OctetStream)
+	{
+		case "1.3.6.1.4.1.1466.101.119.1":
+			LDAPExtendedTtlRefreshRequest TtlRefreshRequest;
+		default:
+			switch ( UINT8( Framedata, Offset ) & 0x1F )
+			{
+				case 1:
+					AsnBerOctetString RequestValue;
+			}
+	}
+}
+
+struct LDAPExtendedTtlRefreshResponse
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger responseTtl;
+}
+
+struct LDAPExtendedResponse
+{
+	LDAPResult Result;
+	switch ( UINT8( Framedata, Offset ) & 0x1F )
+	{
+		case 10:
+		[Conversation.LDAPExtendedResponseName = ResponseName.OctetStream]
+		AsnBerOctetString ResponseName = LDAPExtendedOperationNameTable(ResponseName.OctetStream);
+	}
+	switch(ResponseName.OctetStream)
+	{
+		case "1.3.6.1.4.1.1466.101.119.1":
+			LDAPExtendedTtlRefreshResponse TtlRefreshResponse;
+		default:
+			switch ( UINT8( Framedata, Offset ) & 0x1F )
+			{
+				case 11:
+					AsnBerOctetString ResponseValue;
+			}
+	}
+}
+
+Table NullTable(value)
+{
+	switch(value)
+	{
+		default: "";
+	}
+}
+
+Table LDAPFilterOperatorTable(opt)
+{
+	switch(opt)
+	{
+		case  0: "&";
+		case  1: "|";
+		case  2: "!";
+		case  3: "=";
+		case  5: ">=";
+		case  6: "<=";
+		case  8: "~=";
+	}
+}
+
+/*
+Filter ::= CHOICE {
+		and             [0] SET OF Filter,
+		or              [1] SET OF Filter,
+		not             [2] Filter,
+		equalityMatch   [3] AttributeValueAssertion,
+		substrings      [4] SubstringFilter,
+		greaterOrEqual  [5] AttributeValueAssertion,
+		lessOrEqual     [6] AttributeValueAssertion,
+		present         [7] AttributeDescription,
+		approxMatch     [8] AttributeValueAssertion,
+		extensibleMatch [9] MatchingRuleAssertion }
+*/
+struct LDAPFilter = FilterSummary
+{
+	AsnBerIdentifier Operator = FormatString("%s, %d(0x%02X)", LDAPFilterTypeTable(Property.Tag), Property.Tag, Property.Tag);
+	AsnBerLength Length = FormatString("%d", Property.LengthValue);
+	[
+		FilterOperator = Property.Tag,
+		LDAPFilterEndOffset = FrameOffset + Property.LengthValue
+	]
+	switch( FilterOperator )
+	{
+		case 0:
+		case 1:
+		case 2:
+			[
+				DataFieldFrameLength = LDAPFilterEndOffset,
+				Global.OriginalLogicalSummary$[MakeByteArray(FrameNumber,FrameOffset)] = FilterLogicalSummary,
+				FilterLogicalSummary = LDAPFilterOperatorTable(FilterOperator),
+				Post.FilterLogicalSummary = Global.OriginalLogicalSummary$[MakeByteArray(FrameNumber,FrameOffset)],
+				Post.FilterSummary = "(" + this.ToString + ")"
+			]
+			_struct LDAPLogicalFilter = FilterLogicalSummary
+			{
+				while filters[ FrameOffset < FrameLength ]
+				{
+					[FilterLogicalSummary = FilterLogicalSummary + this.ToString]
+					LDAPFilter filter;
+				};
+			};
+		case 3:
+		case 5:
+		case 6:
+		case 8:
+			[Post.FilterSummary = "(" + this.ToString + ")"]
+			LDAPMatchFilter(FilterOperator) MatchFilter;
+			
+		case 4:
+			[Post.FilterSummary = "(" + this.ToString + ")"]
+			LDAPSubStringsFilter SubStringsFilter;
+			
+		case 7:
+			[Post.FilterSummary = "(" + this.ToString + ")"]
+			LDAPPresentFilter(LengthValue) PresentFilter;
+			
+		case 9:
+			[Post.FilterSummary = "(" + this.ToString + ")"]
+			LDAPExtensibleMatchFilter ExtensibleMatchFilter;
+		
+		default:
+			struct UnhandledFilter
+			{
+				ReportParserError(ParserErrorProtocolClassPublic, "LDAP", "Filter: Unhandled Filter Type") LDAPFilterError;
+				BLOB(LDAPFilterEndOffset - FrameOffset) UnparsedData;
+			}
+	}
+}
+
+struct LDAPMatchFilter(Opt) = FilterMatchSummary
+{
+	[FilterMatchSummary = this.ToString]
+	AsnBerOctetString AttributeDescription;
+	switch
+	{
+		case AttributeDescription.OctetStream.contains("guid"):
+			[FilterMatchSummary = FilterMatchSummary + LDAPFilterOperatorTable(Opt) + this.ToString]
+			AsnBerOctetGuid Guid;
+		case AttributeDescription.OctetStream.contains("NtVer"):
+			[FilterMatchSummary = FilterMatchSummary + LDAPFilterOperatorTable(Opt) + this.ToString]
+			AsnNtVer NtVer;
+		default:
+			[FilterMatchSummary = FilterMatchSummary + LDAPFilterOperatorTable(Opt) + this.ToString]
+			AsnBerOctetString AssertionValue;
+	}
+}
+
+UnsignedNumber NtVer
+{
+	Size = 4;
+	DisplayFormat = FormatString( "%02X:%02X:%02X:%02X",this[3],this[4],this[1],this[2])												
+}
+
+struct AsnNtVer = NtVerValue {
+	AsnBerInfo AsnOctetNtVerHeader;
+	switch(Property.LengthValue)
+	{
+	    case 4: [NtVerValue = this.ToString]NtVer NtVer;
+	    default: [NtVerValue = this.ToString]AsciiString(Property.LengthValue) OctetStream;
+	}
+}
+
+Struct LDAPPresentFilter(PresentLength) = FilterPresentSummary
+{
+	[FilterPresentSummary = this + " Present"]
+	AsciiString(PresentLength) Present;
+}
+
+/*
+MatchingRuleAssertion ::= SEQUENCE {
+		matchingRule    [1] MatchingRuleId OPTIONAL,
+		type            [2] AttributeDescription OPTIONAL,
+		matchValue      [3] AssertionValue,
+		dnAttributes    [4] BOOLEAN DEFAULT FALSE }
+ */
+
+Table LDAPMatchRuleTable( value )
+{
+    switch( value )
+    {
+        case "1.2.840.113556.1.4.803":  FormatString("%s LDAP_MATCHING_RULE_BIT_AND", value);
+        case "1.2.840.113556.1.4.804":  FormatString("%s LDAP_MATCHING_RULE_BIT_OR" , value);
+        case "1.2.840.113556.1.4.1941": FormatString("%s LDAP_MATCHING_RULE_TRANSITIVE_EVAL", value);
+        default: FormatString("%s",value);
+    }
+}
+
+struct LDAPExtensibleMatchFilter = FormatString("%s(%s)%s%s",
+										MatchingRuld == "1.2.840.113556.1.4.803" ? "BIT_AND: " :
+                                    	MatchingRuld == "1.2.840.113556.1.4.804" ? "BIT_OR: " :
+                                    	MatchingRuld == "1.2.840.113556.1.4.1941" ? "TRANSITIVE_EVAL: " : "",
+                                    	type.ToString,
+                                    	MatchingRuld == "1.2.840.113556.1.4.803" ? "&" :
+                                    	MatchingRuld == "1.2.840.113556.1.4.804" ? "|" : "",
+                                    	AssertionValue.ToString)
+{
+	switch(UINT8( Framedata, Offset ) & 0x1F)
+	{
+		case 0x01:
+			[MatchingRuld = FormatString("%s",this.OctetStream) ]
+			AsnBerOctetString MatchingRuleId = LDAPMatchRuleTable( this.OctetStream );
+	}
+	switch(UINT8( Framedata, Offset ) & 0x1F)
+	{
+		case 0x02:
+			AsnBerOctetString type;
+	}
+	AsnBerOctetString AssertionValue;
+	switch(UINT8( Framedata, Offset ) & 0x1F)
+	{
+		case 0x04:
+			AsnBerBoolean dnAttributes;
+	}
+}
+
+/*
+SubstringFilter ::= SEQUENCE {
+		type            AttributeDescription,
+		-- at least one must be present
+		substrings      SEQUENCE OF CHOICE {
+				initial [0] LDAPString,
+				any     [1] LDAPString,
+				final   [2] LDAPString } }
+*/
+struct LDAPSubStringsFilter = FilterSubStringSummary
+{
+	AsnBerOctetString Type;
+	[FilterSubStringSummary = Type.ToString + "=" + this.ToString]
+	FilterSubStringsChoice SubStringChoice;
+}
+
+Table LDAPFilterSubStringDescriptionTable( type, str )
+{
+	switch( type )
+	{
+		case 0: str + "*";
+		case 1: "*" + str + "*";
+		case 2: "*" + str;
+		default: FormatString("Unknown SubString type (%d) of %s", type, str);
+	}
+}
+
+Struct FilterSubStringsChoice = SubStringsChoiceSummary
+{
+	AsnBerInfo SubStringsHeader;
+	[SubStringsChoiceSummary = "", LDAPSubStringsChoiceEndOffset = FrameOffset + Property.LengthValue]
+	while option[ FrameOffset < Property.LDAPSubStringsChoiceEndOffset ]
+	{
+		[SubStringsChoiceSummary = (SubStringsChoiceSummary == "") ? this.ToString : SubStringsChoiceSummary + " | " + this.ToString]
+		AsnBerOctetString SubString = LDAPFilterSubStringDescriptionTable(Property.Tag, SubString.OctetStream);
+	}
+}
+
+struct LDAPAddRequest = FormatString("Entry: %s", Entry.ToString)
+{
+	AsnBerOctetString Entry;
+	PartialAttributeList Attributes;
+}
+
+[ RegisterBefore( GssAPIKrb5.Krb5GssWrap.UnParsedData, LDAPMessage, LDAP) ]
+Protocol LDAPMessage = FormatString("%s, MessageID: %d", LDAPOperationTable(Property.LDAPOperation), Property.LDAPMessageID)
+{
+	AsnBerInfo ParserHeader;
+	[
+		LDAPParserEndOffset = FrameOffset + Property.LengthValue,
+		Post.Property.LDAPMessageID = Property.AsnIntValue
+	]
+	AsnBerInteger MessageID;
+	[
+		Post.LDAPOperationSummary = LDAPOperationSummary ? LDAPOperationSummary : LDAPOperationTable(Property.Tag),
+		Post.Property.LDAPOperation = Property.Tag
+	]
+	AsnBerInfo OperationHeader = FormatString("%s, %d(%#x)", LDAPOperationTable(Property.Tag), Property.Tag, Property.Tag);
+	[OperationEndOffset = FrameOffset + Property.LengthValue]
+	switch
+	{
+		case FrameOffset < FrameLength && FrameOffset < Property.OperationEndOffset:
+		switch(Property.LDAPOperation)
+		{
+			case  0:
+				LDAPBindRequest BindRequest;
+			case  1:
+				switch
+				{
+					case Conversation.LDAPSicilyAuthentication:
+						[Property.LDAPSicilyBindResponse = TRUE]
+						SicilyBindResponse SicilyBindResponse;
+					default:
+						LDAPBindResponse BindResponse;
+				}
+			case 2:
+				struct UnbindRequest {};
+			case  3:
+				LDAPSearchRequest SearchRequest;
+			case  4:
+				LDAPSearchResponse SearchResultEntry;
+			case  5:
+				LDAPResult SearchResultDone;
+			case  6:
+				LDAPModifyRequest ModifyRequest;
+			case  7:
+				LDAPResult ModifyResponse;
+			case  8:
+				LDAPAddRequest AddRequest;
+			case  9:
+				LDAPResult AddResponse;
+			case 10:
+				AsciiString(Property.LengthValue) DelRequest;
+			case 11:
+				LDAPResult DelResponse;
+			case 12:
+				LDAPModifyDNRequest ModifyDNRequest;
+			case 13:
+				LDAPResult ModifyDNResponse;
+			case 14:
+				LDAPCompareRequest CompareRequest;
+			case 15:
+				LDAPResult CompareResponse;
+			case 16:
+				LDAPAbandonRequest AbandonRequest;
+			case 19:
+				LDAPSearchResponseReference SearchResponseReference;
+			case 23:
+				LDAPExtendedRequest ExtendedRequest;
+			case 24:
+				LDAPExtendedResponse ExtendedResponse;
+			case 48:
+				LDAPSearchResponseFull SearchResponseFull;
+			default:
+				struct UnhandledMessageType
+				{
+					ReportParserError(ParserErrorProtocolClassPublic, "LDAP", "Unhandled LDAP Message Type") LDAPMessageTypeError;
+					BLOB(Property.OperationEndOffset - FrameOffset) UnknownOperation;
+				}
+		}
+	}
+	//this switch needn't default case
+	switch
+	{
+		case FrameOffset < FrameLength &&
+			FrameOffset < Property.LDAPParserEndOffset &&
+			( UINT8( Framedata, Offset ) & 0x1F ) == 0:
+				Controls Controls;
+
+	}
+	struct{} // to avoid self-recursive issue
+}
+
+struct LDAPModifyDNRequest = FormatString("Entry: %s, NewRDN: %s", Entry.ToString, NewRDN.ToString)
+{
+	AsnBerOctetString Entry;
+	AsnBerOctetString NewRDN;
+	AsnBerBoolean DeleteOldRDN;
+	switch
+	{
+		case FrameOffset < FrameLength &&
+			FrameOffset < Property.OperationEndOffset:
+				AsnBerOctetString NewSuperior;
+	}
+}
+
+struct LDAPSearchResponseReference
+{
+	while referrals[ FrameOffset < FrameLength && FrameOffset < Property.OperationEndOffset]
+	{
+		AsnBerOctetString ReferralServer;
+	}
+}
+
+struct LDAPServerSaslCreds
+{
+	AsnBerInfo Sequence_Header;
+	switch
+	{
+		case AsciiString(FrameData, FrameOffset, 7) == "Ntlmssp":
+			NLMP_struct NLMP;
+		case FrameOffset < FrameLength &&
+			FrameOffset < Property.OperationEndOffset &&
+			conversation.LdapAuthMechanism.contains("GSS-SPNEGO"):
+				SpnegoNegotiationToken GSS_Spnego;
+		default:
+			switch
+			{
+				case FrameOffset < FrameLength &&
+					FrameOffset < Property.OperationEndOffset:
+						AsciiString(Property.LengthValue) ServerCredentials;
+			}
+	}
+}
+
+struct LDAPBindResponse = Result.ToString
+{
+	LDAPResult Result;
+	switch
+	{
+		case FrameOffset < FrameLength &&
+			( UINT8( Framedata, Offset ) & 0x1F ) == 0x07:
+				LDAPServerSaslCreds ServerSaslCreds;
+	}
+}
+
+struct SicilyBindResponse = ResultCode.ToString
+{
+	[ResultStatus = this.ToString]
+	AsnBerEnumerated ResultCode = LDAPResultTable(Property.AsnIntValue);
+	struct serverCreds
+	{
+		AsnBerInfo AsnBerOctetStringHeader;
+		[DateFieldFrameLength = LengthValue]
+		switch
+		{
+			case AsciiString(FrameData, FrameOffset, 7) == "Ntlmssp":
+			NLMP_struct NLMP;
+			default:
+			AsciiString(LengthValue) creds;
+		}
+	}
+	AsnBerOctetString errorMessage;
+}
+
+[Conversation.GssAPISupportedMechTable$[FrameNumber] = Conversation.GssAPISupportedMech]
+[Property.GssAPISupportedMech = Conversation.GssAPISupportedMechTable$[FrameNumber]]
+Protocol LDAPSASLBuffer = FormatString("BufferLength: %d, AuthMechanism: %s", Property.LDAPSASLBufferLen, IsValueNone(conversation.LdapAuthMechanism) ? "Null" : conversation.LdapAuthMechanism)
+{
+	switch
+	{
+		case Conversation.LDAPExtendedResponseName == "1.3.6.1.4.1.1466.20037":
+			[Property.IsLDAPOverSSL = True]
+			SSLVersionSelector TLSSSLData;
+		default:
+			struct
+			{
+				[ Property.LDAPSASLBufferLen ]
+				UINT32 BufferLength;
+				[DataFieldFrameLength = FrameOffset + BufferLength]
+				switch
+				{
+					case conversation.LdapAuthMechanism == "GSS-SPNEGO" && Conversation.GssAPISupportedMechTable$[FrameNumber] == "1.2.840.48018.1.2.2":
+					case conversation.LdapAuthMechanism == "GSS-SPNEGO" && Conversation.GssAPISupportedMechTable$[FrameNumber] == "1.2.840.113554.1.2.2":
+					case conversation.LdapAuthMechanism == "GSS-SPNEGO" && Conversation.GssAPISupportedMechTable$[FrameNumber] == "1.2.840.113554.1.2.2.3":
+					case conversation.LdapAuthMechanism == "GSS-API":
+						GSSAPIKrb5 KerberosPackage;
+					case conversation.LdapAuthMechanism == "GSS-SPNEGO" && Conversation.GssAPISupportedMechTable$[FrameNumber] == "1.3.6.1.4.1.311.2.2.10":
+					case conversation.LdapAuthMechanism == "NTLMSSP":
+						switch 
+						{
+							// DEVNOTE 2009-07-13
+							// MS implmenetation will always encrypt the message even if the NLMPNegotiateSeal is not set.
+							// This is due to NLMP will not honor SECQOP_WRAP_NO_ENCRYPT parameter.
+							case Conversation.NLMPNegotiateAlwaysSign == 1:
+								struct NLMPPackage
+								{
+									NLMPMessageSignature MessageSignature;
+									BLOB(FrameLength - FrameOffset) EncryptedLDAPData;
+								}
+							case Conversation.NLMPNegotiateAlwaysSign == 0:
+								BLOB(FrameLength - FrameOffset) EncryptedLDAPData;
+						}
+					case UINT8( Framedata, Offset ) == 0x30:
+						LDAPMessage LDAPMessage;
+					// Fallback logic to guess GSSAPI mechanism when conversation information is missing.
+					default:
+						GSSAPIGuessToken GssAPIPackage = conversation.LdapAuthMechanism;
+				}
+			}
+	}
+}

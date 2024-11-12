@@ -1,0 +1,1037 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  .NET Remoting Tcp Channel Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-NRBF]: .NET Remoting: Binary Format Data Structure
+//#                          [MS-NRLS]: .NET Remoting: Lifetime Service Protocol
+//#                          [MS-NRTP]: .NET Remoting: TcpChannel Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/2/2009
+//#
+//####
+
+[DataTypeByteOrder=LittleEndian]
+Protocol DotNETRemotingTcpChannel = Local.DotNETRemotingIsFirst ? 
+										(
+											Local.OperationTypeSummary + 
+											(DotNETRemotingTCPChannel.OperationType == 2 ?
+												FormatString("%s%s%s",					// Response
+													Local.StatusCodeSummary, 
+													Local.StatusPhraseSummary, 
+													Local.CloseConnectionSummary
+												)
+												:
+												FormatString("%s%s%s",					// Request
+													Local.RequestUriSummary, 
+													Local.ContentTypeSummary, 
+													Local.CloseConnectionSummary
+												)	
+											) + 
+											Local.ContentLengthSummary
+										)
+										: "Continuation NRBF data, please reassemble to see parsing result"
+{
+	switch
+	{
+		case !conversation.DotNETRemotingTcpChannel.Id:
+			[BuildConversationWithParent]
+			_struct {};
+	}
+	[
+		Post.Conversation.ConversationDescription = 
+			Conversation.DotNETRemotingTcpChannel.ConversationDescription ? Conversation.DotNETRemotingTcpChannel.ConversationDescription: 
+			(
+				( DotNETRTCPChRequestUriHeader ? FormatString("(Uri: %s) ", DotNETRTCPChRequestUriHeader.ToString) : "" ) +
+				( FormatString(" ConvID = %d", ConvID) )
+			)
+	]
+	[		
+		Local.DotNETRemotingIsFirst = (AsciiString( FrameData, Offset, 4 ) == ".NET") ? true:false,
+		post.PayloadStart(
+			NetworkDirection, 					//direction
+			0, 									//identifier
+			0, 									//sequence token
+			0, 									//next sequence
+			DotNetRemotingLength + property.DotNetRemotingHeaderLength, 			//total payload length
+			Local.DotNETRemotingIsFirst, 				//is first
+			0, 									//is last
+		    RssmblyIndStartBit + RssmblySelfBit	+ RssmblyIndLengthBit	//has start and end indication
+	    )
+	]
+	switch
+	{
+		case AsciiString(FrameData, Offset, 4) == ".NET":
+			_struct DotNETRemotingTCPChannel
+			{
+				AsciiString(4) ProtocolId;
+				UINT8 MajorVersion;
+				UINT8 MinorVersion;				
+				[Local.OperationTypeSummary = DotNETRTCPChOperationTypeTable(DotNETRemotingTCPChannel.OperationType)]
+				UINT16 OperationType = DotNETRTCPChOperationTypeTable(this);
+			    [Local.ContentLengthSummary = FormatString(", %s", ContentDistribution == 0 ? FormatString("%d bytes", Length) : "Chunked")]
+				struct ContentLength = FormatString("%s, %s", DotNETRTCPChContentDistributionTable(ContentDistribution), ContentDistribution == 0 ? FormatString("%d bytes", Length) : "Chunked")
+				{	
+					UINT16 ContentDistribution = DotNETRTCPChContentDistributionTable(this);
+					switch (ContentDistribution)
+					{
+						case 0: [property.DotNetRemotingLength]INT32 Length;
+					}
+				}
+			
+				struct Headers
+				{
+					while [ FrameOffset < FrameLength && !(UINT16(FrameData, Offset) == 0)]
+					{						
+						struct Header = FormatString("%s: %s", DotNETRTCPChHeaderTokenTable(HeaderToken), Property.DotNETRemotingTcpChannelHeaderDesc)
+						{							
+							[Property.HeaderToken]						
+							UINT16 HeaderToken = DotNETRTCPChHeaderTokenTable( this );
+							switch (HeaderToken)
+							{
+								case 0x0001:
+									[Property.DotNETRemotingTcpChannelHeaderDesc = CustomHeader.ToString]
+									DotNETRTCPChCustomHeader CustomHeader;
+ 								case 0x0002:
+ 									[Local.StatusCodeSummary = FormatString(", %s", StatusCodeHeader.ToString)]
+ 									[Property.DotNETRemotingTcpChannelHeaderDesc = StatusCodeHeader.ToString]
+ 									DotNETRTCPChStatusCodeHeader StatusCodeHeader;
+	 							case 0x0003:
+	 								[Local.StatusPhraseSummary = FormatString("(%s)", StatusPhraseHeader.ToString)] 
+	 								[Property.DotNETRemotingTcpChannelHeaderDesc = StatusPhraseHeader.ToString]
+	 								DotNETRTCPChStatusPhraseHeader StatusPhraseHeader;
+		 						case 0x0004:
+		 							[Local.RequestUriSummary = FormatString(" to %s", RequestUriHeader.ToString)]
+		 							[Property.DotNETRemotingTcpChannelHeaderDesc = RequestUriHeader.ToString]
+		 							DotNETRTCPChRequestUriHeader RequestUriHeader;
+			 					case 0x0005:
+			 						[Local.CloseConnectionSummary = ", Close connection"]
+			 						[Property.DotNETRemotingTcpChannelHeaderDesc = CloseConnectionHeader.ToString]
+			 						DotNETRTCPChCloseConnectionHeader CloseConnectionHeader;
+								case 0x0006:
+									[Local.ContentTypeSummary = FormatString(" in %s", ContentTypeHeader.ToString)]
+									[Property.DotNETRemotingTcpChannelHeaderDesc = ContentTypeHeader.ToString]
+									DotNETRTCPChContentTypeHeader ContentTypeHeader;
+								default: 
+									[Property.DotNETRemotingTcpChannelHeaderDesc = ""]
+									DotNETRTCPChUnknownHeader UnknownHeader;
+							}
+						}
+					}
+					[property.DotNetRemotingHeaderLength = CurrentProtocolOffset + 2]
+					UINT16 EndHeadersToken = DotNETRTCPChHeaderTokenTable(this);
+				}
+				
+				switch
+				{
+					case FrameLength > FrameOffset && Property.DotNETRTCPChContentType.contains("xml"):
+						soap soap;
+					default:
+						switch (ContentLength.ContentDistribution)
+						{
+							case 0:
+								switch 
+								{
+									case FrameLength > FrameOffset && ContentLength.Length > 0:
+										[DataFieldFrameLength = FrameOffset + ContentLength.Length]
+										NRBF NRBF;
+								}
+							case 1:
+								struct Chunks
+								{
+									while [FrameLength > FrameOffset && !(UINT32(FrameData, FrameOffset) == 0)]
+									{
+										struct Chunk
+										{
+											INT32 ChunkSize;
+											//#? DEV NOTE: May need reassembly in same frame
+											BLOB(ChunkSize) MessageContent;
+											BLOB(2) Trailer = "MUST be hex 0x0D0A ('\r\n')";
+										}
+									}
+									struct LastChunk
+									{
+										INT32 LastChunkSize = MUSTBeSetToTable(this, "zero");
+										BLOB(2) LastTrailer = "MUST be hex 0x0D0A ('\r\n')";
+									}
+								}
+							default:
+								ReportParserError(ParserErrorProtocolClassWindows, "DotNETRemotingTcpChannel", FormatString( "Unknown Content" ) ) ParserError;
+						}
+				}
+			}
+			
+		default:
+			BLOB(FrameLength - FrameOffset) NRBFData = "NRBF data, please reassemble to see parsing result";
+	}
+}
+
+[DataTypeByteOrder=LittleEndian]
+Protocol NRBF = FormatString("%s%s", Property.NRLS?" NRLS:":"",
+					Property.NRBFMethodInvokeDesc ? FormatString("%s", Property.NRBFMethodInvokeDesc) : "")
+{
+	UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+	DotNETRTCPChSerializationHeaderRecord SerializationHeaderRecord;
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0x15: 
+			struct
+			{
+				UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+				[property.NRBFBinaryMethodCall = true]
+				[Property.NRBFRecordDesc = BinaryMethodCall.ToString]
+				[Property.NRBFMethodInvokeDesc = BinaryMethodCall.ToString]
+				[Post.Conversation.IsNRLSMessage$[FrameNumber] =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																										Property.NRBFType.Contains("Activation.IActivator") ||
+																										Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																										Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+				 Post.Conversation.NRLSMessage =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																										Property.NRBFType.Contains("Activation.IActivator") ||
+																										Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																										Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+				 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS
+				]
+				DotNETRTCPChBinaryMethodCall BinaryMethodCall;
+			}
+		case 0x16:
+			struct
+			{
+				UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+				[property.NRBFBinaryMethodCallReturn = true] 
+				[Property.NRBFRecordDesc = BinaryMethodReturn.ToString]
+				[Property.NRBFMethodInvokeDesc = BinaryMethodReturn.ToString]
+				[Conversation.IsNRLSMessage$[FrameNumber] = Conversation.NRLSMessage,
+				 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS]
+				DotNETRTCPChBinaryMethodReturn BinaryMethodReturn;
+			}
+	}
+	switch
+	{
+		case property.NRBFBinaryMethodCall:
+			NRBFMessageRecord MethodCallArray;
+		case property.NRBFBinaryMethodCallReturn:
+			NRBFMessageRecord MethodCallArrayReturn;
+		default:
+			NRBFMessageRecord Record;
+	}
+	struct MessageEnd = DotNETRTCPChRecordTypeEnumerationTable(RecordTypeEnum)
+	{
+		UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+	}
+}
+
+//[MS-NRBF] 2.1.2.1 RecordTypeEnumeration
+Table DotNETRTCPChRecordTypeEnumerationTable(value)
+{
+	switch (value)
+	{
+		case 0: "SerializedStreamHeader";
+		case 1: "ClassWithId";
+		case 2: "SystemClassWithMembers";
+		case 3: "ClassWithMembers";
+		case 4: "SystemClassWithMembersAndTypes";
+		case 5: "ClassWithMembersAndTypes";
+		case 6: "BinaryObjectString";
+		case 7: "BinaryArray";
+		case 8: "MemberPrimitiveTyped";
+		case 9: "MemberReference";
+		case 10: "ObjectNull";
+		case 11: "MessageEnd";
+		case 12: "BinaryLibrary";
+		case 13: "ObjectNullMultiple256";
+		case 14: "ObjectNullMultiple";
+		case 15: "ArraySinglePrimitive";
+		case 16: "ArraySingleObject";
+		case 17: "ArraySingleString";
+		case 21: "BinaryMethodCall";
+		case 22: "BinaryMethodReturn";
+		Default:FormatString( "Unknown Record Type(%u)", value ) ;
+	}
+}
+
+// [MS-NRBF] 2.1.2.2 BinaryTypeEnumeration
+Table DotNETRTCPChBinaryTypeEnumerationTable(value)
+{
+	switch (value)
+	{
+		case 0: "Primitive";
+		case 1: "String";
+		case 2: "System.Object";
+		case 3: "SystemClass";
+		case 4: "Class";
+		case 5: "ObjectArray";
+		case 6: "StringArray";
+		case 7: "PrimitiveArray";
+		Default:FormatString( "Unknown Binary Type(%u)", value );
+	}
+}
+
+// [MS-NRBF] 2.1.2.3 PrimitiveTypeEnumeration
+Table DotNETRTCPChPrimitiveTypeEnumerationTable(value)
+{
+	switch (value)
+	{
+		case 1: "Boolean";
+		case 2: "Byte";
+		case 3: "Char";
+		case 5: "Decimal";
+		case 6: "Double";
+		case 7: "Int16";
+		case 8: "Int32";
+		case 9: "Int64";
+		case 10: "SByte";
+		case 11: "Single";
+		case 12: "Timespan";
+		case 13: "DateTime";
+		case 14: "UInt16";
+		case 15: "UInt32";
+		case 16: "UInt64";
+		case 17: "Null";
+		case 18: "String";
+		Default:FormatString("Unknown Primitive Type(%u)", value);
+	}
+}
+
+// [MS-NRBF] 2.2.1.1 MessageFlags
+struct DotNETRTCPChMessageFlags = FormatString( "0x%08X", this )
+{
+	UINT32 NoArgs:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Message does not contain arguments" : "");
+	UINT32 ArgsInline:1 = FormatString("            (%s) %s", this.ToBitString, this ? "All arguments are in MethodCall or MethodReturn record" : "");
+	UINT32 ArgsIsArray:1 = FormatString("           (%s) %s", this.ToBitString, this ? "The callArray record contains all arguments" : "");
+	UINT32 ArgsInArray:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Some arguments are in MethodCall or MethodReturn and some in callArray record" : "");
+	UINT32 NoContext:1 = FormatString("             (%s) %s", this.ToBitString, this ? "No call context. The callContext field does not exist or is empty" : "");
+	UINT32 ContextInline:1 = FormatString("         (%s) %s", this.ToBitString, this ? "callContext is a string and is placed inline" : "");
+	UINT32 ContextInArray:1 = FormatString("        (%s) %s", this.ToBitString, this ? "callContext is in callArray record" : "");
+	UINT32 MethodSignatureInArray:1 = FormatString("(%s) %s", this.ToBitString, this ? "Method Signature is in callArray record" : "");
+	UINT32 PropertyInArray:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The method message properties are in callArray record" : "");
+	UINT32 NoReturnValue:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Return value is NULL" : "");
+	UINT32 ReturnValueVoid:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Method Signature has void as return value" : "");
+	UINT32 ReturnValueInline:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Return value is in MethodReturn record" : "");
+	UINT32 ReturnValueInArray:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Return value is in callArray record" : "");
+	UINT32 ExceptionInArray:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Return exception is in callArray record" : "");
+	UINT32 Reserved1:1 = FormatString("             (%s)", this.ToBitString);	
+	UINT32 GenericMethod:1 = FormatString("         (%s) %s", this.ToBitString, this ? "The Remote Method is generic and the type parameters are contained in the Call Array. It is in the Generic category" : "");
+	UINT32 Reserved2:16 = FormatString("             (%s)", this.ToBitString);	
+}
+
+// [MS-NRBF] 2.4.1.1 BinaryArrayTypeEnumeration
+Table DotNETRTCPChBinaryArrayTypeEnumerationTable(value)
+{
+	switch (value)
+	{
+		case 0: "Single";
+		case 1: "Jagged";
+		case 2: "Rectangular";
+		case 3: "SingleOffset";
+		case 4: "JaggedOffset";
+		case 5: "RectangularOffset";
+		Default:FormatString("Unknown Binary Array Type(%u)", value);
+	}
+}
+
+// [MS-NRTP] 2.2.3.1.5 StringEncoding
+Table DotNETRTCPChLengthPrefixedStringEncodingTable(value)
+{
+	switch (value)
+	{
+		case 0: FormatString("Unicode");
+		case 1: FormatString("UTF8");
+		Default:FormatString( "Unknown Encoding(%d)", value );
+	}
+}
+// [MS-NRTP] 2.2.3.1.1 OperationType
+Table DotNETRTCPChOperationTypeTable(value)
+{
+	switch (value)
+	{
+		case 0x0000: "Request";
+		case 0x0001: "OneWayRequest";
+		case 0x0002: "Response";
+		Default: FormatString("Unknown value(%u)", value) ;
+	}
+}
+
+// [MS-NRTP] 2.2.3.1.2 ContentDistribution
+Table DotNETRTCPChContentDistributionTable(value)
+{
+	switch (value)
+	{
+		case 0: FormatString("Message Data");
+		case 1: FormatString("Chunked");
+		Default:FormatString( "Unknown value" );
+	}
+}
+
+// [MS-NRTP] 2.2.3.1.3 HeaderToken
+Table DotNETRTCPChHeaderTokenTable(value)
+{
+	switch (value)
+	{
+		case 0: "EndHeader";
+		case 1: "Custom";
+		case 2: "StatusCode";
+		case 3: "StatusPhrase";
+		case 4: "RequestUri";
+		case 5: "CloseConnection";
+		case 6: "ContentType";
+		Default:"Unknown value";
+	}
+}
+
+// [MS-NRTP] 2.2.3.1.4 HeaderDataFormat
+Table DotNETRTCPChHeaderDataFormatTable(value)
+{
+	switch (value)
+	{
+		case 0: FormatString("Void");
+		case 1: FormatString("CountedString");
+		case 2: FormatString("Byte");
+		case 3: FormatString("UInt16");
+		case 4: FormatString("Int32");
+		Default:FormatString( "Unknown Data Format(%d)", value);
+	}
+}
+
+// [MS-NRTP] 2.2.3.1.6 TCPStatusCode
+Table DotNETRTCPChStatusCodeTable(value)
+{
+	switch (value)
+	{
+		case 0: FormatString("Success");
+		case 1: FormatString("GenericError");
+		Default:FormatString( "Unknown Status(%d)", value);
+	}
+}
+
+// [MS-NRTP] 2.2.3.2.1 CountedString
+struct DotNETRTCPChCountedString = Property.NRTPStringData
+{
+	UINT8 StringEncoding = DotNETRTCPChLengthPrefixedStringEncodingTable(this);
+	INT32 Length;
+	switch(StringEncoding)
+	{
+		case 0:
+			[NRTPStringData]
+			UnicodeString(Length / 2) Unicode;
+		case 1:
+			[NRTPStringData]
+			String(2, Length) UTF8;
+	}
+}
+
+// [MS-NRTP] 2.2.3.3.3.2 CustomHeader
+struct DotNETRTCPChCustomHeader = FormatString("%s = %s", HeaderName.ToString, HeaderValue.ToString)
+{
+	DotNETRTCPChCountedString HeaderName;
+	DotNETRTCPChCountedString HeaderValue;
+}
+
+// [MS-NRTP] 2.2.3.3.3.3 StatusCodeHeader  
+struct DotNETRTCPChStatusCodeHeader = DotNETRTCPChStatusCodeTable(StatusCodeValue)
+{
+	UINT8 DataType = MUSTBeSetToTable(this, "3");
+	UINT16 StatusCodeValue = DotNETRTCPChStatusCodeTable(this);
+}
+
+// [MS-NRTP] 2.2.3.3.3.4 StatusPhraseHeader
+struct DotNETRTCPChStatusPhraseHeader = StatusPhraseValue.ToString
+{
+	UINT8 DataType = MUSTBeSetToTable(this, "1");
+	DotNETRTCPChCountedString StatusPhraseValue;
+}
+
+// [MS-NRTP] 2.2.3.3.3.5 RequestUriHeader
+struct DotNETRTCPChRequestUriHeader = UriValue.ToString
+{
+	UINT8 DataType = MUSTBeSetToTable(this, "1");
+	DotNETRTCPChCountedString UriValue;
+}
+
+// [MS-NRTP] 2.2.3.3.3.6 CloseConnectionHeader
+struct DotNETRTCPChCloseConnectionHeader
+{
+	UINT8 DataType = MUSTBeSetToTable(this, "0");
+}
+
+// [MS-NRTP] 2.2.3.3.3.7 ContentTypeHeader
+struct DotNETRTCPChContentTypeHeader = ContentTypeValue.ToString
+{
+	UINT8 DataType = MUSTBeSetToTable(this, "1");
+	[Property.DotNETRTCPChContentType = ContentTypeValue.ToString]
+	DotNETRTCPChCountedString ContentTypeValue;
+}
+
+// [MS-NRTP] 2.2.3.3.3.8 UnknownHeader
+struct DotNETRTCPChUnknownHeader = Local.UnknownValue
+{
+	UINT8 DataType = DotNETRTCPChHeaderDataFormatTable(this);
+	switch (DataType)
+	{
+		case 0: [Local.UnknownValue = "Void"]_struct Void {};
+		case 1: [Local.UnknownValue = CountedStringValue.ToString]DotNETRTCPChCountedString CountedStringValue;
+		case 2: [Local.UnknownValue = ByteValue.ToString]UINT8 ByteValue;
+		case 3: [Local.UnknownValue = UInt16Value.ToString]UINT16 UInt16Value;
+		case 4: [Local.UnknownValue = Int32Value.ToString]INT32 Int32Value;
+		default: ReportParserError(ParserErrorProtocolClassWindows, "DotNETRemotingTcpChannel", FormatString( "Unknown Header Data Type" ) ) ParserError;
+	}
+}
+
+// [MS-NRBF] 2.3.1.1 ClassInfo
+struct DotNETRTCPChClassInfo = FormatString("ObjectId = %d, ObjectName = %s, MemberCount = %d", ObjectId, ObjectName.ToString, MemberCount)
+{
+	INT32 ObjectId;
+	DotNETRTCPChLengthPrefixedString ObjectName;
+	INT32 MemberCount;
+	switch
+	{
+		case MemberCount > 0:
+			DotNETRTCPChLengthPrefixedString MemberNames[MemberCount];
+	}
+}
+
+// [MS-NRBF] 2.3.1.2 MemberTypeInfo
+struct DotNETRTCPChMemberTypeInfo(MemberCount, ObjectId)
+{
+	[Property.NRBFMemberCount = MemberCount]
+	[Property.DotNETRTCPChMemberTypeInfoIndex = 0]
+	while [Property.DotNETRTCPChMemberTypeInfoIndex < MemberCount]
+	{
+		[Property.DotNETRTCPChMemberTypeInfoIndex = Property.DotNETRTCPChMemberTypeInfoIndex + 1]
+		[Property.DotNETRTCPChMemberTypeInfoTable$[Property.DotNETRTCPChMemberTypeInfoIndex] = (BinaryTypeEnum == 0 || BinaryTypeEnum == 3 || BinaryTypeEnum == 4 || BinaryTypeEnum == 7) ? BinaryTypeEnum : -1]
+		[Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(ObjectId, Property.DotNETRTCPChMemberTypeInfoIndex)] = -1]
+		UINT8 BinaryTypeEnum = DotNETRTCPChBinaryTypeEnumerationTable(this);
+	}
+	
+	[Property.DotNETRTCPChMemberTypeInfoIndex = 0]
+	[MaxLoopCount = MemberCount]
+	while [true]
+	{
+		[Property.DotNETRTCPChMemberTypeInfoIndex = Property.DotNETRTCPChMemberTypeInfoIndex + 1]
+		switch(Property.DotNETRTCPChMemberTypeInfoTable$[Property.DotNETRTCPChMemberTypeInfoIndex])
+		{
+			case 0:
+				[Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(ObjectId, Property.DotNETRTCPChMemberTypeInfoIndex)] = Primitive]
+				UINT8 Primitive = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+			case 3:
+				DotNETRTCPChLengthPrefixedString SystemClass;
+			case 4:
+				DotNETRTCPChClassTypeInfo ClassTypeInfo;
+			case 7:
+				UINT8 PrimitiveArray = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+		}
+	}
+}
+
+// [MS-NRBF] 2.3.2.1 ClassWithMembersAndTypes
+struct DotNETRTCPChClassWithMembersAndTypes = FormatString("%s, LibraryId = %d", ClassInfo.ToString, LibraryId)
+{
+	DotNETRTCPChClassInfo ClassInfo;
+	switch 
+	{
+		case ClassInfo.MemberCount > 0:
+			DotNETRTCPChMemberTypeInfo(ClassInfo.MemberCount, ClassInfo.ObjectId) MemberTypeInfo;
+	}
+	INT32 LibraryId;
+}
+
+// [MS-NRBF] 2.3.2.2 ClassWithMembers
+struct DotNETRTCPChClassWithMembers = FormatString("%s, LibraryId = %d", ClassInfo.ToString, LibraryId)
+{
+	DotNETRTCPChClassInfo ClassInfo;
+	INT32 LibraryId;
+}
+
+//[MS-NRBF] 2.3.2.3 SystemClassWithMembersAndTypes
+struct DotNETRTCPChSystemClassWithMembersAndTypes = ClassInfo.ToString
+{
+	DotNETRTCPChClassInfo ClassInfo;
+	switch 
+	{
+		case ClassInfo.MemberCount > 0:
+			DotNETRTCPChMemberTypeInfo(ClassInfo.MemberCount, ClassInfo.ObjectId) MemberTypeInfo;
+	}
+}
+
+// [MS-NRBF] 2.3.2.4 SystemClassWithMembers
+struct DotNETRTCPChSystemClassWithMembers = ClassInfo.ToString
+{
+	DotNETRTCPChClassInfo ClassInfo;
+}
+
+// [MS-NRBF] 2.3.2.5 ClassWithId
+struct DotNETRTCPChClassWithId = FormatString("ObjectId = %d, MetadataId = %d", ObjectId, MetadataId)
+{
+	INT32 ObjectId;
+	INT32 MetadataId;
+}
+
+// [MS-NRBF] 2.4.2.1 ArrayInfo
+struct DotNETRTCPChArrayInfo = FormatString("ObjectId = %d, Length = %d", ObjectId, Length)
+{
+	INT32 ObjectId;
+	INT32 Length;
+}
+
+// [MS-NRBF] 2.4.3.1 BinaryArray
+struct DotNETRTCPChBinaryArray = FormatString("ObjectId:%u",objectId)
+{
+	INT32 ObjectId;
+	UINT8 BinaryArrayTypeEnum = DotNETRTCPChBinaryArrayTypeEnumerationTable(this);
+	INT32 Rank;
+	[Local.NRBFBinaryArrayLength = 1]
+	[MaxLoopCount = Rank]
+	while [true]
+	{
+		[Local.NRBFBinaryArrayLength = Local.NRBFBinaryArrayLength * Length]
+		INT32 Length;
+	}
+	switch(BinaryArrayTypeEnum)
+	{
+		case 3:
+		case 4:
+		case 5: 
+			INT32 LowerBounds[Rank];
+	}
+	UINT8 TypeEnum = DotNETRTCPChBinaryTypeEnumerationTable(this);
+	switch(TypeEnum)
+	{
+		case 0:
+			UINT8 Primitive = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+		case 3:
+			DotNETRTCPChLengthPrefixedString SystemClass;
+		case 4:
+			DotNETRTCPChClassTypeInfo ClassTypeInfo;
+		case 7:
+			UINT8 PrimitiveArray = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+	}
+	switch 
+	{
+		case TypeEnum == 0:
+			DotNETRTCPChMemberPrimitiveUnTyped(Primitive) MemberPrimitiveUnTypedrecords[Local.NRBFBinaryArrayLength];
+	}
+}
+
+// [MS-NRBF] 2.4.3.2 ArraySingleObject
+struct DotNETRTCPChArraySingleObject = ArrayInfo.ToString
+{
+	DotNETRTCPChArrayInfo ArrayInfo;
+}
+
+// [MS-NRBF] 2.4.3.3 ArraySinglePrimitive
+struct DotNETRTCPChArraySinglePrimitive = FormatString("Type = %s, %s", DotNETRTCPChPrimitiveTypeEnumerationTable(PrimitiveTypeEnum), ArrayInfo.ToString)
+{
+	DotNETRTCPChArrayInfo ArrayInfo;
+	UINT8 PrimitiveTypeEnum = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+	DotNETRTCPChMemberPrimitiveUnTyped(PrimitiveTypeEnum) MemberPrimitiveUnTypedrecords[ArrayInfo.Length];
+}
+
+// [MS-NRBF] 2.4.3.4 ArraySingleString
+struct DotNETRTCPChArraySingleString = ArrayInfo.ToString
+{
+	DotNETRTCPChArrayInfo ArrayInfo;
+}
+
+// [MS-NRBF] 2.5.1 MemberPrimitiveTyped
+struct DotNETRTCPChMemberPrimitiveTyped 
+{
+	DotNETRTCPChValueWithCode ObjectValue;
+}
+
+// [MS-NRBF] 2.5.2 MemberPrimitiveUnTyped
+[Local.DotNETRTCPChValueWithCodeDesc = ""]
+struct DotNETRTCPChMemberPrimitiveUnTyped(PrimitiveTypeEnum) = Local.DotNETRTCPChValueWithCodeDesc
+{
+	switch(PrimitiveTypeEnum)
+	{
+		case 0x01: [Local.DotNETRTCPChValueWithCodeDesc = BooleanValue.ToString]BOOLEAN BooleanValue;
+		case 0x02: [Local.DotNETRTCPChValueWithCodeDesc = ByteValue.ToString]UINT8 ByteValue;
+		case 0x03: [Local.DotNETRTCPChValueWithCodeDesc = CharValue.ToString]CHAR CharValue; 
+		case 0x05: [Local.DotNETRTCPChValueWithCodeDesc = DecimalValue.ToString]DotNETRTCPChDecimal DecimalValue;
+		case 0x06: [Local.DotNETRTCPChValueWithCodeDesc = DoubleValue.ToString]DOUBLE DoubleValue;
+		case 0x07: [Local.DotNETRTCPChValueWithCodeDesc = Int16Value.ToString]INT16 Int16Value;
+		case 0x08: [Local.DotNETRTCPChValueWithCodeDesc = Int32Value.ToString]INT32 Int32Value;
+		case 0x09: [Local.DotNETRTCPChValueWithCodeDesc = Int64Value.ToString]INT64 Int64Value;
+		case 0x0A: [Local.DotNETRTCPChValueWithCodeDesc = SbyteValue.ToString]INT8 SbyteValue;
+		case 0x0B: [Local.DotNETRTCPChValueWithCodeDesc = Single.ToString]Float Single;
+		case 0x0C: [Local.DotNETRTCPChValueWithCodeDesc = Timespan.ToString]INT64 Timespan;
+		case 0x0D: [Local.DotNETRTCPChValueWithCodeDesc = DateTime.ToString]
+		INT64 DateTime = (this!= 0)? FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss tt}", this, this ): "No Time Specified (0)"
+		{
+			INT64 Ticks:62;
+			INT64 Kind:2;
+		};
+		case 0x0E: [Local.DotNETRTCPChValueWithCodeDesc = UInt16Value.ToString]UINT16 UInt16Value;
+		case 0x0F: [Local.DotNETRTCPChValueWithCodeDesc = UInt32Value.ToString]UINT32 UInt32Value;
+		case 0x10: [Local.DotNETRTCPChValueWithCodeDesc = UInt64Value.ToString]UINT64 UInt64Value;
+		case 0x11: [Local.DotNETRTCPChValueWithCodeDesc = "Null"]struct DotNETRTCPChDOTNETNULL = "Null"{}
+		case 0x12: [Local.DotNETRTCPChValueWithCodeDesc = StringValue.ToString]DotNETRTCPChLengthPrefixedString StringValue ;	
+		Default:ReportParserError(ParserErrorProtocolClassWindows, "DotNETRemotingTcpChannel", FormatString( "Unknown Primitive Type" ) ) ParserError;
+	}
+}	
+
+// [MS-NRBF] 2.5.3 MemberReference
+struct DotNETRTCPChMemberReference = FormatString("IdRef = %d", IdRef)
+{
+	INT32 IdRef;
+}
+// [MS-NRBF] 2.5.4 ObjectNull
+struct DotNETRTCPChObjectNull = FormatString("NULL")
+{
+}
+
+// [MS-NRBF] 2.5.5 ObjectNullMultiple
+struct DotNETRTCPChObjectNullMultiple = FormatString("NullCount = %d",NullCount)
+{
+	INT32 NullCount;
+}
+
+// [MS-NRBF] 2.5.6 ObjectNullMultiple256
+struct DotNETRTCPChObjectNullMultiple256 = FormatString("NullCount = %u",NullCount)
+{
+	UINT8 NullCount;
+}
+
+// [MS-NRBF] 2.5.7 BinaryObjectString
+struct DotNETRTCPChBinaryObjectString = FormatString("ObjectId = %d, Value = %s", ObjectId, Value.ToString)
+{
+	INT32 ObjectId;
+	DotNETRTCPChLengthPrefixedString Value;
+}
+
+// [MS-NRBF] 2.6.1 SerializationHeaderRecord
+struct DotNETRTCPChSerializationHeaderRecord = FormatString("RootId = %d, HeaderId = %d, V%d.%d", RootId, HeaderId, MajorVersion, MinorVersion)
+{
+	INT32 RootId;
+	INT32 HeaderId;
+	INT32 MajorVersion;
+	INT32 MinorVersion;
+}
+
+// [MS-NRBF] 2.6.2 BinaryLibrary
+struct DotNETRTCPChBinaryLibrary = LibraryName.ToString
+{
+	INT32 LibraryId;
+	DotNETRTCPChLengthPrefixedString LibraryName;
+}
+
+//[MS-NRBF] 2.2.3.1 BinaryMethodCall
+struct DotNETRTCPChBinaryMethodCall = FormatString("%s.%s(%s)", Property.NRBFType, Property.NRBFMethod, Property.DotNETRTCPChBinaryMethodCallParams == "" ? "ArgsNotInline" : Property.DotNETRTCPChBinaryMethodCallParams)
+{
+	[Property.DotNETRTCPChBinaryMethodCallParams = MessageEnum.NoArgs ? "Void" : ""]
+	DotNETRTCPChMessageFlags MessageEnum;
+	[Property.NRBFMethod = MethodName.ToString]
+	DotNETRTCPChLengthPrefixedStringValueWithCode MethodName;
+	[Post.Property.NRBFType = AsciiStringTerm(FrameData, FrameOffset + 2 + Property.NRBFStringHeaderLen, ",", False)]
+	DotNETRTCPChLengthPrefixedStringValueWithCode TypeName;
+	switch
+	{
+		case MessageEnum.ContextInline: 
+			DotNETRTCPChValueWithCode CallContext;
+	}
+	switch
+	{
+		case MessageEnum.ArgsInline:
+			[Property.DotNETRTCPChArrayOfValueWithCodeDesc = ""]
+			[Post.Property.DotNETRTCPChBinaryMethodCallParams = Property.DotNETRTCPChArrayOfValueWithCodeDesc]
+			DotNETRTCPChArrayOfValueWithCode Args;
+	}
+}
+
+//[MS-NRBF] 2.2.3.3 BinaryMethodReturn
+struct DotNETRTCPChBinaryMethodReturn = FormatString("ReturnValue %s", MessageEnum.ReturnValueInline ? FormatString("= %s", ReturnValue.ToString) : "NotInline")
+{
+	DotNETRTCPChMessageFlags MessageEnum;
+	switch
+	{
+		case MessageEnum.ReturnValueInline:
+			DotNETRTCPChValueWithCode ReturnValue;
+	}
+	switch
+	{ 
+		case MessageEnum.ContextInline: 
+			DotNETRTCPChValueWithCode CallContext;
+	}
+	switch
+	{
+		case MessageEnum.ArgsInline:
+			DotNETRTCPChArrayOfValueWithCode Args;
+	}
+}
+
+
+struct NRBFMessageRecord
+{
+	while [FrameLength > FrameOffset && !(UINT8(FrameData,FrameOffset) == 11)]
+	{
+		[Property.NRBFMemberIndex = Property.NRBFMemberIndex + 1]
+		struct Record = FormatString(
+			"%s: %s", 
+			Property.NRBFMemberIndex <= Property.NRBFMemberCount && Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)] > 0 ? 
+				"MemberPrimitiveUnTyped" : DotNETRTCPChRecordTypeEnumerationTable(RecordTypeEnum), 
+			Property.NRBFRecordDesc)
+				{
+					switch
+					{
+						case Property.NRBFMemberIndex <= Property.NRBFMemberCount && Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)] > 0:
+							[Property.NRBFRecordDesc = MemberPrimitiveUnTypedRecord.ToString]
+							DotNETRTCPChMemberPrimitiveUnTyped(Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)]) MemberPrimitiveUnTypedRecord;
+						default:
+							struct
+							{
+								UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+								switch (RecordTypeEnum)
+								{
+									case 0x00:
+										[Property.NRBFRecordDesc = SerializationHeaderRecord.ToString]
+										DotNETRTCPChSerializationHeaderRecord SerializationHeaderRecord;
+									case 0x01: 
+										[Property.NRBFRecordDesc = ClassWithId.ToString]
+										[Property.NRBFMemberIndex = 0,Property.NRBFMetaId = ClassWithId.MetadataId]
+										DotNETRTCPChClassWithId ClassWithId;
+									case 0x02: 
+										[Property.NRBFRecordDesc = SystemClassWithMembers.ToString]
+										DotNETRTCPChSystemClassWithMembers SystemClassWithMembers;
+									case 0x03: 
+										[Property.NRBFRecordDesc = ClassWithMembers.ToString]
+										DotNETRTCPChClassWithMembers ClassWithMembers;
+									case 0x04: 
+										[Property.NRBFRecordDesc = SystemClassWithMembersAndTypes.ToString]
+										[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = SystemClassWithMembersAndTypes.ClassInfo.ObjectId]
+										DotNETRTCPChSystemClassWithMembersAndTypes SystemClassWithMembersAndTypes;
+									case 0x05: 
+										[Property.NRBFRecordDesc = ClassWithMembersAndTypes.ToString]
+										[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = ClassWithMembersAndTypes.ClassInfo.ObjectId]
+										DotNETRTCPChClassWithMembersAndTypes ClassWithMembersAndTypes; 
+									case 0x06: 
+									[Property.NRBFRecordDesc = BinaryObjectString.ToString]
+									DotNETRTCPChBinaryObjectString BinaryObjectString;
+									case 0x07: 
+										[Property.NRBFRecordDesc = BinaryArray.ToString]
+										[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = BinaryArray.ObjectId]
+										DotNETRTCPChBinaryArray BinaryArray;
+									case 0x08: 
+										[Property.NRBFRecordDesc = MemberPrimitiveTyped.ToString]
+										DotNETRTCPChMemberPrimitiveTyped MemberPrimitiveTyped;
+									case 0x09: 
+										[Property.NRBFRecordDesc = MemberReference.ToString]
+										DotNETRTCPChMemberReference MemberReference;
+									case 0x0A: 
+										[Property.NRBFRecordDesc = ObjectNull.ToString]
+										DotNETRTCPChObjectNull ObjectNull;
+									case 0x0C: 
+										[Property.NRBFRecordDesc = BinaryLibrary.ToString]
+										DotNETRTCPChBinaryLibrary BinaryLibrary;
+									case 0x0D: 
+										[Property.NRBFRecordDesc = ObjectNullMultiple256.ToString]
+										DotNETRTCPChObjectNullMultiple256 ObjectNullMultiple256;
+									case 0x0E: 
+										[Property.NRBFRecordDesc = ObjectNullMultiple.ToString]
+										DotNETRTCPChObjectNullMultiple ObjectNullMultiple;
+									case 0x0F: 
+										[Property.NRBFRecordDesc = ArraySinglePrimitive.ToString]
+										[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = BinaryArray.ObjectId]
+										DotNETRTCPChArraySinglePrimitive ArraySinglePrimitive;
+									case 0x10: 
+										[Property.NRBFRecordDesc = ArraySingleObject.ToString]
+										DotNETRTCPChArraySingleObject ArraySingleObject;
+									case 0x11: 
+										[Property.NRBFRecordDesc = ArraySingleString.ToString]
+										DotNETRTCPChArraySingleString ArraySingleString;
+									case 0x15: 
+										[Property.NRBFRecordDesc = BinaryMethodCall.ToString]
+										[Property.NRBFMethodInvokeDesc = BinaryMethodCall.ToString]
+										[Post.Conversation.IsNRLSMessage$[FrameNumber] =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																																Property.NRBFType.Contains("Activation.IActivator") ||
+																																Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																																Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+										 Post.Conversation.NRLSMessage =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																																Property.NRBFType.Contains("Activation.IActivator") ||
+																																Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																																Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+										 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS
+										]
+										DotNETRTCPChBinaryMethodCall BinaryMethodCall;					
+						
+									case 0x16: 
+										[Property.NRBFRecordDesc = BinaryMethodReturn.ToString]
+										[Property.NRBFMethodInvokeDesc = BinaryMethodReturn.ToString]
+										[Conversation.IsNRLSMessage$[FrameNumber] = Conversation.NRLSMessage,
+										 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS]
+										DotNETRTCPChBinaryMethodReturn BinaryMethodReturn;
+										
+									default: ReportParserError(ParserErrorProtocolClassWindows, "NRBF", "Unkown Record") ParserError;
+								}
+							}
+					}
+				}
+	}
+}
+
+
+[DataTypeByteOrder=LittleEndian]
+struct NRBF_struct = FormatString("%s%s", Property.NRLS?" NRLS:":"",
+					Property.NRBFMethodInvokeDesc ? FormatString("%s", Property.NRBFMethodInvokeDesc) : "")
+{
+	while [FrameLength > FrameOffset && !(UINT8(FrameData,FrameOffset) == 11)]
+	{
+		[Property.NRBFMemberIndex = Property.NRBFMemberIndex + 1]
+		struct Record = FormatString(
+			"%s: %s", 
+			Property.NRBFMemberIndex <= Property.NRBFMemberCount && Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)] > 0 ? 
+				"MemberPrimitiveUnTyped" : DotNETRTCPChRecordTypeEnumerationTable(RecordTypeEnum), 
+			Property.NRBFRecordDesc)
+		{
+			switch 
+			{
+				case Property.NRBFMemberIndex <= Property.NRBFMemberCount && Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)] > 0:
+					[Property.NRBFRecordDesc = MemberPrimitiveUnTypedRecord.ToString]
+					DotNETRTCPChMemberPrimitiveUnTyped(Property.NRBFMemberPrimitiveTypeTable$[MakeByteArray(Property.NRBFMetaId, Property.NRBFMemberIndex)]) MemberPrimitiveUnTypedRecord;
+				default:
+					struct
+					{
+						UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+						switch (RecordTypeEnum)
+						{
+							case 0x00:
+								[Property.NRBFRecordDesc = SerializationHeaderRecord.ToString]
+								DotNETRTCPChSerializationHeaderRecord SerializationHeaderRecord;
+							case 0x01: 
+								[Property.NRBFRecordDesc = ClassWithId.ToString]
+								[Property.NRBFMemberIndex = 0,Property.NRBFMetaId = ClassWithId.MetadataId]
+								DotNETRTCPChClassWithId ClassWithId;
+							case 0x02: 
+								[Property.NRBFRecordDesc = SystemClassWithMembers.ToString]
+								DotNETRTCPChSystemClassWithMembers SystemClassWithMembers;
+							case 0x03: 
+								[Property.NRBFRecordDesc = ClassWithMembers.ToString]
+								DotNETRTCPChClassWithMembers ClassWithMembers;
+							case 0x04: 
+								[Property.NRBFRecordDesc = SystemClassWithMembersAndTypes.ToString]
+								[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = SystemClassWithMembersAndTypes.ClassInfo.ObjectId]
+								DotNETRTCPChSystemClassWithMembersAndTypes SystemClassWithMembersAndTypes;
+							case 0x05: 
+								[Property.NRBFRecordDesc = ClassWithMembersAndTypes.ToString]
+								[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = ClassWithMembersAndTypes.ClassInfo.ObjectId]
+								DotNETRTCPChClassWithMembersAndTypes ClassWithMembersAndTypes; 
+							case 0x06: 
+								[Property.NRBFRecordDesc = BinaryObjectString.ToString]
+								DotNETRTCPChBinaryObjectString BinaryObjectString;
+							case 0x07: 
+								[Property.NRBFRecordDesc = BinaryArray.ToString]
+								[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = BinaryArray.ObjectId]
+								DotNETRTCPChBinaryArray BinaryArray;
+							case 0x08: 
+								[Property.NRBFRecordDesc = MemberPrimitiveTyped.ToString]
+								DotNETRTCPChMemberPrimitiveTyped MemberPrimitiveTyped;
+							case 0x09: 
+								[Property.NRBFRecordDesc = MemberReference.ToString]
+								DotNETRTCPChMemberReference MemberReference;
+							case 0x0A: 
+								[Property.NRBFRecordDesc = ObjectNull.ToString]
+								DotNETRTCPChObjectNull ObjectNull;
+							case 0x0C: 
+								[Property.NRBFRecordDesc = BinaryLibrary.ToString]
+								DotNETRTCPChBinaryLibrary BinaryLibrary;
+							case 0x0D: 
+								[Property.NRBFRecordDesc = ObjectNullMultiple256.ToString]
+								DotNETRTCPChObjectNullMultiple256 ObjectNullMultiple256;
+							case 0x0E: 
+								[Property.NRBFRecordDesc = ObjectNullMultiple.ToString]
+								DotNETRTCPChObjectNullMultiple ObjectNullMultiple;
+							case 0x0F: 
+								[Property.NRBFRecordDesc = ArraySinglePrimitive.ToString]
+								[Property.NRBFMemberIndex = 0, Property.NRBFMetaId = BinaryArray.ObjectId]
+								DotNETRTCPChArraySinglePrimitive ArraySinglePrimitive;
+							case 0x10: 
+								[Property.NRBFRecordDesc = ArraySingleObject.ToString]
+								DotNETRTCPChArraySingleObject ArraySingleObject;
+							case 0x11: 
+								[Property.NRBFRecordDesc = ArraySingleString.ToString]
+								DotNETRTCPChArraySingleString ArraySingleString;
+							case 0x15: 
+								[Property.NRBFRecordDesc = BinaryMethodCall.ToString]
+								[Property.NRBFMethodInvokeDesc = BinaryMethodCall.ToString]
+								[Post.Conversation.IsNRLSMessage$[FrameNumber] =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																														Property.NRBFType.Contains("Activation.IActivator") ||
+																														Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																														Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+								 Post.Conversation.NRLSMessage =(Property.NRBFType.Contains("Lifetime.ILease") ||
+																														Property.NRBFType.Contains("Activation.IActivator") ||
+																														Property.NRBFType.Contains("Lifetime.ISponsor") ||
+																														Property.NRBFType.Contains("Lifetime.MarshalByRefObject")) ? 1 : 0,
+								 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS
+								]
+								DotNETRTCPChBinaryMethodCall BinaryMethodCall;					
+
+							case 0x16: 
+								[Property.NRBFRecordDesc = BinaryMethodReturn.ToString]
+								[Property.NRBFMethodInvokeDesc = BinaryMethodReturn.ToString]
+								[Conversation.IsNRLSMessage$[FrameNumber] = Conversation.NRLSMessage,
+								 Property.NRLS = Conversation.IsNRLSMessage$[FrameNumber] ? 1 : Property.NRLS]
+								DotNETRTCPChBinaryMethodReturn BinaryMethodReturn;
+								
+							default: ReportParserError(ParserErrorProtocolClassWindows, "NRBF", "Unkown Record") ParserError;
+						}
+					}
+				}
+		}
+	}
+	struct MessageEnd = DotNETRTCPChRecordTypeEnumerationTable(RecordTypeEnum)
+	{
+		UINT8 RecordTypeEnum = DotNETRTCPChRecordTypeEnumerationTable(this);
+	}
+}
+// [MS-NRBF] 2.1.1.6 LengthPrefixedString
+struct DotNETRTCPChLengthPrefixedString = stringData.toString
+{
+	[Property.DotNETStringLength = 0, Property.NRBFStringHeaderLen = 0, Property.MaxLoopCount = 4]
+	while [UINT8(FrameData, FrameOffset) & 0x80]
+	{
+		[
+			DotNETStringLength = DotNETStringLength | ((UINT8(FrameData, FrameOffset) & 0x7F) << (7 * Property.NRBFStringHeaderLen)),
+			Property.NRBFStringHeaderLen = Property.NRBFStringHeaderLen + 1
+		]
+		UINT8 Length = FormatString("%d, Current Length = %d", this, Property.DotNETStringLength);
+	}
+	[DotNETStringLength = DotNETStringLength | ((UINT8(FrameData, FrameOffset) & 0x7F) << (7 * Property.NRBFStringHeaderLen))]
+	UINT8 LastLength = FormatString("%d, Total Length = %d", this, Property.DotNETStringLength);
+
+	MBCString(Property.DotNETStringLength) StringData;
+}
+
+// [MS-NRBF] 2.1.1.7 Decimal
+struct DotNETRTCPChDecimal = Value.ToString
+{
+	DotNETRTCPChLengthPrefixedString Value;
+}
+
+// [MS-NRBF] 2.1.1.8 ClassTypeInfo
+struct DotNETRTCPChClassTypeInfo = FormatString("%s, ID = ", TypeName.ToString, LibraryId)
+{
+	DotNETRTCPChLengthPrefixedString TypeName;
+	UINT32 LibraryId;
+}
+
+// [MS-NRBF] 2.2.2.1 ValueWithCode
+[Post.Property.DotNETRTCPChArrayOfValueWithCodeDesc = (Property.DotNETRTCPChArrayOfValueWithCodeDesc == "" ? Value.ToString : FormatString("%s, %s", Property.DotNETRTCPChArrayOfValueWithCodeDesc, Value.ToString))]
+Struct DotNETRTCPChValueWithCode = Value.ToString
+{
+	UINT8 PrimitiveTypeEnum = DotNETRTCPChPrimitiveTypeEnumerationTable(this);
+	DotNETRTCPChMemberPrimitiveUnTyped(PrimitiveTypeEnum) Value;
+}
+
+// [MS-NRBF] 2.2.2.2 StringValueWithCode
+struct DotNETRTCPChLengthPrefixedStringValueWithCode = StringValue.ToString
+{
+	DotNETRTCPChValueWithCode StringValue;
+}
+
+// [MS-NRBF] 2.2.2.3 ArrayOfValueWithCode
+struct DotNETRTCPChArrayOfValueWithCode = FormatString("Count = %d", Length)
+{
+	INT32 Length;
+	DotNETRTCPChValueWithCode ListOfValueWithCode[Length];
+}

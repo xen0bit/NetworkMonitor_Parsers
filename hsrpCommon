@@ -1,0 +1,81 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Hot Standby Router Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.networksorcery.com/enp/protocol/hsrp.htm
+//#                          http://www.javvin.com/protocol/rfc2281.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/24/2009
+//#
+//####
+
+[ RegisterAfter (UDPPayload.http, Hsrp, 1985) ]
+Protocol HSRP = FormatString("Opcode = %s, State = %s",
+							HSRPOpcodeTable(UINT8(frameData, offset +1)),
+							HSRPStateTable(UINT8(frameData, offset + 2))
+							)
+{
+	UINT8 Version;
+	UINT8 Opcode = FormatString("%s (%d)", HSRPOpcodeTable(this), this);
+	UINT8 State = FormatString("%s (%d)", HSRPStateTable(this), this)
+	{
+		UINT8 Bit0_2:3 = FormatString("(%s) Reserved", this.ToBitString);		
+		UINT8 Bit3:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Active" : "");
+		UINT8 Bit4:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Standby" : "");
+		UINT8 Bit5:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Speak" : "");
+		UINT8 Bit6:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Listen" : "");
+		UINT8 Bit7:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Learn" : "");
+	};
+	switch(Opcode) {
+		case 0:
+			_struct {
+				UINT8 Hellotime; // Default: 3
+				UINT8 Holdtime;  // Default: 10
+			}
+		default:
+			BLOB(2) ImplementationSpecificData;
+	}
+
+	UINT8 Priority;
+	UINT8 Group;
+	UINT8 Reserved;
+
+	// 8 character password
+	// Recommended Default Value: 0x63 0x69 0x73 0x63 0x6F 0x00 0x00 0x00 (cisco)
+	AsciiString(8) AuthenticationData;
+	switch
+	{
+		case FrameOffset < FrameLength:
+			IPv4Address VirtualIPAddress;
+	}
+}
+Table HSRPOpcodeTable
+{
+	switch(value)
+	{
+		case 0x00 : "Hello"; // The Router is running and is capable of becoming the active or standby router
+		case 0x01 : "Coup"; // The router wishes to become the active router
+		case 0x02 : "Resign"; // The router no longer wishes to be the active router
+		// There's a "new" 3 value here but, could not find documentation on the subject.
+		default : "Unknown Code";
+	}
+}
+
+Table HSRPStateTable
+{
+	switch(value)
+	{
+		case 0x00 : "Initial"; // This is the starting state and indicates that HSRP is not running. This state is entered via a configuration change or when an interface first comes up. 
+		case 0x01 : "Learn"; // The router has not determined the virtual IP address, and not yet seen an authenticated Hello message from the active router. In this state the router is still waiting to hear from the active router.
+		case 0x02 : "Listen"; // The router knows the virtual IP address, but is neither the active router nor the standby router. It listens for Hello messages from those routers. 
+		case 0x04 : "Speak"; // The router sends periodic Hello messages and is actively participating in the election of the active and/or standby router. A router cannot enter Speak state unless it has the virtual IP address. 
+		case 0x08 : "Standby"; // The router is a candidate to become the next active router and sends periodic Hello messages. Excluding transient conditions, there MUST be at most one router in the group in Standby state.
+		case 0x10 : "Active"; // The router is currently forwarding packets that are sent to the group's virtual MAC address. The router sends periodic Hello messages. Excluding transient conditions, there MUST be at most one router in Active state in the group. 
+		default : "Unknown Code";
+	}
+}
+

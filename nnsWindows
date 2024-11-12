@@ -1,0 +1,124 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  .NET NegotiateStream Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-NNS]: .NET NegotiateStream Protocol Specification (1.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1154.0
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[BuildConversationWithParent]
+Protocol NNS = Property.NNSummary
+{
+	[
+		Post.PayloadStart(
+					Property.NetworkDirection, /*direction */
+					0, /* id */
+					0, /* sequence token */
+					0, /* next sequence token */
+					Property.NNSPayloadSize, /* total payload length */
+					Property.NNSfirstFrame, /* is first */
+					0, /* is last */
+					RssmblyIndStartBit+ RssmblyIndLengthBit +RssmblySelfBit  // Has start, Whole Length indication
+					
+					)
+	]
+	switch
+	{
+		case Conversation.NNSFragmentData$[Property.TCPSeqNumber]:
+			[Property.NNSummary = "Fragment",Property.NNSPayloadSize = Conversation.NNSFragmentData$[Property.TCPSeqNumber]]
+			BLOB( FrameLength - FrameOffset ) Data;
+			
+		case 
+			( UINT8( Framedata, Offset ) == 0x14 ||
+			  UINT8( Framedata, Offset ) == 0x15 ||
+			  UINT8( Framedata, Offset ) == 0x16 ) &&
+			UINT8( Framedata, Offset + 1 ) == 0x01 &&
+			UINT8( Framedata, Offset + 2 ) == 0x00:
+			
+		 	[Property.NNSummary = FormatString( "HandshakeMessage, MessageId = %s, PayloadSize = %d", NNSMessageIdTable(MessageId), PayloadSize ),Property.NNSfirstFrame = true]
+			NNShandshake HandshakeMessage;
+			
+		default:
+			[Property.NNSummary = FormatString( "DataMessage, PayloadSize = %d", PayloadSize ),Property.NNSfirstFrame = true]
+			 NNSdataMessage DataMessage;
+	}
+}
+
+//
+//	dataMessage
+//
+Struct NNSdataMessage
+{
+	[DataFieldByteOrder = LittleEndian,property.NNSPayloadSize = 4 + PayloadSize]
+	UINT32 PayloadSize;
+	[DataFieldFrameLength = FrameOffset + PayloadSize,
+	(FrameLength - FrameOffset) < PayloadSize ? Conversation.NNSFragmentData$[Property.TCPNextSeqNumber] = property.NNSPayloadSize : 0]
+	struct AuthPayload
+	{
+		GssAPI GssAPI;
+	}
+}
+
+
+//
+//	handshake
+//
+Struct NNShandshake
+{
+	UINT8 MessageId = NNSMessageIdTable(this);
+	UINT8 MajorVersion = MustBeSetToTable(this, "1");
+	UINT8 MinorVersion = MustBeSetToTable(this, "0");
+	[property.NNSPayloadSize = 5 + PayloadSize]
+	UINT16 PayloadSize;
+	[(FrameLength - FrameOffset) < PayloadSize ? Conversation.NNSFragmentData$[Property.TCPNextSeqNumber] = property.NNSPayloadSize : 0]
+	switch(MessageId)
+	{
+		case 0x14: 
+		case 0x16://authentication tokens
+			switch
+			{
+				case PayloadSize > 0:
+					[ DataFieldFrameLength = FrameOffset + PayloadSize]
+					GssAPI GssAPI;
+			}
+		case 0x15://Windows Error Code
+			switch
+			{
+				case PayloadSize >= 8:
+					NNSNestedHandshakeAuthPayload AuthPayload;
+			}
+	}
+}
+
+
+Table NNSMessageIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x14: "HandshakeDone - Signals that the handshake has completed successfully.";
+		Case 0x15: "HandshakeError - Signals that an error occurred during the handshake. The Authpayload field contains a Win32 error code. See the description of the AuthPayload field for further information.";
+		Case 0x16: "HandshakeInProgress - Signals that the message is part of the handshake phase, and is not the final message from the host. The final Handshake message from a host is always transferred in a HandshakeDone message.";
+		Default: "Unknown";
+	}
+}
+
+
+//
+//	nested_handshake_AuthPayload
+//
+Struct NNSNestedHandshakeAuthPayload
+{
+	UINT32 Reserved;
+	UINT32 ErrorCode = WinErrorCodeTable(this);
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength - FrameOffset) AuthPayloadData;
+	}
+}

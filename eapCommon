@@ -1,0 +1,240 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Extensible Authentication Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2284, 2716, 3748
+//#                          http://www.iana.org/assignments/eap-numbers
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DefaultTimeOut = EapConversationTimeout]
+Protocol EAP = FormatString("%s%s%s",
+							EapTypeTable(Code),
+							Property.EapReqResType ? ", Type = " + EapReqResTypeTable(Property.EapReqResType) : "",
+							Property.PEAPStart
+							)
+{
+	[EapCode]
+	UINT8 Code = FormatString("%s, %d(%#x)", EapTypeTable(this), this, this);
+	[
+		BuildConversationWithParent,
+		Post.Conversation.ConversationDescription = FormatString("(ID: %d) ConvID = %d", Identifier,ConvID)
+	]
+	UINT8 Identifier;
+	[EapEnd = Offset+Length-2]
+	UINT16 Length = FormatString("%d bytes",this);
+	switch(Code)
+	{
+		case 0x01:
+		case 0x02:
+			//1 for Request &  2 for Response
+			switch(UINT8( Framedata, Offset ))
+			{
+				case 0x01: //Identity
+					_struct EapIdentity
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						MBCString(Length - 5) IdentityData;
+					};
+				case 0x02: //Notification
+					_struct EapNotification
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						MBCString(Length - 5) NotificationData;
+					};
+				case 0x03: //Nak
+					_struct EapNak
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						UINT8 DesiredAuthType[Length - 5] = this ? EapReqResTypeTable(this) : "No alternative";
+					};
+				case 0x04: //MD5-Challenge
+					_struct EapMD5Challenge
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						UINT8 ValueSize = FormatString("%d bytes",this);
+						Blob(ValueSize) Value;
+						AsciiString(Length - ValueSize - 6) Name;
+					};
+				case 0x05: //One-Time Password (OTP)
+					_struct EapOneTimePassword
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						Blob(Length - 5) OTPData;
+					};
+				case 0x06: //Generic Token Card (GTC)
+					_struct EapGenericTokenCard
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						Blob(Length - 5) GTCData;
+					};
+				case 0x0D: //Transport Level Security (TLS)
+					//# RFC 2716 page 18 ~ 19
+					_struct EapTransportLevelSecurity
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						UINT8 Flags
+						{
+							[HasPeapTlsLength]
+							UINT8 L:1 = FormatString("       (%s) %s",this.ToBitString,this ? "TLS Message Length field included"
+											 : "TLS Message Length field not included");
+							UINT8 M:1 = FormatString("       (%s) %s",this.ToBitString,this ? "there are more fragments"
+											 : "this is the last fragment");
+							UINT8 S:1 = FormatString("       (%s) %s",this.ToBitString,this ? "this is a EAP-TLS start message"
+											 : "this is not a EAP-TLS start message");
+							UINT8 Reserved:5 = FormatString("(%s)",this.ToBitString);
+						};
+						switch
+						{
+							case FrameOffset < EapEnd:
+								TLSData TLSData;
+						}		
+						
+					};
+				case  25:  // PEAP
+					struct EapPeap
+						{
+							[EapReqResType, PeapReqResType]
+							UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+							PeapData TypeData;
+						};
+				case   26: // MSCHAPv2
+					_struct EapMSCHAPv2
+					{
+						[EapReqResType, MSCHAPv2ReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						MschapV2Data TypeData;
+					};
+				//case   33: // MSPEAP EAP TLV Extensions are encrypted and transmitted by TLS tunnel
+				case 0xFE: //Expanded Types
+					_struct EapExpandedTypes
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						UINT24 VendorId;//0
+						UINT32 VendorType = this ? EapReqResTypeTable(this) : "No alternative";//3
+						switch
+						{
+							case VendorId == 0 && VendorType == 3:
+								//Expanded Nak
+								//# RFC 3748 page 34
+								struct EapExpandedNak[length - 12]
+								{
+									UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+									UINT24 VendorId;
+									UINT32 VendorType = this ? EapReqResTypeTable(this) : "No alternative";
+								}
+							//case VendorId == 0x137 && VendorType == 0x21: SoH Extensions are encrypted and transmitted by TLS tunnel
+							//case VendorId == 0x137 && VendorType == 0x22: SoH Extensions are encrypted and transmitted by TLS tunnel
+							default:  //# RFC 3748 page 39
+								Blob(length - 12) VendorData;
+						}
+					};
+				default:
+					_struct EapOtherType
+					{
+						[EapReqResType]
+						UINT8 Type = FormatString("%s, %d(%#x)", EapReqResTypeTable(this), this, this);
+						Blob(Length - 5) TypeData;
+					};
+			};
+		// Not Request/Response
+		default:
+			switch
+			{
+				case Length - 4 > 0:
+					Blob(Length - 4) UnknownEapData;
+			}
+	}
+}
+//# rfc 2284 page 5
+Table EapTypeTable(Code)
+{
+	switch(Code)
+	{
+		case 0x01: "Request";
+		case 0x02: "Response";
+		case 0x03: "Success";
+		case 0x04: "Failure";
+		default  : "Unallocated EAP Code";
+	}
+}
+
+// http://www.iana.org/assignments/eap-numbers
+Table EapReqResTypeTable(Type)
+{
+	switch
+	{
+		case type ==   0: "NULL";
+		case type ==   1: "Identity"; 
+		case type ==   2: "Notification"; 
+		case type ==   3: "Nak (Response only)";  
+		case type ==   4: "MD5-Challenge";  
+		case type ==   5: "One Time Password (OTP)";  
+		case type ==   6: "Generic Token Card";  
+		case type ==   7: "Allocated";
+		case type ==   8: "Allocated";
+		case type ==   9: "RSA Public Key Authentication"; 
+		case type ==  10: "DSS Unilateral"; 
+		case type ==  11: "KEA"; 
+		case type ==  12: "KEA-VALIDATE"; 
+		case type ==  13: "EAP-TLS";
+		case type ==  14: "Defender Token (AXENT)"; 
+		case type ==  15: "RSA Security SecurID EAP"; 
+		case type ==  16: "Arcot Systems EAP"; 
+		case type ==  17: "EAP-Cisco Wireless (LEAP)"; 
+		case type ==  18: "EAP-SIM Nokia IP smart card authentication"; 
+		case type ==  19: "SRP-SHA1 Part 1"; 
+		case type ==  20: "SRP-SHA1 Part 2"; 
+		case type ==  21: "EAP-TTLS"; 
+		case type ==  22: "Remote Access Service"; 
+		case type ==  23: "UMTS Authentication and Key Agreement"; 
+		case type ==  24: "EAP-3Com Wireless"; 
+		case type ==  25: "PEAP"; 
+		case type ==  26: "MS-EAP-Authentication"; 
+		case type ==  27: "Mutual Authentication w/Key Exchange (MAKE)"; 
+		case type ==  28: "CRYPTOCard"; 
+		case type ==  29: "EAP-MSCHAP-V2"; 
+		case type ==  30: "DynamID"; 
+		case type ==  31: "Rob EAP"; 
+		case type ==  32: "SecurID EAP"; 
+		case type ==  33: "MS-Authentication-TLV"; 
+		case type ==  34: "SentriNET"; 
+		case type ==  35: "EAP-Actiontec Wireless"; 
+		case type ==  36: "Cogent Systems Biometrics Authentication EAP"; 
+		case type ==  37: "AirFortress EAP"; 
+		case type ==  38: "EAP-HTTP Digest"; 
+		case type ==  39: "SecureSuite EAP"; 
+		case type ==  40: "DeviceConnect EAP"; 
+		case type ==  41: "EAP-SPEKE"; 
+		case type ==  42: "EAP-MOBAC"; 
+		case type ==  43: "EAP-FAST"; 
+		case type ==  44: "ZoneLabs EAP (ZLXEAP)"; 
+		case type ==  45: "EAP-Link";
+		case type ==  46: "EAP-PAX";
+		case type ==  47: "EAP-PSK";
+		case type >=  48
+		  && type <= 191: "AVAILABLE via review by Designated Expert";
+		case type >= 192
+		  && type <= 253: "RESERVED for allocation via Standards Action";
+		case type == 254: "RESERVED for the Expanded Type";  
+		case type == 255: "EXPERIMENTAL"; 
+		default  : "UNHANDLED EAP Request/Response Type";
+	}
+}
+
+
+

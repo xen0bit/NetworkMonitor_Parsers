@@ -1,0 +1,361 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Passport Protocol
+//#
+//#  Details:                The Passport protocol has 13 different packets. They can be
+//#
+//#                          categorized into 6 groups based on the HTTP header they use:
+//#
+//#                          1. Authentication-Info (HTTP response)
+//#
+//#                          - Authed Response and Logout
+//#
+//#                          - DA Redir
+//#
+//#                          - Set Tickets
+//#
+//#                          - Ticket Response
+//#
+//#                          2. Accept-Auth (HTTP request)
+//#
+//#                          - Accept-Auth
+//#
+//#                          3. WWW-Authenticate (HTTP response)
+//#
+//#                          - Auth-Error
+//#
+//#                          - DA Challenge
+//#
+//#                          - Server Challenge
+//#
+//#                          4. PassportConfig (HTTP response)
+//#
+//#                          - DA-Instructed Update
+//#
+//#                          5. Authorization (HTTP request)
+//#
+//#                          - First Authed Request
+//#
+//#                          - Login Request
+//#
+//#                          - Ticket Request
+//#
+//#                          6. PassportURLs (HTTP response)
+//#
+//#                          - Update Configuration
+//#
+//#  Microsoft References:   [MS-PASS]: Passport Server Side Include (SSI) Version 1.4 Protocol Specification (4.0.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/17/2009
+//#
+//####
+
+Protocol PASSPORT = FormatString("%s, packet type=%s", Property.HttpSummary, PassportPacketTypeString)
+{
+	switch (PassportPacketType)
+	{
+		case PPAuthenticationInfo: 
+			_struct AuthenticationInfo {
+				switch 
+				{
+					case AsciiString(framedata,Offset+12,8).Contains("tname="):
+																		// Set Tickets
+						_struct SetTickets {
+							[PassportPacketTypeString = "Set Tickets"]
+							AsciiStringTerm("Passport1.4 ") CTAuthenticationInfo = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") SetTicketResponse
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case AsciiString(framedata,Offset+12,27).Contains("da-status=success ,tname="):
+					case AsciiString(framedata,Offset+12,29).Contains("da-status=success ,From-PP="):
+																		// Ticket Response
+						_struct TicketResponse {
+							[PassportPacketTypeString = "Ticket Response"]
+							AsciiStringTerm("Passport1.4 ") TSRAuthenticationInfo = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") TSuccessResponse
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case AsciiString(framedata,Offset+12,18).Contains("da-status=logout"):
+					case AsciiString(framedata,Offset+12,19).Contains("da-status=success"):
+					case AsciiString(framedata,Offset+12,18).Contains("da-status=failed"):
+					case AsciiString(framedata,Offset+12,26).Contains("da-status=failed-noretry"):
+																		// Authed Response and Logout
+						_struct AuthedResponseAndLogout {
+							[PassportPacketTypeString = "Authed Response and Logout"]
+							AsciiStringTerm("Passport1.4 ") ARAuthenticationInfo = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") AuthedStatus
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case HttpStatusCode.Contains("302"):
+					case AsciiString(framedata,Offset+12,17).Contains("da-status=redir"):
+																		// DA Redir
+						_struct DARedir {
+							[PassportPacketTypeString = "DA Redir"]
+							AsciiStringTerm("Passport1.4 ") DARAuthenticationInfo = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") DARedir
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					default: 
+						_struct Unknown {
+							[PassportPacketTypeString = "Unknown Passport packet type"]
+							AsciiStringTerm("Passport1.4 ") AuthenticationInfo = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") Parameter
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+				}			
+			}
+		case PPAcceptAuth:
+			_struct AcceptAuth {
+				[PassportPacketTypeString = "Accept-Auth"]
+				AsciiStringTerm("\r\n") AdvertisePP
+				{
+					while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+					{
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							default:
+								AsciiStringTerm(",") DefaultName;
+						}
+					}
+				}
+			}
+		case PPWWWAuthenticate:
+			_struct WWWAuthenticate {
+				switch
+				{
+					case HttpStatusCode.Contains("401"):
+					case AsciiString(framedata,Offset+12,27).Contains("da-status=failed, srealm="):
+					case AsciiString(framedata,Offset+12,35).Contains("da-status=failed-noretry, srealm="):
+																		// DA Challenge
+						_struct DAChallenge {
+							[PassportPacketTypeString = "DA Challenge"]
+							AsciiStringTerm("Passport1.4 ") DAWWWAuthenticate = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") DAChallenge
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case HttpStatusCode.Contains("401"):
+					case AsciiString(framedata,Offset+12,18).Contains("da-status=failed"):
+					case AsciiString(framedata,Offset+12,8).Contains("tname="):
+																		// Auth Error
+						_struct AuthError {
+							[PassportPacketTypeString = "Auth Error"]
+							AsciiStringTerm("Passport1.4 ") TERWWWAuthenticate = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") TErrorResponse
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case HttpStatusCode.Contains("302"):
+					case AsciiString(framedata,Offset+12,7).Contains("site="):
+																		// Server Challenge
+						_struct ServerChallenge {
+							[PassportPacketTypeString = "Server Challenge"]
+							AsciiStringTerm("Passport1.4 ") SCWWWAuthenticate = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") ServerChallenge 
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					default: 
+						_struct Unknown {
+							[PassportPacketTypeString = "Unknown Passport packet type"]
+							AsciiStringTerm("Passport1.4 ") WWWAuthenticate = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") Parameter
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+				}
+			}
+		case PPPassportConfig:
+																		// DA-Instructed Update
+			_struct PassportConfig {
+				[PassportPacketTypeString = "DA-Instructed Update"]
+				AsciiStringTerm("\r\n") ConfigData
+				{
+					while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+					{
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							default:
+								AsciiStringTerm(",") DefaultName;
+						}
+					}
+				}
+			}
+		case PPAuthorization:
+			_struct Authorization {
+				switch
+				{
+					case AsciiString(framedata,Offset+12,10).Contains("from-PP="):
+																		// First Authed Request
+						_struct FirstAuthedRequest {
+							[PassportPacketTypeString = "First Authed Request"]
+							AsciiStringTerm("Passport1.4 ") ARAuthorization = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") FirstAuthedRequest
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case AsciiString(framedata,Offset+12,19).Contains("WWW-Authenticate:"):
+																		// Ticket Request
+						_struct TicketRequest {
+							[PassportPacketTypeString = "Ticket Request"]
+							AsciiStringTerm("Passport1.4 ") TRAuthorization = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") TicketRequest
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					case AsciiString(framedata,Offset+12,5).Contains("1# "):
+						_struct LoginRequest {
+																		// Login Request
+							[PassportPacketTypeString = "Login Request"]
+							AsciiStringTerm("Passport1.4 ") LRAuthorization = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") LoginRequest
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+					default: 
+						_struct Unknown {
+							[PassportPacketTypeString = "Unknown Passport packet type"]
+							AsciiStringTerm("Passport1.4 ") Authorization = FormatString("Passport1.4 ");
+							AsciiStringTerm("\r\n") Parameter
+							{
+								while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										default:
+											AsciiStringTerm(",") DefaultName;
+									}
+								}
+							}
+						}
+				}
+			}
+		case PPPassportURLs:
+																		// Update Configuration
+			_struct PassportURLs {
+				switch
+				{
+					case HttpStatusCode.Contains("200"):
+						[PassportPacketTypeString = "Update Configuration"]
+						AsciiStringTerm("\r\n") Parameter
+						{
+							while Fields[ !(UINT16( FrameData, Offset ) == 0x0D0A) && FrameOffset < FrameLength]
+							{
+								DynamicSwitch AsciiStringTerm("=")
+								{
+									default:
+										AsciiStringTerm(",") DefaultName;
+								}
+							}
+						}
+				}
+			}
+		default:
+			[PassportPacketTypeString = "Unknown Passport packet type"]
+			AsciiStringTerm("\r\n") Passport;
+	}
+}
+

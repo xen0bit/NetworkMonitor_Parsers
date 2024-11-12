@@ -1,0 +1,90 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  TRAIL
+//#
+//#  Details:                Parses the TRAIL frame for Microsoft Network Monitor 2.1 statistics
+//#
+//#  Comments:               Microsoft Network Monitor 2.1 source code
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol TRAIL = FrameType.ToString
+{
+	AsciiString(4) TrailID;
+	UINT32 Flags
+	{
+		UINT8 SS:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Ignore this Frame completely for Statistics" 
+                                                                    : "Use this Frame as a Statistics Endpoint");
+		UINT8 FS:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Only show Statistics for Frames which pass the Filter" 
+                                                                    : "Show Statistics for all Frames, even if Filtered");
+		UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 FrameType = TRAILFrameTypeTable(this);
+	switch(FrameType)
+	{
+		case 0:TRAILBlockStatistics BlockStatistics;
+	}
+}
+
+[RegisterBefore(Trail.BlockStatistics, TrailComment, 106)]
+Protocol TrailComment = TrailComment.Comment
+{
+	AsciiString(FrameLength - FrameOffset) Comment;
+}
+
+Table TRAILFrameTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x65:FormatString("Generic (%d)",value);
+		case  0x66:FormatString("BookMark (%d)",value);
+		case  0x67:FormatString("Capture Statistics (%d)",value);
+		case  0x68:FormatString("MESSAGE (%d)",value);
+		case  0x69:FormatString("Comment (%d)",value);
+		case  0x6A:FormatString("TrailComment (%d)",value);
+		default   :FormatString("Unknown TRAIL FrameType (%d)",value);
+	}
+}
+
+struct TRAILBlockStatistics
+{
+	UINT16 BytesLeft;
+	UINT32 Version;
+	UINT64 ElapsedMicroSecs;
+	
+	UINT32 FramesCaptured;
+	UINT32 BytesCaptured;
+	struct FilteredWhileCapturing 
+	{
+		UINT32 Frames;
+		UINT32 Bytes;
+		UINT32 Multicasts;
+		UINT32 Broadcasts;
+	}
+	struct SeenDuringCapture
+	{
+		UINT32 Frames;
+		UINT32 Bytes;
+	}
+	UINT32 MulticastsRecieved;
+	UINT32 BroadcastsReceived;
+	UINT32 FramesDroppedFromCapture;
+	UINT32 FramesDroppedFromBuffer;
+	struct MAC
+	{
+		UINT32 FramesRecieved;
+		UINT32 CRCErrors;
+		UINT64 BytesRecieved;
+		UINT32 FramesDroppedDueToNoBuffers;
+		UINT32 MultiCastsReceived;
+		UINT32 BroadCastsReceived;
+		UINT32 FramesDroppedDueToHardwareErrors;
+	}
+	BLOB(FrameLength - FrameOffset) Padding;
+}
+
+
+

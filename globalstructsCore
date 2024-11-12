@@ -1,0 +1,821 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  GlobalStructs
+//#
+//#  Details:                Definitions of Global Structures for all NPL
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/10/2010
+//#
+//####
+
+Struct ConstrictingBlob( Length ) = Value.ToString
+{
+    BLOB(Length <= 0 ? 0 : Length <= (FrameLength - FrameOffset) ? Length : (FrameLength - FrameOffset) ) Value;
+}
+
+Struct NULL = "Null Value"
+{
+}
+
+[DataTypeBitAlign]
+struct Bit = Bit
+{
+    UINT8 Bit:1;
+}
+
+[DataTypeBitAlign]
+struct Bits(length)
+{
+    Bit Bit[length];
+}
+
+Struct ALIGN2 = FormatString( "%u Bytes", Local.PadLen )
+{
+	[Local.PadLen = 0]
+	Switch {
+		Case CurrentProtocolOffset % 2 > 0: 
+			[Local.PadLen = 2 - (CurrentProtocolOffset % 2)]
+			BLOB (2 - CurrentProtocolOffset % 2) Padding;
+	}
+}
+
+Struct ALIGN4 = FormatString( "%u Bytes", Local.PadLen ) {
+	[Local.PadLen = 0]
+	Switch {
+		Case CurrentProtocolOffset % 4 > 0:
+			[Local.PadLen = 4 - (CurrentProtocolOffset % 4)]
+			BLOB (4 - CurrentProtocolOffset % 4) Padding;
+	}
+}
+
+Struct ALIGN8 = FormatString( "%u Bytes", Local.PadLen ) {
+	[Local.PadLen = 0]
+	Switch {
+		Case CurrentProtocolOffset % 8 > 0: 
+			[Local.PadLen = 8 - (CurrentProtocolOffset % 8)]
+			BLOB (8 - CurrentProtocolOffset % 8) Padding;
+	}
+}
+
+struct ALIGN(BaseOffset, Boundary) = FormatString( "%u Bytes", Local.PadLen)
+{
+	[Local.PadLen = 0]
+	switch
+	{
+		case (FrameOffset-BaseOffset) % Boundary > 0:
+			[Local.PadLen = Boundary - ((FrameOffset - BaseOffset) % Boundary)]
+			BLOB (Boundary - ((FrameOffset-BaseOffset) % Boundary)) AlignBytes;
+	}
+}
+
+[strSummary = "", nOffset = 0]
+Struct ArrayAsHex( nSize ) = strSummary {
+	While Data[nOffset < nSize] {
+		[strSummary = strSummary + FormatString( "%02X", UINT8, nOffset ), nOffset = nOffset + 1]
+		UINT8 UINT8 = FormatString( "0x%02X", this );
+	}
+}
+
+Table SystemTimeToString( wHour, wMinute, wSeconds )
+{
+	Switch( wHour > 12 )
+	{
+		Case 0: FormatString( "%u:%u:%u AM", wHour, wMinute, wSeconds );
+		Case 1: FormatString( "%u:%u:%u PM", wHour - 12, wMinute, wSeconds );
+	}
+}
+
+Struct SystemTime = Year ? Month.ToString + "/" + Day.ToString + "/" + Year.ToString + " " + SystemTimeToString( Hour, Minute, Seconds ) : "NULL"
+{
+	UINT16 Year         = FormatString( "%u", this );
+	UINT16 Month        = FormatString( "%u", this );
+	UINT16 DayOfWeek    = FormatString( "%u", this );
+	UINT16 Day          = FormatString( "%u", this );
+	UINT16 Hour         = FormatString( "%u", this );
+	UINT16 Minute       = FormatString( "%u", this );
+	UINT16 Seconds      = FormatString( "%u", this );
+	UINT16 Milliseconds = FormatString( "%u", this );
+}
+
+Struct Win32ErrorCodes = WinErrorCodeNameTable(WinErrorValue)
+{
+	UINT32 WinErrorValue = WinErrorCodeTable(this);
+}
+
+Struct HRESULT = Local.Description
+{
+	[ Local.HResultValue = UINT32(FrameData, FrameOffset) ]
+	switch
+	{
+		case Local.HResultValue & 0x10000000:
+			[ Local.Description = this.ToString ]
+			NTSTATUS BENTStatus;
+		default:
+			[ Local.Description = Local.HResultValue & 0x80000000 ? (Local.HResultValue & 0x20000000) ? "Customer Defined" : ((Local.HResultValue & 0x07FF0000) == 0x00070000 ? WinErrorCodeNameTable(Local.HResultValue & 0x0000FFFF) : HResultErrorCodeNameTable(Local.HResultValue)) : "Success" ]
+			switch(ByteOrder)
+			{
+				case BigEndian:
+					_struct BEHResult
+					{
+						UINT32 S:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Failure" : "Success");
+						UINT32 R:1 = FormatString("        (%s) Reserved", this.ToBitString);
+						UINT32 C:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Customer-defined" : "Microsoft-defined");
+						UINT32 N:1 = FormatString("        (%s) %s", this.ToBitString, this ? "NTSTATUS" : "Not NTSTATUS");
+						UINT32 X:1 = FormatString("        (%s) Reserved", this.ToBitString);
+						UINT32 Facility:11 = FormatString(" (%s) %s", this.ToBitString, HResultFacilityTable(this));
+						UINT32 Code:16 = FormatString("     (%s) %s", this.ToBitString, (Local.HResultValue & 0x20000000) ? "Customer Defined" : ((Local.HResultValue & 0x07FF0000) == 0x00070000 ? WinErrorCodeTable( this ) : HResultErrorCodeTable(Local.HResultValue)));
+					}
+				default:
+					_struct LEHResult
+					{
+						UINT32 Code:16 = FormatString("     (%s) %s", this.ToBitString, (Local.HResultValue & 0x20000000) ? "Customer Defined" : ((Local.HResultValue & 0x07FF0000) == 0x00070000 ? WinErrorCodeTable( this ) : HResultErrorCodeTable(Local.HResultValue)));
+						UINT32 Facility:11 = FormatString(" (%s) %s", this.ToBitString, HResultFacilityTable(this));
+						UINT32 X:1 = FormatString("        (%s) Reserved", this.ToBitString);
+						UINT32 N:1 = FormatString("        (%s) %s", this.ToBitString, this ? "NTSTATUS" : "Not NTSTATUS");
+						UINT32 C:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Customer-defined" : "Microsoft-defined");
+						UINT32 R:1 = FormatString("        (%s) Reserved", this.ToBitString);
+						UINT32 S:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Failure" : "Success");
+					}
+			};
+	}
+}
+
+Struct NTSTATUS = Local.S ? Local.Description : "Success"
+{
+	[Local.NTStatusValue = UINT32(FrameData, FrameOffset)]
+	switch( ByteOrder )
+	{
+		case BigEndian:
+			_struct BENTStatus
+			{
+				[Local.S]
+				UINT32 Sev:2 = FormatString("      (%s) %s", this.ToBitString, NTStatusSevTable(this));
+				UINT32 C:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Customer-defined" : "Microsoft-defined");
+				UINT32 N:1 = FormatString("        (%s) %s", this.ToBitString, "Reserved");
+				UINT32 Facility:12 = FormatString(" (%s) %s", this.ToBitString, NTSTATUSFacilityTable(this));
+				[Local.Description = (Local.NTStatusValue & 0x20000000) ? "Customer Defined" : NTStatusTable(Local.NTStatusValue)]
+				UINT32 Code:16 = FormatString("     (%s) %s", this.ToBitString, NTStatusTable(Local.NTStatusValue));
+			};
+		default:
+			_struct LENTStatus
+			{
+				[Local.Description = (Local.NTStatusValue & 0x20000000) ? "Customer Defined" : NTStatusTable(Local.NTStatusValue)]
+				UINT32 Code:16 = FormatString("     (%s) %s", this.ToBitString, NTStatusTable(Local.NTStatusValue));
+				UINT32 Facility:12 = FormatString(" (%s) %s", this.ToBitString, NTSTATUSFacilityTable(this));
+				UINT32 N:1 = FormatString("        (%s) %s", this.ToBitString, "Reserved");
+				UINT32 C:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Customer-defined" : "Microsoft-defined");
+				[Local.S]
+				UINT32 Sev:2 = FormatString("      (%s) %s", this.ToBitString, NTStatusSevTable(this));
+			};
+	}	
+}
+
+/*
+ ReportParserError is used to report error for different protocol class in parsers
+ Usage: ReportParserError(nProtocolClass, strName, strErrorMessage) parserError;
+ 	nProtocolClass - ParserErrorProtocolClassPublic, ParserErrorProtocolClassWindows or ParserErrorProtocolClassMsOffice
+ 	strName - the protocol name
+ 	strErrorMessage - Error Description
+*/
+
+[ParserError = true, 
+ParserErrorProtocolClass = ParserErrorProtocolClass ? ParserErrorProtocolClass : nProtocolClass, 
+ParserErrorProtocolName = ParserErrorProtocolName ? ParserErrorProtocolName : strName, 
+ParserErrorMessage = ParserErrorMessage ? ParserErrorMessage : strErrorMessage,
+ParserErrorFrameOffset = ParserErrorFrameOffset ? ParserErrorFrameOffset : FrameOffset]
+Struct ReportParserError( nProtocolClass, strName, strErrorMessage ) = Property.ParserErrorMessage {
+}
+
+
+[Property.ParserWarning= 1, 
+Property.ParserWarningProtocolName = Property.ParserWarningProtocolName ? Property.ParserWarningProtocolName : strName, 
+Property.ParserWarningMessage = Property.ParserWarningMessage ? Property.ParserWarningMessage : strWarningMessage,
+ParserWarningFrameOffset = ParserWarningFrameOffset ? ParserWarningFrameOffset : FrameOffset]
+Struct ReportParserWarning( strName, strWarningMessage ) = Property.ParserWarningMessage {
+}
+
+[Property.ParserValidationError  = true, 
+Property.ParserValidationErrorProtocolClass = Property.ParserValidationErrorProtocolClass ? Property.ParserValidationErrorProtocolClass : nProtocolClass, 
+Property.ParserValidationErrorProtocolName = Property.ParserValidationErrorProtocolName ? Property.ParserValidationErrorProtocolName : strName, 
+Property.ParserValidationErrorMessage = Property.ParserValidationErrorMessage ? Property.ParserValidationErrorMessage : strErrorMessage,
+Property.ParserValidationErrorFrameOffset = Property.ParserValidationErrorFrameOffset ? Property.ParserValidationErrorFrameOffset : FrameOffset]
+Struct ReportParserValidationError( nProtocolClass, strName, strErrorMessage ) = Property.ParserValidationErrorMessage {
+}
+/*
+Struct SIDIdentifierAuthority = IdentifierAuthority.ToString {
+	INT48 IdentifierAuthority;
+}
+*/
+
+Struct SecurityDescriptorRelative = FormatString( "%s %s", SecurityDescriptorOwnerSID, SecurityDescriptorGroupSID ) 
+{
+	[
+		SecurityDescriptorOffset = Frameoffset,
+		SecurityDescriptorOwnerSID = "",
+		SecurityDescriptorGroupSID = ""
+	]
+	UINT8 Revision;
+	UINT8 Sbz1;
+	Struct SecurityDescriptorControl = FormatString( "0x%04X", UINT16( FrameData, Offset ) )
+	{
+		Switch( ByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT16 OD:1 = FormatString( "(%s) Owner Defaulted - %s", this.ToBitString, this ? "The owner was established by default means." : "The owner was NOT established by default means." );
+				UINT16 GD:1 = FormatString( "(%s) Group Defaulted - %s", this.ToBitString, this ? "The group was established by default means." : "The group was NOT established by default means." );
+				UINT16 DP:1 = FormatString( "(%s) DACL Present - %s", this.ToBitString, this ? "The DACL is present on the object." : "The DACL is NOT present on the object." );
+				UINT16 DD:1 = FormatString( "(%s) DACL Defaulted - %s", this.ToBitString, this ? "The DACL was established by default means." : "The DACL was NOT established by default means." );
+				UINT16 SP:1 = FormatString( "(%s) SACL Present - %s", this.ToBitString, this ? "The SACL is present on the object." : "The SACL is NOT present on the object." );
+				UINT16 SD:1 = FormatString( "(%s) SACL Defaulted - %s", this.ToBitString, this ? "The SACL was established by default means." : "The SACL was NOT established by default means." );
+				UINT16 SS:1 = FormatString( "(%s) Server Security - %s", this.ToBitString, this ? "The caller wishes the system to create a Server ACL based on the input ACL, regardless of its source (explicit or defaulting)." : "The caller does NOT wish the system to create a Server ACL based on the input ACL" );
+				UINT16 DT:1 = FormatString( "(%s) DACL Trusted - %s", this.ToBitString, this ? "ACL pointed to by the DACL field was provided by a trusted source and does not require any editing of compound ACEs." : "ACL pointed to by the DACL field was NOT provided by a trusted source" );
+				UINT16 DR:1 = FormatString( "(%s) DACL Inheritance Required - %s", this.ToBitString, this ? "The DACL should be computed through inheritance." : "The DACL should NOT be computed through inheritance." );
+				UINT16 IR:1 = FormatString( "(%s) Inheritance Required - %s", this.ToBitString, this ? "The SACL should be computed through inheritance." : "The SACL should NOT be computed through inheritance." );
+				UINT16 DI:1 = FormatString( "(%s) DACL Auto-Inherited - %s", this.ToBitString, this ? "The DACL was created through inheritance." : "The DACL was NOT created through inheritance." );
+				UINT16 SI:1 = FormatString( "(%s) SACL Auto-Inherited - %s", this.ToBitString, this ? "The SACL was created through inheritance." : "The SACL was NOT created through inheritance." );
+				UINT16 PD:1 = FormatString( "(%s) DACL Protected - %s", this.ToBitString, this ? "The DACL should be protected from inherit operations." : "The DACL is NOT protected from inherit operations." );
+				UINT16 PS:1 = FormatString( "(%s) SACL Protected - %s", this.ToBitString, this ? "The SACL should be protected from inherit operations." : "The SACL is NOT protected from inherit operations." );
+				UINT16 RM:1 = FormatString( "(%s) RM Control Valid - %s", this.ToBitString, this ? "The resource manager control bits are valid." : "The resource manager control bits are NOT valid." );
+				UINT16 SR:1 = FormatString( "(%s) Self-Relative - %s", this.ToBitString, this ? "The security descriptor is in self-relative format." : "The security descriptor is in absolute format." );
+			}
+			Default:
+			Struct
+			{
+				UINT16 SR:1 = FormatString( "(%s) Self-Relative - %s", this.ToBitString, this ? "The security descriptor is in self-relative format." : "The security descriptor is in absolute format." );
+				UINT16 RM:1 = FormatString( "(%s) RM Control Valid - %s", this.ToBitString, this ? "The resource manager control bits are valid." : "The resource manager control bits are NOT valid." );
+				UINT16 PS:1 = FormatString( "(%s) SACL Protected - %s", this.ToBitString, this ? "The SACL should be protected from inherit operations." : "The SACL is NOT protected from inherit operations." );
+				UINT16 PD:1 = FormatString( "(%s) DACL Protected - %s", this.ToBitString, this ? "The DACL should be protected from inherit operations." : "The DACL is NOT protected from inherit operations." );
+				UINT16 SI:1 = FormatString( "(%s) SACL Auto-Inherited - %s", this.ToBitString, this ? "The SACL was created through inheritance." : "The SACL was NOT created through inheritance." );
+				UINT16 DI:1 = FormatString( "(%s) DACL Auto-Inherited - %s", this.ToBitString, this ? "The DACL was created through inheritance." : "The DACL was NOT created through inheritance." );
+				UINT16 IR:1 = FormatString( "(%s) Inheritance Required - %s", this.ToBitString, this ? "The SACL should be computed through inheritance." : "The SACL should NOT be computed through inheritance." );
+				UINT16 DR:1 = FormatString( "(%s) DACL Inheritance Required - %s", this.ToBitString, this ? "The DACL should be computed through inheritance." : "The DACL should NOT be computed through inheritance." );
+				UINT16 DT:1 = FormatString( "(%s) DACL Trusted - %s", this.ToBitString, this ? "ACL pointed to by the DACL field was provided by a trusted source and does not require any editing of compound ACEs." : "ACL pointed to by the DACL field was NOT provided by a trusted source" );
+				UINT16 SS:1 = FormatString( "(%s) Server Security - %s", this.ToBitString, this ? "The caller wishes the system to create a Server ACL based on the input ACL, regardless of its source (explicit or defaulting)." : "The caller does NOT wish the system to create a Server ACL based on the input ACL" );
+				UINT16 SD:1 = FormatString( "(%s) SACL Defaulted - %s", this.ToBitString, this ? "The SACL was established by default means." : "The SACL was NOT established by default means." );
+				UINT16 SP:1 = FormatString( "(%s) SACL Present - %s", this.ToBitString, this ? "The SACL is present on the object." : "The SACL is NOT present on the object." );
+				UINT16 DD:1 = FormatString( "(%s) DACL Defaulted - %s", this.ToBitString, this ? "The DACL was established by default means." : "The DACL was NOT established by default means." );
+				UINT16 DP:1 = FormatString( "(%s) DACL Present - %s", this.ToBitString, this ? "The DACL is present on the object." : "The DACL is NOT present on the object." );
+				UINT16 GD:1 = FormatString( "(%s) Group Defaulted - %s", this.ToBitString, this ? "The group was established by default means." : "The group was NOT established by default means." );
+				UINT16 OD:1 = FormatString( "(%s) Owner Defaulted - %s", this.ToBitString, this ? "The owner was established by default means." : "The owner was NOT established by default means." );
+			}
+		}
+	}
+	
+	Switch( SecurityDescriptorControl.SR )
+	{
+		Case 1: //self relative
+			Struct
+			{
+				[
+					SecurityDescriptorCount = ( this ? 1 : 0 ), 
+					SecurityDescriptorLastOffset = this
+				]
+				UINT32 OffsetToOwnerSID = FormatString( "%d (0x%X) %s", this, this, this ? FormatString( "Offset: 0x%X", this + SecurityDescriptorOffset ) : "" );
+				[
+					SecurityDescriptorCount = SecurityDescriptorCount + ( this ? 1 : 0 ), 
+					SecurityDescriptorLastOffset = this > SecurityDescriptorLastOffset ? this : SecurityDescriptorLastOffset
+				]
+				UINT32 OffsetToGroupSID = FormatString( "%d (0x%X) %s", this, this, this ? FormatString( "Offset: 0x%X", this + SecurityDescriptorOffset ) : "" );
+				[
+					SecurityDescriptorCount = SecurityDescriptorCount + ( this ? 1 : 0 ), 
+					SecurityDescriptorLastOffset = this > SecurityDescriptorLastOffset ? this : SecurityDescriptorLastOffset
+				]
+				UINT32 OffsetToSacl = FormatString( "%d (0x%X) %s", this, this, this ? FormatString( "Offset: 0x%X", this + SecurityDescriptorOffset ) : "" );
+				[
+					SecurityDescriptorCount = SecurityDescriptorCount + ( this ? 1 : 0 ), 
+					SecurityDescriptorLastOffset = this > SecurityDescriptorLastOffset ? this : SecurityDescriptorLastOffset
+				]
+				UINT32 OffsetToDacl = FormatString( "%d (0x%X) %s", this, this, this ? FormatString( "Offset: 0x%X", this + SecurityDescriptorOffset ) : "" );
+				
+				While [ SecurityDescriptorCount > 0 && Frameoffset <= SecurityDescriptorOffset + SecurityDescriptorLastOffset ]
+				{
+					[SecurityDescriptorCount = SecurityDescriptorCount - 1]
+					[SecurityDescriptorThisOffset = Frameoffset - SecurityDescriptorOffset]
+					Switch
+					{
+						Case SecurityDescriptorThisOffset == OffsetToOwnerSID: 
+							[SecurityDescriptorOwnerSID = "OwnerSID: " + OwnerSid.toString] SID(FALSE) OwnerSid;
+						Case SecurityDescriptorThisOffset == OffsetToGroupSID: 
+							[SecurityDescriptorGroupSID = "GroupSID: " + GroupSid.toString] SID(FALSE) GroupSid;
+						Case SecurityDescriptorThisOffset == OffsetToSacl: AccessControlList Sacl;
+						Case SecurityDescriptorThisOffset == OffsetToDacl: AccessControlList Dacl;
+					}
+				}
+			}
+		Default: ReportParserError(ParserErrorProtocolClassWindows, "GlobalStructs", "Security Descriptor not self-relative" ) ParserError;
+	}
+}
+
+Table SidIdentifierAuthorityTable( Authority )
+{
+	Switch( Authority )
+	{
+		Case  0: "NULL_SID_AUTHORITY";
+		Case  1: "WORLD_SID_AUTHORITY";
+		Case  2: "LOCAL_SID_AUTHORITY";
+		Case  3: "CREATOR_SID_AUTHORITY";
+		Case  4: "NON_UNIQUE_AUTHORITY";
+		Case  5: "NT_AUTHORITY";
+		Default: "Unknown Authority";
+	}
+}
+
+[DataTypeByteOrder = BigEndian]
+Struct SidIdentifierAuthority = FormatString( "{%u,%u,%u,%u,%u,%u} (%s) [%s]", 
+	Value[0], Value[1], Value[2], Value[3], Value[4], Value[5], 
+	SidIdentifierAuthorityString,
+	SidIdentifierAuthorityTable( Property.SidIdentifierAuthorityId ) )
+{
+	[
+		SidIdentifierAuthorityString = Value[0] != 0 || Value[1] != 0 ? 
+			FormatString( "0x%02X%02X%02X%02X%02X%02X", Value[0], Value[1], Value[2], Value[3], Value[4], Value[5] ) :
+			FormatString( "0x%X", UINT32( FrameData, FrameOffset + 2 ) ),
+		SidIdentifierAuthorityId = UINT40( FrameData, FrameOffset) == 0 ? Value[5] : 255
+	]
+	UINT8 Value[6];
+}
+
+Struct SID( Conformant ) = FormatString( "S-%u%s ", Revision, Property.SidSubAuthorityString) + SecurityIdentifierTable(SidSubAuthorityString, SidSubAuthorityStringFirst, SidSubAuthorityStringLast,SidIdentifierAuthorityId)
+{
+	Switch( Conformant )
+	{
+		Case TRUE:
+		Struct {
+			NdrConformant SubAuthoritySize;
+		}
+	}
+
+	[SidSubAuthorityLoop = 1, SidSubAuthorityString = ""]
+	UINT8 Revision;
+	UINT8 SubAuthorityCount;
+	Switch {
+		Case Revision != 1:
+		Case SubAuthorityCount > 15:
+			ReportParserError(ParserErrorProtocolClassWindows, "SID", FormatString( "Invalid SID:%s%s", 
+				Revision != 1 ? FormatString( " Revision (%u)", Revision ) : "",
+				SubAuthorityCount > 15 ? FormatString( " SubAuthorityCount (%u) > 15", SubAuthorityCount ) : ""
+				) ) ParserError;
+	}
+	SidIdentifierAuthority IdentifierAuthority;
+	[SidSubAuthorityString = FormatString( "-%u",SidIdentifierAuthorityId)]
+	switch
+	{
+		case FrameOffset < FrameLength:
+			Struct SubAuthority = FormatString( "%u Sub-Authorities", SubAuthorityCount )
+			{
+				[Post.Property.SidSubAuthorityStringFirst, Post.SidSubAuthorityString = SidSubAuthorityString + FormatString( "-%u", SidSubAuthorityStringFirst)]
+				UINT32 SubAuthorityValueF;
+				While SubAuthority[SidSubAuthorityLoop < SubAuthorityCount]
+				{
+					[SidSubAuthorityString = SidSubAuthorityString + FormatString( "-%u", SubAuthorityValue), SidSubAuthorityLoop = SidSubAuthorityLoop + 1, Property.SidSubAuthorityStringLast]
+					UINT32 SubAuthorityValue;
+				}
+			}
+	}
+}
+
+Table SecurityIdentifierTable(totalString, firstString, lastString, stringId)
+{
+	switch
+	{
+		case totalString == "-0": "Null Authority -- An identifier authority";
+		case totalString == "-0-0" : "Nobody -- No security principal";
+		case totalString == "-1": "World Authority -- An identifier authority";
+		case totalString == "-1-0": "Everyone -- A group that includes all users, even anonymous users and guests. Membership is controlled by the operating system";
+		case totalString == "-2": "Local Authority -- An identifier authority";
+		case totalString == "-3": "Creator Authority -- An identifier authority";
+		case totalString == "-3-0": "Creator Owner -- A placeholder in an inheritable access control entry (ACE). When the ACE is inherited, the system replaces this SID with the SID for the object's creator";
+		case totalString == "-3-1": "Creator Group -- A placeholder in an inheritable ACE. When the ACE is inherited, the system replaces this SID with the SID for the primary group of the object's creator. The primary group is used only by the POSIX subsystem";
+		case totalString == "-3-2": "Creator Owner Server -- This SID is not used in Windows 2000";
+		case totalString == "-3-3": "Creator Group Server -- This SID is not used in Windows 2000";
+		case totalString == "-4": "Non-unique Authority -- An identifier authority";
+		case totalString == "-5": "NT Authority -- An identifier authority";
+		case totalString == "-5-1": "Dialup -- A group that includes all users who have logged on through a dial-up connection. Membership is controlled by the operating system";
+		case totalString == "-5-2": "Network -- A group that includes all users that have logged on through a network connection. Membership is controlled by the operating system";
+		case totalString == "-5-3": "Batch -- A group that includes all users that have logged on through a batch queue facility. Membership is controlled by the operating system";
+		case totalString == "-5-4": "Interactive -- A group that includes all users that have logged on interactively. Membership is controlled by the operating system";
+		case totalString == "-5-6": "Service -- A group that includes all security principals that have logged on as a service. Membership is controlled by the operating system";
+		case totalString == "-5-7": "Anonymous -- A group that includes all users that have logged on anonymously. Membership is controlled by the operating system";
+		case totalString == "-5-8": "Proxy -- This SID is not used in Windows 2000";
+		case totalString == "-5-9": "Enterprise Domain Controllers -- A group that includes all domain controllers in a forest that uses an Active Directory directory service. Membership is controlled by the operating system";
+		case totalString == "-5-10": "Principal Self -- A placeholder in an inheritable ACE on an account object or group object in Active Directory. When the ACE is inherited, the system replaces this SID with the SID for the security principal who holds the account";
+		case totalString == "-5-11": "Authenticated Users -- A group that includes all users whose identities were authenticated when they logged on. Membership is controlled by the operating system";
+		case totalString == "-5-12": "Restricted Code -- This SID is reserved for future use";
+		case totalString == "-5-13": "Terminal Server Users -- A group that includes all users that have logged on to a Terminal Services server. Membership is controlled by the operating system";
+		case totalString == "-5-18": "Local System -- A service account that is used by the operating system";
+		case totalString == "-5-19": "NT Authority -- Local Service";
+		case totalString == "-5-20": "NT Authority -- Network Service";
+		case totalString == "-5-32-544": "Administrators -- A built-in group. After the initial installation of the operating system, the only member of the group is the Administrator account. When a computer joins a domain, the Domain Admins group is added to the Administrators group. When a server becomes a domain controller, the Enterprise Admins group also is added to the Administrators group";
+		case totalString == "-5-32-545": "Users -- A built-in group. After the initial installation of the operating system, the only member is the Authenticated Users group. When a computer joins a domain, the Domain Users group is added to the Users group on the computer";
+		case totalString == "-5-32-546": "Guests -- A built-in group. By default, the only member is the Guest account. The Guests group allows occasional or one-time users to log on with limited privileges to a computer's built-in Guest account";
+		case totalString == "-5-32-547": "Power Users -- A built-in group. By default, the group has no members. Power users can create local users and groups; modify and delete accounts that they have created; and remove users from the Power Users, Users, and Guests groups. Power users also can install programs; create, manage, and delete local printers; and create and delete file shares";
+		case totalString == "-5-32-548": "Account Operators -- A built-in group that exists only on domain controllers. By default, the group has no members. By default, Account Operators have permission to create, modify, and delete accounts for users, groups, and computers in all containers and organizational units of Active Directory except the Builtin container and the Domain Controllers OU. Account Operators do not have permission to modify the Administrators and Domain Admins groups, nor do they have permission to modify the accounts for members of those groups";
+		case totalString == "-5-32-549": "Server Operators -- A built-in group that exists only on domain controllers. By default, the group has no members. Server Operators can log on to a server interactively; create and delete network shares; start and stop services; back up and restore files; format the hard disk of the computer; and shut down the computer";
+		case totalString == "-5-32-550": "Print Operators -- A built-in group that exists only on domain controllers. By default, the only member is the Domain Users group. Print Operators can manage printers and document queues";
+		case totalString == "-5-32-551": "Backup Operators -- A built-in group. By default, the group has no members. Backup Operators can back up and restore all files on a computer, regardless of the permissions that protect those files. Backup Operators also can log on to the computer and shut it down";
+		case totalString == "-5-32-552": "Replicators -- A built-in group that is used by the File Replication service on domain controllers. By default, the group has no members. Do not add users to this group";
+		case totalString == "-5-32-554": "BUILTIN\\Pre-Windows 2000 Compatible Access -- An alias added by Windows 2000. A backward compatibility group which allows read access on all users and groups in the domain";
+		case totalString == "-5-32-555": "BUILTIN\\Remote Desktop Users -- An alias. Members in this group are granted the right to logon remotely";
+		case totalString == "-5-32-556": "BUILTIN\\Network Configuration Operators -- An alias. Members in this group can have some administrative privileges to manage configuration of networking features";
+		case totalString == "-5-32-557": "BUILTIN\\Incoming Forest Trust Builders -- An alias. Members of this group can create incoming, one-way trusts to this forest";
+		case totalString == "-5-32-558": "BUILTIN\\Performance Monitor Users -- An alias. Members of this group have remote access to monitor this computer";
+		case totalString == "-5-32-559": "BUILTIN\\Performance Log Users -- An alias. Members of this group have remote access to schedule logging of performance counters on this computer";
+		case totalString == "-5-32-560": "BUILTIN\\Windows Authorization Access Group -- An alias. Members of this group have access to the computed tokenGroupsGlobalAndUniversal attribute on User objects";
+		case totalString == "-5-32-561": "BUILTIN\\Terminal Server License Servers -- An alias. A group for Terminal Server License Servers";
+		case stringId == 5 && firstString == 5: "Logon Session -- The X and Y values for these SIDs are different for each session";//S-1-5-5-X-Y
+		case stringId == 5 && lastString == 500:"Administrator -- A user account for the system administrator. By default, it is the only user account that is given full control over the system";//S-1-5-domain-500
+		case stringId == 5 && lastString == 501:"Guest -- A user account for people who do not have individual accounts. This user account does not require a password. By default, the Guest account is disabled";//S-1-5-domain-501
+		case stringId == 5 && lastString == 502:"KRBTGT -- A service account that is used by the Key Distribution Center (KDC) service";//S-1-5-domain-502
+		case stringId == 5 && lastString == 512:"Domain Admins -- A global group whose members are authorized to administer the domain. By default, the Domain Admins group is a member of the Administrators group on all computers that have joined a domain, including the domain controllers. Domain Admins is the default owner of any object that is created by any member of the group";//S-1-5-domain-512
+		case stringId == 5 && lastString == 513:"Domain Users -- A global group that, by default, includes all user accounts in a domain. When you create a user account in a domain, it is added to this group by default";//S-1-5-domain-513
+		case stringId == 5 && lastString == 514:"Domain Guests -- A global group that, by default, has only one member, the domain's built-in Guest account";//S-1-5-domain-514
+		case stringId == 5 && lastString == 515:"Domain Computers -- A global group that includes all clients and servers that have joined the domain";//S-1-5-domain-515
+		case stringId == 5 && lastString == 516:"Domain Controllers -- A global group that includes all domain controllers in the domain. New domain controllers are added to this group by default";//S-1-5-domain-516
+		case stringId == 5 && lastString == 517:"Cert Publishers -- A global group that includes all computers that are running an enterprise certification authority. Cert Publishers are authorized to publish certificates for User objects in Active Directory";//S-1-5-domain-517
+		case stringId == 5 && lastString == 518:"Schema Admins -- A universal group in a native-mode domain; a global group in a mixed-mode domain. The group is authorized to make schema changes in Active Directory. By default, the only member of the group is the Administrator account for the forest root domain";//S-1-5-domain-518
+		case stringId == 5 && lastString == 519:"Enterprise Admins -- A universal group in a native-mode domain; a global group in a mixed-mode domain. The group is authorized to make forest-wide changes in Active Directory, such as adding child domains. By default, the only member of the group is the Administrator account for the forest root domain";//S-1-5-domain-519
+		case stringId == 5 && lastString == 520:"Group Policy Creator Owners -- A global group that is authorized to create new Group Policy objects in Active Directory. By default, the only member of the group is Administrator";//S-1-5-domain-520
+		case stringId == 5 && lastString == 533:"RAS and IAS Servers -- A domain local group. By default, this group has no members. Servers in this group have Read Account Restrictions and Read Logon Information access to User objects in the Active Directory domain local group. By default, this group has no members. Servers in this group have Read Account Restrictions and Read Logon Information access to User objects in Active Directory";//S-1-5-domain-533
+		default: "Unknown SID";
+	}
+}
+
+struct AccessControlList = FormatString( "ACE Entries: %u", AceCount )
+{
+	[AccessControlListOffset = FrameOffset]
+	UINT8  Revision;
+	UINT8  Reserved;
+	UINT16 Size;
+	UINT16 AceCount;
+	UINT16 Sbz2;
+	AccessControlEntry AccessControlEntry[ AceCount ];
+	Switch {
+		Case FrameOffset < AccessControlListOffset + Size: Blob( AccessControlListOffset + Size - FrameOffset ) UnusedBuffer;
+	}
+}
+
+struct AccessControlEntry  = FormatString( "%s",AceTypeValues( UINT8( Framedata, Offset ) ) )
+{
+	[AccessControlEntryOffset = FrameOffset]
+	switch( UINT8( Framedata, Offset ) )
+	{
+		case 0x00: AccessAllowedACE AccessAllowedAce;
+		case 0x01: AccessDeniedACE AccessDeniedAce;
+		case 0x02: SystemAuditACE SystemAuditAce;
+		case 0x05: AccessAllowedObjectACE AccessAllowedObjectAce;
+		case 0x06: AccessDeniedObjectACE AccessDeniedObjectAce;
+		case 0x07: SystemAuditObjectACE SystemAuditObjectACE;
+		case 0x09: AccessAllowedCallbackACE AccessAllowedCallbackAce;
+		case 0x0A: AccessDeniedCallbackACE AccessDeniedCallbackAce;
+		case 0x0B: AccessAllowedCallbackObjectACE AccessAllowedCallbackObjectAce;
+		case 0x0C: AccessDeniedCallbackObjectACE AccessDeniedCallbackObjectAce;
+		case 0x0D: SystemAuditCallbackACE SystemAuditCallbackACE;
+		case 0x0F: SystemAuditCallbackObjectACE SystemAuditCallbackObjectACE;
+		case 0x11: SystemMandatoryLabelACE SystemMandatoryLabelAce;
+		default:
+			Struct {
+				ACEHeader AceHeader;
+				ReportParserError(ParserErrorProtocolClassWindows, "GlobalStructs", FormatString( "Unknown ACE type: %d", AceHeader.AceType ) ) ParserError;
+				Blob( AceHeader.AceSize - 4 ) unknown;
+			}
+	}
+	
+}
+
+struct ACEHeader 
+{
+	UINT8 AceType = AceTypeValues( this );
+	UINT8 AceFlags
+	{
+		Switch( ByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT8 ObjectInheritACE:1 = FormatString( "       (%s) OBJECT_INHERIT_ACE - %s", this.ToBitString, this ? "Noncontainer child objects inherit the ACE as an effective ACE" : "Noncontainer child objects do NOT inherit the ACE as an effective ACE" );
+				UINT8 ContainerInheritACE:1 = FormatString( "    (%s) CONTAINER_INHERIT_ACE - %s", this.ToBitString, this ? "Child objects that are containers, such as directories, inherit the ACE as an effective ACE. The inherited ACE is inheritable unless the NO_PROPAGATE_INHERIT_ACE bit flag is also set." : "Child objects that are containers, such as directories, do NOT inherit the ACE as an effective ACE. The inherited ACE is inheritable unless the NO_PROPAGATE_INHERIT_ACE bit flag is also set." );
+				UINT8 NoPropagateInheritACE:1 = FormatString( "  (%s) NO_PROPAGATE_INHERIT_ACE - %s", this.ToBitString, this ? "If the ACE is inherited by a child object, the system clears the OBJECT_INHERIT_ACE and CONTAINER_INHERIT_ACE flags in the inherited ACE. This prevents the ACE from being inherited by subsequent generations of objects." : "If the ACE is inherited by a child object, the system does NOT clear the OBJECT_INHERIT_ACE and CONTAINER_INHERIT_ACE flags in the inherited ACE." );
+				UINT8 InheritOnlyACE:1 = FormatString( "         (%s) INHERIT_ONLY_ACE - %s", this.ToBitString, this ? "Indicates an inherit-only ACE, which does not control access to the object to which it is attached." : "Indicates this is NOT an inherit-only ACE" );
+				UINT8 InheritedACE:1 = FormatString( "           (%s) INHERITED_ACE - %s", this.ToBitString, this ? "Indicates that the ACE was inherited. The system sets this bit when it propagates an inherited ACE to a child object" : "Indicates that the ACE was NOT inherited. The system sets this bit when it propagates an inherited ACE to a child object" );
+				UINT8 Unused:1 = FormatString( "                 (%s) unused", this.ToBitString );
+				UINT8 SuccessfulAccessACEFlag:1 = FormatString( "(%s) SUCCESSFUL_ACCESS_ACE_FLAG - Used with system-audit ACEs in a SACL to generate audit messages for successful access attempts.", this.ToBitString );
+				UINT8 FailedAccessACEFlag:1 = FormatString( "    (%s) FAILED_ACCESS_ACE_FLAG - Used with system-audit ACEs in a system access control list (SACL) to generate audit messages for failed access attempts.", this.ToBitString );
+			}
+			Case BigEndian:
+			Struct
+			{
+				UINT8 FailedAccessACEFlag:1 = FormatString( "    (%s) FAILED_ACCESS_ACE_FLAG - Used with system-audit ACEs in a system access control list (SACL) to generate audit messages for failed access attempts.", this.ToBitString );
+				UINT8 SuccessfulAccessACEFlag:1 = FormatString( "(%s) SUCCESSFUL_ACCESS_ACE_FLAG - Used with system-audit ACEs in a SACL to generate audit messages for successful access attempts.", this.ToBitString );
+				UINT8 Unused:1 = FormatString( "                 (%s) unused", this.ToBitString );
+				UINT8 InheritedACE:1 = FormatString( "           (%s) INHERITED_ACE - %s", this.ToBitString, this ? "Indicates that the ACE was inherited. The system sets this bit when it propagates an inherited ACE to a child object" : "Indicates that the ACE was NOT inherited. The system sets this bit when it propagates an inherited ACE to a child object" );
+				UINT8 InheritOnlyACE:1 = FormatString( "         (%s) INHERIT_ONLY_ACE - %s", this.ToBitString, this ? "Indicates an inherit-only ACE, which does not control access to the object to which it is attached." : "Indicates this is NOT an inherit-only ACE" );
+				UINT8 NoPropagateInheritACE:1 = FormatString( "  (%s) NO_PROPAGATE_INHERIT_ACE - %s", this.ToBitString, this ? "If the ACE is inherited by a child object, the system clears the OBJECT_INHERIT_ACE and CONTAINER_INHERIT_ACE flags in the inherited ACE. This prevents the ACE from being inherited by subsequent generations of objects." : "If the ACE is inherited by a child object, the system does NOT clear the OBJECT_INHERIT_ACE and CONTAINER_INHERIT_ACE flags in the inherited ACE." );
+				UINT8 ContainerInheritACE:1 = FormatString( "    (%s) CONTAINER_INHERIT_ACE - %s", this.ToBitString, this ? "Child objects that are containers, such as directories, inherit the ACE as an effective ACE. The inherited ACE is inheritable unless the NO_PROPAGATE_INHERIT_ACE bit flag is also set." : "Child objects that are containers, such as directories, do NOT inherit the ACE as an effective ACE. The inherited ACE is inheritable unless the NO_PROPAGATE_INHERIT_ACE bit flag is also set." );
+				UINT8 ObjectInheritACE:1 = FormatString( "       (%s) OBJECT_INHERIT_ACE - %s", this.ToBitString, this ? "Noncontainer child objects inherit the ACE as an effective ACE" : "Noncontainer child objects do NOT inherit the ACE as an effective ACE" );
+			}
+		}
+	}
+	UINT16 AceSize;
+}
+
+struct ACEAccessMask = FormatString("Access Rights=%s", Property.ACEAccessMaskSummary)
+{
+	Switch( ByteOrder )
+	{
+		Case LittleEndian:
+		Struct
+		{
+			UINT16 Reserved;
+			[Property.ACEAccessMaskSummary = this.ToString]
+			MSRPCAccessRights AccessRights;
+		};
+		Default:
+		Struct
+		{
+			[Property.ACEAccessMaskSummary = this.ToString]
+			MSRPCAccessRights AccessRights;
+			UINT16 Reserved;
+		};
+	}	
+}
+
+struct AccessAllowedACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessDeniedACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessAllowedCallbackACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessDeniedCallbackACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessAllowedObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: 
+			switch(FrameLength - FrameOffset >= 16)
+			{
+				case true : GUID( TRUE ) InheritedObjectType;
+				default : BLOB(FrameLength - FrameOffset) PartialGUID = "Need Reassemble";
+			}
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessDeniedObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: GUID( TRUE ) InheritedObjectType;
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessAllowedCallbackObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: GUID( TRUE ) InheritedObjectType;
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct AccessDeniedCallbackObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: GUID( TRUE ) InheritedObjectType;
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct SystemAuditACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct SystemAuditObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: GUID( TRUE ) InheritedObjectType;
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct SystemAuditCallbackACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct SystemAuditCallbackObjectAce = FormatString( "SID: %s", SecurityIdentifier.toString ) 
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+ 	UINT32 Flags = AceAllowedFlagValues ( this );
+	switch
+	{
+		case Flags & 0x00000001: GUID( TRUE ) ObjectType;
+	}
+	switch
+	{
+		case Flags & 0x00000002: GUID( TRUE ) InheritedObjectType;
+	}
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+struct SystemMandatoryLabelACE = FormatString( "SID: %s", SecurityIdentifier.toString )
+{
+	ACEHeader Header;
+	ACEAccessMask Mask;
+	SID( FALSE ) SecurityIdentifier;
+	Switch {
+		Case FrameOffset < AccessControlEntryOffset + Header.AceSize: Blob( AccessControlEntryOffset + Header.AceSize - FrameOffset ) ApplicationData;
+	}
+}
+
+Table AceAllowedFlagValues ( Value )
+{
+	switch( Value )
+	{
+		case 0x00000000: FormatString ("0x%08X - Reserved - Neither ObjectType nor InheritedObjectType are present", Value);
+		case 0x00000001: FormatString ("0x%08X - IT - InheritedObjectType field is present", Value);
+		case 0x00000002: FormatString ("0x%08X - OT - ObjectType field is present", Value);
+		case 0x00000003: FormatString ("0x%08X - Both - InheritedObjectType and ObjectType fields are presen", Value);
+	}
+}
+
+Table AceTypeValues ( Value )
+{
+	switch ( Value )
+	{
+		case 0x00:FormatString ("0x%02X - ACCESS_ALLOWED_ACE_TYPE - Access-allowed ACE", Value);
+		case 0x01:FormatString ("0x%02X - ACCESS_DENIED_ACE_TYPE - Access-denied ACE", Value); 
+		case 0x02:FormatString ("0x%02X - SYSTEM_AUDIT_ACE_TYPE - System-audit ACE", Value); 
+		case 0x03:FormatString ("0x%02X - SYSTEM_ALARM_ACE_TYPE - Reserved", Value); 
+		case 0x04:FormatString ("0x%02X - ACCESS_ALLOWED_COMPOUND_ACE_TYPE - Reserved.", Value);
+		case 0x05:FormatString ("0x%02X - ACCESS_ALLOWED_OBJECT_ACE_TYPE - Object-specific access-allowed ACE", Value);
+		case 0x06:FormatString ("0x%02X - ACCESS_DENIED_OBJECT_ACE_TYPE - Object-specific access-denied ACE", Value);
+		case 0x07:FormatString ("0x%02X - SYSTEM_AUDIT_OBJECT_ACE_TYPE - Object-specific system-audit ACE", Value);
+		case 0x08:FormatString ("0x%02X - SYSTEM_ALARM_OBJECT_ACE_TYPE - Reserved for future use. Object-specific system-alarm ACE",Value);
+		case 0x09:FormatString ("0x%02X - ACCESS_ALLOWED_CALLBACK_ACE_TYPE - Access-allowed callback ACE", Value);
+		case 0x0A:FormatString ("0x%02X - ACCESS_DENIED_CALLBACK_ACE_TYPE - Access-denied callback ACE", Value);
+		case 0x0B:FormatString ("0x%02X - ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE - Object-specific access-allowed callback ACE", Value);
+		case 0x0C:FormatString ("0x%02X - ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE - Object-specific access-denied callback ACE", Value);
+		case 0x0D:FormatString ("0x%02X - SYSTEM_AUDIT_CALLBACK_ACE_TYPE - System-audit callback ACE", Value);
+		case 0x0E:FormatString ("0x%02X - SYSTEM_ALARM_CALLBACK_ACE_TYPE - Reserved for future use. System-alarm callback ACE", Value);
+		case 0x0F:FormatString ("0x%02X - SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE - System-audit callback ACE", Value);
+		case 0x10:FormatString ("0x%02X - SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE - Reserved for future use. Object-specific system-alarm callback ACE",Value);
+		case 0x11:FormatString ("0x%02X - SYSTEM_MANDATORY_LABEL_ACE_TYPE - Mandatory label ACE", Value);
+		Default : FormatString ("0x%02X - Unknown ACE", value );
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Struct GroupAttributes
+// ====================
+// Ref: winnt.h
+// Callout in: Struct SidAndAttributes
+//////////////////////////////////////////////////////////////////////////////
+Struct GroupAttributes = GroupAttributesDescription
+{
+	[
+		GlobalStructsTempProp = UINT32(FrameData,Offset),
+		GroupAttributesDescription = FormatString("0x%X (", GlobalStructsTempProp)
+			+ ( ( GlobalStructsTempProp & 0xC0000000 ) ? " Gl" : "" )
+			+ ( ( GlobalStructsTempProp & 0x20000000 ) ? " Gr" : "" )
+			+ ( ( GlobalStructsTempProp & 0x00000010 ) ? " Gu" : "" )
+			+ ( ( GlobalStructsTempProp & 0x00000008 ) ? " Go" : "" )
+			+ ( ( GlobalStructsTempProp & 0x00000004 ) ? " Ge" : "" )
+			+ ( ( GlobalStructsTempProp & 0x00000002 ) ? " Gd" : "" )
+			+ ( ( GlobalStructsTempProp & 0x00000001 ) ? " Gm" : "" )
+			+ " )"
+	]
+	Switch ( ByteOrder )
+	{
+		Case LittleEndian:
+			_Struct GroupAttributesLittleEndian
+			{
+				UINT32 SEGroupMandatory:1  = FormatString("         (%s) (Gm) The AdjustTokenGroups function %s clear the SEGroupENABLED attribute", this.ToBitString, (this ? "can" : "cannot")); // Bit 00
+				UINT32 SEGroupEnabledByDefault:1  = FormatString("(%s) (Gd) The group %s enabled by default",                             this.ToBitString, (this ? "is" : "is not")); // Bit 01
+				UINT32 SEGroupEnabled:1  = FormatString("           (%s) (Ge) The group %s enabled for access checks",                      this.ToBitString, (this ? "is" : "is not")); // Bit 02
+				UINT32 SEGroupOwner:1  = FormatString("             (%s) (Go) Token's user %s be assigned as object or token owner",      this.ToBitString,
+															(this ? "owns this group account, or the group can be" : "does not own this group account, and the group cannot"));      // Bit 03
+				UINT32 SEGroupUseForDenyOnly:1  = FormatString(" (%s) (Gu) Group %s deny-only in a restricted token (Win 2000+)",        this.ToBitString, (this ? "is" : "is not")); // Bit 04
+				UINT32 Reserved:24 = FormatString("                   (%s) Bits 05-29",                                                     this.ToBitString);                           // Bit 05-29
+				UINT32 SEGroupResource:1  = FormatString("          (%s) (Gr) Group %s a domain local group (Win 2000+)",                   this.ToBitString, (this ? "identifies" : "does not identify")); // Bit 30
+				UINT32 SEGroupLogonId:2  = FormatString("          (%s) (Gl) %s a logon SID identifying the access token logon session", this.ToBitString, (this ? "Is" : "Is not")); // Bit 31
+			};
+		Default:
+			_Struct GroupAttributesBigEndian
+			{
+				UINT32 SEGroupLogonId:2  = FormatString("          (%s) (Gl) %s a logon SID identifying the access token logon session", this.ToBitString, (this ? "Is" : "Is not")); // Bit 31
+				UINT32 SEGroupResource:1  = FormatString("          (%s) (Gr) Group %s a domain local group (Win 2000+)",                   this.ToBitString, (this ? "identifies" : "does not identify")); // Bit 30
+				UINT32 Reserved:24 = FormatString("                   (%s) Bits 05-29",                                                     this.ToBitString);                           // Bit 05-29
+				UINT32 SEGroupUseForDenyOnly:1  = FormatString(" (%s) (Gu) Group %s deny-only in a restricted token (Win 2000+)",        this.ToBitString, (this ? "is" : "is not")); // Bit 04
+				UINT32 SEGroupOwner:1  = FormatString("             (%s) (Go) Token's user %s be assigned as object or token owner",      this.ToBitString,
+															(this ? "owns this group account, or the group can be" : "does not own this group account, and the group cannot"));      // Bit 03
+				UINT32 SEGroupEnabled:1  = FormatString("           (%s) (Ge) The group %s enabled for access checks",                      this.ToBitString, (this ? "is" : "is not")); // Bit 02
+				UINT32 SEGroupEnabledByDefault:1  = FormatString("(%s) (Gd) The group %s enabled by default",                             this.ToBitString, (this ? "is" : "is not")); // Bit 01
+				UINT32 SEGroupMandatory:1  = FormatString("         (%s) (Gm) The AdjustTokenGroups function %s clear the SEGroupENABLED attribute", this.ToBitString, (this ? "can" : "cannot")); // Bit 00
+			}
+	}
+}

@@ -1,0 +1,313 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet X.509 Certificate Request Message Format Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2511
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 12/30/2008
+//#
+//####
+
+[DataTypeByteOrder=BigEndian]
+struct CrmfCertReqMessages {
+	AsnBerInfo SequenceOfHeader;
+	[CrmfCRMsSequenceEnd=Offset+LengthValue]
+	while Msgs[Offset<CrmfCRMsSequenceEnd] {
+		CrmfCertReqMsg Msg;
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct CrmfCertReqMsg {
+	AsnBerInfo SequenceHeader;
+	CrmfCertRequest CertReq;
+	switch(UINT8(FrameData,Offset)&0x1f)
+	{	
+		case 0:
+		case 1:
+		case 2:
+		case 3:
+			CrmfProofOfPossession  Pop;
+	}	
+	switch {
+		case (UINT8(FrameData,Offset)==0x30): struct {
+			AsnBerInfo SequenceOfHeader;
+			[CrmfRegInfoSequenceEnd=Offset+LengthValue]
+			while RegInfo[Offset<CrmfRegInfoSequenceEnd] {
+				CrmfAttributeTypeAndValue RegInfo;
+			}
+		}
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct CrmfCertRequest {
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger CertReqId;
+	CrmfCertTemplate CertTemplate;
+	switch {
+		case UINT8(FrameData,Offset)==0x30:
+		CrmfControls Controls;
+	}
+}
+
+struct CrmfCertTemplate {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==0:
+		X509Version Version;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==1:
+		AsnBerInteger SerialNumber;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==2:
+		X509AlgorithmIdentifier SigningAlg;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==3:
+		X509Name Issuer;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==4:
+		CrmfOptionalValidity Validity;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==5:
+		X509Name Subject;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==6:
+		X509SubjectPublicKeyInfo PublicKey;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==7:
+		X509UniqueIdentifier IssuerUid;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==8:
+		X509UniqueIdentifier SubjectUid;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==9:
+		X509Extensions Extensions;
+	}
+}
+
+struct CrmfOptionalValidity {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==0:
+		X509Time NotBefore;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==1:
+		X509Time NotAfter;
+	}
+}
+
+struct CrmfControls {
+	AsnBerInfo SequenceOfHeader;
+	[CrmfControlsSequenceEnd=Offset+LengthValue]
+	while Controls[Offset<CrmfControlsSequenceEnd] {
+		CrmfAttributeTypeAndValue Control;
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct CrmfAttributeTypeAndValue {
+	AsnBerInfo SequenceHeader;
+	AsnBerObjectIdentifier Type;
+	AsnBerAnyByOid(property.AsnOid) Value;
+}
+
+struct CrmfProofOfPossession {
+	AsnBerInfo SequenceHeader;
+	switch (Property.Tag) {
+		case 0: AsnBerNull RaVerified;
+		case 1: CrmfPopoSigningKey Signature;
+		case 2: CrmfPopoPrivKey KeyEncipherment;
+		case 3: CrmfPopoPrivKey KeyAgreement;
+	}
+}
+
+struct CrmfPopoSigningKey {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==0:
+		CrmfPopoSigningKeyInput PoposkInput;
+	}
+	X509AlgorithmIdentifier AlgorithmIdentifier;
+	AsnBerBitString Signature;
+}
+
+struct CrmfPopoSigningKeyInput {
+	AsnBerInfo SequenceHeader;
+	switch (UINT8(FrameData,Offset)) {
+		case 0xa0: X509GeneralName Sender;
+		case 0x30: CrmfPkMacValue PublicKeyMac;
+	}
+	X509SubjectPublicKeyInfo PublicKey;
+}
+
+struct CrmfPkMacValue {
+	AsnBerInfo SequenceHeader;
+	X509AlgorithmIdentifier AlgId;
+	AsnBerBitString Value;
+}
+
+struct CrmfPBMParameter {
+	AsnBerInfo SequenceHeader;
+	AsnBerOctetString Salt;
+	X509AlgorithmIdentifier Owf;
+	AsnBerInteger IterationCount;
+	X509AlgorithmIdentifier Mac;
+}
+
+struct CrmfPopoPrivKey {
+	AsnBerInfo SequenceHeader;
+	switch (Property.Tag) {
+		case 0: AsnBerBitString ThisMessage;
+		case 1: CrmfSubsequentMessage SubsequentMessage;
+		case 2: AsnBerBitString DhMac;
+	}
+}
+
+Table CrmfSubsequentMessageTable(Message) {
+	switch (Message) {
+		case 0: "encrCert (0)";
+		case 1: "challengeResp (1)";
+		default: FormatString("Unknown Message (%d)",Message);
+	}
+}
+
+struct CrmfSubsequentMessage 
+		= CrmfSubsequentMessageTable(CrmfSubsequentMessage) {
+	[CrmfSubsequentMessage=AsnIntValue]
+	AsnBerInteger Message = CrmfSubsequentMessageTable(AsnIntValue);
+}
+
+struct CrmfRegToken {
+	AsnBerUtf8String RegToken;
+}
+
+struct CrmfAuthenticator {
+	AsnBerUtf8String Authenticator;
+}
+
+Table CrmfActionTable(Action) {
+	switch (Action) {
+		case 0: "DontPublish (0)";
+		case 1: "PleasePublish (1)";
+		default: FormatString("Unknown Action (%d)", Action);
+	}
+}
+
+struct CrmfPkiPublicationInfo {
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger Action = CrmfActionTable(AsnIntValue);
+	switch {
+		case (UINT8(FrameData,Offset)==0x30): struct {
+			AsnBerInfo SequenceOfHeader;
+			[CrmfPubInfosSequenceEnd=Offset+LengthValue]
+			while PubInfos[Offset<CrmfPubInfosSequenceEnd] {
+				CrmfSinglePubInfo PubInfo;
+			}
+		}
+	}
+}
+
+Table CrmfPubMethodTable(Method) {
+	switch (Method) {
+		case 0: "dontCare (0)";
+		case 1: "x500 (1)";
+		case 2: "web (2)";
+		case 3: "ldap (3)";
+		default: FormatString("Unknown PubMethod (%d)", Method);
+	}
+}
+
+struct CrmfSinglePubInfo {
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger PubMethod = CrmfPubMethodTable(AsnIntValue);
+	switch {
+		case (UINT8(FrameData,Offset)==0x30):
+		X509GeneralName PubLocation;
+	}
+}
+
+struct CrmfPkiArchiveOptions {
+	switch (UINT8(FrameData,Offset)) {
+		case 0xa0: CrmfEncryptedKey EncryptedPrivKey;
+		case 0xa1: CrmfKeyGenParameters KeyGenParameters;
+		case 0x82: AsnBerBoolean ArchiveRemGenPrivKey;
+	}
+}
+
+struct CrmfEncryptedKey {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CrmfEncryptedValue EncryptedValue;
+		case 0xa0: CmsEnvelopedData EnvelopedData;
+	}
+}
+
+struct CrmfEncryptedValue {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==0:
+		X509AlgorithmIdentifier IntendedAlg;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==1:
+		X509AlgorithmIdentifier SymmAlg;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==2:
+		AsnBerBitString EncSymmKey;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==3:
+		X509AlgorithmIdentifier KeyAlg;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)&0x1f)==4:
+		AsnBerOctetString ValueHint;
+	}
+	AsnBerBitString EncValue;
+}
+
+struct CrmfKeyGenParameters = KeyGenParameters.toString {
+	AsnBerOctetString KeyGenParameters;
+}
+
+struct CrmfOldCertId {
+	CrmfCertId CertId;
+}
+
+struct CrmfCertId {
+	AsnBerInfo SequenceHeader;
+	X509GeneralName Issuer;
+	AsnBerInteger SerialNumber;
+}
+
+struct CrmfProtocolEncrKey {
+	X509SubjectPublicKeyInfo Key;
+}
+
+struct CrmfUTF8Pairs {
+	AsnBerUtf8String Utf8Pairs;
+}
+
+struct CrmfCertReq {
+	CrmfCertRequest CertReq;
+}
+
+
+
+
+

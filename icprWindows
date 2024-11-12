@@ -1,0 +1,89 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Interface Certificate Passage (ICertPassage) Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-ICPR]: ICertPassage Remote Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+//========= PROTOCOL ==========================================================================================
+[ICPICertPassageSummary=""]
+Protocol ICPR = FormatString( "%s, %s, %s%s%s", ICPRICertPassageMethodTable( Property.MSRPCOpnum ),  Property.MSRPCPType ? "Response" : "Request", ICPICertPassageSummary != "" ? ICPICertPassageSummary : "", Property.MSRPCPType ? ", Status = " + WinErrorCodeNameTable( ReturnValue ) : "", Property.ParserError ? ", " + Property.ParserErrorMessage : Property.ParserErrorMessage )
+{
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0x00:
+		_Struct ICPCertServerRequest
+		{
+			Switch( property.MSRPCPType )
+			{
+				Case 0x00:
+				[ICPICertPassageSummary = Flags.ToString + ", Name: " + Authority.ToString + ", ID: " + RequestId.ToString ]
+				_Struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								WCCEFlags                     Flags;
+								NdrWIDESTRINGPtr              Authority;
+								Align4                        Pad1;
+								UINT32                        RequestId;
+								NdrAlign                      pad2;					
+								WCCECerttransBlob(WCCEStringCertTransBlob,0)     Attributes;
+								NdrAlign                      pad3;
+								WCCECerttransBlob(WCCECertTransBlob,0)      Request;
+							}
+					}
+
+				}
+				Case 0x02:
+				[ICPICertPassageSummary = "Response ID: " + RequestID.ToString + ", Disposition: " + Disposition.ToString]
+				_Struct Response
+				{
+					Switch {
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								UINT32                              RequestId;
+								UINT32                              Disposition = WCCEDispositionTable( this );
+								NdrAlign                            pad1;						
+								WCCECerttransBlob(WCCECmsCertTransBlob,0)  Certificate;
+								NdrAlign                            Pad2;
+								WCCECerttransBlob(WCCEX509CertTransBlob,0)  EncodedCertificate;
+								NdrAlign                            Pad3;
+								WCCECerttransBlob(WCCEStringCertTransBlob,0)        DispositionMessage;
+								Align4                              Pad4;					
+								[ReturnValue]
+								UINT32                              ReturnValue = WinErrorCodeTable( this );
+							}
+					}
+
+				}
+			}
+		}
+		default:
+		ReportParserError(ParserErrorProtocolClassWindows, "ICertPassage Remote", "Unknown Method" ) ProtocolError;
+	}
+}
+
+//========= TABLES ==========================================================================================
+Table ICPRICertPassageMethodTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "CertServerRequest";
+	}
+}
+

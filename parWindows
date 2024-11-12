@@ -1,0 +1,3454 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Print System Asynchronous Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PAR]: Print System Asynchronous Remote Protocol Specification (6.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 5/26/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol PAR = FormatString( "%s %s%s%s%s%s", 
+	Property.PARMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.PARSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.PARSummary : "" )
+{
+	[Property.PARSummary = ""]
+	[Property.PARMethodName = PARMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct RpcAsyncOpenPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "PrinterName = %s Datatype = %s AccessRequired = %u", PrinterName.ToString, Datatype.ToString, AccessRequired )]
+									Struct
+									{
+										NdrWideStringPtr PrinterName;
+										NdrWideStringPtr Datatype;
+										NdrAlign Pad1;
+										RPRNDevModeContainer DevModeContainer;
+										Align4 Pad2;
+										RPRNAccessMaskFlags AccessRequired;
+										NdrAlign Pad3;
+										RPRNSplClientContainer ClientInfo;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct RpcAsyncAddPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s", Name.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrAlign Pad1;
+										RPRNPrinterContainer PrinterContainer;
+										NdrAlign Pad2;
+										RPRNDevModeContainer DevModeContainer;
+										NdrAlign Pad3;
+										RPRNSecurityContainer SecurityContainer;
+										NdrAlign Pad4;
+										RPRNSplClientContainer ClientInfo;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct RpcAsyncSetJob
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "JobId = %u Command = %u", JobId, Command )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 JobId;
+										RPRNJobContainerPtr JobContainer;
+										Align4 Pad;
+										UINT32 Command;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct RpcAsyncGetJob
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "JobId = %u Level = %u Buffer Size = %u", JobId, Level, CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 JobId;
+										[ Conversation.RPRNJobInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] ]
+										//Level field MUST be 0x00000001, 0x00000002, 0x00000003, or 0x00000004
+										UINT32 Level = RPRNJobInfoTable( this );
+										RPRNConfByteBufferPtr Job;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u Status = %s", PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomJobInfoPtr(False) Job;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct RpcAsyncEnumJobs
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "First Job = %u, Total Jobs = %u, Level = %s", FirstJob, NoJobs, RPRNJobInfoTable( Level ) ) ]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 FirstJob;
+										UINT32 NoJobs;
+										[ Conversation.RPRNJobInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										//Level field MUST be 0x00000001, 0x00000002, 0x00000003, or 0x00000004
+										UINT32 Level = RPRNJobInfoTable( this );
+										RPRNConfByteBufferPtr Job;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) )]
+									Struct
+									{
+										RPRNConfCustomJobInfoPtr( TRUE ) Job;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct RpcAsyncAddJob
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Level = %u Buffer Size = %u", Level, CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 Level;
+										RPRNConfByteBufferPtr AddJob;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u Status = %s", PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfByteBufferPtr AddJob;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct RpcAsyncScheduleJob
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "JobId = %u", JobId )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 JobId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct RpcAsyncDeletePrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct RpcAsyncSetPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Command = %u", Command )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrAlign Pad1;
+										RPRNPrinterContainer PrinterContainer;
+										NdrAlign Pad2;
+										RPRNDevModeContainer DevModeContainer;
+										NdrAlign Pad3;
+										RPRNSecurityContainer SecurityContainer;
+										Align4 Pad;
+										UINT32 Command = this? RPRNRpcSetPrinterCommandTable( this ) : this;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct RpcAsyncGetPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Level = %u Buffer Size = %u", Level, CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										[Conversation.RPRNPrinterInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level;
+										RPRNConfByteBufferPtr PrinterData;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u Status = %s", PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfByteBufferPtr PrinterData;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct RpcAsyncStartDocPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+										NdrAlign Pad;
+										RPRNDocInfoContainer DocInfoContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "JobId = %u Status = %s", JobId, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 JobId;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct RpcAsyncStartPagePrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct RpcAsyncWritePrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u", CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										RPRNWritePrinterBuffer Buf;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "PcWritten = %u Status = %s", PcWritten, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 PcWritten;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct RpcAsyncEndPagePrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct RpcAsyncEndDocPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct RpcAsyncAbortPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct RpcAsyncGetPrinterData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "ValueName = %s NSize = %u", ValueName.ToString, NSize )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString ValueName;
+										Align4 Pad;
+										UINT32 NSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Type = %u Buffer Size = %u Status = %s", Type, PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 Type;
+										RPRNDynamicallyTypedQuery( Type ) Data;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct RpcAsyncGetPrinterDataEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "KeyName = %s ValueName = %s NSize = %u", KeyName.ToString, ValueName.ToString, NSize )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+										NdrWideString ValueName;
+										Align4 Pad;
+										UINT32 NSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Type = %u Buffer Size = %u Status = %s", Type, PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 Type = RPRNRegistryTypeValuesTable( this );
+										RPRNDynamicallyTypedQuery( Type ) Data;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct RpcAsyncSetPrinterData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "ValueName = %s Type = %u CbData = %u", ValueName.ToString, Type, CbData )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString ValueName;
+										Align4 Pad1;
+										UINT32 Type = RPRNRegistryTypeValuesTable( this );
+										RPRNDynamicallyTypedQuery( Type ) Data;
+										Align4 Pad2;
+										UINT32 CbData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct RpcAsyncSetPrinterDataEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "KeyName = %s ValueName = %s Type = %u CbData = %u", KeyName.ToString, ValueName.ToString, Type, CbData )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+										NdrWideString ValueName;
+										Align4 Pad1;
+										UINT32 Type = RPRNRegistryTypeValuesTable( this );
+										RPRNDynamicallyTypedQuery( Type ) Data;
+										Align4 Pad2;
+										UINT32 CbData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct RpcAsyncClosePrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 21:
+			_Struct RpcAsyncAddForm
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+										NdrAlign Pad;
+										RPRNFormContainer FormInfoContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 22:
+			_Struct RpcAsyncDeleteForm
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "FormName = %s", FormName.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString FormName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct RpcAsyncGetForm
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "FormName = %s Level = %u Buffer Size = %u", FormName.ToString, Level, CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString FormName;
+										Align4 Pad1;
+										[Conversation.RPRNFormInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level = RPRNFormInfoTable(this);
+										RPRNConfByteBufferPtr Form;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u Status = %s", PcbNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomFormInfoPtr( FALSE ) Form;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct RpcAsyncSetForm
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "FormName = %s", FormName.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString FormName;
+										NdrAlign Pad;
+										RPRNFormContainer FormInfoContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct RpcAsyncEnumForms
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Level = %u Buffer Size = %u", Level, CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										[Conversation.RPRNFormInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level;
+										RPRNConfByteBufferPtr Form;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size Response = %u, Info Structures Count = %u Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomFormInfoPtr( TRUE ) Form;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct RpcAsyncGetPrinterDriver
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Environment = %s Level = %u Buffer Size = %u ClientMajorVersion = %u ClientMinorVersion = %u", Environment.ToString, Level, CbBuf, ClientMajorVersion, ClientMinorVersion )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideStringPtr Environment;
+										Align4 Pad1;
+										[Conversation.RPRNDriverInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level = RPRNDriverInfoTable(this);
+										RPRNConfByteBufferPtr Driver;
+										Align4 Pad2;
+										UINT32 CbBuf;
+										UINT32 ClientMajorVersion;
+										UINT32 ClientMinorVersion;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u ServerMaxVersion = %u ServerMinVersion = %u Status = %s", PcbNeeded, ServerMaxVersion, ServerMinVersion, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomDriverInfoPtr(FALSE) Driver;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ServerMaxVersion;
+										UINT32 ServerMinVersion;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct RpcAsyncEnumPrinterData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Index = %u, Buffer Size = %u", Index, CbData )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 Index;
+										UINT32 CbValueName;
+										UINT32 CbData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Type %u = %s , Buffer Size = %u, Status = %s", Type, RPRNRegistryTypeValuesTable( Type ), PcbData, WinErrorCodeNameTable( ReturnValue ) )]
+									Struct
+									{
+										RPRNWideString ValueName;
+										Align4 Pad1;
+										UINT32 PcbValueName;
+										UINT32 Type = RPRNRegistryTypeValuesTable( this );
+										RPRNDynamicallyTypedQuery( Type ) Data;
+										Align4 Pad2;
+										UINT32 PcbData;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct RpcAsyncEnumPrinterDataEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( " Key Name = %s, Buffer Size = %u", KeyName.ToString, CbEnumValues )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+										Align4 Pad;
+										UINT32 CbEnumValues;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbEnumValues, PnEnumValues, WinErrorCodeNameTable( ReturnValue ) )]
+									Struct
+									{
+										RPRNConfCustomMultiPrinterEnumValues EnumValues;
+										Align4 Pad;
+										UINT32 PcbEnumValues;
+										UINT32 PnEnumValues;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 29:
+			_Struct RpcAsyncEnumPrinterKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "KeyName = %s CbSubkey = %u", KeyName.ToString, CbSubkey )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+										Align4 Pad;
+										UINT32 CbSubkey;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "PcbSubkey = %u Status = %s", PcbSubkey, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfStringQuery2(false) Subkey;
+										Align4 Pad;
+										UINT32 PcbSubkey;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct RpcAsyncDeletePrinterData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "ValueName = %s", ValueName.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString ValueName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 31:
+			_Struct RpcAsyncDeletePrinterDataEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "KeyName = %s ValueName = %s", KeyName.ToString, ValueName.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+										NdrWideString ValueName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 32:
+			_Struct RpcAsyncDeletePrinterKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "KeyName = %s", KeyName.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideString KeyName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 33:
+			_Struct RpcAsyncXcvData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Data Name = %s, Buffer Size = %u, Status = %s", DataName.ToString, CbInputData, WinErrorCodeNameTable( Status ) )]
+									Struct
+									{
+										ContextHandle Xcv;
+										NdrWideString DataName = RPRNRpcXcvDataDataNameTable(this.Array.ToString);
+										RPRNConfByteBuffer InputData;
+										Align4 Pad;
+										UINT32 CbInputData;
+										UINT32 CbOutputData;
+										UINT32 Status = WinErrorCodeTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Status = %s", PcbOutputNeeded, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfByteBuffer OutputData;
+										Align4 Pad;
+										UINT32 PcbOutputNeeded;
+										UINT32 Status = WinErrorCodeTable(this);
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 34:
+			_Struct RpcAsyncSendRecvBidiData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Action = %s", Action.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideStringPtr Action = RPRNRpcSendRecvBidiDataActionTable( this.stringValue.ToString );
+										RPRNRpcBidiRequestContainer ReqData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNRpcBidiResponseContainerPtr RespData;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 35:
+			_Struct RpcAsyncCreatePrinterIC
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+										NdrAlign Pad;
+										RPRNDevModeContainer DevModeContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 36:
+			_Struct RpcAsyncPlayGdiScriptOnPrinterIC
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u", COut)]
+									Struct
+									{
+										ContextHandle PrinterIC;
+										RPRNConfByteBuffer In;
+										Align4 Pad;
+										UINT32 CIn;
+										UINT32 COut;
+										UINT32 Ul;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfUniversalFontIDArray Out;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 37:
+			_Struct RpcAsyncDeletePrinterIC
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle PrinterIC;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle PrinterIC;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 38:
+			_Struct RpcAsyncEnumPrinters
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Flags = %s Name = %s Level = %u Buffer Size = %u", Flags, Name.ToString, Level, CbBuf )]
+									Struct
+									{
+										RPRNPrinterEnumFlags Flags;
+										NdrWideStringPtr Name;
+										Align4 Pad1;
+										[Conversation.RPRNPrinterInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level;
+										RPRNConfByteBufferPtr PrinterEnum;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u PcReturned = %u Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomPrinterInfoPtr(true) PrinterEnum;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 39:
+			_Struct RpcAsyncAddPrinterDriver
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, FileCopyFlag = %s", Name.ToString, FileCopyFlag.ToString ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrALign Pad1;
+										RPRNDriverContainer DriverContainer = RPRNDriverInfoTable(this);
+										Align4 Pad2;
+										RPRNFileCopyFlags FileCopyFlag;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 40:
+			_Struct RpcAsyncEnumPrinterDrivers
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Environment = %s, Level = %s", Name.ToString, Environment.ToString, RPRNDriverInfoTable( Level) ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										Align4 Pad1;
+										[Conversation.RPRNDriverInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ]]
+										UINT32 Level = RPRNDriverInfoTable(this);
+										RPRNConfByteBufferPtr Drivers;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) )]
+									Struct
+									{
+										RPRNConfCustomDriverInfoPtr(true) Drivers;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 41:
+			_Struct RpcAsyncGetPrinterDriverDirectory
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Environment = %s, Level = %u, CbBuf = %u",Name.ToString, Environment.ToString, Level, CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										Align4 Pad1;
+										//The Level field that MUST be 0x00000001.
+										UINT32 Level;
+										RPRNConfByteBufferPtr DriverDirectory;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Status = %s", PcbNeeded, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfStringQueryPtr( FALSE ) DriverDirectory;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 42:
+			_Struct RpcAsyncDeletePrinterDriver
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s Environment = %s DriverName = %s", Name.ToString, Environment.ToString, DriverName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideString Environment;
+										NdrWideString DriverName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 43:
+			_Struct RpcAsyncDeletePrinterDriverEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Environment = %s, Driver Name = %s, DeleteFlag = %s", Name.ToString, Environment.ToString, DriverName.ToString, DeleteFlag.ToString ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideString Environment;
+										NdrWideString DriverName;
+										Align4 Pad1;
+										RPRNDeletePrinterDriverFlags DeleteFlag;
+										Align4 Pad2;
+										UINT32 VersionNum = FormatString( "%u - %s", this, RPRNDriverInfoOSVersionTable( this ) );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 44:
+			_Struct RpcAsyncAddPrintProcessor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s Environment = %s PathName = %s PrintProcessorName = %s", Name.ToString, Environment.ToString, PathName.ToString, PrintProcessorName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideString Environment;
+										NdrWideString PathName;
+										NdrWideString PrintProcessorName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 45:
+			_Struct RpcAsyncEnumPrintProcessors
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Environment = %s, Level = %u, Buffer Size = %u", Name.ToString, Environment.ToString, Level, CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										Align4 Pad1;
+										[ Conversation.RPRNPrintProcessorInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] ]
+										//Level field MUST be 0x00000001
+										UINT32 Level;
+										RPRNConfByteBufferPtr PrintProcessorInfo;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u PcReturned = %u Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfCustomPrintProcessorInfoPtr(true) PrintProcessorInfo;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 46:
+			_Struct RpcAsyncGetPrintProcessorDirectory
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Environment = %s, Level = %u, Buffer Size = %u", Name.ToString, Environment.ToString, Level, CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										Align4 Pad1;
+										//Level field MUST be 0x00000001
+										UINT32 Level;
+										RPRNConfByteBufferPtr PrintProcessorDirectory;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Status = %s", PcbNeeded, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfStringQueryPtr( False ) PrintProcessorDirectory;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 ReturnValue =  WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 47:
+			_Struct RpcAsyncEnumPorts
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Level = %s, Buffer Size = %u", Name.ToString, RPRNPortInfoTable( Level ), CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										Align4 Pad1;
+										[ Conversation.RPRNPortInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] ]
+										UINT32 Level = RPRNPortInfoTable(this);
+										RPRNConfByteBufferPtr Port;
+										ALign4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfCustomPortInfoPtr( TRUE ) Port;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 48:
+			_Struct RpcAsyncEnumMonitors
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Level %u = %s, Buffer Size = %u", Name.ToString, Level, RPRNMonitorInfoTable( Level ), CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										Align4 Pad1;
+										[ Conversation.RPRNMonitorInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] ]
+										UINT32 Level = RPRNMonitorInfoTable(this);
+										RPRNConfByteBufferPtr Monitor;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfCustomMonitorInfoPtr( TRUE ) Monitor;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 49:
+			_Struct RpcAsyncAddPort
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s MonitorName = %s", Name.ToString, MonitorName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrAlign Pad1;
+										RPRNPortContainer PortContainer;
+										NdrAlign Pad2;
+										RPRNPortVarContainer PortVarContainer;
+										NdrWideString MonitorName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 50:
+			_Struct RpcAsyncSetPort
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s PortName = %s", Name.ToString, PortName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr PortName;
+										NdrAlign Pad;
+										RPRNPortContainer PortContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 51:
+			_Struct RpcAsyncAddMonitor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s", Name.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrAlign Pad;
+										RPRNMonitorContainer MonitorContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 52:
+			_Struct RpcAsyncDeleteMonitor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s Environment = %s MonitorName = %s", Name.ToString, Environment.ToString, MonitorName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										NdrWideString MonitorName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 53:
+			_Struct RpcAsyncDeletePrintProcessor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s Environment = %s PrintProcessorName = %s", Name.ToString, Environment.ToString, PrintProcessorName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr Environment;
+										NdrWideString PrintProcessorName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 54:
+			_Struct RpcAsyncEnumPrintProcessorDatatypes
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Name = %s, Print Processor Name = %s, Level = %u, Buffer Size = %u", Name.ToString, PrintProcessorName.ToString, Level, CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Name;
+										NdrWideStringPtr PrintProcessorName;
+										Align4 Pad1;
+										//The Level field MUST be 0x00000001.
+										[ Conversation.RPRNDataTypesInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] ]
+										UINT32 Level;
+										RPRNConfByteBufferPtr Datatypes;
+										Align4 Pad2;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfCustomDataTypesInfoPtr( TRUE ) Datatypes;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 55:
+			_Struct RpcAsyncAddPerMachineConnection
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s PrinterName = %s PrintServer = %s Provider = %s", Server.ToString, PrinterName.ToString, PrintServer.ToString, Provider.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString PrinterName;
+										NdrWideString PrintServer;
+										NdrWideString Provider;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 56:
+			_Struct RpcAsyncDeletePerMachineConnection
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s PrinterName = %s", Server.ToString, PrinterName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString PrinterName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 57:
+			_Struct RpcAsyncEnumPerMachineConnections
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s, Buffer Size = %u", Server.ToString, CbBuf ) ]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										[ Conversation.RPRNPrinterInfoLevel$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] = 4 ]
+										RPRNConfByteBufferPtr PrinterEnum;
+										Align4 Pad;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u, Structure Count = %u, Status = %s", PcbNeeded, PcReturned, WinErrorCodeNameTable( ReturnValue ) ) ]
+									Struct
+									{
+										RPRNConfCustomPrinterInfoPtr( TRUE ) PrinterEnum;
+										Align4 Pad;
+										UINT32 PcbNeeded;
+										UINT32 PcReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 58:
+			_Struct RpcSyncRegisterForRemoteNotifications
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Printer;
+										PARRpcPrintPropertiesCollection RpcPrintPropertiesCollection;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle RpcHandle;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 59:
+			_Struct RpcSyncUnRegisterForRemoteNotifications
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle RpcHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle RpcHandle;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 60:
+			_Struct RpcSyncRefreshRemoteNotifications
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle RpcHandle;
+										PARRpcPrintPropertiesCollection NotifyFilter;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr Pointer;
+										switch
+										{
+											Case Pointer.ReferentID != 0:
+												PARRpcPrintPropertiesCollection NotifyData;
+										}
+										Align4 Pad;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 61:
+			_Struct RpcAsyncGetRemoteNotifications
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle RpcHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										
+										NdrPtr Pointer;
+										switch
+										{
+											Case Pointer.ReferentID != 0:
+												PARRpcPrintPropertiesCollection NotifyData;
+										}
+										Align4 Pad;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 62:
+			_Struct RpcAsyncInstallPrinterDriverFromPackage
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s InfPath = %s DriverName = %s Environment = %s Flags = %u", Server.ToString, InfPath.ToString, DriverName.ToString, Environment.ToString, Flags )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideStringPtr InfPath;
+										NdrWideString DriverName;
+										NdrWideString Environment;
+										Align4 pad;
+										UINT32 Flags = this ? "" : "Only the files that will not overwrite files with a newer version SHOULD be installed."
+										{
+											UINT32 Flag:1 = FormatString("   (%s) %s", this.ToBitString, this ? "All files SHOULD be installed, even if doing so would overwrite some newer versions." : "Not set");
+											UINT32 Unused:31 = FormatString(" (%s)", this.ToBitString);
+										};
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 63:
+			_Struct RpcAsyncUploadPrinterDriverPackage
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s InfPath = %s Environment = %s Flags = %u DestInfPath1 = %u", Server.ToString, InfPath.ToString, Environment.ToString, Flags, DestInfPath1 )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString InfPath;
+										NdrWideString Environment;
+										Align4 Pad1;
+										UINT32 Flags = this ? "" : "This method MUST upload the driver package that is named by the string pointed to by the pszInfPath parameter to the print server, but only if that driver package is not already present on the server."
+										{
+											UINT32 Unused1:1 = FormatString("  (%s)", this.ToBitString);
+											UINT32 Flag1:1 = FormatString("   (%s) %s", this.ToBitString, this ? "This method MUST upload the driver package files specified by the pszInfPath parameter even if the driver package is already present on the print server." : "Not set");
+											UINT32 Flag2:1 = FormatString("   (%s) %s", this.ToBitString, this ? "This method MUST only check the print server's driver store to see if the driver package specified by the pszInfPath parameter is already present on the print server. " : "Not set");
+											UINT32 Unused2:29 = FormatString(" (%s)", this.ToBitString);
+										};
+										PARDestInfPath DestInfPath;
+										Align4 Pad2;
+										UINT32 DestInfPath1;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "DestInfPath1 = %u Status = %s", DestInfPath1, HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										PARDestInfPath DestInfPath;
+										Align4 Pad;
+										UINT32 DestInfPath1;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 64:
+			_Struct RpcAsyncGetCorePrinterDrivers
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s Environment = %s CoreDrivers = %u CCorePrinterDrivers = %u", Server.ToString, Environment.ToString, CoreDrivers, CCorePrinterDrivers )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString Environment;
+										Align4 Pad1;
+										UINT32 CoreDrivers;
+										PARCoreDriverDependencies CoreDriverDependencies;
+										Align4 Pad;
+										UINT32 CCorePrinterDrivers;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant Size;
+										switch
+										{
+										case Size.MaxCount > 0:
+											PARCCorePrinterDriver CorePrinterDriverArray[ Size.MaxCount ];
+										}
+										Align4 Pad;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 65:
+			_Struct RpcAsyncCorePrinterDriverInstalled
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s Environment = %s DwlDriverVersion = %u", Server.ToString, Environment.ToString, DwlDriverVersion )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString Environment;
+										Align4 Pad1;
+										GUID(0) CoreDriverGUID;
+										FILETIME FtDriverDate;
+										Align8 pad2;
+										UINT64 DwlDriverVersion;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "DriverInstalled=%d Status = %s", DriverInstalled, HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										INT32 DriverInstalled = PARRpcAsyncCorePrinterDriverInstalledDriverInstalledTable(this);
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 66:
+			_Struct RpcAsyncGetPrinterDriverPackagePath
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s Environment = %s Language = %s PackageID = %s DriverPackageCab1 = %u", Server.ToString, Environment.ToString, Language.ToString, PackageID.ToString, DriverPackageCab1 )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString Environment;
+										NdrWideStringPtr Language;
+										NdrWideString PackageID;
+										PARDestInfPath DriverPackageCab;
+										Align4 Pad;
+										UINT32 DriverPackageCab1;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "RequiredSize = %u Status = %s", RequiredSize, HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										PARDestInfPath DriverPackageCab;
+										Align4 Pad;
+										UINT32 RequiredSize;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 67:
+			_Struct RpcAsyncDeletePrinterDriverPackage
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Server = %s InfPath = %s Environment = %s", Server.ToString, InfPath.ToString, Environment.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Server;
+										NdrWideString InfPath;
+										NdrWideString Environment;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", HResultErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 68:
+			_Struct RpcAsyncReadPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Buffer Size = %u", CbBuf )]
+									Struct
+									{
+										ContextHandle Printer;
+										UINT32 CbBuf;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "PcNoBytesRead = %u Status = %s", PcNoBytesRead, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										RPRNConfByteBuffer Buf;
+										Align4 Pad;
+										UINT32 PcNoBytesRead;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 69:
+			_Struct RpcAsyncResetPrinter
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Datatype = %s", Datatype.ToString )]
+									Struct
+									{
+										ContextHandle Printer;
+										NdrWideStringPtr Datatype;
+										NdrAlign Pad;
+										RPRNDevModeContainer DevModeContainer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[PARSummary = FormatString( "Status = %s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("PAR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "PAR", "Unknown IRemoteWinspool method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+//
+//	_CORE_PRINTER_DRIVER
+//	Alignment : 8
+//
+Struct PARCCorePrinterDriver
+{
+	Align8 Padding1;
+	GUID(0) CoreDriverGUID;
+	FILETIME FtDriverDate;
+	Align8 Padding2;
+	UINT64 DwlDriverVersion;
+	UINT16 PackageID[260];
+}
+
+Table PAREPrintPropertyTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "kPropertyTypeString - The data type is string.";
+		Case 1: "kPropertyTypeInt32 - The data type is a 32-bit signed integer.";
+		Case 2: "kPropertyTypeInt64 - The data type is a 64-bit signed integer.";
+		Case 3: "kPropertyTypeByte - The data type is a BYTE.";
+		Case 4: "kPropertyTypeTime - The data type is SYSTEMTIME_CONTAINER, as specified in [MS-RPRN] section .";
+		Case 5: "kPropertyTypeDevMode - The data type is DEVMODE_CONTAINER, as specified in [MS-RPRN] section .";
+		Case 6: "kPropertyTypeSD - The data type is SECURITY_CONTAINER, as specified in [MS-RPRN] section .";
+		Case 7: "kPropertyTypeNotificationReply - The data type is NOTIFY_REPLY_CONTAINER, as specified in section .";
+		Case 8: "kPropertyTypeNotificationOptions - The data type is NOTIFY_OPTIONS_CONTAINER, as specified in section .";
+	}
+}
+
+Table PARRpcAsyncCorePrinterDriverInstalledDriverInstalledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - The driver, or a newer version of the driver, is not installed.";
+		Case 1: "V2 - The driver, or a newer version of the driver, is installed.";
+		Default: "Unknown";
+	}
+}
+
+Table PARRpcAsyncInstallPrinterDriverFromPackageFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - Only the files that will not overwrite files with a newer version SHOULD be installed.";
+		Case 0x00000001: "IPDFP_COPY_ALL_FILES - All files SHOULD be installed, even if doing so would overwrite some newer versions.";
+		Default: "Unknown";
+	}
+}
+
+
+//
+//	RpcPrintPropertiesCollection
+//
+Struct PARRpcPrintPropertiesCollection
+{
+	NdrAlign Pad;
+	UINT32 NumberOfProperties;
+	[post.Property.PARRpcPrintNamedCount = Property.PARRpcPrintNamedCount + (PrintNamedPropertyPtr.referentID == 0 ? 0 : 1)]
+	NdrPtr PrintNamedPropertyPtr;
+	Switch
+	{
+		Case PrintNamedPropertyPtr.ReferentId > 0:
+			PARRpcPrintNamedProperty PropertiesCollection;
+	}
+}
+
+//
+//	RpcPrintPropertyValue
+//
+struct RpcPrintPropertyValuePtr
+{
+	NdrEnum ePropertyType = PAREPrintPropertyTypeTable( this.value );
+	Align8 Padding;
+	[Post.property.PARRPCPtr$["SwitchValue"]]
+	[Post.property.PARRPCSwitchValue$[Property.PARRPCPropsCount] = this.value & 0x0000FFFF]
+	NdrEnum SwitchValue;
+	switch(SwitchValue.value)
+	{
+		case 1:
+			[Post.property.PARRPCPtr$[Property.PARRPCPropsCount] = propertyStringPtr.ReferentID]
+			NdrPtr propertyStringPtr;
+		case 2:
+			struct
+			{
+				Align4 Pad;
+				INT32 propertyInt32;
+			}
+		case 3:
+			struct
+			{
+				Align8 Pad;
+				INT64 propertyInt64;
+			}
+		case 4:
+			UINT8 propertyByte;
+		case 5:
+			struct
+			{
+				Align4 Pad;
+				RPRNSystemTimeContainer propertyTimeContainer;
+			}
+		case 6:
+			struct
+			{
+				NdrAlign Pad;
+				RPRNDevModeContainer propertyDevModeContainer;
+			}
+		case 7:
+			struct
+			{
+				NdrAlign Pad;
+				RPRNSecurityContainer propertySDContainer;
+			}
+		case 8:
+			[Post.property.PARRPCPtr$[Property.PARRPCPropsCount] = ReplyPtr.ReferentID]
+			NdrPtr ReplyPtr;
+		case 9:
+			[Post.property.PARRPCPtr$[Property.PARRPCPropsCount] = OptionsPtr.ReferentID]
+			NdrPtr OptionsPtr;
+	}
+}
+
+struct RpcPrintNamedPropertyPtr
+{
+	Align8 Padding1;
+	[Post.property.PARRPCProPtr$[Property.PARRPCPropsCount] = propertyNamePtr.ReferentID]
+	NdrPtr propertyNamePtr;
+	Align8 Padding2;
+	RpcPrintPropertyValuePtr	RpcPrintPropertyValuePtr;
+}
+
+//
+//	RpcPrintNamedProperty
+//
+Struct PARRpcPrintNamedProperty
+{
+	NdrConformant PropertiesCount;
+	[Property.PARRPCPropsCount = 0]
+	[MaxLoopCount = PropertiesCount.MaxCount]
+	while [Property.PARRPCPropsCount < PropertiesCount.MaxCount]
+	{
+		[Property.PARRPCPropsCount = Property.PARRPCPropsCount + 1]
+		RpcPrintNamedPropertyPtr PrintNamedPropertyPtr;
+	}
+	[Local.Count = 0]
+	[MaxLoopCount = PropertiesCount.MaxCount]
+	while [Local.Count < PropertiesCount.MaxCount]
+	{
+		[Local.Count = Local.Count + 1]
+		switch
+		{
+			case property.PARRPCProPtr$[Local.Count] != 0:
+				Ndrwidestring PropertyName;
+		}
+		switch(property.PARRPCSwitchValue$[Local.Count])
+		{
+			case 1:
+				switch
+				{
+					case property.PARRPCPtr$[Local.Count] != 0:
+						Ndrwidestring propertyString;
+				}
+			case 8:
+				switch
+				{
+					case property.PARRPCPtr$[Local.Count] != 0:
+						struct
+						{
+							NdrAlign pad;
+							RPRNRpcV2NotifyInfo propertyReplyContainer;
+						}
+				}
+			case 9:
+				switch
+				{
+					case property.PARRPCPtr$[Local.Count] != 0:
+						struct
+						{
+							NdrAlign pad;
+							RPRNRpcV2NotifyOptions propertyOptionsContainer;
+						}
+				}
+		}
+	}
+}
+
+struct PARCoreDriverDependencies
+{
+	NdrConformant Size;
+	switch
+	{
+		case Size.maxcount > 0:
+			unicodestring(Size.maxcount) CoreDriverDependencies;
+	}
+}
+
+Struct PARDestInfPath
+{
+	NdrPtr DestInfPathPtr;
+	switch
+	{
+		case DestInfPathPtr.ReferentId > 0:
+			struct
+			{
+				NdrConformant Size;
+				switch
+				{
+					case Size.Maxcount > 0:
+						Unicodestring(Size.Maxcount) DestinationInstallFilePath;
+				}
+			}
+	}
+}
+
+Table PARMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "RpcAsyncOpenPrinter";
+		Case 1: "RpcAsyncAddPrinter";
+		Case 2: "RpcAsyncSetJob";
+		Case 3: "RpcAsyncGetJob";
+		Case 4: "RpcAsyncEnumJobs";
+		Case 5: "RpcAsyncAddJob";
+		Case 6: "RpcAsyncScheduleJob";
+		Case 7: "RpcAsyncDeletePrinter";
+		Case 8: "RpcAsyncSetPrinter";
+		Case 9: "RpcAsyncGetPrinter";
+		Case 10: "RpcAsyncStartDocPrinter";
+		Case 11: "RpcAsyncStartPagePrinter";
+		Case 12: "RpcAsyncWritePrinter";
+		Case 13: "RpcAsyncEndPagePrinter";
+		Case 14: "RpcAsyncEndDocPrinter";
+		Case 15: "RpcAsyncAbortPrinter";
+		Case 16: "RpcAsyncGetPrinterData";
+		Case 17: "RpcAsyncGetPrinterDataEx";
+		Case 18: "RpcAsyncSetPrinterData";
+		Case 19: "RpcAsyncSetPrinterDataEx";
+		Case 20: "RpcAsyncClosePrinter";
+		Case 21: "RpcAsyncAddForm";
+		Case 22: "RpcAsyncDeleteForm";
+		Case 23: "RpcAsyncGetForm";
+		Case 24: "RpcAsyncSetForm";
+		Case 25: "RpcAsyncEnumForms";
+		Case 26: "RpcAsyncGetPrinterDriver";
+		Case 27: "RpcAsyncEnumPrinterData";
+		Case 28: "RpcAsyncEnumPrinterDataEx";
+		Case 29: "RpcAsyncEnumPrinterKey";
+		Case 30: "RpcAsyncDeletePrinterData";
+		Case 31: "RpcAsyncDeletePrinterDataEx";
+		Case 32: "RpcAsyncDeletePrinterKey";
+		Case 33: "RpcAsyncXcvData";
+		Case 34: "RpcAsyncSendRecvBidiData";
+		Case 35: "RpcAsyncCreatePrinterIC";
+		Case 36: "RpcAsyncPlayGdiScriptOnPrinterIC";
+		Case 37: "RpcAsyncDeletePrinterIC";
+		Case 38: "RpcAsyncEnumPrinters";
+		Case 39: "RpcAsyncAddPrinterDriver";
+		Case 40: "RpcAsyncEnumPrinterDrivers";
+		Case 41: "RpcAsyncGetPrinterDriverDirectory";
+		Case 42: "RpcAsyncDeletePrinterDriver";
+		Case 43: "RpcAsyncDeletePrinterDriverEx";
+		Case 44: "RpcAsyncAddPrintProcessor";
+		Case 45: "RpcAsyncEnumPrintProcessors";
+		Case 46: "RpcAsyncGetPrintProcessorDirectory";
+		Case 47: "RpcAsyncEnumPorts";
+		Case 48: "RpcAsyncEnumMonitors";
+		Case 49: "RpcAsyncAddPort";
+		Case 50: "RpcAsyncSetPort";
+		Case 51: "RpcAsyncAddMonitor";
+		Case 52: "RpcAsyncDeleteMonitor";
+		Case 53: "RpcAsyncDeletePrintProcessor";
+		Case 54: "RpcAsyncEnumPrintProcessorDatatypes";
+		Case 55: "RpcAsyncAddPerMachineConnection";
+		Case 56: "RpcAsyncDeletePerMachineConnection";
+		Case 57: "RpcAsyncEnumPerMachineConnections";
+		Case 58: "RpcSyncRegisterForRemoteNotifications";
+		Case 59: "RpcSyncUnRegisterForRemoteNotifications";
+		Case 60: "RpcSyncRefreshRemoteNotifications";
+		Case 61: "RpcAsyncGetRemoteNotifications";
+		Case 62: "RpcAsyncInstallPrinterDriverFromPackage";
+		Case 63: "RpcAsyncUploadPrinterDriverPackage";
+		Case 64: "RpcAsyncGetCorePrinterDrivers";
+		Case 65: "RpcAsyncCorePrinterDriverInstalled";
+		Case 66: "RpcAsyncGetPrinterDriverPackagePath";
+		Case 67: "RpcAsyncDeletePrinterDriverPackage";
+		Case 68: "RpcAsyncReadPrinter";
+		Case 69: "RpcAsyncResetPrinter";
+		Default: "unknown";
+	}
+}
+

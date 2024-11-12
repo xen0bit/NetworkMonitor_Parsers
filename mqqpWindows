@@ -1,0 +1,616 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Queue Manager to Queue Manager Protocol
+//#
+//#  Details:                the RPC portion of MSMQ
+//#
+//#  Microsoft References:   [MS-MQQP]: Message Queuing (MSMQ): Queue Manager to Queue Manager Protocol Specification(7.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 11/18/2009
+//#                          Minor, 4/23/2010
+//#
+//####
+
+Protocol MQQP = FormatString( "%s %s%s%s%s%s", 
+	Property.MQQPMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.MQQPSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.MQQPSummary : "" )
+{
+	[Property.MQQPSummary = ""]
+	[Property.MQQPMethodName = MQQPMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct RemoteQMStartReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										MQQPRemotereaddesc RemoteReadDesc;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										NdrAlign Pad;
+										MQQPRemotereaddesc RemoteReadDesc;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct RemoteQMEndReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "Ack=%u", Ack )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 Ack = MQQPRemoteQMEndReceiveAckTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct RemoteQMOpenQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "MQS=%u Queue1=%u Queue2=%u DwpContext=%u", MQS, Queue1, Queue2, DwpContext )]
+									Struct
+									{
+										MSRPCGuid LicGuid;
+										UINT32 MQS;
+										UINT32 Queue1;
+										UINT32 Queue2;
+										UINT32 DwpContext;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct RemoteQMCloseQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct RemoteQMCloseCursor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "Queue=%u Cursor=%u", Queue, Cursor )]
+									Struct
+									{
+										UINT32 Queue;
+										UINT32 Cursor;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct RemoteQMCancelReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "Queue1=%u Queue2=%u RequestID=%u", Queue1, Queue2, RequestID )]
+									Struct
+									{
+										UINT32 Queue1;
+										UINT32 Queue2;
+										UINT32 RequestID;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct RemoteQMPurgeQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "Queue=%u", Queue )]
+									Struct
+									{
+										UINT32 Queue;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct RemoteQMGetQMQMServerPort
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "PortType=%u", PortType )]
+									Struct
+									{
+										UINT32 PortType = MQQPRemoteQMGetQMQMServerPortTypeTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										UINT32 ReturnValue = this != 0 ? FormatString("Success") : MustBeSetToTable(this, "0x00000000");
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct RemoteQmGetVersion
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "Major=%u Minor=%u BuildNumber=%u", Major, Minor, BuildNumber )]
+									Struct
+									{
+										UINT8 Major;
+										UINT8 Minor;
+										UINT16 BuildNumber;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct RemoteQMStartReceive2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										MQQPRemotereaddesc2 RemoteReadDesc2;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										MQQPRemotereaddesc2 RemoteReadDesc2;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct RemoteQMStartReceiveByLookupId
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "LookupId=%u", LookupId )]
+									Struct
+									{
+										UINT64 LookupId;
+										MQQPRemotereaddesc2 RemoteReadDesc2;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQQPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										MQQPRemotereaddesc2 RemoteReadDesc2;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("MQQP", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "MQQP", "Unknown qm2qm method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+Table MQQPRemoteQMEndReceiveAckTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "RR_NACK - The client acknowledges that the message packet was not delivered successfully.The server MUST keep the message in the queue and make it available for subsequent consumption.";
+		Case 0x00000002: "RR_ACK - The client acknowledges that the message packet was delivered successfully.The server MUST remove the message from the queue and make it unavailable for subsequent consumption.";
+		Default: "Unknown";
+	}
+}
+
+Table MQQPRemoteQMGetQMQMServerPortTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "IP_HANDSHAKE - Requests that the server return the RPC port number for the qmcomm and qmcomm2 interfaces bound to TCP/IP. For more information on the qmcomm and qmcomm2 interfaces, see [MS-MQMP]. The default port number is 2103.";
+		Case 0x00000001: "IP_READ - Requests that the server return the RPC port number for the qm2qm interface bound to TCP/IP. For more information on the qm2qm interface, see section . The default port number is 2105.";
+		Case 0x00000002: "IPX_HANDSHAKE - Requests that the server return the RPC port number for the qmcomm and qmcomm2 interfaces bound to SPX.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, and windows_vista, and the MQQP server returns 0x00000000 to indicate failure.RPC over SPX is supported only by windows_nt and windows_2000. windows_xp, windows_server_2003, windows_vista, windows_server_2008, windows_7, and windows_server_7 do not support this value, and the MQQP server returns 0x00000000 to indicate failure.For more information on the qmcomm and qmcomm2 interfaces, see [MS-MQMP]. The default port number is 2103.";
+		Case 0x00000003: "IPX_READ - Requests that the server return the RPC port number for the qm2qm interface bound to SPX.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, and windows_vista, and the MQQP server returns 0x00000000 to indicate failure.RPC over SPX is supported only by windows_nt and windows_2000. windows_xp, windows_server_2003, windows_vista, windows_server_2008, windows_7, and windows_server_7 do not support this value, and the MQQP server returns 0x00000000 to indicate failure.For more information on the qm2qm interface, see section . The default port number is 2105.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_REMOTEREADACK
+//
+Struct MQQPRemotereadack
+{
+	NdrEnum Value = MQQPRemotereadackTable(this);
+}
+
+Table MQQPRemotereadackTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "RR_UNKNOWN - No acknowledgment.";
+		Case 0x0001: "RR_NACK - Negative acknowledgment for a packet.";
+		Case 0x0002: "RR_ACK - Acknowledgment for a packet.";
+	}
+}
+
+//
+//	_REMOTEREADDESC
+//
+Struct MQQPRemotereaddesc
+{
+	UINT32 RemoteQueue;
+	UINT32 Cursor;
+	UINT32 Action = MQQPRemotereaddescActionTable(this);
+	UINT32 Timeout;
+	UINT32 Size;
+	UINT32 Queue;
+	UINT32 RequestID;
+	UINT32 Reserved = MQQPRemotereaddescReservedTable(this);
+	UINT32 ArriveTime;
+	MQQPRemotereadack EAckNack;
+	NdrPtr pBuffer;
+	switch
+	{
+		case pBuffer.ReferentID > 0:
+			struct
+			{
+				NdrConformantVarying Size;
+				switch
+				{
+					case Size.ActualCount > 0: Blob(Size.ActualCount) Value;
+				}
+			}
+	}
+}
+
+//
+//	_REMOTEREADDESC2
+//
+
+Struct MQQPRemotereaddesc2
+{
+	Align8 Pad1;
+	NdrPtr RemoteReadDescPtr;
+	Align8 Pad2;
+	UINT64 SequentialId;
+	Switch {
+		Case RemoteReadDescPtr.ReferentID != 0:
+			MQQPRemotereaddesc RemoteReadDesc;
+	}
+}
+
+
+Table MQQPRemotereaddescActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_ACTION_RECEIVE - Type = ReceiveReads and removes a message from the current cursor location if hCursor is nonzero or from the front of the queue if hCursor is set to zero.";
+		Case 0x80000000: "MQ_ACTION_PEEK_CURRENT - Type = PeekReads a message from the current cursor location if hCursor is nonzero or from the front of the queue if hCursor is set to zero but does not remove it from the queue.";
+		Case 0x80000001: "MQ_ACTION_PEEK_NEXT - Type = PeekReads a message following the message at the current cursor location but does not remove it from the queue.";
+		Case 0x40000010: "MQ_LOOKUP_PEEK_CURRENT - Type = PeekReads the message specified by a lookup identifier but does not remove it from the queue.";
+		Case 0x40000011: "MQ_LOOKUP_PEEK_NEXT - Type = PeekReads the message following the message specified by a lookup identifier but does not remove it from the queue.";
+		Case 0x40000012: "MQ_LOOKUP_PEEK_PREV - Type = PeekReads the message preceding the message specified by a lookup identifier but does not remove it from the queue.";
+		Case 0x40000020: "MQ_LOOKUP_RECEIVE_CURRENT - Type = ReceiveReads the message specified by a lookup identifier and removes it from the queue.";
+		Case 0x40000021: "MQ_LOOKUP_RECEIVE_NEXT - Type = ReceiveReads the message following the message specified by a lookup identifier and removes it from the queue.";
+		Case 0x40000022: "MQ_LOOKUP_RECEIVE_PREV - Type = ReceiveReads the message preceding the message specified by a lookup identifier and removes it from the queue.";
+		Default: "Unknown";
+	}
+}
+
+Table MQQPRemotereaddescReservedTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - Returned by client.";
+		Case 0x00000001: "V2 - Returned by server.";
+		Default: "Unknown";
+	}
+}
+
+
+Table MQQPMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "RemoteQMStartReceive";
+		Case 1: "RemoteQMEndReceive";
+		Case 2: "RemoteQMOpenQueue";
+		Case 3: "RemoteQMCloseQueue";
+		Case 4: "RemoteQMCloseCursor";
+		Case 5: "RemoteQMCancelReceive";
+		Case 6: "RemoteQMPurgeQueue";
+		Case 7: "RemoteQMGetQMQMServerPort";
+		Case 8: "RemoteQmGetVersion";
+		Case 9: "RemoteQMStartReceive2";
+		Case 10: "RemoteQMStartReceiveByLookupId";
+		Default: "unknown";
+	}
+}

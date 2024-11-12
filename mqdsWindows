@@ -1,0 +1,2258 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Directory Service Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQDS]: Message Queuing (MSMQ): Directory Service Protocol Specification (13.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1991.0
+//#
+//#  Revision Class and Date:Major, 12/3/2009
+//#                          Minor, 4/23/2010
+//#
+//####
+
+
+Protocol MQDS = FormatString( "%s %s%s%s%s%s", 
+	Property.MQDSMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.MQDSSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.MQDSSummary : "" )
+{
+	[Property.MQDSSummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{77DF7A80-F298-11D0-8358-00A024C480A8}":
+			[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+			Struct dscomm
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 0:
+						Struct
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ChallengeSize=%u Context=%u SignatureSize=%u SignatureMaxSize=%u", ChallengeSize, Context, SignatureSize, SignatureMaxSize )]
+														Struct SDSQMSetMachinePropertiesSignProc
+														{
+															NDRConformant Size;
+															Switch
+															{
+																Case Size.MaxCount > 0:
+																	BLOB( Size.MaxCount ) Challenge;
+															}
+															Align4 Pad;
+															UINT32 ChallengeSize;
+															UINT32 Context;
+															NDRConformantVarying Size1;
+															Switch
+															{
+																Case Size1.ActualCount > 0:
+																	BLOB( Size1.ActualCount ) Signature;
+															}
+															Align4 Pad1;
+															UINT32 SignatureSize;
+															UINT32 SignatureMaxSize;
+														}
+													Default:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "SDLength=%u PropertyCount=%u", SDLength, cp)]
+														Struct SDSCreateObject
+														{
+															UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+															NdrWideStringPtr PathName;
+															Align4 Pad;
+															UINT32 SDLength;
+															NdrPtr SecurityDescriptorPtr;
+															switch
+															{
+																case SecurityDescriptorPtr.ReferentID > 0:
+																	struct
+																	{
+																		NDRConformant Size;
+																		NdrSecurityDescriptor SecurityDescriptor;
+																	}
+															}
+															Align4 Pad1;
+															UINT32 Cp;
+															//Used in common PROPIDs.
+															[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+															NDRConformant Size1;
+															Switch
+															{
+															Case Size1.MaxCount > 0:
+																Struct
+																{
+																	[MQMPDirObjPropIdCounter = 0]
+																	While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																	{
+																		[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																			post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																		UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																	}
+																}
+															}
+															//Used in common PROPVARIANTs.
+															[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+															NDRConformant Size2;
+															Switch
+															{
+															Case Size2.MaxCount > 0:
+																Struct
+																{
+																	[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																	While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																	{
+																		[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																		MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																	}
+																	[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																	While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																	}
+																}
+															}
+															NdrPtr GUIDPtr;
+															switch
+															{
+																case GUIDPtr.ReferentID > 0:
+																	GUID(TRUE) GUID;
+															}
+														}
+												}
+										}
+									}		
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+														Struct SDSCreateObject
+														{
+															NdrPtr GUIDPtr;
+															switch
+															{
+																case GUIDPtr.ReferentID > 0:
+																	GUID(TRUE) GUID;
+															}
+															HRESULT ReturnValue;
+														}
+													Default:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "SignatureSize=%u ReturnValue=%s", SignatureSize, ReturnValue.ToString)]
+														Struct SDSQMSetMachinePropertiesSignProc
+														{
+															NDRConformantVarying Size1;
+															Switch
+															{
+																Case Size1.ActualCount > 0:
+																	BLOB( Size1.ActualCount ) Signature;
+															}
+															Align4 Pad;
+															UINT32 SignatureSize;
+															HRESULT ReturnValue;
+														}
+												}
+										}
+									}
+								
+							}
+						}
+					case 1:
+						Struct
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ChallengeSize=%u Context=%u ChallengeResponseSize=%u ChallengeResponseMaxSize=%u", ChallengeSize, Context, ChallengeResponseSize, ChallengeResponseMaxSize)]
+														Struct MQDScommSDSQMGetObjectSecurityChallengeResponceProc
+														{
+															
+															NDRConformant Size;
+															Switch
+															{
+																Case Size.MaxCount > 0:
+																	BLOB( Size.MaxCount ) Challenge;
+															}
+															Align4 Pad;
+															UINT32 ChallengeSize;
+															UINT32 Context;
+															NDRConformantVarying Size1;
+															Switch
+															{
+																Case Size1.ActualCount > 0:
+																	BLOB( Size1.ActualCount ) CallengeResponce;
+															}
+															Align4 Pad2;
+															UINT32 ChallengeResponseSize;
+															UINT32 ChallengeResponseMaxSize;
+														}
+													Default:	
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "DirectoryObjectType=%s PathName=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), PathName.ToString)]
+														Struct SDSDeleteObject
+														{
+															UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+															NdrWideString PathName;
+														}
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+														Struct MQDScommSDSDeleteObject
+														{
+															HRESULT ReturnValue;
+														}
+													Default:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ChallengeResponseSize=%u ReturnValue=%s", ChallengeResponseSize, ReturnValue.ToString)]
+														Struct MQDScommSDSQMGetObjectSecurityChallengeResponceProc
+														{
+															NDRConformantVarying Size1;
+															Switch
+															{
+																Case Size1.ActualCount > 0:
+																	BLOB( Size1.ActualCount ) CallengeResponce;
+															}
+															Align4 Pad;
+															UINT32 ChallengeResponseSize;
+															HRESULT ReturnValue;
+														}
+												}
+										}
+									}
+							}
+						}
+					case 2:
+						Struct
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ServerBufferSize=%u ClientBufferMaxSize=%u", ServerBufferSize, ClientBufferMaxSize)]
+														Struct SInitSecCtx
+														{
+															UINT32 Context;
+															NDRConformant Size;
+															Switch
+															{
+																Case Size.MaxCount > 0:
+																	BLOB( Size.MaxCount ) Serverbuff;
+															}
+															Align4 Pad;
+															UINT32 ServerBufferSize;
+															UINT32 ClientBufferMaxSize;
+														}
+													Default:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "DirectoryObjectType=%s ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), ServerSignatureSize)]
+														Struct SDSGetProps
+														{
+															UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+															NdrWideString PathName;
+															Align4 Pad;
+															UINT32 cp;
+															//Used in common PROPIDs.
+															[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+															NDRConformant Size1;
+															Switch
+															{
+																Case Size1.MaxCount > 0:
+																	Struct
+																	{
+																		[MQMPDirObjPropIdCounter = 0]
+																		While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																		{
+																			[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																				post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																			UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																		}
+																	}
+															}
+															//Used in common PROPVARIANTs.
+															[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+															NDRConformant Size2;
+															Switch
+															{
+																Case Size2.MaxCount > 0:
+																	Struct
+																	{
+																		[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																		While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																		{
+																			[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																			MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																		}
+																		[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																		While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																		{
+																			[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																			MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																		}
+																	}
+															}
+															Align4 Pad1;
+															ContextHandle ServerAuth; 
+															UINT32 ServerSignatureSize;
+														}
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Switch
+												{
+													Case Property.MSRPCFromServer:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ServerSignatureSize=%u ReturnValue=%s", ServerSignatureSize, ReturnValue.ToString)]
+														Struct SDSGetProps
+														{
+															//Used in common PROPVARIANTs.
+															[MQMPDirObjPropValElementTotal = Size1.MaxCount]
+															NDRConformant			Size1;
+															Switch
+															{
+																Case Size1.MaxCount > 0:
+																	Struct
+																	{
+																		[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																		While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																		{
+																			[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																			MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																		}
+																		[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																		While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																		{
+																			[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																			MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																		}
+																	}
+															}
+															NDRConformant Size2;
+															Switch
+															{
+																Case Size2.MaxCount > 0:
+																	BLOB( Size2.MaxCount ) ServerSignature;
+															}
+															UINT32 ServerSignatureSize;
+															HRESULT ReturnValue;
+														}
+													Default:
+														[Property.MQDSMethodName = "dscomm:" + MQDSCommCallbackMethodTable( Property.MSRPCOpnum )]
+														[MQDSSummary = FormatString( "ClientBufferSize=%u ReturnValue=%s", ClientBufferSize, ReturnValue.ToString)]
+														Struct SInitSecCtx
+														{
+															NDRConformantVarying Size1;
+															Switch
+															{
+																Case Size1.ActualCount > 0:
+																	BLOB( Size1.ActualCount ) ClientBuffer;
+															}
+															Align4 Pad;
+															UINT32 ClientBufferSize;
+															HRESULT ReturnValue;
+														}
+											}
+										}
+									}
+							}
+						}
+					Case 3:
+						Struct MQDScommSDSSetProps
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s PathName=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), PathName.ToString)]
+												Struct
+												{
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													NdrWideString PathName;
+													Align4 Pad;
+													UINT32 cp;
+													//Used in common PROPIDs.
+													[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+													NDRConformant Size1;
+													Switch
+													{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+															}
+													}
+													//Used in common PROPVARIANTs.
+													[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+														}
+													}
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					Case 4:
+						Struct MQDScommSDSGetObjectSecurity
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s PathName=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), PathName.ToString)]
+												Struct
+												{
+													[Conversation.MQDSDirectoryObjectType$[Property.MSRPCCallId]]
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													NdrWideString PathName;
+													Align4 Pad;
+													MQDSSecurityInformationFlags SecurityInformation; // Determines SecurityDescriptor response.
+													UINT32 Length;
+													ContextHandle ServerAuth;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "LengthNeeded=%u ServerSignatureSize=%u ReturnValue = %u", LengthNeeded, ServerSignatureSize,ReturnValue.ToString)]
+												Struct
+												{
+													MQDSConfCustSecurityDescriptorOrPublicKeys( false ) SecurityDescriptor;
+													UINT32 LengthNeeded;
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) ServerSignature;
+													}
+													Align4 Pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+								}
+						}
+					Case 5:
+						Struct MQDScommSDSSetObjectSecurity
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s PathName=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), PathName.ToString)]
+												Struct
+												{
+													[Conversation.MQDSDirectoryObjectType$[Property.MSRPCCallId]]
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													NdrWideString PathName;
+													Align4 pad;
+													MQDSSecurityInformationFlags SecurityInformation;
+													NdrPtr SecurityDescriptorPtr;
+													switch
+													{
+															case SecurityDescriptorPtr.ReferentID > 0:	
+																MQDSConfCustSecurityDescriptorOrPublicKeys( true ) SecurityDescriptor;
+													}
+													Align4 Pad1;
+													UINT32 Length;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					Case 6:
+						Struct MQDScommSDSLookupBegin
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "Context=%s", Context.ToString)]
+												Struct
+												{
+													NdrWIDESTRINGPtr Context;
+													NdrPtr RestrictionPtr;
+													Switch
+													{
+														Case RestrictionPtr.ReferentID > 0:
+															MQDSMQRestriction Restriction;
+													}
+													Align4 Pad;
+													MQDSMQColumnSet Columns;
+													NdrPtr SortPtr;
+													Switch
+													{
+														Case SortPtr.ReferentID > 0:
+															MQDSMQSortSet Sort;
+													}
+													Align4 Pad1;
+													ContextHandle ServerAuth;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												Struct
+												{
+													ContextHandle Handle;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 7:
+						Struct MQDScommSDSLookupNext
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "Size=%u ServerSignatureSize=%u", Size, ServerSignatureSize)]
+												Struct
+												{
+													ContextHandle Handle;
+													UINT32 Size;
+													ContextHandle ServerAuth;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "OutSize=%u ServerSignatureSize=%u ReturnValue = %u",OutSize, ServerSignatureSize, ReturnValue.ToString)]
+												Struct
+												{
+													UINT32 OutSize;
+													//Only used in the LookupBegin-LookupNext multi-method property query.
+													[MQDSDirObjLookupNextPropIdElementTotal = Size1.ActualCount]
+													NdrConformantVarying Size1;
+													Switch
+													{
+														Case Size1.ActualCount > 0:
+															Struct
+															{
+																[MQDSDirObjLookupNextPropIdCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQDSDirObjLookupNextPropIdElements[ MQDSDirObjLookupNextPropIdCounter < MQDSDirObjLookupNextPropIdElementTotal ]
+																{
+																	[post.MQDSDirObjLookupNextPropIdCounter = MQDSDirObjLookupNextPropIdCounter + 1]
+																	MQMQCommonPropVariant Value = MQMQCommonDirectoryObjectPROPIDTable( Conversation.MQDSDirectoryObjectLookupBeginPropId$[ MQDSDirObjLookupNextPropIdCounter ] );
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] ) Values;
+																}
+															}
+													}
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															BLOB( Size2.MaxCount ) ServerSignature;
+													}
+													Align4 Pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 8:
+						Struct MQDScommSDSLookupEnd
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												ContextHandle Context;
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												Struct
+												{
+													ContextHandle Context;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 10:
+						Struct MQDScommSDSDeleteObjectGuid
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ))]
+												Struct
+												{
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													GUID(TRUE) ObjectGuid;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+								[MQDSMethodName = MQDSCommMethodTable( Property.MSRPCOpnum )]
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					Case 11:
+						Struct MQDScommSDSGetPropsGuid
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), ServerSignatureSize)]
+												Struct
+												{
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													NdrPtr GUIDPtr;
+													Switch
+													{
+														Case GUIDPtr.ReferentID > 0:
+															GUID(TRUE) GUID;
+													}
+													UINT32 Cp;
+													//Used in common PROPIDs.
+													[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+													NDRConformant Size1;
+													Switch
+													{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+															}
+													}
+													//Used in common PROPVARIANTs.
+													[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+													}
+													Align4 Pad;
+													ContextHandle ServerAuth;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									[MQDSMethodName = MQDSCommMethodTable( Property.MSRPCOpnum )]
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ServerSignatureSize=%u ReturnValue=%s", ServerSignatureSize, ReturnValue.ToString)]
+												Struct
+												{
+													//Used in common PROPVARIANTs.
+													[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+													}
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) ServerSignature;
+													}
+													Align4 Pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 12:
+						Struct MQDScommSDSSetPropsGuid
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s", MQDSDirectoryObjectTypesTable( DirectoryObjectType ))]
+												Struct
+												{
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													GUID(TRUE) Guid;
+													UINT32 Cp;
+													//Used in common PROPIDs.
+													[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+													NDRConformant Size1;
+													Switch
+													{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+														}
+													}
+													//Used in common PROPVARIANTs.
+													[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+													}
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									[MQDSMethodName = MQDSCommMethodTable( Property.MSRPCOpnum )]
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					Case 13:
+						Struct MQDScommSDSGetObjectSecurityGuid
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( this ), ServerSignatureSize)]
+												Struct
+												{
+													[Conversation.MQDSDirectoryObjectType$[Property.MSRPCCallId]]
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													GUID(TRUE) Guid;
+													MQDSSecurityInformationFlags SecurityInformation;
+													UINT32 Length;
+													ContextHandle ServerAuth;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ServerSignatureSize=%u ReturnValue=%s", ServerSignatureSize, ReturnValue.ToString)]
+												Struct
+												{
+													MQDSConfCustSecurityDescriptorOrPublicKeys( false ) SecurityDescriptor;
+													UINT32 LengthNeeded;
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) ServerSignature;
+													}
+													Align4 Pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 14:
+						Struct MQDScommSDSSetObjectSecurityGuid
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s Length=%u", MQDSDirectoryObjectTypesTable(DirectoryObjectType), Length)]
+												Struct
+												{
+													[Conversation.MQDSDirectoryObjectType$[Property.MSRPCCallId]]
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													GUID(TRUE) Guid;
+													MQDSSecurityInformationFlags SecurityInformation;
+													NdrPtr SecurityDescriptorPtr;
+													switch
+													{
+														case SecurityDescriptorPtr.ReferentId > 0:
+															MQDSConfCustSecurityDescriptorOrPublicKeys( true ) SecurityDescriptor;
+													}
+													Align4 Pad;
+													UINT32 Length;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					Case 19:
+						Struct MQDScommSDSQMSetMachineProperties
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "PathName=%s", PathName.ToString)]
+												Struct
+												{
+													NdrWideString	PathName;
+													Align4 Pad;
+													UINT32 Cp;
+													//Used in common PROPIDs.
+													[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+													NDRConformant Size1;
+													Switch
+													{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+															}
+													}
+													//Used in common PROPVARIANTs.
+													[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+													NDRConformant Size2;
+													Switch
+													{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+													}
+													Align4 Pad1;
+													UINT32 Context;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					case 20:
+						Struct MQDScommSDSCreateServersCache
+						{
+							switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "Index=%u ServerSignatureSize=%u", Index, ServerSignatureSize)]
+												Struct
+												{
+													UINT32 Index;
+													Ndrptr lplpSiteServers;
+													NdrWIDESTRINGPtr SiteServers;
+													Align4 Pad;
+													ContextHandle ServerAuth;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "Index=%u ServerSignatureSize=%u", Index, ServerSignatureSize)]
+												Struct
+												{
+													UINT32 Index;
+													Ndrptr SiteServersptr;
+													NdrWIDESTRINGPtr SiteServers;
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) ServerSignature;
+													}
+													Align4 pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 21:
+						Struct MQDScommSDSQMGetObjectSecurity
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "DirectoryObjectType=%s ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( this ), ServerSignatureSize)]
+												Struct
+												{
+													[Conversation.MQDSDirectoryObjectType$[Property.MSRPCCallId]]
+													UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+													GUID(TRUE) Guid;
+													MQDSSecurityInformationFlags SecurityInformation; 
+													UINT32 Length;
+													ContextHandle ServerAuthorization;
+													UINT32 ServerSignatureSize;
+												}
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "LengthNeeded=%u ServerSignatureSize=%u ReturnValue = %u", LengthNeeded, ServerSignatureSize,ReturnValue.ToString)]
+												Struct
+												{
+													MQDSConfCustSecurityDescriptorOrPublicKeys( false ) SecurityDescriptor;
+													Align4 pad1;
+													UINT32 LengthNeeded;
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) ServerSignature;
+													}
+													Align4 pad2;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 22:
+						Struct MQDScommSDSValidateServer
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+								Struct Request
+								{
+									Switch
+									{
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+										Default:
+											[MQDSSummary = FormatString( "SetupMode=%s ClientBufferSize=%u", SetupMode ? "true":"false", ClientBufferSize)]
+											Struct
+											{
+												GUID(TRUE) EnterpriseIdGuid;
+												BOOL SetupMode; 
+												UINT32 Context;
+												UINT32 ClientBufferMaxSize;
+												NDRConformantVarying Size1;
+												Switch
+												{
+													Case Size1.ActualCount > 0:
+														BLOB( Size1.ActualCount ) ClientBuffer;
+												}
+												Align4 Pad;
+												UINT32 ClientBufferSize;
+											}
+									}
+								}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												Struct
+												{
+													ContextHandle ServerAuth;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 23:
+						Struct MQDScommSDSCloseServerHandle
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												ContextHandle ServerAuth;
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												Struct
+												{
+													ContextHandle ServerAuth;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 27:
+						Struct MQDScommSDSGetServerPort
+						{
+							Switch( property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												UINT32		ForIPPort = MQDSIPPortNetworkProtocolTable( this );
+										}
+									}
+								Case 0x02: //RESPONSE
+									Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+												HRESULT ReturnValue;
+										}
+									}
+							}
+						}
+					case 9:
+					case 15:
+					case 16:
+					case 17:
+					case 18:
+					case 24:
+					case 25:
+					case 26:
+						struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[MQDSSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									Struct Request
+									{
+										ReportParserWarning("MQDS", "Invalid dscomm method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[MQDSSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									Struct Response
+									{
+										ReportParserWarning("MQDS", "Invalid dscomm method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("MQDS", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "MQDS", "Unknown dscomm method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+			Case "{708CCA10-9569-11D1-B2A5-0060977D8118}":
+				Struct DSComm2
+				{
+					[Property.MQDSMethodName = "dscomm:" + MQDSComm2MethodTable( Property.MSRPCOpnum )]
+					Switch( Property.MSRPCOpnum )
+					{
+						Case 0:
+							Struct MQDScomm2SDSGetComputerSites
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "PathName=%s, ServerSignatureSize=%u", PathName.ToString, ServerSignatureSize)]
+													Struct
+													{
+														NdrWIDESTRINGPtr PathName;
+														Align4 Pad;
+														ContextHandle ServerAuth; 
+														UINT32 ServerSignatureSize;
+													}
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "NumberOfSites=%u, ServerSignatureSize=%u, ReturnValue=%s", NumberOfSites, ServerSignatureSize, ReturnValue.ToString)]
+													Struct
+													{
+														UINT32 NumberOfSites;
+														[MQDSGuidArrayCounter = NumberOfSites]
+														While[ MQDSGuidArrayCounter > 0 ]
+														{
+															[MQDSGuidArrayCounter = MQDSGuidArrayCounter - 1]
+															NdrPtr Ptr;
+															Switch
+															{
+																Case Ptr.ReferentID > 0:
+																	Struct
+																	{
+																		NDRConformantVARYING Size1;
+																		GUID(TRUE) Value;
+																	}
+															}
+														}
+														NDRConformant Size2;
+														Switch
+														{
+															Case Size2.MaxCount > 0:
+																BLOB( Size2.MaxCount ) ServerSignature;
+														}
+														Align4 Pad;
+														UINT32 ServerSignatureSize;
+														HRESULT ReturnValue;
+													}
+												}
+										}
+								}
+							}
+						Case 1:
+							Struct MQDScomm2SDSGetPropsEx
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "DirectoryObjectType=%s, PathName=%s, ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), PathName.ToString, ServerSignatureSize)]
+													Struct
+													{
+														UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+														NdrWideString PathName;
+														Align4 Pad1;
+														UINT32 Cp;
+														//Used in common PROPIDs.
+														[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+														NDRConformant Size1;
+														Switch
+														{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+															}
+														}
+														//Used in common PROPVARIANTs.
+														[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+														NDRConformant Size2;
+														Switch
+														{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+														}
+														Align4 Pad2;
+														ContextHandle ServerAuth;
+														UINT32 ServerSignatureSize;
+													}
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ServerSignatureSize=%u, ReturnValue=%s", ServerSignatureSize, ReturnValue.ToString)]
+													Struct
+													{
+														//Used in common PROPVARIANTs.
+														[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+														NDRConformant Size2;
+														Switch
+														{
+															Case Size2.MaxCount > 0:
+																Struct
+																{
+																	[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																	While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																	{
+																		[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																		MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																	}
+																	[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																	While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																	}
+																}
+														}
+														NDRConformant Size;
+														switch
+														{
+															case Size.MaxCount > 0:
+																BLOB( Size.MaxCount ) Value;
+														}
+														Align4 Pad;
+														UINT32 ServerSignatureSize;
+														HRESULT ReturnValue;
+													}
+											}
+										}
+								}
+							}
+						Case 2:
+							Struct MQDScomm2SDSGetPropsGuidEx
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "DirectoryObjectType=%s, Cp=%u, ServerSignatureSize=%u", MQDSDirectoryObjectTypesTable( DirectoryObjectType ), Cp, ServerSignatureSize)]
+													Struct
+													{
+														UINT32 DirectoryObjectType = MQDSDirectoryObjectTypesTable( this );
+														NdrPtr GUIDPtr;
+														Switch
+														{
+															Case GUIDPtr.ReferentID > 0:
+																GUID(TRUE) GUID;
+														}
+														UINT32 Cp;
+														//Used in common PROPIDs.
+														[MQMPDirObjPropIdElementTotal = Size1.MaxCount]
+														NDRConformant Size1;
+														Switch
+														{
+														Case Size1.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropIdCounter = 0]
+																While MQMPDirObjPropIdElements[ MQMPDirObjPropIdCounter < MQMPDirObjPropIdElementTotal ]
+																{
+																	[Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropIdCounter ],
+																		post.MQMPDirObjPropIdCounter = MQMPDirObjPropIdCounter + 1]
+																	UINT32		PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+																}
+															}
+														}
+														//Used in common PROPVARIANTs.
+														[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+														NDRConformant Size2;
+														Switch
+														{
+														Case Size2.MaxCount > 0:
+															Struct
+															{
+																[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																{
+																	[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																	MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																}
+																[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																{
+																	[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																	MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																}
+															}
+														}
+														Align4 Pad;
+														ContextHandle ServerAuth;
+														UINT32 ServerSignatureSize;
+													}
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ServerSignatureSize=%u, ReturnValue = %u", ServerSignatureSize, ReturnValue.ToString)]
+													Struct
+													{
+														//Used in common PROPVARIANTs.
+														[MQMPDirObjPropValElementTotal = Size2.MaxCount]
+														NDRConformant Size2;
+														Switch
+														{
+															Case Size2.MaxCount > 0:
+																Struct
+																{
+																	[MQMPDirObjPropValCounter = 0, MQMQCommonPropVariantPointerReferenceCount = 0]
+																	While MQMPDirObjPropValElements[ MQMPDirObjPropValCounter < MQMPDirObjPropValElementTotal ]
+																	{
+																		[post.MQMPDirObjPropValCounter = MQMPDirObjPropValCounter + 1]
+																		MQMPDirectoryObjectPropertyValue( Conversation.MQMPDirectoryObjectPropId$[ Property.MSRPCCallId, MQMPDirObjPropValCounter ] )		Values;
+																	}
+																	[MQMQCommonPropVariantPointerReferenceCounter = 0]
+																	While MQMQCommonPropVariantPointerReferences[ MQMQCommonPropVariantPointerReferenceCounter < MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[post.MQMQCommonPropVariantPointerReferenceCounter = MQMQCommonPropVariantPointerReferenceCounter + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[MQMQCommonPropVariantPointerReferenceCounter] )		Values;
+																	}
+																}
+														}
+														NDRConformant Size;
+														Switch
+														{
+															Case Size.MaxCount > 0:
+																BLOB( Size.MaxCount ) Value;
+														}
+														Align4 Pad;
+														UINT32 ServerSignatureSize;
+														HRESULT ReturnValue;
+													}
+											}
+										}
+								}
+							}
+						Case 3:
+							Struct MQDScomm2SDSBeginDeleteNotification
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "QueueName=%s", QueueName.ToString)]
+													Struct
+													{
+														NdrWideString QueueName;
+														Align4 Pad;
+														ContextHandle ServerAuth;
+													}
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+													Struct
+													{
+														ContextHandle Handle;
+														HRESULT ReturnValue;
+													}
+											}
+										}
+								}
+							}
+						Case 4:
+							Struct MQDScomm2SDSNotifyDelete
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:ContextHandle Handle;
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+													HRESULT ReturnValue;
+											}
+										}
+								}
+							}
+						Case 5:
+							Struct MQDScomm2SDSEndDeleteNotification
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:ContextHandle Handle;
+											}
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+													Struct
+													{
+														ContextHandle Handle;
+														HRESULT ReturnValue;
+													}
+											}
+										}
+								}
+							}
+						Case 6:
+							Struct MQDScomm2SDSIsServerGC
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+										}
+									Case 0x02: //RESPONSE
+										Struct Response
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+													BOOL ReturnValue = FormatString( "AD Server is %s also a global catalog server", this ? "":"NOT" );
+											}
+										}
+								}
+							}
+						Case 8:
+							Struct MQDScomm2SDSGetGCListInDomain
+							{
+								Switch( property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										Struct Request
+										{
+											Switch
+											{
+												Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+												Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+												Default:
+													[MQDSSummary = FormatString( "ComputerName=%s, DomainName = %s, ServerSignatureSize", ComputerName.ToString, DomainName.ToString, ServerSignatureSize)]
+													Struct
+													{
+														NdrWIDESTRINGPtr ComputerName; // ALWAYS SET TO NULL.
+														NdrWIDESTRINGPtr DomainName;
+														Align4 Pad;
+														ContextHandle ServerAuth;
+														UINT32 ServerSignatureSize;
+													}
+											}
+										}
+									Case 0x02: //RESPONSE
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQDSSummary = FormatString( "GlobalCatalogServerList=%s, ServerSignatureSize = %u, ReturnValue = %u", GlobalCatalogServerList.ToString, ServerSignatureSize, ReturnValue.ToString)]
+												Struct
+												{
+													NdrWIDESTRINGPtr GlobalCatalogServerList;
+													NDRConformant Size;
+													Switch
+													{
+														Case Size.MaxCount > 0:
+															BLOB( Size.MaxCount ) Challenge;
+													}
+													Align4 Pad;
+													UINT32 ServerSignatureSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						Case 7:
+							Struct NotUsedOnWire
+							{
+								Switch( Property.MSRPCPType )
+								{
+									Case 0x00: //REQUEST
+										[MQDSSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+										Struct Request
+										{
+											ReportParserWarning("MQDS", "Invalid dscomm2 method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+											Blob(FrameLength - Offset) PayloadData;
+										}
+									
+									Case 0x02: //RESPONSE
+										[MQDSSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+										Struct Response
+										{
+											ReportParserWarning("MQDS", "Invalid dscomm2 method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+											Blob(FrameLength - Offset) PayloadData;
+										}
+								}
+							}
+						Default:
+							Switch
+							{
+								Case IsValueNone(Property.MSRPCOpnum):
+									Struct
+									{
+										Blob( FrameLength - Offset ) data;
+										ReportParserWarning("MQDS", "Property MSRPCOpnum is missing") ParserWarning;
+									}
+								Default:
+									ReportParserError( ParserErrorProtocolClassWindows, "MQDS", "Unknown dscomm method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+							}
+					}
+				}
+	}
+}
+
+//========= TABLES ==========================================================================================
+Table MQDSCommMethodTable( opnum )
+{
+	Switch( opnum )
+	{
+		Case 0: "MQDSCommSDSCreateObject";
+		Case 1: "MQDSCommSDSDeleteObject";
+		Case 2: "MQDSCommSDSGetProps";
+		Case 3: "MQDSCommSDSSetProps";
+		Case 4: "MQDSCommSDSGetObjectSecurity";
+		Case 5: "MQDSCommSDSSetObjectSecurity";
+		Case 6: "MQDSCommSDSLookupBegin";
+		Case 7: "MQDSCommSDSLookupNext";
+		Case 8: "MQDSCommSDSLookupEnd";
+		Case 10: "MQDSCommSDSDeleteObjectGuid";
+		Case 11: "MQDSCommSDSGetPropsGuid";
+		Case 12: "MQDSCommSDSSetPropsGuid";
+		Case 13: "MQDSCommSDSGetObjectSecurityGuid";
+		Case 14: "MQDSCommSDSSetObjectSecurityGuid";
+		Case 19: "MQDSCommSDSQMSetMachineProperties";
+		Case 20: "MQDSCommSDSCreateServersCache";
+		Case 21: "MQDSCommSDSQMGetObjectSecurity";
+		Case 22: "MQDSCommSDSValidateServer";
+		Case 23: "MQDSCommSDSCloseServerHandle";
+		Case 27: "MQDSCommSDSGetServerPort";
+		Case 9:
+		Case 15:
+		Case 16:
+		Case 17:
+		Case 18:
+		Case 24:
+		Case 25:
+		Case 26:"this method is not used";
+		Default: FormatString("Unknown opnum %u",opnum);
+	}
+}
+
+Table MQDSCommCallbackMethodTable( opnum )
+{
+	Switch( opnum )
+	{
+		Case 0: "MQDSCommSDSQMSetMachinePropertiesSignProc";
+		Case 1: "MQDSCommSDSQMGetObjectSecurityChallengeResponceProc";
+		Case 2: "MQDSCommSInitSecCtx";
+		Default: FormatString("Unknown opnum %u",opnum);
+	}
+}
+
+Table MQDSComm2MethodTable( opnum )
+{
+	Switch( opnum )
+	{
+		Case 0: "MQDSComm2SDSGetComputerSites";
+		Case 1: "MQDSComm2SDSGetPropsEx";
+		Case 2: "MQDSComm2SDSGetPropsGuidEx";
+		Case 3: "MQDSComm2SDSBeginDeleteNotification";
+		Case 4: "MQDSComm2SDSNotifyDelete";
+		Case 5: "MQDSComm2SDSEndDeleteNotification";
+		Case 6: "MQDSComm2SDSIsServerGC";
+		Case 7: "this method is not used";
+		Case 8: "MQDSComm2SDSGetGCListInDomain";
+		Default: FormatString("Unknown opnum %u",opnum);
+	}
+}
+
+Table MQDSDirectoryObjectTypesTable( value )
+{
+	Switch( value )
+	{
+		Case 1: "MqdsQueue - Object represents a message queue";
+		Case 2: "MqdsMachine - Object represents a queue manager";
+		Case 3: "MqdsSite - Object represents a site";
+		Case 4: "MqdsDeletedObject - Object has been deleted";
+		Case 5: "MqdsCN - Object represents a connected network";
+		Case 6: "MqdsEnterprise - Object represents an enterprise";
+		Case 7: "MqdsUser - Object represents a user";
+		Case 8: "MqdsSiteLink - Object represents a site link";
+		Default: "Unknown";
+	}
+}
+
+Table MQDSIPPortNetworkProtocolTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00000000: "SPX - Causes the RPC endpoint port to use the SPX protocol";
+		Case 0xFFFFFFFF: "Zero - Causes a value of 0 to be returned";
+		Default: "TCP/IP - Causes the RPC endpoint port to use the TCP/IP protocol";
+	}
+}
+
+Table MQDSServerPortReturnValueTable( value )
+{
+	Switch( value )
+	{
+		Case 0: "Error - Failure";
+		Default: FormatString( "Port number: %s", value );
+	}
+}
+
+Table MQDSPropRestrctBinaryRelationTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00000000: "PRLT - Less than";
+		Case 0x00000001: "PRLE - Less than or equal to";
+		Case 0x00000002: "PRGT - Greater than";
+		Case 0x00000003: "PRGE - Greater than or equal to";
+		Case 0x00000004: "PREQ - Equal to";
+		Case 0x00000005: "PRNE - Not equal to";
+		Default:FormatString( "Unknown value: %u", value );
+	}
+}
+
+Table MQDSPublicKeyProviderTypeTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00000001: "ProvRsaFull";
+	}
+}
+Table MQDSAiKeyAlgTable(value)
+{
+	switch(value)
+	{
+		case 0x0000a400: "exchange algorithm";
+		case 0x00002400: "signature algorithm";
+		default:"unknown";
+	}
+}
+
+//========= STRUCTS =========================================================================================
+
+struct MQDSMQDSPublicKeyArray( hasPublicKeyBlobSize )
+{
+	switch( hasPublicKeyBlobSize )
+	{
+		case true:
+			UINT32			PublicKeyBlobSize;
+	}
+	MQDSBlobHeader			BlobHeader;
+	RDPBCGRRsaPublicKey		aPublicKeys;
+}
+
+struct MQDSBlobHeader
+{
+	UINT8					bType = this == 06 ? "public key" : "";
+	UINT8					bVersion;
+	UINT16					wReserved;
+	UINT32					aiKeyAlg = MQDSAiKeyAlgTable(this);
+}
+
+struct MQDSConfCustSecurityDescriptorOrPublicKeys( hasPublicKeyBlobSize )
+{
+	NdrConformant	Size;
+	switch
+	{
+		case Size.MaxCount > 0:
+			[ DatafieldFrameLength = FrameOffset + Size.MaxCount ]
+			struct
+			{
+				[MQDSSecurityDescriptorEndOffset = FrameOffset + Size.MaxCount]
+				switch
+				{
+					case Conversation.MQDSSecurityInfoKeyxPublicKey$[Property.MSRPCCallId] == 1:
+						MQDSMQDSPublicKeyArray( hasPublicKeyBlobSize )		MachineKeyxPublicKey; //PROPID_QM_ENCRYPT_PK
+					case Conversation.MQDSSecurityInfoSignPublicKey$[Property.MSRPCCallId] == 1:
+						MQDSMQDSPublicKeyArray( hasPublicKeyBlobSize )		MachineSignPublicKey; //PROPID_QM_SIGN_PK
+					default:
+						NdrSecurityDescriptor	MachineSecurityDescriptor;
+				}
+				switch
+				{
+					case FrameOffset < MQDSSecurityDescriptorEndOffset:
+						Blob(MQDSSecurityDescriptorEndOffset - FrameOffset) Padding;
+				}
+			}
+	}
+}
+
+Struct MQDSSecurityInformationFlags = FormatString( "0x%08X", Flags )
+{
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 OwnerSecurityInformation:1 = FormatString( "(%s) Owner field from the security descriptor", this.ToBitString );
+					UINT32 GroupSecurityInformation:1 = FormatString( "(%s) Group field from the security descriptor", this.ToBitString );
+					UINT32 DaclSecurityInformation:1 = FormatString( " (%s) Discretionary ACL field from the security descriptor", this.ToBitString );
+					UINT32 SaclSecurityInformation:1 = FormatString( " (%s) System ACL field from the security descriptor", this.ToBitString );
+					UINT32 NotUsed:26 = FormatString( "                 (%s)", this.ToBitString );
+					[Conversation.MQDSSecurityInfoKeyxPublicKey$[Property.MSRPCCallId]]
+					UINT32 MqdsKeyxPublicKey:1 = FormatString( "       (%s) Encrypting public key", this.ToBitString );
+					[Conversation.MQDSSecurityInfoSignPublicKey$[Property.MSRPCCallId]]
+					UINT32 MqdsSignPublicKey:1 = FormatString( "       (%s) Signing public key", this.ToBitString );
+				}
+			Default:
+				Struct
+				{
+					[Conversation.MQDSSecurityInfoSignPublicKey$[Property.MSRPCCallId]]
+					UINT32 MqdsSignPublicKey:1 = FormatString( "       (%s) Signing public key", this.ToBitString );
+					[Conversation.MQDSSecurityInfoKeyxPublicKey$[Property.MSRPCCallId]]
+					UINT32 MqdsKeyxPublicKey:1 = FormatString( "       (%s) Encrypting public key", this.ToBitString );
+					UINT32 NotUsed:26 = FormatString( "                 (%s)", this.ToBitString );
+					UINT32 SaclSecurityInformation:1 = FormatString( " (%s) System ACL field from the security descriptor", this.ToBitString );
+					UINT32 DaclSecurityInformation:1 = FormatString( " (%s) Discretionary ACL field from the security descriptor", this.ToBitString );
+					UINT32 GroupSecurityInformation:1 = FormatString( "(%s) Group field from the security descriptor", this.ToBitString );
+					UINT32 OwnerSecurityInformation:1 = FormatString( "(%s) Owner field from the security descriptor", this.ToBitString );
+				}
+			}
+	}
+}
+
+//
+// MQRestriction
+// Alignment: None
+//
+Struct MQDSMQRestriction
+{
+	UINT32 Res;
+	NdrPtr Ptr;
+	Switch
+	{
+		Case Ptr.ReferentId > 0:
+			Struct
+			{
+				NdrConformant Size;
+				Align8 Pad1;
+				[MQMQCommonPropVariantPointerReferenceCount = 0] // Reset the reference count.
+				MQDSConfMQPropertyRestriction PropertyRestrictionArray[ Size.MaxCount ];
+				[local.Count = 1]
+				While[local.count <= MQMQCommonPropVariantPointerReferenceCount]
+				{
+					[post.local.count = local.count + 1]
+					MQMQCommonPropVariantReferencedValues(MQMQCommonPropVariantPointerReferenceArray$[local.count - 1]) ReferencedValue; // First element is 0.
+				}
+			}
+	}
+}
+
+//
+// MQPROPERTYRESTRICTION
+// Alignment: Align8
+//
+Struct MQDSConfMQPropertyRestriction
+{
+	UINT32 Rel = MQDSPropRestrctBinaryRelationTable( this );
+	UINT32 Prop = MQMQCommonDirectoryObjectPROPIDTable( this );
+	MQMQCommonPropVariant Val;
+	Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 pad;
+	}
+}
+
+//
+// MQColumnSet
+// Alignment: None
+//
+Struct MQDSMQColumnSet
+{
+	UINT32 cCol;
+	NdrPtr aCol;
+	Switch
+	{
+		Case aCol.ReferentId > 0:
+			Struct
+			{
+				[MQDSDirObjLookupBeginPropIdElementTotal = Size.MaxCount]
+				NDRConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							[local.MQDSDirObjLookupBeginPropIdCounter = 0]
+							While MQDSDirObjLookupBeginPropIdElements[ local.MQDSDirObjLookupBeginPropIdCounter < MQDSDirObjLookupBeginPropIdElementTotal ]
+							{
+								[Conversation.MQDSDirectoryObjectLookupBeginPropId$[ local.MQDSDirObjLookupBeginPropIdCounter ],
+									post.local.MQDSDirObjLookupBeginPropIdCounter = local.MQDSDirObjLookupBeginPropIdCounter + 1]
+								UINT32 PropertyId = MQMQCommonDirectoryObjectPROPIDTable( this );
+							}
+						}
+				}
+			}
+	}
+}
+
+Struct MQDSMQSortSet
+{
+	UINT32 cCol;
+	NdrPtr aCol;
+	Switch
+	{
+		Case aCol.ReferentId > 0:
+			Struct
+			{
+				NDRConformant Size;
+				Switch
+				{
+						Case Size.MaxCount > 0:
+							MQDSConfMQSortKeyArray Column;
+				}
+			}
+	}
+}
+
+Struct MQDSConfMQSortKeyArray
+{
+	UINT8 PropertyColumn;
+	UINT8 Order;
+	Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 pad;
+	}
+}

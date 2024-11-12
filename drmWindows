@@ -1,0 +1,218 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Digital Rights Management Protocols
+//#
+//#  Details:                for DRM v1 and DRM v7; yet DRM v11 is always encrypted
+//#
+//#  Microsoft References:   [MS-DRM]: Digital Rights Management License Acquisition Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/18/2009
+//#
+//####
+
+// Client rights for the licensed content
+const RightPlayOnPc = 0x01000000;
+const RightCopyToNonSdmiDevice = 0x02000000;
+const RightNoRestore = 0x04000000;
+const RightBurnToCd = 0x08000000;
+const RightCopyToSdmiDevice = 0x10000000;
+const RightOneTime = 0x20000000;
+const RightSdmiTrigger = 0x00000100;
+const RightSdmiNoMoreCopies = 0x00000200;
+// ===========================================================================
+// Protocol
+// ===========================================================================
+[DrmSummary1 = DrmVerFlag ? "DRM Version 7/Version 11" : "DRM Version 1"]
+[DrmSummary2 = Property.HttpSummary.Contains("Response") ? ", License Response - DRM encoded" : ", License Request - DRM encoded"]
+[DrmSummary = DrmSummary1 + DrmSummary2]
+Protocol DRM = FormatString("%s", DrmSummary)
+{
+
+	switch (DrmVerFlag)
+	{
+		case DrmVer1:
+			switch (DrmPacketType)
+			{
+				case DrmLicenseRequest:			// License request
+					LicenseRequestV1 LicenseRequest;
+				case DrmLicenseResponse:		// license response
+					CertifiedLicense LicenseResponse; 
+			}
+		case DrmVer7:
+			switch (DrmPacketType)
+			{
+				case DrmLicenseRequest:			// License request
+					_struct LicenseRequestV7 {
+						LicenseRequestV7 LicenseRequest;
+					}
+				case DrmLicenseResponse:		// license response
+					_struct LicenseResponseV7 {
+						LicenseResponse LicenseRes;
+					}
+			}
+	}
+}
+
+// ===========================================================================
+// Struct
+// ===========================================================================
+// DRMv1 certified license
+[DataTypeEncoding = 1]
+Struct CertifiedLicense
+{
+	License License;
+	Cert Cert1;
+	Cert Cert2;
+}
+
+// DRMv1 certificate
+[DataTypeEncoding = 1]
+Struct Cert
+{
+	UINT32 CertVersion;
+	UINT32 DataLen;
+	UINT8 Sign[40];
+	CertData CertData;
+}
+
+// DRMv1 certificate data block
+[DataTypeEncoding = 1]
+Struct CertData = FormatString("Expiration date: 0x%x", Drmv1CertExpiryDate)
+{
+	UINT8 Pk[40];
+	[Drmv1CertExpiryDate]
+	UINT32 ExpiryDate = FormatString("%d/%d/%d%d", Drmv1ExpiryMonth, Drmv1ExpiryDay, Drmv1ExpiryYear0, Drmv1ExpiryYear1)
+	{
+		[Drmv1ExpiryYear0]
+		UINT32 YearFirst2Digits:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryYear1]
+		UINT32 YearSecond2Digits:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryMonth]
+		UINT32 Month:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryDay]
+		UINT32 Day:8 = FormatString("(%d)", this);
+	}
+
+	[Drmv1CertCtr = Drmv1CertCtr + 1]
+	[DrmSummary = DrmSummary + " Cert" + Drmv1CertCtr + " expiration date: " + Drmv1CertExpiryDate]
+	UINT32 SerialNumber;
+	UINT32 Issuer;
+	UINT32 Subject;
+}
+
+// DRMv1 certified license
+[DataTypeEncoding = 1]
+Struct License = FormatString("Expiration date: 0x%x Rights: 0x%x", Drmv1LicenseDataExpiryDate, Drmv1LicenseDataRights)
+{
+	UINT32 LicVersion;
+	UINT32 DataLen;
+	UINT8 Sign[40];
+	LicenseData LicenseData;
+}
+
+// DRMv1 license data portion
+[ DataTypeEncoding = 1 ]
+Struct LicenseData
+{
+	CHAR Kid[25];
+	UINT8 Key[80];
+	[Drmv1LicenseDataRights]
+	UINT32 Rights = FormatString( "0x%08X", this )
+	{
+		Struct
+		{
+			UINT32 Reserved30_31:2 = FormatString("           (%s)", this.ToBitString);
+			UINT32 RightOneTime:1 = FormatString("            (%s) %s", this.ToBitString, this ?  "Client can perform any of the authorized actions once" : "Client cannot perform any of the authorized actions");
+			UINT32 RightCopyToSdmiDevice:1 = FormatString("   (%s) %s", this.ToBitString, this ?  "Client is authorized to copy the licensed content to an SDMI device" : "Client is not authorized to copy the licensed content to an SDMI device");
+			UINT32 RightBurnToCd:1 = FormatString("           (%s) %s", this.ToBitString, this ?  "Client is authorized to burn the licensed content to a CD" : "Client is not authorized to burn the licensed content to a CD");
+			UINT32 RightNoRestore:1 = FormatString("          (%s) %s", this.ToBitString, this ?  "Client is not authorized to restore the license content" : "Client is authorized to restore the license content");
+			UINT32 RightCopyToNonSdmiDevice:1 = FormatString("(%s) %s", this.ToBitString, this ?  "Client is authorized to copy the licensed content to a device that is not compliant with the SDMI (Secure Digital Music Initiative)" : "Client is not authorized to copy the licensed content to a device that is not compliant with the SDMI (Secure Digital Music Initiative)");
+			UINT32 RightPlayOnPc:1 = FormatString("           (%s) %s", this.ToBitString, this ?  "Client is authorized to play back the content" : "Client is not authorized to play back the content");
+			UINT32 Reserved10_23:14 = FormatString("           (%s)", this.ToBitString);
+			UINT32 RightSdmiNoMoreCopies:1 = FormatString("   (%s) %s", this.ToBitString, this ?  "Client is not authorized to make any further SDMI copies of the licensed content" : "Client is authorized to make any further SDMI copies of the licensed content");
+			UINT32 RightSdmiTrigger:1 = FormatString("        (%s) %s", this.ToBitString, this ?  "Client is authorized to handle SMDI-generated events" : "Client is not authorized to handle SMDI-generated events");
+			UINT32 Reserved0_7:8 = FormatString("             (%s)", this.ToBitString);
+		}
+	}
+	UINT32 AppSec;
+	[Drmv1LicenseDataExpiryDate]
+	UINT32 ExpiryDate = FormatString("%d/%d/%d%d", Drmv1ExpiryMonth, Drmv1ExpiryDay, Drmv1ExpiryYear0, Drmv1ExpiryYear1)
+	{
+		[Drmv1ExpiryYear0]
+		UINT32 YearFirst2Digits:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryYear1]
+		UINT32 YearSecond2Digits:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryMonth]
+		UINT32 Month:8 = FormatString("(%d)", this);
+		[Drmv1ExpiryDay]
+		UINT32 Day:8 = FormatString("(%d)", this);
+	}
+}
+
+// Common structures to DrmV1 and DrmV7:
+
+// Client's machine certificate
+[DataTypeEncoding = 1]
+Struct PKCert = FormatString("DRM public key structure, RC4 encrypted")
+{
+	PK PK;
+	UINT8 Sign[40];	// = FormatString("Public key signature created using private Microsoft elliptic-curve encryption algorithm");
+}
+
+// DRM Public Key structure
+[DataTypeEncoding = 1]
+Struct PK
+{
+	UINT8 PubKey[40];	// = FormatString("%u (%#x) - Public key", PubKey, PubKey);
+	UINT32 Version = FormatString("%u (%#x) - Public key version", Version, Version);
+}
+
+// Random number
+[DataTypeEncoding = 1]
+Struct EncRandNum = FormatString("Random number encrypted with a global license server public key")
+{
+	UINT8 EncRandNum[80];
+}
+
+// Content Key ID
+[DataTypeEncoding = 1]
+Struct KeyID = FormatString("Content key identifier, RC4 encrypted")
+{
+	UINT8 KeyID[28];
+}
+
+[DataTypeEncoding = 1]
+Struct LicenseRequestV7 
+{
+	XMLparser Value;
+}
+
+[DataTypeEncoding = 1]
+struct LicenseRequestV1 {
+	// Version (4 bytes)
+	UINT32 Version = FormatString("%u (%#x) - request version", Version, Version);
+	EncRandNum EncRandNum;	// EncRandNum (80 bytes)
+	PKCert PublicKey;		// PK (84 bytes)												
+	KeyID KeyID;			// KeyID (28 bytes)
+							// Rights (4 bytes)
+	UINT32 Rights = FormatString("%u (%#x) - requested playback rights, RC4 encrypted", Rights, Rights);
+							// AppSec (4 bytes)
+	UINT32 AppSec = FormatString("%u (%#x) - security level, RC4 encrypted", AppSec, AppSec);
+}
+
+[DataTypeEncoding = 1]
+struct CLIENTID
+{
+	UINT8 Version[4];
+	UINT8 EncRandNum[80];
+	PKCert pkcertS[84];
+}
+
+[DataTypeEncoding = 1]
+struct LicenseResponse
+{
+	XMLparser LicenseResponse = FormatString("RC4 encrypted XML packet");
+}
+

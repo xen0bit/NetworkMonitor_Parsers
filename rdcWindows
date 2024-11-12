@@ -1,0 +1,73 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Differential Compression
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-RDC]: Remote Differential Compression Protocol Specification (3.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/22/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDC = "Version:"+ Property.RDCVersion + " FileType:" + RDCFileTypeTable(FileHeader.FileType)
+{
+	_struct FileHeader
+	{
+		UINT32 HeaderSize;
+		[RDCVersion = FormatString("%d.%d",Version.LibraryVersion,Version.BuildNumber)]
+		RDCVersion Version;
+		RDCVersion MinVersionRequired;
+		UINT32 Padding;
+		UINT64 FileType = RDCFileTypeTable(this);
+	}
+	switch (FileHeader.FileType)
+	{
+		//Signature File		
+		case 1 :
+			[RDCChunkSignatureLength = 0]
+			struct ChunkSignatures = "Length:" + Property.RDCChunkSignatureLength
+			{
+				while [FrameOffset < frameLength && FrameOffset + 18 <= frameLength]
+				{
+					[RDCChunkSignatureLength = RDCChunkSignatureLength + 1]
+					struct ChunkSignature = "Index:" + Property.RDCChunkSignatureLength + " BlockLength:" + BlockLength
+					{
+						BLOB(16) HashValue = FormatString("0x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+								this[0],this[1],this[2],this[3],this[4],this[5],this[6],this[7],
+								this[8],this[9],this[10],this[11],this[12],this[13],this[14],this[15]
+								);
+						UINT16 BlockLength;
+					}
+				}
+			}
+	}
+	
+	switch
+	{
+		case FrameOffset < frameLength : BLOB(frameLength - FrameOffset) Pad;
+	}
+}
+
+struct RDCVersion = FormatString("%d.%d",LibraryVersion,BuildNumber)
+{
+	UINT16 LibraryVersion;
+	UINT16 BuildNumber;
+}
+
+Table RDCFileTypeTable(value)
+{
+	switch(value)
+	{
+		case 1 : "Signature File";
+		default: "Unknown RDC FileType";
+	}		
+}
+
+struct RDCSimilarityDataStruct
+{
+	UINT8 SimilarityData[16];
+}

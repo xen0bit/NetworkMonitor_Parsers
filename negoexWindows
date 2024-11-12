@@ -1,0 +1,241 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  The Extended GSS-API Negotiation Mechanism
+//#
+//#  Details:                
+//#
+//#  Public References:      draft-zhu-negoex-01 The Extended GSS-API Negotiation Mechanism (NEGOEX): http://tools.ietf.org/html/draft-zhu-negoex-01
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 8/4/2009
+//#
+//####
+
+const VECTOR_TYPE_AUTH_SCHEME = 1;
+const VECTOR_TYPE_EXTENSION = 2;
+const VECTOR_TYPE_ALERT = 3;
+const VECTOR_TYPE_BYTE = 4;
+
+[DataTypeByteOrder = LittleEndian]
+struct Negoex = FormatString("%s", NegoexMessageHeader.Tostring)
+{
+	while[FrameOffset < FrameLength && AsciiString(FrameData,FrameOffset,8 )== "NEGOEXTS"]
+	{
+		[Property.NegoexStartOffset = FrameOffset]
+		NegoexMessageHeader MessageHeader;
+		
+		[DataFieldFrameLength = FrameOffset + MessageHeader.HeaderLength - 40]
+		struct
+		{
+			switch (MessageHeader.MessageType)
+			{
+				case 0:
+				case 1:
+					NegoexNegoMessage NegoMessage;
+				case 2:
+				case 3:
+				case 4:
+				case 5:
+					NegoexExchangeMessage ExchangeMessage;
+				case 6:
+					NegoexVerifyMessage VerifyMessage;
+				case 7:
+					NegoexAlertMessage Alert;
+				default:
+					struct
+					{
+						ReportParserError(ParserErrorProtocolClassWindows, "Negoex", "Unknown Message Type") ProtocolError;
+						BLOB(FrameLength - FrameOffset) UnknownMessage;
+					}
+			}
+			
+			switch 
+			{
+				case FrameLength > FrameOffset:
+					BLOB(FrameLength - FrameOffset) Padding;
+			}
+		}
+		
+		[DataFieldFrameLength = FrameOffset + MessageHeader.MessageLength - MessageHeader.HeaderLength]
+		struct Payload
+		{
+			[MaxLoopCount = MessageHeader.MessageLength - MessageHeader.HeaderLength]
+			while [true]
+			{
+				switch 
+				{
+					case NegoexVectorTypeByOffsetMVS$[FrameOffset]:
+						switch (NegoexVectorTypeByOffsetMVS$[FrameOffset])
+						{
+							case VECTOR_TYPE_AUTH_SCHEME:
+								NegoexAuthScheme AuthScheme[NegoexVectorElementCountByOffsetMVS$[FrameOffset]];
+								
+							case VECTOR_TYPE_EXTENSION:
+								NegoexExtension Extension[NegoexVectorElementCountByOffsetMVS$[FrameOffset]];
+								
+							case VECTOR_TYPE_ALERT:
+								NegoexAlert Alert[NegoexVectorElementCountByOffsetMVS$[FrameOffset]];
+								
+							case VECTOR_TYPE_BYTE:
+								BLOB(NegoexVectorElementCountByOffsetMVS$[FrameOffset] <= FrameLength - FrameOffset ? NegoexVectorElementCountByOffsetMVS$[FrameOffset] : FrameLength - FrameOffset) Bytes = FormatString("%s",NegoexVectorElementCountByOffsetMVS$[FrameOffset] > FrameLength - FrameOffset ? "This part will be parsed after reassemble" : FormatString("Length = %d",NegoexVectorElementCountByOffsetMVS$[FrameOffset]));
+						}
+						
+					default:
+						struct
+						{
+							while [!NegoexVectorTypeByOffsetMVS$[FrameOffset]]
+							{
+								UINT8 Padding;
+							}
+						}
+				}
+			}
+		
+			switch
+			{
+				case FrameLength > FrameOffset:
+					BLOB(FrameLength - FrameOffset) Padding;
+			}
+		}
+	}
+}
+
+struct NegoexMessageHeader = FormatString("MessageType = %s, MessageLength = %u", NegoexMessageTypeTable(MessageType),MessageLength)
+{
+	AsciiString(8) Signature;
+	UINT32 MessageType = NegoexMessageTypeTable(this);
+	UINT32 SequenceNum;
+	UINT32 HeaderLength;
+	UINT32 MessageLength;
+	GUID(false) ConversationId;
+}
+
+Table NegoexMessageTypeTable(type)
+{
+	switch (type)
+	{
+		case 0: "MESSAGE_TYPE_INITIATOR_NEGO";
+		case 1: "MESSAGE_TYPE_ACCEPTOR_NEGO";
+		case 2: "MESSAGE_TYPE_INITIATOR_META_DATA";
+		case 3: "MESSAGE_TYPE_ACCEPTOR_META_DATA";
+		case 4: "MESSAGE_TYPE_CHALLENGE";
+		case 5: "MESSAGE_TYPE_AP_REQUEST";
+		case 6: "MESSAGE_TYPE_VERIFY";
+		case 7: "MESSAGE_TYPE_ALERT";
+		default: FormatString("Undefined Value (%u)", type);
+	}
+}
+
+struct NegoexNegoMessage
+{
+	BLOB(32) Random;
+	UINT64 ProtocolVersion;
+	NegoexAuthSchemeVector AuthSchemes;
+	NegoexExtensionVector Extensions;
+	
+}
+
+struct NegoexExchangeMessage
+{
+	GUID(false) AuthScheme;
+	NegoexByteVector Exchange;
+}
+
+struct NegoexVerifyMessage
+{
+	GUID(false) AuthScheme;
+	NegoexCheckSum CheckSum;
+}
+
+struct NegoexAlertMessage = FormatString("%s",NtStatusTable(this))
+{
+	NegoexAuthScheme AuthScheme;
+	UINT32 ErrorCode = NtStatusTable(this);
+	NegoexAlertVector AlertVector;
+}
+
+struct NegoexAlertVector = FormatString("AlertArrayOffset = %x,AlertCount = %u",FrameOffset,AlertCount)
+{
+	UINT32 AlertArrayOffset;
+	[Property.NegoexVectorTypeByOffsetMVS$[Property.NegoexStartOffset + AlertArrayOffset] = VECTOR_TYPE_ALERT, Property.NegoexVectorElementCountByOffsetMVS$[Property.NegoexStartOffset + AlertArrayOffset] = AlertCount]
+	UINT16 AlertCount;
+	Align4 Pad;
+}
+
+table NegoexAlertTypeTable(value)
+{
+	switch(value)
+	{
+		case 1: "ALERT_TYPE_PULSE";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+
+table NegoexReasonTable(value)
+{
+	switch(value)
+	{
+		case 1: "ALERT_VERIFY_NO_KEY";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+struct NegoexAlertPulse
+{
+	UINT32 cbHeaderLength;
+	UINT32 Reason = NegoexReasonTable(this);
+}
+struct NegoexAlert
+{
+	UINT32 AlertType = NegoexAlertTypeTable(this);
+	switch(AlertType)
+	{
+		case 1 :
+			NegoexAlertPulse AlertPulse;
+		default:
+			NegoexByteVector AlertValue;
+	}
+}
+
+struct NegoexCheckSum
+{
+	UINT32 HeaderLength;
+	UINT32 ChecksumScheme;
+	UINT32 ChecksumType = KrbCksumTypeTable(this);
+	NegoexByteVector ChecksumValue;
+}
+
+struct NegoexAuthSchemeVector = FormatString("AuthSchemeArrayOffset = 0X%X,AuthSchemeCount = %u",Property.NegoexStartOffset + AuthSchemeArrayOffset,AuthSchemeCount)
+{
+	UINT32 AuthSchemeArrayOffset;
+	[Property.NegoexVectorTypeByOffsetMVS$[Property.NegoexStartOffset + AuthSchemeArrayOffset] = VECTOR_TYPE_AUTH_SCHEME, Property.NegoexVectorElementCountByOffsetMVS$[Property.NegoexStartOffset + AuthSchemeArrayOffset] = AuthSchemeCount]
+	UINT16 AuthSchemeCount; 
+	Align4 Pad;
+}
+
+struct NegoexAuthScheme
+{
+	GUID(false) AuthScheme;
+}
+
+struct NegoexExtensionVector = FormatString("ExtensionArrayOffset = 0X%X,ExtensionCount = %u",Property.NegoexStartOffset + ExtensionArrayOffset,ExtensionCount)
+{
+	UINT32 ExtensionArrayOffset;
+	[Property.NegoexVectorTypeByOffsetMVS$[Property.NegoexStartOffset + ExtensionArrayOffset] = VECTOR_TYPE_EXTENSION, Property.NegoexVectorElementCountByOffsetMVS$[Property.NegoexStartOffset + ExtensionArrayOffset] = ExtensionCount]
+	UINT16 ExtensionCount; 
+	Align4 Pad;
+}
+
+struct NegoexExtension = FormatString("ExtensionType = %u", ExtensionType)
+{
+	UINT32 ExtensionType;
+	
+	NegoexByteVector ByteVector;
+}
+
+struct NegoexByteVector = FormatString("ByteArrayOffset = 0x%X, ByteArrayLength = %u",Property.NegoexStartOffset + ByteArrayOffset,ByteArrayLength)
+{
+	UINT32 ByteArrayOffset;
+	[Property.NegoexVectorTypeByOffsetMVS$[Property.NegoexStartOffset + ByteArrayOffset] = VECTOR_TYPE_BYTE, Property.NegoexVectorElementCountByOffsetMVS$[Property.NegoexStartOffset + ByteArrayOffset] = ByteArrayLength]
+	UINT32 ByteArrayLength;
+}

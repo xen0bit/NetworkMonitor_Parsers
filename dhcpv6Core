@@ -1,0 +1,925 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Dynamic Host Configuration Protocol for IPv6
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3315, 3319, 3633, 3646, 3898
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/10/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+//[DataTypeByteOrder = BigEndian]
+Protocol DHCPV6 = FormatString("MessageType = %s", DHCPV6MsgTypeTable(Message))
+{
+	UINT8 Message = FormatString("%s, %d(0x%02X)", DHCPV6MsgTypeTable(this), this, this);
+	switch(Message)
+	{
+		case 12:
+		case 13:
+			_struct DHCPV6ReplyMessage
+			{
+				UINT8 hopcount;
+				Ipv6Address LinkAddress;
+				Ipv6Address PeerAddress;
+			};
+		default:
+			UINT24 TransactionID;
+	}
+	while Option[Frameoffset <= FrameLength - 4]
+	{
+		switch( UINT16(FrameData,offset) )
+		{
+			case  1: DHCPV6ClientIDOption ClientID;
+			case  2: DHCPV6ServerIDOption ServerID;
+			case  3: DHCPV6IANAOption IA_NA;
+			case  4: DHCPV6IATAOption IA_TA;
+			case  5: DHCPV6IAAddrOption IAAddress;
+			case  6: DHCPV6OptionRequestOption OptionRequest;
+			case  7: DHCPV6PreferenceOption PreOption;
+			case  8: DHCPV6ElapsedTimeOption ElapsedTime;
+			case  9: DHCPV6RelayMsgOption  RelayMessage;
+			case 11: DHCPV6AuthenticationOption Authentication;
+			case 12: DHCPV6ServerUnicastOption ServerUnicast;
+			case 13: DHCPV6StatusCodeOption StatusCode;
+			case 14: DHCPV6RapidCommitOption RapidCommit;
+			case 17: DHCPV6VendorSpecificInfoOption VendorSpecificInfo;
+			case 18: DHCPV6InterfaceIDOption InterfaceID;
+			case 19: DHCPV6ReconfigureMsgOption ReconfigureMsg;
+			case 20: DHCPV6ReconfigureAcceptOption ReconfigureAccept;
+			case 21: DHCPV6SIPServerDomainOption SIPServerDomain;
+			case 22: DHCPV6SIPServerAddrOption SIPServerAddr;
+			case 23: DHCPV6DNSServersOption DNSServers;
+			case 24: DHCPV6DomainSearchListOption DomainSearchList;
+			case 25: DHCPV6IAPrefixDelegationOption IA_PD;
+			case 26: DHCPV6IAPrefixOption IA_Prefix;
+			case 27: DHCPV6NetworkInformationServerOption NISServer;
+			case 28: DHCPV6NetworkInformationServerV2Option NISV2Server;
+			case 29: DHCPV6NetworkInformationServerDomainNameOption NISDomaiName;
+			case 30: DHCPV6NetworkInformationServerV2DomainNameOption NISV2DomaiName;
+			case 31: DHCPV6SNTPServerListOption SNTPServerList;
+			case 32: DHCPV6InformationRefreshTime RefreshTime;
+			case 33: DHCPV6BCMCSControllerDomainNamelist DomainNamelist; 
+			case 34: DHCPV6BCMCSControllerIPv6addresslist IPv6addresslist; 
+			case 36: DHCPV6OverallFormat OverallFormat;
+			case 37: DHCPV6RelayAgentRemoteID RemoteID;  
+			case 38: DHCPV6RelayAgentSubscriberID SubscriberID; 
+			case 39: DHCPV6ClientFQDN ClientFQDN;
+			case 41: DHCPV6TimeZoneOption TimeZone;
+			case 42: DHCPV6LifeTimeOption LifeTime;
+			default: AsciiString(FrameLength - offset) OptionData;
+		}
+	}
+}
+Table DHCPV6DayFrom2000Table(day)
+{
+	switch
+	{
+		case (day/365 + 1)/4 - (day/365 + 99)/100 + (day/365 + 399)/400 > day%365:
+			CalendarTable(2000 + day/365 -1, 365 + day%365 - (day/365 + 1)/4 + (day/365 + 99)/100 - (day/365 + 399)/400);
+		default:
+			CalendarTable(2000 + day/365, day%365 - (day/365 + 1)/4 + (day/365 + 99)/100 - (day/365 + 399)/400);
+	}
+}
+
+Table DHCPV6DateTimeTable(seconds)
+{
+	switch
+	{
+		default: DHCPV6DayFrom2000Table(seconds/(60*60*24)) + " " + TimeTable(seconds%(60*60*24));
+	}
+}
+
+Table DHCPV6StatusCodeTable(code)
+{
+	switch(code)
+	{
+		case 0: "Success.";
+		case 1: "UnspecFail.";
+		case 2: "NoAddrsAvail.";
+		case 3: "NoBinding.";
+		case 4: "NotOnLink.";
+		case 5: "UseMulticast.";
+		default: FormatString("Undefined code(%d)",code);
+	}
+}
+
+Table DHCPV6MsgTypeTable(Type)
+{
+	switch(Type)
+	{
+		case 1: "SOLICIT";
+		case 2: "ADVERTISE";
+		case 3: "REQUEST";
+		case 4: "CONFIRM";
+		case 5: "RENEW";
+		case 6: "REBIND";
+		case 7: "REPLY";
+		case 8: "RELEASE";
+		case 9: "DECLINE";
+		case 10: "RECONFIGURE";
+		case 11: "INFORMATION-REQUEST";
+		case 12: "RELAY-FORW";
+		case 13: "RELAY-REPL";
+		default: FormatString("Undefined Message Type(%d)",Type);
+	}
+}
+
+Table DHCPV6LinkLayerTypeTable(Type)
+{
+	switch(Type)
+	{
+		case 1: "Source Link-layer address";
+		case 2: "Target Link-layer address";
+		default: FormatString("Undefined type(%d)",Type);
+	}
+}
+
+//# http://www.iana.org/assignments/dhcpv6-parameters
+Table DHCPV6OpCodeTable(code)
+{
+	switch(code)
+	{
+		case  1: FormatString("OPTION_CLIENTID %d(%#x)", code, code);                   //[RFC3315]
+		case  2: FormatString("OPTION_SERVERID %d(%#x)", code, code);                   //[RFC3315]
+		case  3: FormatString("OPTION_IA_NA %d(%#x)", code, code);                      //[RFC3315]
+		case  4: FormatString("OPTION_IA_TA %d(%#x)", code, code);                      //[RFC3315]
+		case  5: FormatString("OPTION_IAADDR %d(%#x)", code, code);                     //[RFC3315]
+		case  6: FormatString("OPTION_ORO %d(%#x)", code, code);                        //[RFC3315]
+		case  7: FormatString("OPTION_PREFERENCE %d(%#x)", code, code);                 //[RFC3315]
+		case  8: FormatString("OPTION_ELAPSED_TIME %d(%#x)", code, code);               //[RFC3315]
+		case  9: FormatString("OPTION_RELAY_MSG %d(%#x)", code, code);                  //[RFC3315]
+		case 10: FormatString("Unassigned %d(%#x)", code, code);                        //
+		case 11: FormatString("OPTION_AUTH %d(%#x)", code, code);                       //[RFC3315]
+		case 12: FormatString("OPTION_UNICAST %d(%#x)", code, code);                    //[RFC3315]
+		case 13: FormatString("OPTION_STATUS_CODE %d(%#x)", code, code);                //[RFC3315]
+		case 14: FormatString("OPTION_RAPID_COMMIT %d(%#x)", code, code);               //[RFC3315]
+		case 15: FormatString("OPTION_USER_CLASS %d(%#x)", code, code);                 //[RFC3315]
+		case 16: FormatString("OPTION_VENDOR_CLASS %d(%#x)", code, code);               //[RFC3315]
+		case 17: FormatString("OPTION_VENDOR_OPTS %d(%#x)", code, code);                //[RFC3315]
+		case 18: FormatString("OPTION_INTERFACE_ID %d(%#x)", code, code);               //[RFC3315]
+		case 19: FormatString("OPTION_RECONF_MSG %d(%#x)", code, code);                 //[RFC3315]
+		case 20: FormatString("OPTION_RECONF_ACCEPT %d(%#x)", code, code);              //[RFC3315]
+		case 21: FormatString("SIP Servers Domain Name List %d(%#x)", code, code);      //[RFC3319]
+		case 22: FormatString("SIP Servers IPv6 Address List %d(%#x)", code, code);     //[RFC3319]
+		case 23: FormatString("DNS Recursive Name Server Option %d(%#x)", code, code);  //[RFC3646]
+		case 24: FormatString("Domain Search List option %d(%#x)", code, code);         //[RFC3646]
+		case 25: FormatString("OPTION_IA_PD %d(%#x)", code, code);                      //[RFC3633]
+		case 26: FormatString("OPTION_IAPREFIX %d(%#x)", code, code);                   //[RFC3633]
+		case 27: FormatString("OPTION_NIS_SERVERS %d(%#x)", code, code);                //[RFC3898]
+		case 28: FormatString("OPTION_NISP_SERVERS %d(%#x)", code, code);               //[RFC3898]
+		case 29: FormatString("OPTION_NIS_DOMAIN_NAME %d(%#x)", code, code);            //[RFC3898]
+		case 30: FormatString("OPTION_NISP_DOMAIN_NAME %d(%#x)", code, code);           //[RFC3898]
+		case 31: FormatString("OPTION_SNTP_SERVERS %d(%#x)", code, code);               //[RFC4075]
+		case 32: FormatString("OPTION_INFORMATION_REFRESH_TIME %d(%#x)", code, code);   //[RFC4242]
+		case 33: FormatString("OPTION_BCMCS_SERVER_D %d(%#x)", code, code);             //[RFC4280]
+		case 34: FormatString("OPTION_BCMCS_SERVER_A %d(%#x)", code, code);             //[RFC4280]
+		case 36: FormatString("OPTION_GEOCONF_CIVIC %d(%#x)", code, code);              //[RFC4776]
+		case 37: FormatString("OPTION_REMOTE_ID %d(%#x)", code, code);                  //[RFC4649]
+		case 38: FormatString("Relay_Agent_Subscriber_ID %d(%#x)", code, code);         //[RFC4580]
+		case 39: FormatString("Fully_Qualified_Domain_Name %d(%#x)", code, code);       //[RFC4704]
+		default: FormatString("Unknown Option %d(%#x)", code, code);
+	}
+}
+
+Table DHCPV6DUIDTypeTable( type)
+{
+	switch( type )
+	{
+		case 1: "link-layer address plus time";
+		case 2: "assigned by vendor based on Enterprise number";
+		case 3: "link-layer address";
+		case 4: "link-layer address (old)";
+		default: FormatString("%d",type);
+	}
+}
+
+Table DHCPV6WhatTable( type)
+{
+	switch( type )
+	{
+		case 0: "the location of the DHCP server";
+		case 1: "the location of the network element believed to be closest to the client ";
+		case 2: "the location of the client ";
+		default: FormatString("Unknown value: %d",type);
+	}
+}
+
+Table DHCPV6CAtypeTable( type)
+{
+	switch( type )
+	{
+		case 0: "language";
+		case 1: "national subdivisions (state, canton, region, province, prefecture) ";
+		case 2: "county, parish, gun (JP), district (IN)";
+		case 3: "city, township, shi (JP)";
+		case 4: "city division, borough, city district, ward, chou (JP)";
+		case 5: "neighborhood, block";
+		case 6: "group of streets below the neighborhood level";
+		case 16: "leading street direction";
+		case 17: "trailing street suffix";
+		case 18: "street suffix or type";
+		case 19: "house number";
+		case 20: "house number suffix";
+		case 21: "landmark or vanity address";
+		case 22: "additional location information";
+		case 23: "name (residence and office occupant)";
+		case 24: "postal/zip code";
+		case 25: "building (structure)";
+		case 26: "unit (apartment, suite)";
+		case 27: "floor";
+		case 28: "room";
+		case 29: "type of place";
+		case 30: "postal community name";
+		case 31: "post office box (P.O.Box)";
+		case 32: "additional code";
+		case 33: "seat (desk, cubicle,workstation)";
+		case 34: "primary road name";
+		case 35: "road section";
+		case 36: "branch road name";
+		case 37: "sub-branch road name";
+		case 38: "street name pre-modifier";
+		case 39: "street name post-modifier";
+		case 128: "script";
+		case 255: "Reserved";
+		default: FormatString("Unknown value: %d",type);
+	}
+}
+
+struct DHCPV6DomainName = DomainName
+{
+	UINT8    NameLength;
+	AsciiStringTerm("\0",true) DomainName;
+}
+
+//rfc 3315
+struct DHCPV6ClientIDOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 1
+	[DUIDEndOffset = FrameOffset+ this + 2]
+	UINT16    OptionLen;
+	switch( UINT16(FrameData,offset) )
+	{
+		case  1: DHCPV6DUIDLLT DUIDLLT;
+		case  2: DHCPV6DUIDEN  DUIDEN;
+		case  3: DHCPV6DUIDLL  DUIDLL;
+		case  4: DHCPV6DUIDLL  DUIDLLOld;
+		default: 
+			switch
+			{
+				case FrameLength > FrameOffset:
+						AsciiString(OptionLen) DUID;
+			}
+	}
+}
+
+/* rfc 2464
+	 10 bits            54 bits                  64 bits
+	 +----------+-----------------------+----------------------------+
+	 |1111111010|         (zeros)       |    Interface Identifier    |
+	 +----------+-----------------------+----------------------------+
+*/
+
+//DUID Based on Link-layer Address Plus Time [DUID-LLT]
+//rfc 3315
+struct DHCPV6DUIDLLT = Type.ToString
+{
+	UINT16   Type = DHCPV6DUIDTypeTable(this);//Type = 1
+	[HardWareType]
+	UINT16   HardWareType = HardwareTypeTable(this);
+	UINT32   Time = DHCPV6DateTimeTable(this);
+	switch
+	{
+		case Property.DUIDEndOffset > offset:DHCPV6LinkLayerAddr linkAddr;
+	}
+}
+
+UnsignedNumber DHCPV6LinkLayerAddess ( Length )
+{
+	Size = Length;
+	DisplayFormat = FormatString( "(%X Bytes)", Length );
+}
+
+struct DHCPV6LinkLayerAddr = Property.DHCPV6LinkLayerAddress
+{
+/*
+	UINT8    Type = DHCPV6LinkLayerTypeTable(this);
+	UINT8    Length;
+	MacAddress EthernetAddr;
+*/
+/*    [DHCPV6LinkLayerAddress = FormatString("0x%02X",UINT8( Framedata, Offset )) , DUIDOffset = FrameOffset+1 ]
+	while condition[Property.DUIDOffset < FrameLength && Property.DUIDOffset < Property.DUIDEndOffset]
+	{
+		[DHCPV6LinkLayerAddress = Property.DHCPV6LinkLayerAddress + FormatString(":%02X",UINT8( Framedata, Property.DUIDOffset ))]
+		[DUIDOffset = Property.DUIDOffset + 1]struct{};
+	};
+	AsciiString(Property.DUIDEndOffset - offset) Address = Property.DHCPV6LinkLayerAddress;
+*/
+	switch
+	{
+		case FrameOffset< FrameLength && FrameOffset< Property.DUIDEndOffset:
+			switch
+			{
+				case Property.DUIDEndOffset - Offset == 6 && HardWareType == 1:
+					[DHCPV6LinkLayerAddress = AddressMac.ToString] 
+					MacAddress AddressMac;
+				default: 
+					[DHCPV6LinkLayerAddress = Address.ToString] 
+					DHCPV6LinkLayerAddess(Property.DUIDEndOffset - Offset) Address;
+			}
+			//Integer(Property.DUIDEndOffset - Offset) Address;
+	}
+}
+
+//rfc 3315
+struct DHCPV6ServerIDOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 2
+	[DUIDEndOffset = FrameOffset+ this + 2]
+	UINT16    OptionLen;
+	switch( UINT16(FrameData,offset) )
+	{
+		case 1: DHCPV6DUIDLLT DUIDLLT;
+		case 2: DHCPV6DUIDEN  DUIDEN;
+		case 3: DHCPV6DUIDLL  DUIDLL;
+		case 4: DHCPV6DUIDLL  DUIDLLOld;
+		default: 
+			switch
+			{
+				case FrameLength > FrameOffset:
+					_struct UnhandledCode
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "DHCPv6", "DHCPV6ServerIDOption Code Error") DHCPV6ServerIDOptionCodeError;
+						BLOB( FrameLength - FrameOffset ) UnknownData;
+					}
+			}
+	}
+}
+
+//DUID Assigned by Vendor Based on Enterprise Number [DUID-EN]
+//rfc 3315
+struct DHCPV6DUIDEN
+{
+	UINT16   Type = DHCPV6DUIDTypeTable(this);//Type = 2
+	UINT32   EnterpriseNum;
+	AsciiString(Property.DUIDEndOffset - offset) Identifier = FormatString("%d bytes INT32",Property.DUIDEndOffset - offset);
+	//#?
+}
+
+//DUID Based on Link-layer Address [DUID-LL]
+//rfc 3315
+struct DHCPV6DUIDLL
+{
+	UINT16    Type = DHCPV6DUIDTypeTable(this);//Type = 3
+	UINT16    HardWareType;
+	switch
+	{
+		case Property.DUIDEndOffset > offset:DHCPV6LinkLayerAddr linkAddr;
+	}
+}
+
+//rfc 3315
+struct DHCPV6IANAOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 3
+	UINT16 OptionLen;
+	[LoopCondition = OptionLen+Offset] 
+	UINT32 IAID;
+	UINT32 T1 ;
+	UINT32 T2;
+    
+//....please take notice of this option
+/*  rfc3315 , page 78
+    An IA Address option may appear only in an IA_NA option or an IA_TA
+    option. More than one IA Address Option can appear in an IA_NA
+    option or an IA_TA option.
+*/
+    While Condition [Offset < LoopCondition ]
+	{
+		switch(UINT16(FrameData,offset))
+		{
+			case 5: DHCPV6IAAddrOption IAAddress;
+			case 13: DHCPV6StatusCodeOption StatusCode;
+			default: AsciiString(LoopCondition-Offset) IANAOptions;
+		}
+	}
+}
+
+//rfc 3315
+struct DHCPV6IATAOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 4
+	UINT16 OptionLen;
+    [LoopCondition = OptionLen+Offset]
+	UINT32 IAID;
+//....please take notice of this option
+/*  rfc3315 , page 78
+    An IA Address option may appear only in an IA_NA option or an IA_TA
+    option. More than one IA Address Option can appear in an IA_NA
+    option or an IA_TA option.
+*/
+	 while Condition[Offset < LoopCondition]
+	{
+		switch(UINT16(FrameData,offset))
+		{
+			case 5: DHCPV6IAAddrOption IAAddress;
+			case 13: DHCPV6StatusCodeOption StatusCode;
+			default: AsciiString(LoopCondition-Offset) IANAOptions;
+		}
+	}
+}
+
+// rfc 3315
+struct DHCPV6IAAddrOption = FormatString("Ipv6Address:(%s)",Ipv6Addr) 
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 5
+	UINT16 OptionLen;
+    [LoopCondition = OptionLen+Offset]
+	Ipv6Address Ipv6Addr;
+	UINT32 PreferredLifeTime;
+	UINT32 ValidLifeTime;
+//....please take notice of this option
+/*  rfc3315 , page 78
+	The status of any operations involving this IA Address is indicated
+	in a Status Code option in the IAaddr-options field
+*/
+	 while Condition[Offset < LoopCondition]
+	{
+		switch(UINT16(FrameData,offset))
+		{
+			case 13: DHCPV6StatusCodeOption StatusCode;
+			default: AsciiString(LoopCondition-Offset) IAddrOptions;
+		}
+	}
+}
+
+//rfc 3315
+struct DHCPV6OptionRequestOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 6
+	[DHCPV6OptionCount = OptionLen/2]
+	UINT16 OptionLen;
+	while Fields[DHCPV6OptionCount > 0]
+	{
+		[DHCPV6OptionCount = DHCPV6OptionCount - 1]
+		UINT16 ReqOptCode = DHCPV6OpCodeTable(this);
+	}
+}
+
+// rfc 3315
+struct DHCPV6PreferenceOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 7
+	UINT16 OptionLen;  // OptionLen = 1
+	UINT8  PrefValue;
+}
+
+// rfc 3315
+struct DHCPV6ElapsedTimeOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 8
+	UINT16 OptionLen;  // OptionLen = 2
+	UINT16 ElapsedTime = FormatString("%d seconds",this/100);
+}
+
+// rfc 3315
+struct DHCPV6RelayMsgOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 9
+	[property.OptionLength]
+	UINT16 OptionLen;
+	//AsciiString(OptionLen) RelayMsg;
+	[Local.RelayLoop = FrameOffset + OptionLen]
+	while Condition[Property.OptionLength >= 4]
+	{
+		[property.OptionLength = 0]
+		UINT8    Message = DHCPV6MsgTypeTable(this);
+		switch(Message)
+		{
+			case 12:
+			case 13:
+				_struct DHCPV6ReplyMessage
+				{
+					UINT8 hopcount;
+					Ipv6Address LinkAddress;
+					Ipv6Address PeerAddress;
+				};
+			default:UINT24 TransactionID;
+		}
+    	while option [FrameOffset < Local.RelayLoop ]
+ 		{
+			switch( UINT16(FrameData,FrameOffset) )
+			{
+				case  1: DHCPV6ClientIDOption ClientID;
+				case  2: DHCPV6ServerIDOption ServerID;
+				case  3: DHCPV6IANAOption IA_NA;
+				case  4: DHCPV6IATAOption IA_TA;
+				case  5: DHCPV6IAAddrOption IAAddress;
+				case  6: DHCPV6OptionRequestOption OptionRequest;
+				case  7: DHCPV6PreferenceOption PreOption;
+				case  8: DHCPV6ElapsedTimeOption ElapsedTime;
+				case  9: DHCPV6RelayMsgOption  RelayMessage;
+				case 11: DHCPV6AuthenticationOption Authentication;
+				case 12: DHCPV6ServerUnicastOption ServerUnicast;
+				case 13: DHCPV6StatusCodeOption StatusCode;
+				case 14: DHCPV6RapidCommitOption RapidCommit;
+				case 15: DHCPV6UserClassOption UserClass;
+				case 16: DHCPV6VendorClassOption VendorClass;
+				case 17: DHCPV6VendorSpecificInfoOption VendorSpecificInfo;
+				case 18: DHCPV6InterfaceIDOption InterfaceID;
+				case 19: DHCPV6ReconfigureMsgOption ReconfigureMsg;
+				case 20: DHCPV6ReconfigureAcceptOption ReconfigureAccept;
+				case 21: DHCPV6SIPServerDomainOption SIPServerDomain;
+				case 22: DHCPV6SIPServerAddrOption SIPServerAddr;
+				case 23: DHCPV6DNSServersOption DNSServers;
+				case 24: DHCPV6DomainSearchListOption DomainSearchList;
+				case 25: DHCPV6IAPrefixDelegationOption IA_PD;
+				case 26: DHCPV6IAPrefixOption IA_Prefix;
+				case 27: DHCPV6NetworkInformationServerOption NISServer;
+				case 28: DHCPV6NetworkInformationServerV2Option NISV2Server;
+				case 29: DHCPV6NetworkInformationServerDomainNameOption NISDomaiName;
+				case 30: DHCPV6NetworkInformationServerV2DomainNameOption NISV2DomaiName;
+				case 31: DHCPV6SNTPServerListOption SNTPServerList;
+				case 39: DHCPV6ClientFQDNOption FullyQualifiedDomainName;
+				case 41: DHCPV6TimeZoneOption TimeZone;
+				case 42: DHCPV6LifeTimeOption LifeTime;
+				default: AsciiString(FrameLength - offset) OptionData;
+			}
+		}
+	}
+}
+
+//rfc 3315
+struct DHCPV6AuthenticationOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 11
+	UINT16 OptionLen;
+	UINT8  Protocol;
+	UINT8  Algorithm;
+	UINT8  RDM;
+	INT64  ReplayDetection;
+	AsciiString(OptionLen-11) AuthInfo;
+}
+
+// rfc 3315
+struct DHCPV6ServerUnicastOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 12
+	UINT16 OptionLen;
+	Ipv6Address ServerAddr;
+}
+
+// rfc 3315
+struct DHCPV6StatusCodeOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 13
+	UINT16 OptionLen;
+	UINT16 StatusCode = DHCPV6StatusCodeTable(this);
+	AsciiString(OptionLen - 2) StatusMsg;
+}
+
+// rfc 3315
+struct DHCPV6RapidCommitOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 14
+	UINT16 OptionLen;
+}
+
+//rfc  3315
+struct DHCPV6UserClassOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 15
+	[UserClassEndOffset = FrameOffset+ 2 + this]
+	UINT16 OptionLen;
+	while Conditions[offset < Property.UserClassEndOffset]
+	{
+		switch
+		{
+			case FrameOffset+ UINT16(FrameData,offset) <= Property.UserClassEndOffset:
+				struct UserData
+				{
+					UINT16 UserClassLen;
+					AsciiString(UserClassLen) OpaqueData = FormatString("%d bytes data",UserClassLen);
+				};
+			default:
+				AsciiString(Property.UserClassEndOffset - offset) VendorClassData = FormatString("%d bytes data",Property.UserClassEndOffset - offset);
+		}
+	}
+}
+
+//rfc 3315
+struct DHCPV6VendorClassOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 16
+	[VendorClassEndOffset = FrameOffset+ 2 + this]
+	UINT16 OptionLen;
+	UINT32 EnterpriseNum;
+	while Conditions[offset < Property.VendorClassEndOffset]
+	{
+		switch
+		{
+			case FrameOffset+ UINT16(FrameData,offset) <= Property.VendorClassEndOffset:
+				struct VendorData
+				{
+					UINT16 VendorClassLen;
+					AsciiString(VendorClassLen) OpaqueData = FormatString("%d bytes data",VendorClassLen);
+				};
+			default:
+				AsciiString(Property.VendorClassEndOffset - offset) VendorClassData = FormatString("%d bytes data",Property.VendorClassEndOffset - offset);
+		}
+	}
+}
+
+// rfc 3315
+struct DHCPV6VendorSpecificInfoOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 17
+	[VendorSpEndOffset = FrameOffset+ 2 + this]
+	UINT16 OptionLen;
+	UINT32 EnterpriseNum;
+	while Conditions[offset < Property.VendorSpEndOffset]
+	{
+		switch
+		{
+			case FrameOffset+ 4 + UINT16(FrameData,offset+2) < Property.VendorSpEndOffset:
+				struct VendorSpecificInfoData
+				{
+					UINT16 OptCode;
+					UINT16 OptLen;
+					AsciiString(OptLen) OptData = FormatString("%d bytes data",OptLen);
+				};
+			default:
+				AsciiString(Property.VendorSpEndOffset - offset) VendorSpecificData = FormatString("%d bytes data",Property.VendorSpEndOffset - offset);
+		}
+
+	}
+}
+
+// rfc 3315
+struct DHCPV6InterfaceIDOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 18
+	UINT16 OptionLen;
+	AsciiString(OptionLen) InterfaceID;
+}
+
+// rfc 3315
+struct DHCPV6ReconfigureMsgOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 19
+	UINT16 OptionLen;  // OptionLen = 1
+	UINT8 MsgType = ( this == 5 ) ? "Renew message" :( ( this == 11) ? "Information-request message":this.ToString);    // 5 for Renew message, 11 for Information-request message
+}
+
+// rfc 3315
+struct DHCPV6ReconfigureAcceptOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 20
+	UINT16 OptionLen;
+}
+// rfc 3319
+struct DHCPV6SIPServerDomainOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 21
+	[SFrameLength = FrameOffset+ this + 2]
+	UINT16 OptionLen;
+	while Condition[offset < Property.SFrameLength]
+	{
+		DHCPV6DomainName DomainName;
+	}
+}
+
+// rfc 3319
+struct DHCPV6SIPServerAddrOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 22
+	UINT16 OptionLen;
+	Ipv6Address SIPServerAddr[OptionLen/16];
+}
+
+// rfc 3646
+struct DHCPV6DNSServersOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 23
+	UINT16 OptionLen;
+	Ipv6Address DNSServerAddr[OptionLen/16];
+}
+
+// rfc 3646
+struct DHCPV6DomainSearchListOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 24
+	[SearchEndOffset = FrameOffset+ this + 2]
+	UINT16 OptionLen;
+	while Condition[offset < Property.SearchEndOffset]
+	{
+		DHCPV6DomainName DomainName;
+	}
+}
+
+// rfc 3633
+struct DHCPV6IAPrefixDelegationOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 25
+	UINT16 OptionLen;
+	UINT32 IAID;
+	UINT32 T1;
+	UINT32 T2;
+}
+
+// rfc 3633
+struct DHCPV6IAPrefixOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 26
+	UINT16 OptionLen;
+	UINT32 PreferredLifeTime;
+	UINT32 ValidLifeTime;
+	UINT8  PrefixLen;
+	Ipv6Address Ipv6Prefix;
+}
+
+// rfc 3898
+struct DHCPV6NetworkInformationServerOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 27
+	UINT16 OptionLen;
+	Ipv6Address NISServerAddr[OptionLen/16];
+}
+
+// rfc 3898
+struct DHCPV6NetworkInformationServerV2Option
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 28
+	UINT16 OptionLen;
+	Ipv6Address NISPServerAddr[OptionLen/16];
+}
+
+// rfc 3898
+struct DHCPV6NetworkInformationServerDomainNameOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 29
+	[NISEndOffset = FrameOffset+ this + 2]
+	UINT16 OptionLen;
+	while Condition[offset < Property.NISEndOffset]
+	{
+		DHCPV6DomainName DomainName;
+	}
+}
+
+// rfc 3898
+struct DHCPV6NetworkInformationServerV2DomainNameOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 30
+	[NISPEndOffset = FrameOffset+ this + 2]
+	UINT16 OptionLen;
+	while Condition[offset < Property.NISPEndOffset]
+	{
+		DHCPV6DomainName DomainName;
+	}
+}
+
+// rfc 4075
+struct DHCPV6SNTPServerListOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this);// OptionCode = 31
+	UINT16 OptionLen;
+	Ipv6Address SNTPServerAddr[OptionLen/16];
+}
+
+
+// rfc 4242
+struct DHCPV6InformationRefreshTime
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 32
+	UINT16 OptionLen;
+	UINT32 InformationRefreshTime;
+}
+
+// rfc 4280
+struct DHCPV6BCMCSControllerDomainNamelist
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 33
+	UINT16 OptionLen;
+	[local.Lencount = 0]
+	while namelist[local.Lencount < OptionLen]
+	{
+			[local.Lencount = local.Lencount + UINT8( Framedata, Offset )+ 1]
+			UINT8 DomainNameLen;
+			Asciistring(DomainNameLen) DomainNamelist;
+	}
+}
+
+struct DHCPV6BCMCSControllerIPv6addresslist
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 34
+	UINT16 OptionLen;
+	[local.Lencount = 0]
+	[IPv6addresscount = OptionLen/16]
+	while namelist[local.Lencount < IPv6addresscount]
+	{
+		[local.Lencount = local.Lencount + 1]
+		IPv6Address BCMCSControllerIPv6address;
+	}
+}
+
+// rfc 4776
+struct DHCPV6CivicAddresseLement
+{
+	UINT8 CAtype = DHCPV6CAtypeTable(this); 
+	UINT8 CAlength ;
+	AsciiString(CAlength) CAvalue;
+}
+
+struct DHCPV6OverallFormat = FormatString("countrycode:(%s) civicaddresselements:(%s)",countrycode,civicaddresselements) 
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 36
+	UINT16 OptionLen;
+	UINT8 What = DHCPV6WhatTable(this);
+	AsciiString(2) countrycode;
+	DHCPV6CivicAddresseLement civicaddresselements;
+}
+
+// rfc 4649
+struct DHCPV6RelayAgentRemoteID = FormatString("RemoteId:(%s)",RemoteId)
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 37
+	UINT16 OptionLen;
+	UINT32 EnterpriseNumber;
+	Asciistring(OptionLen-4) RemoteId;
+}
+
+// rfc 4580
+struct DHCPV6RelayAgentSubscriberID = FormatString("SubscriberID:(%s)",SubscriberID) 
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 38
+	UINT16 OptionLen;
+	Asciistring(OptionLen) SubscriberID;
+}
+
+// rfc 4704
+struct DHCPV6ClientFQDN = FormatString("DomainName:(%s)",DomainName)
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); //OptionCode = 39
+	UINT16 OptionLen;
+	UINT8 Flag
+	{
+		UINT8 MBZ:5 = FormatString("(%s) %d",this.ToBitString,this);
+		UINT8 N:1 = FormatString("  (%s) %s",this.ToBitString,
+								this ? "DHCPServer SHOULD NOT perform the any DNS updates"
+									 :"DHCPServer SHOULD perform updates (the PTR RR and possibly the AAAA RR based on the 'S' bit)" );	
+		UINT8 O:1 = FormatString("  (%s) %s",this.ToBitString,
+								this ? "the server has overridden the client's preference for the 'S' bit"
+									 : "the server has not overridden the client's preference for the 'S' bit");
+		UINT8 S:1 = FormatString("  (%s) %s",this.ToBitString,
+								this ? "SHOULD perform the AAAA RR (FQDN to address) DNS updates"
+									 : "SHOULD NOT perform the AAAA RR (FQDN to address) DNS updates");
+	};
+
+	Asciistring(OptionLen-1) DomainName;
+}
+
+struct DHCPV6TimeZoneOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 41
+	UINT16 OptionLen;
+	AsciiString(OptionLen) TimeData;
+}
+
+
+struct DHCPV6LifeTimeOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 42
+	UINT16 OptionLen; // OptionLen = 4
+	UINT32 LifeTime;
+}
+
+//#? I have not understood this struct, this will be implemented in future
+struct DHCPV6ClientFQDNOption
+{
+	UINT16 OptionCode = DHCPV6OpCodeTable(this); // OptionCode = 39
+	UINT16 OptionLength; 
+	UINT8 Flag
+	{
+		UINT8 MBZ:5 = FormatString("(%s) %d",this.ToBitString,this);
+		UINT8 N:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "DHCPServer SHOULD NOT perform the any DNS updates"
+									 :"DHCPServer SHOULD perform updates (the PTR RR and possibly the AAAA RR based on the 'S' bit)" );	
+		UINT8 O:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "the server has overridden the client's preference for the 'S' bit"
+									 : "the server has not overridden the client's preference for the 'S' bit");
+		UINT8 S:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "SHOULD perform the AAAA RR (FQDN to address) DNS updates"
+									 : "SHOULD NOT perform the AAAA RR (FQDN to address) DNS updates");
+	};
+	switch
+	{
+		case OptionLength > 1:
+			AsciiString(OptionLength - 1) DomainName;
+	}
+}
+
+

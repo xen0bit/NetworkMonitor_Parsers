@@ -1,0 +1,142 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IPv4 Over IEEE 1394 Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2734
+//#                          IEEE Std 802.1D - 2004
+//#  Microsoft References:   [MS-V4OF]: IPv4 Over IEEE 1394 Protocol Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+Protocol ARP1394 = FormatString("Request, %s asks for %s", SenderIP.toString, TargetIP.toString)
+{
+	UINT16 HardwareType;
+	UINT16 ProtocolType;
+	UINT8 HardwareAddressLength;
+	UINT8 IPAddressLength;
+	UINT16 Opcode;
+	ArrayAsHex(8) SenderUniqueID;
+	UINT8 SenderMaxRecRate;
+	UINT8 SSPD;
+	UINT16 SenderUnicastFIFIhi;
+	UINT32 SenderUnicastFIFIlo;
+	[Pair = Address, 
+		SourceIPv4Alias = Global.AliasTable$[this],
+		SourceName = Global.NameTable$[this],
+		Source = SourceIPv4Alias ? SourceIPv4Alias :
+					(SourceName ? SourceName : SenderIP.ToDataTypeString),
+		SourceNetworkAddress
+	]
+	IPv4Address SenderIP;
+	[Pair = Address, 
+		DestinationIPv4Alias = Global.AliasTable$[this],
+		DestinationName = Global.NameTable$[this],
+		Destination = DestinationIPv4Alias ? DestinationIPv4Alias : 
+							(DestinationName ? DestinationName : TargetIP.ToDataTypeString), 
+		DestinationNetworkAddress, 
+		BuildConversation(SenderIP < TargetIP ?
+			MakeByteArray(SenderIP,TargetIP) :
+			MakeByteArray(TargetIP,SenderIP)),
+			Post.Conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d", SourceName ? SourceName : SenderIP.ToDataTypeString,
+																DestinationName ? DestinationName : TargetIP.ToDataTypeString,ConvID)
+	]
+	IPv4Address TargetIP;
+}
+
+//[ Register(Frame.ATM, 5) ]
+Protocol IP1394 = FormatString("Ether_Type = %s, VCI = %d, NodeAddress = %d", Ether_Type.toString, VCI, IfReserved)
+{
+	[Pair = Address, Destination = FormatString("[%s]", this.ToString), DestinationHardwareAddress, DestinationMacAlias = Global.AliasTable$[this]]
+	MACAddress DestinationAddress;
+	[Pair = Address, Source = FormatString("[%s]", this.ToString), SourceHardwareAddress, SourceMACAlias = Global.AliasTable$[this]]
+	MACAddress SourceAddress;
+	UINT64 VCI;
+	UINT16 IfReserved
+	{
+		UINT16 Fragment : 2 = FormatString( "(%s)%s",this.toBitString,FragmengTable(this));
+		UINT16 Reserved : 14 = FormatString("(%s)Reserved",this.toBitString);
+	};
+	UINT16 Ether_Type = EtherTypeTable(this);
+
+	Switch(Ether_Type)
+	{
+	case 0x806:
+		ARP1394 Arp1394;
+	case 0x800:
+		IPv4 IPv4;
+	case 0x8861:
+		MCAP Mcap;
+	case 0x0777:
+		STP Stp;
+	}
+}
+
+Table EtherTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0806: "ARP1394";
+		case 0x0800: "IPv4";
+		case 0x8861: "MCAP";
+		case 0x0777: "STP";
+		default: "Unknown Type";
+	}
+}
+
+Table FragmengTable(value)
+{
+	switch(value)
+	{
+		case 0: "UnFragmented";
+		case 1: "First Fragment";
+		case 2: "Last Fragment";
+		case 3: "Interior Fragment";
+		default: "Unknown Value";
+	}
+}
+
+Protocol MCAP = FormatString("ProtocolName:MCAP, ProtocolLength: %d, OperationCode: %s",Length,OPcode.toString)
+{
+	UINT16 Length;
+	UINT8 reserved;
+	UINT8 OPcode = FormatString("%s",this ? "Solicit" : "Advertise");
+	struct MSGData
+	{
+		UINT8 DataLength;
+		UINT8 Type;
+		UINT16 Reserved;
+		UINT8 Expiration;
+		UINT8 Channal;
+		UINT8 Speed;
+		UINT8 ReservedOctet;
+		UINT32 BandWidth;
+		IPv4Address IPv4Address[(DataLength - 12)/4];
+	}
+}
+
+Protocol STP = FormatString("ProtocolID:%s,ProtocolVersion:%s",PotocolID.toString,ProtocolVersion.toString)
+{
+	UINT16 PotocolID;
+	UINT8 ProtocolVersion;
+	UINT8 BPDUType;
+	UINT8 Flags
+	{
+		UINT8 Acknowledgment : 1 = FormatString("(%s)%s",this.toBitString,this?"Topology Change Acknowledgment":"");
+		UINT8 ReservedBit : 6 = FormatString("   (%s)Reserved",this.toBitString);
+		UINT8 Change : 1 = FormatString("        (%s)%s",this.toBitString,"Topology Change");
+	};
+	UINT64 RootIdentifier;
+	UINT32 RootPath;
+	UINT64 BridgeIdentifier;
+	UINT16 PortID;
+	UINT16 MessageTimeValue;
+	UINT16 MaxTimeValue;
+	UINT16 HelloTimeValue;
+	UINT16 DelayTimeValue;
+}

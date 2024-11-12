@@ -1,0 +1,278 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Extensible Authentication Protocol over LAN
+//#
+//#  Details:                
+//#
+//#  Public References:      http://standards.ieee.org/getieee802/download/802.1X-2001.pdf
+//#                          http://standards.ieee.org/getieee802/download/802.11i-2004.pdf
+//#                          http://www.dmtf.org/standards/asf/ for EAPOL-Encapsulated-ASF-Alert
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol EAPOL = FormatString("%s %s, Length = %d",
+							  EAPOLTypeTable(Type),
+							  Property.EAPOLSummary ? Property.EAPOLSummary
+							  						: "", BodyLength)
+{
+	UINT8  Version;
+	UINT8  Type = FormatString("%s, %d(0x%02X)", EAPOLTypeTable(this), this, this);
+	UINT16 BodyLength = FormatString("%d bytes",this);
+	switch(Type)
+	{
+		case 0x00:
+			EAP Eap;
+		case 0x03:
+			switch(UINT8( Framedata, Offset ))
+			{
+				case 0xFE:
+				case 0x02:
+					struct RSNWPAKeyDescriptor
+					{
+
+						UINT8 DescriptorType = FormatString("%s, %d(0x%02X)",EAPOLDescriptorTypeTable(this), this, this);
+						//# 802.11i - 2004 page 78
+						[EAPOLRSNWPAKeyDescriptorKeyInfo = UINT16(FrameData, FrameOffset)]
+						UINT16 KeyInfo
+						{
+							UINT16 Reserved1:3 = FormatString("(%s)",this.ToBitString);
+							UINT16 KeyData:1= FormatString("  (%s) %s",this.ToBitString,this?"Key data encrypted"
+												   :"Key data not encrypted");
+							UINT16 Request:1=  FormatString("  (%s) %s",this.ToBitString,this?"STA Request"
+												   :"Not a STA Request");
+							UINT16 Error:1= FormatString("    (%s) %s",this.ToBitString,this?"Error":"No error");
+							UINT16 Secure:1= FormatString("   (%s) %s",this.ToBitString,this?"Connection Secure"
+												   :"Connection Insecure");
+							UINT16 KeyMIC:1= FormatString("   (%s) %s",this.ToBitString,this?"Message is signed"
+												   :"Message is not signed");
+							UINT16 KeyAck:1= FormatString("   (%s) %s",this.ToBitString,this?"Ack Required"
+												   :"Ack not required");
+							UINT16 Install:1= FormatString("  (%s) %s",this.ToBitString,EAPOLKeyInfoInstallTable((EAPOLRSNWPAKeyDescriptorKeyInfo & 0x08) >> 3, this));
+							UINT16 Reserved:2 = FormatString(" (%s)",this.ToBitString);
+							UINT16 KeyType:1= FormatString("  (%s) %s",this.ToBitString,this?"Pairwise key"
+												   :"Group/STA Key");
+							UINT16 Version:3= FormatString("  (%s) %s",this.ToBitString,EAPOLKeyInfoVersionTable(this));
+						};
+						UINT16      KeyLength= FormatString("%d bytes",this);
+						Blob(8)    ReplayCounter = FormatString("%X", this);
+						Blob(32)   KeyNonce = FormatString("%X", this);
+						Blob(16)   KeyIV = FormatString("%X", this);
+						//# 802.11i-2004, page 81, Table 20gKey RSC field
+						Blob(8)   KeyRSC = FormatString("0x%I64X", UINT64(this, 0))
+						{
+							UINT8 KeyRSC0;
+							UINT8 KeyRSC1;
+							UINT8 KeyRSC2;
+							UINT8 KeyRSC3;
+							UINT8 KeyRSC4;
+							UINT8 KeyRSC5;
+							UINT8 KeyRSC6;
+							UINT8 KeyRSC7;
+						};
+						Blob(8)    KeyID = FormatString("%X", this);
+						Blob(16)   KeyMIC = FormatString("%X", this);
+						[EAPOLSummary = EAPOLKeyInfoSummaryTable(KeyInfo, this)]
+						UINT16      KeyDataLength;
+						switch
+						{
+							case KeyInfo.KeyData:
+								BLOB(KeyDataLength) EncryptedKeyData;
+							case KeyDataLength > 0:
+								//# 802.11i-2004, page 81, Figure 43wKDE format
+								//#? Not implemented KDE for other OUIs
+								struct KeyData = EAPOLKDETypeTable(OUI, KeyDataType)
+								{
+									UINT8 Type;
+									UINT8 Length;
+									UINT24 OUI;
+									[EAPOLSummary = EAPOLSTAKeyInfoSummaryTable(KeyInfo.KeyType, OUI, KeyDataType, EAPOLSummary)]
+									UINT8 KeyDataType = EAPOLKDETypeTable(OUI, this);
+									switch
+									{
+										case OUI == 0x000FAC && KeyDataType == 1:
+											//# 802.11i-2004, page 82, Figure 43xGT KDE format
+											struct GTKKDE
+											{
+												UINT8 KeyID
+												{
+													UINT8 Reserved:5 = FormatString("(%s)",this.ToBitString);
+													UINT8 Tx:1 = FormatString("      (%s) %s",this.ToBitString,this ? "IEEE 802.1X component shall configure the key from this KDE into its IEEE 802.11 STA for both transmission and reception"
+																	  : "IEEE 802.1X component shall configure the key from this KDE into its IEEE 802.11 STA for both reception only");
+													UINT8 KeyID:2 = FormatString("   (%s) %d",this.ToBitString,this);
+												};
+												UINT8 Reserved;
+												Blob(Length - 6) GTK = FormatString("%X", this);
+											};
+										case OUI == 0x000FAC && KeyDataType == 2:
+											//# 802.11i-2004, page 82, Figure 43ySTAKey KDE format
+											struct STAKeyKDE
+											{
+												UINT16 Reserved;
+												MacAddress STAKeyMACAddress;
+												Blob(Length - 12) STAKey = FormatString("%X", this);
+											};
+										case OUI == 0x000FAC && KeyDataType == 3:
+											//# 802.11i-2004, page 82, Figure 43zMAC address KDE format
+											struct MacKDE
+											{
+												MacAddress MACAddress;
+											};
+
+										case OUI == 0x000FAC && KeyDataType == 4:
+											//# 802.11i-2004, page 83, Figure 43aaPMKID KDE format
+											struct PMKIDKDE
+											{
+												Blob(16) PMKID = FormatString("%X", this);
+											};
+										default:
+											Blob(Length - 4) Data;
+									}
+								};
+						}
+					}
+
+				case 0x01:
+					struct RC4KeyDescriptor
+					{
+						UINT8     DescriptorType = FormatString("%s, %d(0x%02X)",EAPOLDescriptorTypeTable(this), this, this);
+						UINT16     KeyLength = FormatString("%d bytes",this);
+						Blob(8)   Replay = FormatString("%X", this);
+						Blob(16)  KeyIv = FormatString("%X", this);
+						[EAPOLSummary = (this & 0x80) ?"(Ucast)":"(Mcast)"]
+						UINT8     KeyIndex
+						{
+							UINT8 Key:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Unicast key" : "broadcast key");
+							UINT8 IndexNum:7 = FormatString("(%s) %d",this.ToBitString,this);
+						};
+						Blob(16)  KeySignature = FormatString("%X", this);
+						switch
+						{
+							case frameLength > offset: Blob(KeyLength)  Key;
+						}
+					};
+				default :
+					struct DefaultDescriptor
+					{
+						UINT8     DescriptorType = FormatString("%s, %d(0x%02X)",EAPOLDescriptorTypeTable(this), this, this);
+						UINT16     KeyLength = FormatString("%d bytes",this);
+						Blob(8)   Replay = FormatString("%X", this);
+						Blob(16)  KeyIv = FormatString("%X", this);
+						UINT8     KeyIndex;
+						Blob(16)  KeySignature = FormatString("%X", this);
+						switch
+						{
+							case frameLength > offset: Blob(KeyLength)  Key;
+						}
+					};
+			}
+		//This maybe parsed further.
+		case 0x04: Blob(BodyLength) EncapsulatedASFAlertBody;
+		default:
+			switch
+			{
+				case BodyLength > 0:
+					_struct UnhandledType
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "EAPOL", "EAPOL Type Error") EAPOLTypeError;
+						BLOB(BodyLength) UnknownData;
+					}
+			}
+	}
+}
+//# 802.1X-2001.pdf page 15
+Table EAPOLTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x00: "EAP-Packet";
+		case 0x01: "EAPOL-Start";
+		case 0x02: "EAPOL-Logoff";
+		case 0x03: "EAPOL-Key";
+		case 0x04: "EAPOL-Encapsulated-ASF-Alert";
+		default  : "UNHANDLED EAPOL Type";
+	}
+}
+
+Table EAPOLDescriptorTypeTable(type)
+{
+	switch(type)
+	{
+		case   1: "RC4 Key Descriptor"; //# 802.1X-2001.pdf page 17
+		case   2: "RSN Key Descriptor"; //# 802.11i-D3.1.doc page 81
+		case 254: "WPA Key Descriptor";
+		default : "UNHANDLED EAPOL Descriptor Type";
+	}
+}
+
+Table EAPOLKeyInfoVersionTable(version)
+{
+	switch(version)
+	{
+		case 1:  "RC4 encryption with HMAC-MD5";
+		case 2:  "NIST AES key wrap with HMAC-SHA1-128";
+		default: "UNHANDLED EAPOL KeyInfoVersion";
+	}
+}
+
+//# 802.11i - 2004 page 79
+Table EAPOLKeyInfoInstallTable(KeyType, Install)
+{
+	switch
+	{
+		case KeyType == 1 && Install == 1: "configure the temporal key derived from this message into its IEEE 802.11 STA";
+		case KeyType == 1 && Install == 0: "shall not configure the temporal key into the IEEE 802.11 STA.";
+		case KeyType == 0 && Install == 1: "Should be Zero";
+		case KeyType == 0 && Install == 0: "";
+	}
+}
+
+//# 802.11i - 2004 page 49~50.83~97
+Table EAPOLKeyInfoSummaryTable(Info,KeyDataLength)
+{
+	switch
+	{
+		case (Info & 0xFFF8) == 0x0088: "(4-Way Handshake Message 1)";
+		case (Info & 0xFFF8) == 0x0108: "(4-Way Handshake Message 2)";
+		case (Info & 0xFFB8) == 0x1388: "(4-Way Handshake Message 3)";
+		case (Info & 0xFFF8) == 0x0308: "(4-Way Handshake Message 4)";
+		case (Info & 0xFFF0) == 0x1380: "(Group Key Handshake Message 1)";
+		case (Info & 0xFFF0) == 0x0300 && (KeyDataLength == 0): "(Group Key Handshake Message 2)";
+		case (Info & 0xFFF0) == 0x0B00: "(STAKey Request message)";
+		case (Info & 0xFFF0) == 0x13C0: "(STAKey Message 1)";
+		case (Info & 0xFFF0) == 0x0300 && (KeyDataLength != 0): "(STAKey Message 2)";
+		case (Info & 0x0F00) == 0x0F00: "(Michael MIC Failure Report)";
+		default                     : "Undefined";
+	}
+}
+
+//# 802.11i - 2004 page 84
+Table EAPOLSTAKeyInfoSummaryTable(KeyType, OUI, Type, EAPOLSummary)
+{
+	switch
+	{
+		case KeyType == 0 && OUI == 0x000FAC && Type == 2: "(STA 1)";             //STAKey Handshake Message 1
+		case KeyType == 0 && OUI == 0x000FAC && Type == 3: "(STA 2)";             //STAKey Handshake Message 2
+		default: EAPOLSummary;
+	}
+}
+
+//# 802.11i - 2004 page 81, Table 20hKDE
+Table EAPOLKDETypeTable(oui, type)
+{
+	switch
+	{
+		case oui == 0x000FAC && type == 0: "Reserved";
+		case oui == 0x000FAC && type == 1: "GTK KDE";
+		case oui == 0x000FAC && type == 2: "STAKey KDE";
+		case oui == 0x000FAC && type == 3: "MAC address KDE";
+		case oui == 0x000FAC && type == 4: "PMKID KDE";
+		case oui == 0x000FAC: "Reserved";
+		default: "Vendor specific";
+	}
+}
+
+

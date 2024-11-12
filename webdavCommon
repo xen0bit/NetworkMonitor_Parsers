@@ -1,0 +1,45 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  World Wide Web Distributed Authoring and Versioning Extensions
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2518
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[property.HTTPPayloadType = "WEBDAV"]
+[RegisterBefore(HTTPPayloadData.FrontPage, WebDav,
+				property.HTTPPayloadType == "WEBDAV" || Property.HttpCommand == "COPY" || Property.HttpCommand == "LOCK"
+				|| Property.HttpCommand == "MOVE" || Property.HttpCommand == "MKCOL" || Property.HttpCommand == "SEARCH"
+				|| Property.HttpCommand == "UNLOCK" || Property.HttpCommand == "PROPFIND" || Property.HttpCommand == "PROPPATCH"
+				|| Property.HttpCommand == "GETLIB" || Property.HttpCommand == "SUBSCRIBE" || contains(Property.HttpUserAgent, "webdav"))]
+[RegisterBefore(HTTP.defaultname, WebDav,
+				property.HTTPPayloadType == "WEBDAV" || Property.HttpCommand == "COPY" || Property.HttpCommand == "LOCK"
+				|| Property.HttpCommand == "MOVE" || Property.HttpCommand == "MKCOL" || Property.HttpCommand == "SEARCH"
+				|| Property.HttpCommand == "UNLOCK" || Property.HttpCommand == "PROPFIND" || Property.HttpCommand == "PROPPATCH"
+				|| Property.HttpCommand == "GETLIB" || Property.HttpCommand == "SUBSCRIBE" || contains(Property.HttpUserAgent, "webdav"))]
+Protocol WEBDAV = FormatString("%s%s", 
+								Property.HttpSummary, 
+								Property.NTLMSSPAuthentication ? ", Using NLMP Authentication" : ""
+							  )
+{
+	Switch
+	{
+		Case FrameLength == FrameOffset:
+			struct{};
+		Case Property.HttpContentType.Contains( "html" ) && (!IsValueNone(http.request) || !IsValueNone(http.response) || !IsValueNone(http.ChunkedPayload)):
+			While HtmlPayload[FrameOffset < FrameLength] 
+			{
+				AsciiStringTerm(">", TRUE) HtmlElement;
+			}
+		Case Property.HttpContentType.Contains( "xml" ) && (!IsValueNone(http.request) || !IsValueNone(http.response) || !IsValueNone(http.ChunkedPayload)):
+			XMLParser_struct XmlPayload;
+		Default:
+			AsciiString( FrameLength - FrameOffset ) WebdavPayLoad;
+	}
+}

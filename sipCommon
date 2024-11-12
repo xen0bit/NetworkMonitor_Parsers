@@ -1,0 +1,827 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Session Initiation Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2976, 3265, 3261, 3311, 3428, 3515, 3903
+//#  Microsoft References:   [MS-SIP]: Session Initiation Protocol Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Const CnstSipHead = 0x01;
+Const CnstSipContentLength = 0x02;
+Const CnstSipHeaders = 0x04;
+Const CnstSipPayload = 0x08;
+Const CnstSipKeepAlive = 0x10;
+Protocol SIP = Property.SipParserCounter > 1
+	? FormatString("There are %d SIP Payloads", Property.SipParserCounter)
+	: Property.SIPSummary
+{
+	// Build SIP conversation, for reassembly
+	switch
+	{
+		case !Conversation.SIP.id:
+			[BuildConversationWithParent]struct{}
+	}
+	[
+		Post.Conversation.ConversationDescription = 
+			Conversation.SIP.ConversationDescription ? Conversation.SIP.ConversationDescription: 
+			(
+				( Property.SIPMethod ? ( FormatString("(%s) ", Property.SIPMethod + " " +  Property.SIPRequestURI) ) : "") +
+				( FormatString("ConvID = %d", ConvID) )
+			)
+	]
+	[
+		Property.SIPREEndCode.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		Property.SIPREEndCode.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		Property.SIPREEndCode.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+	]
+	[
+		 Property.SIPRETerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		 Property.SIPRETerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		 Property.SIPRETerminator.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		 Property.SIPRETerminator.AddToProperty(",", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+	]
+
+	// Start-line
+	[
+		Post.Property.SipIsFirst = Property.SipOnUdp ? true : (Conversation.SipIsStartSeq$[Property.NetworkDirection, Property.TcpSeqNumber] == true),
+		Post.Property.SipIsLast = Property.SipOnUdp ? true : (Conversation.SipIsStartSeq$[Property.NetworkDirection, Property.TcpNextSeqNumber] == true),
+		Post.PayloadStart(
+			NetworkDirection, /*direction */
+			0, /* id */
+			0, /* sequence token */
+			0, /* next sequence token */
+			0, /* total payload length */
+			Property.SipIsFirst, /* is first */
+			Property.SipIsLast, /* is last */
+			RssmblyIndStartBit + RssmblySelfBit + RssmblyIndEndBit
+		)
+	]
+	[Property.SipParserCounter = 0]
+	[Property.SIPContentLength = Conversation.CurrentSipContentLength$[Property.NetworkDirection, Property.TcpSeqNumber]]
+	[Post.Conversation.NextEndSequence$[Property.NetworkDirection, Property.TcpNextSeqNumber] = Conversation.SipEndSeqVar$[Property.NetworkDirection]]
+	[Post.Conversation.CurrentSipContentLength$[Property.NetworkDirection, Property.TcpNextSeqNumber] = Property.SIPContentLength]
+	while [FrameOffset < FrameLength]
+	{
+		[Post.Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber]
+			= (FrameOffset == ProtocolOffset)
+			? Property.SipStatusProp
+			: Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber]
+		]
+		switch (AsciiStringTerm(FrameData,FrameOffset," "))
+		{
+			case "ACK": //RFC 3261
+			case "BYE": //RFC 3261
+			case "CANCEL": //RFC 3261
+			case "INFO": //RFC 2976
+			case "INVITE": //RFC 3261
+			case "MESSAGE": //RFC 3428
+			case "NOTIFY": //RFC 3265
+			case "OPTIONS": //RFC 3261
+			case "PRACK": //RFC 3262
+			case "PUBLISH": //RFC 3903
+			case "REFER": //RFC 3515
+			case "REGISTER": //RFC 3261
+			case "SUBSCRIBE": //RFC 3265
+			case "UPDATE": //RFC 3311
+			case "BENOTIFY"://[MS-SIP] 3.5
+			case "SERVICE":
+				[Property.SipStatusProp = CnstSipHead, Property.SipRequest = true] struct{}
+			default:
+				switch
+				{
+					// Response-Line  =  SIP-Version SP Status-Code SP Reason-Phrase CRLF
+					case AsciiString(FrameData,FrameOffset,4) == "SIP/":
+						[Property.SipStatusProp = CnstSipHead, Property.SipRequest = false]struct{}
+					case AsciiString(FrameData,FrameOffset,8) == "\r\n\r\n\r\n\r\n":
+						[Property.SipStatusProp = CnstSipKeepAlive] struct{}
+					default:
+						[Post.Property.SipStatusProp = Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber]]
+						switch
+						{
+							case Property.IsReassembledPayload:
+								// Don't change status in SIP reassembled frame
+								struct{}
+							case FrameOffset == ProtocolOffset:
+								switch
+								{
+									case Conversation.SipParsedHeaderEndVar$[Property.NetworkDirection] == false:
+										switch
+										{
+											case Conversation.SipContentLengthVar$[Property.NetworkDirection] == -1:
+												[Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber] = CnstSipContentLength] struct{};
+											default:
+												[Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber] = CnstSipHeaders] struct{};
+										}
+									default:
+										[Conversation.SipStatus$[Property.NetworkDirection, Property.TCPSeqNumber] = CnstSipPayload] struct{};
+								}
+						}
+				}
+		}
+		struct SipParser = FormatString("%s", Property.SIPSummary)
+		{
+			switch (Property.SipStatusProp)
+			{
+				case CnstSipHead:
+					[Property.SipParserCounter = Property.SipParserCounter + 1]
+					[Conversation.SipIsStartSeq$[Property.NetworkDirection, Property.TcpSeqNumber + CurrentProtocolOffset] = true]
+					[Conversation.SipContentLengthVar$[Property.NetworkDirection] = -1]
+					[Conversation.SipEndSeqVar$[Property.NetworkDirection] = -1]
+					[Conversation.SipParsedHeaderEndVar$[Property.NetworkDirection] = false]
+					[Conversation.SipStartSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + CurrentProtocolOffset]
+					switch
+					{
+						case Property.SipRequest:
+							// Request-Line  =  Method SP Request-URI SP SIP-Version CRLF
+							struct
+							{	
+								[Property.SIPSummary = "Request: " + this.ToString]
+								struct RequestLine = Method + " " + RequestURI + " " + SIPVersion
+								{	
+									[Property.SIPMethod]
+									AsciiStringTerm(" ") Method;
+									[Property.SIPRequestURI]
+									AsciiStringTerm(" ") RequestURI;
+									AsciiStringTerm("\r\n") SIPVersion;
+								};
+								SipMessageHeaders RequestHeaders;
+								switch
+								{
+									case Property.SIPContentLength > 0 && FrameOffset < FrameLength:
+										[DataFieldFrameLength = FrameOffset + Property.SIPContentLength]
+										SipMessageBody RequestBody;
+								}
+							}
+						default:
+							struct
+							{
+								[Property.SIPSummary = "Response: " + this.ToString]
+								struct StatusLine = SIPVersion + " " + StatusCode + " " + ReasonPhrase
+								{
+									AsciiStringTerm(" ") SIPVersion;
+									AsciiStringTerm(" ") StatusCode = SIPStatusCodeTable(this, UINT8( Framedata, Offset ));
+									AsciiStringTerm("\r\n") ReasonPhrase;
+								};
+								SipMessageHeaders ResponseHeaders;
+								switch
+								{
+									case Property.SIPContentLength > 0 && FrameOffset < FrameLength:
+										[DataFieldFrameLength = FrameOffset + Property.SIPContentLength]
+										SipMessageBody ResponseBody;
+								}
+							}
+						}							
+
+				case CnstSipContentLength:
+					[Property.SIPSummary = "[Continuation Payload]"]
+					struct
+					{
+						[Property.SipContentLengthTerm.AddToProperty("\r\nl:", Add_To_Property_Flag_No_Duplicates)]
+						[Property.SipContentLengthTerm.AddToProperty("\r\nContent-Length:", Add_To_Property_Flag_No_Duplicates)]
+						StringTerm(Ascii, Property.SipContentLengthTerm, false, false, true) Headers;
+						[Property.SIPContentLength = StringToNumber(ContentLength)]
+						[Property.SIPSummary = Property.SIPSummary + " ContentLength = " + this]
+						[Post.Conversation.SipContentLengthVar$[Property.NetworkDirection] = Property.SIPContentLength]
+						AsciiStringTerm("\r\n") ContentLength;
+						[Local.SipHeaderTerminator = "\r\n"]
+						switch
+						{
+							case !(UINT16(FrameData, FrameOffset) == 0x0D0A):
+								[Local.SipHeaderTerminator = "\r\n\r\n"]
+								StringTerm(Ascii, "\r\n\r\n", true, false, false) OtherHeaders;
+						}
+						switch
+						{
+							case UINT16(FrameData, FrameOffset) == 0x0D0A:
+								[Conversation.SipParsedHeaderEndVar$[Property.NetworkDirection] = true]
+								[PostAfter.Conversation.SipEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + CurrentProtocolOffset + Conversation.SipContentLengthVar$[Property.NetworkDirection]]
+								[PostAfter.Conversation.SipIsStartSeq$[Property.NetworkDirection,Property.TcpSeqNumber + CurrentProtocolOffset +Conversation.SipContentLengthVar$[Property.NetworkDirection]] = true]
+								AsciiStringTerm(Local.SipHeaderTerminator) HeaderEnd;
+						}
+						switch
+						{
+							case Property.SIPContentLength > 0 && FrameOffset < FrameLength:
+								[DataFieldFrameLength = FrameOffset + Property.SIPContentLength]
+								SipMessageBody Body;
+						}
+					}
+					
+				case CnstSipHeaders:
+					[Property.SIPSummary = "[Continuation Payload]"]
+					struct
+					{
+						StringTerm(Ascii, "\r\n\r\n", true, false, false) OtherHeaders;
+						switch (UINT32(FrameData, FrameOffset))
+						{
+							case 0x0D0A0D0A:
+								[Conversation.SipParsedHeaderEndVar$[Property.NetworkDirection] = true]
+								[Conversation.SipEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + CurrentProtocolOffset + 4 + Conversation.SipContentLengthVar$[Property.NetworkDirection]]
+								[Conversation.SipIsStartSeq$[Property.NetworkDirection,Property.TcpSeqNumber + CurrentProtocolOffset + 4 +Conversation.SipContentLengthVar$[Property.NetworkDirection]] = true]
+								UINT32 HeaderEnd;
+						}
+						switch
+						{
+							case FrameOffset < FrameLength:
+								[DataFieldFrameLength = FrameOffset + Property.SIPContentLength]
+								SipMessageBody Body;
+						}
+					}
+					
+				case CnstSipPayload:
+					[Local.SipContinuationLength = Conversation.NextEndSequence$[Property.NetworkDirection, Property.TcpSeqNumber] - Property.TcpSeqNumber]
+					[Local.SipContinuationLength = Local.SipContinuationLength > FrameLength - FrameOffset ? FrameLength- FrameOffset : Local.SipContinuationLength]
+					[Property.SIPSummary = FormatString("[Continuation Payload] Length = %d", Local.SipContinuationLength)]
+					Blob(Local.SipContinuationLength) SipContinuationBody;
+					
+				case CnstSipKeepAlive:
+					[Property.SIPSummary = "MsKeepAlive"]
+					Blob(FrameLength - FrameOffset) MsKeepAlive;
+					
+				default:
+					switch
+					{
+						case Conversation.Sip.Id > 0:
+							ReportParserError(ParserErrorProtocolClassPublic, "SIP", "Error Sip Status") SipStatusError;
+						default:
+							[Property.SIPSummary = "[Continuation Payload]"]
+							struct
+							{
+								ReportParserWarning( "SIP", "May not parsed correctly when conversation off") ParserWarning;
+								BloB(FrameLength - FrameOffset) SipContinuationPayload;
+							}
+
+					}
+			}
+		}
+	}
+}
+Table SIPStatusCode1Table(code, code1)
+{
+	switch(code1)
+	{
+		case 0x31:FormatString("%s - Informational(Unhandled code)",code);
+		case 0x32:FormatString("%s - Success(Unhandled code)",code);
+		case 0x33:FormatString("%s - Redirection(Unhandled code)",code);
+		case 0x34:FormatString("%s - Client Error(Unhandled code)",code);
+		case 0x35:FormatString("%s - Server Error(Unhandled code)",code);
+		case 0x36:FormatString("%s - Global Failure(Unhandled code)",code);
+		default:FormatString("%s - Invalid Code", code);		
+	}
+}
+
+Table SIPStatusCodeTable(code, code1)
+{
+	switch(code)
+	{
+		case "100":"100 - Informational(Trying)";
+		case "180":"180 - Informational(Ringing)";
+		case "181":"181 - Informational(Call Is Being Forwarded)";
+		case "182":"182 - Informational(Queued)";
+		case "183":"183 - Informational(Session Progress)";
+		case "200":"200 - Success(OK)";
+		case "202":"202 - Success(Accepted)";
+		case "300":"300 - Redirection(Multiple Choices)";
+		case "301":"301 - Redirection(Moved Permanently)";
+		case "302":"302 - Redirection(Moved Temporarily)";
+		case "305":"305 - Redirection(Use Proxy)";
+		case "380":"380 - Redirection(Alternative Service)";
+		case "400":"400 - Client Error(Bad Request)";
+		case "401":"401 - Client Error(Unauthorized)";
+		case "402":"402 - Client Error(Payment Required)";
+		case "403":"403 - Client Error(Forbidden)";
+		case "404":"404 - Client Error(Not Found)";
+		case "405":"405 - Client Error(Method Not Allowed)";
+		case "406":"406 - Client Error(Not Acceptable)";
+		case "407":"407 - Client Error(Proxy Authentication Required)";
+		case "408":"408 - Client Error(Request Timeout)";
+		case "410":"410 - Client Error(Gone)";
+		case "412":"412 - Client Error(Conditional Request Failed)";
+		case "413":"413 - Client Error(Request Entity Too Large)";
+		case "414":"414 - Client Error(Request-URI Too Large)";
+		case "415":"415 - Client Error(Unsupported Media Type)";
+		case "416":"416 - Client Error(Unsupported URI Scheme)";
+		case "417":"417 - Client Error(Unknown Resource-Priority)";
+		case "420":"420 - Client Error(Bad Extension)";
+		case "421":"421 - Client Error(Extension Required)";
+		case "422":"422 - Client Error(Session Interval Too Small)";
+		case "423":"423 - Client Error(Interval Too Brief)";
+		case "429":"429 - Client Error(Provide Referrer Identity)";
+		case "480":"480 - Client Error(Temporarily not available)";
+		case "481":"481 - Client Error(Call Leg/Transaction Does Not Exist)";
+		case "482":"482 - Client Error(Loop Detected)";
+		case "483":"483 - Client Error(Too Many Hops)";
+		case "484":"484 - Client Error(Address Incomplete)";
+		case "485":"485 - Client Error(Ambiguous)";
+		case "486":"486 - Client Error(Busy Here)";
+		case "487":"487 - Client Error(Request Terminated)";
+		case "488":"488 - Client Error(Not Acceptable Here)";
+		case "489":"489 - Client Error(Bad Event)";
+		case "491":"491 - Client Error(Request Pending)";
+		case "493":"493 - Client Error(Undecipherable)";
+		case "494":"494 - Client Error(Security Agreement Required)";
+		case "500":"500 - Server Error(Internal Server Error)";
+		case "501":"501 - Server Error(Not Implemented)";
+		case "502":"502 - Server Error(Bad Gateway)";
+		case "503":"503 - Server Error(Service Unavailable)";
+		case "504":"504 - Server Error(Server Time-out)";
+		case "505":"505 - Server Error(SIP Version not supported)";
+		case "513":"513 - Server Error(Message Too Large)";
+		case "580":"580 - Server Error(Precondition Failure )";
+		case "600":"600 - Gloabl Failure(Busy Everywhere)";
+		case "603":"603 - Global Failure(Decline)";
+		case "604":"604 - Global Failure(Does not exist anywhere)";
+		case "606":"606 - Global Failure(Not Acceptable)";
+		default:
+			SIPStatusCode1Table(code, code1);
+	}
+}
+
+[DataTypeEncoding = 1]
+struct SipGssapiData(AuthScheme)
+{
+	switch(AuthScheme)
+	{
+		case "Kerberos":
+			GssapiKrb5 Kerberos;
+		case "NTLM":
+			NLMP NLMP;
+	}
+}
+
+/*
+	These Consts represent the situations when we start parsing a SIP payload:
+	CnstSipHead - start with Request-Line or Status-Line
+	CnstSipContentLength - ContentLength has not been consumed
+	CnstSipHeaders - Already has ContentLength, but headers not completed
+	CnstSipPayload - Start with Sip Payload Data
+*/
+
+
+/*
+	SIP-message	= Request | Response
+
+	Request        = Request-Line
+					 *( message-header)
+					 CRLF
+					 [ message-body ]
+	Request-Line   = Method SP Request-URI SP SIP-Version CRLF
+
+	Response       = Status-Line
+					 *( message-header)
+					 CRLF
+					 [ message-body ]
+	Status-Line    = SIP-Version SP Status-Code SP Reason-Phrase CRLF
+				
+*/
+
+
+struct SipMessageHeaders
+{
+	While [FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset)==0x0D0A)]
+	{
+		DynamicSwitch AsciiStringTerm(": ")
+		{
+			case "Call-ID":
+				[SIPCallID]
+				AsciiStringTerm("\r\n") CallID;
+
+			case "Content-Type":
+			case "c"://RFC3261 20.15
+				[SIPContentType, Property.MimeMediaType = (AsciiStringTerm(Framedata, FrameOffset, "/") == "multipart") ? "multipart" : "" ]
+				AsciiStringTerm("\r\n") ContentType
+				{
+					switch
+					{
+						case AsciiStringTerm(Framedata, FrameOffset, "\r\n").contains("boundary"):
+							struct
+							{
+								AsciiStringTerm(";") MainType;
+								while Parameters[ !(UINT16( FrameData, Offset ) == 0x0D0A) ]
+								{
+									While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+									{
+										DynamicSwitch AsciiString(1)
+										{
+											default: struct{}
+										};
+									}
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										case "boundary":
+											struct
+											{
+												[Property.IsContentTypeContainBoundary = true]
+												MimeBoundary MimeBoundary;
+												switch
+												{
+													case AsciiString(FrameData, FrameOffset, 1) == ";":
+														DynamicSwitch AsciiString(1)
+														{
+															default: struct{}
+														};
+												}
+											}
+										default:
+											[
+												Local.SubTypeTerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+												Local.SubTypeTerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+											]
+											AsciiStringTerm(Local.SubTypeTerminator) DefaultName;
+									}
+								}
+							}
+					}
+				}
+			case "Content-Length":
+			case "l"://RFC3261 20.14
+				[Property.SIPContentLength = StringToNumber(ContentLength)]
+				[Post.Conversation.SipContentLengthVar$[Property.NetworkDirection] = Property.SIPContentLength]
+				AsciiStringTerm("\r\n") ContentLength;
+			
+			case "Via":
+			case "v":
+				AsciiStringTerm("\r\n") Via
+				{
+					AsciiStringTerm(" ") SentProtocol;
+					StringTerm(Ascii,Property.SIPREEndCode,false,false,false) SentBy;
+					switch
+					{
+						case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains(";"): 
+							HeaderParameters ContactParameters;
+					}
+				};
+			case "From":
+			case "f":
+				AsciiStringTerm("\r\n") From
+				{
+					SIPAddress From;
+					switch
+					{
+						case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains(";"): 
+							HeaderParameters ContactParameters;
+					}
+				};
+			case "To":
+			case "t":
+				AsciiStringTerm("\r\n") To
+				{
+					SIPAddress To;
+					switch
+					{
+						case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains(";"): 
+							HeaderParameters ContactParameters;
+					}
+				};
+			case "Contact":
+			case "m":
+				AsciiStringTerm("\r\n") Contact
+				{
+					SIPAddress  Contact;			
+					switch
+					{
+						case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains(";"): 
+							HeaderParameters ContactParameters;
+					}
+					switch
+					{
+						default: _struct defaultname{};
+					}
+				}
+			case "Authorization":
+			case "WWW-Authenticate":
+			case "Proxy-Authenticate":
+			case "Proxy-Authorization":
+			case "Authentication-Info":
+			case "Proxy-Authentication-Info":
+				AsciiStringTerm("\r\n") Authorization
+				{
+					[Property.SipAuthScheme]
+					AsciiStringTerm(" ") scheme;
+					while [FrameOffset < FrameLength]
+					{
+						while [UINT8(FrameData, FrameOffset) == 0x20]
+						{
+							DynamicSwitch AsciiString(1)
+								{
+									default: struct{};
+								}
+						};
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							case "qop":
+								AsciiStringTerm(",") QualityOfProtection;
+							case "realm":
+								AsciiStringTerm(",") Realm;
+							case "opaque":
+								AsciiStringTerm(",") Opaque;
+							case "rspauth":
+								AsciiStringTerm(",") ResponseAuth;
+							case "nextnonce":
+								AsciiStringTerm(",") NextNonce;
+							case "algorithm":
+								AsciiStringTerm(",") Algorithm;
+							case "response":
+								AsciiStringTerm(",") Response;
+							case "cn":
+								AsciiStringTerm(",") NonceCount;
+							case "username":
+								AsciiStringTerm(",") UserName;
+							case "targetname":
+								AsciiStringTerm(",") TargetName;
+							case "gssapi-data":
+								AsciiStringTerm(",") gssapidata
+								{
+									AsciiString(1) LeftQuotation;
+									// gssapi-data can be null
+									switch
+									{
+										case AsciiString(FrameData, FrameOffset, 1) != "\"":
+											SipGssApiData(Property.SipAuthScheme) GssAPI;
+									}
+									AsciiString(1) RightQuotation;
+								};
+							default:
+								AsciiStringTerm(",") Defaultname;
+						}
+					}
+				};
+			case "CSeq":
+				AsciiStringTerm("\r\n") CSeq
+				{
+					AsciiStringTerm(" ") CSeqNumber;
+					[Property.SIPCSeqMethod]
+					AsciiStringTerm("\r\n") CSeqMethod;
+				}
+			case "Supported":
+			case "k":
+				switch
+				{
+					default:
+						[Property.SIPSupportedValue]
+						AsciiStringTerm("\r\n") Supported;
+				}
+			default:
+				AsciiStringTerm("\r\n") DefaultName;
+		}
+	};
+	switch
+	{
+		case UINT16(FrameData, FrameOffset)==0x0D0A:
+			[Conversation.SipParsedHeaderEndVar$[Property.NetworkDirection] = true]
+			[Conversation.SipEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + CurrentProtocolOffset + 2 + Conversation.SipContentLengthVar$[Property.NetworkDirection]]
+			[Conversation.SipIsStartSeq$[Property.NetworkDirection,Property.TcpSeqNumber + CurrentProtocolOffset + 2 +Conversation.SipContentLengthVar$[Property.NetworkDirection]] = true]
+			AsciiString(2) HeaderEnd = "CRLF";
+	};
+}
+ 
+
+struct SIPMessageBody
+{
+	switch
+	{
+		// We cover SDP nad XML media-type for now and will cover more if there something more	
+		case Property.MimeMediaType == "multipart" && Property.IsContentTypeContainBoundary == true:
+			MimeBody MimeBody;
+		case Property.SIPContentType.contains("application/sdp"):
+			SDP Sdp;
+		case Property.SIPContentType.Contains ("xml"):
+			XMLparser XML;
+		
+		default:
+			BLOB (SIPContentLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : SIPContentLength) MessageBody;
+	}
+}
+
+struct HeaderParameters = FormatString("%s", AsciiStringTerm(FrameData,FrameOffset + 1,"\r\n"))
+{
+	while [!(UINT8(FrameData,FrameOffset) == 0x3E) && !(UINT16(FrameData,FrameOffset) == 0x0D0A)]
+	{
+		switch
+		{
+			case AsciiString(FrameData,FrameOffset,1) == ";":
+				DynamicSwitch AsciiString(1)
+				{
+					default: struct{};
+				}
+		}
+		switch
+		{
+			case AsciiString(FrameData,FrameOffset,1) == " ":
+				while[AsciiString(FrameData,FrameOffset,1) == " "]
+				{
+					DynamicSwitch AsciiString(1)
+					{
+						default: struct{};
+					}
+			}
+		}
+		switch
+		{
+			case StringTerm(FrameData,FrameOffset,Ascii,Property.SIPREEndCode,false,false,false).Contains("="):
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					case      "tag": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Tag;
+					case      "ttl": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) TTL;
+					case    "maddr": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) MAddress;
+					case "received": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Received;
+					case   "branch": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Branch;
+					case        "q": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Q;
+					case  "expires": StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Expires;
+					case "opaque":
+						_struct Opaque
+						{
+							switch
+							{
+								default:StringTerm(Ascii,Property.SIPREEndCode,false,false,false) OpaqueValue;
+							}
+						}
+					default: 				 StringTerm(Ascii,Property.SIPREEndCode,false,false,false) DefaultName;
+				}
+			default:
+				StringTerm(Ascii,Property.SIPREEndCode,false,false,false) Parameter;
+		}
+	}
+}
+
+ [Property.SIPUriEnd.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+ Property.SIPUriEnd.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+ 
+ [Property.SIPHostEnd.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+ Property.SIPHostEnd.AddToProperty(":", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+ Property.SIPHostEnd.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+ 
+ [Property.SIPAddressEnd.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+ Property.SIPAddressEnd.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+struct SIPAddress = StringTerm(FrameData, FrameOffset, Ascii, Property.SIPAddressEnd, true, true)
+{
+	switch
+	{
+		case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains("<"): 
+			SIPNameAddr NameAddr;
+		default:
+			SIPAddrSpec AddrSpec;
+	}
+}
+
+//Name-Address = [Display-Name] < addr - spec > 
+struct SIPNameAddr = AsciiStringTerm(FrameData, FrameOffset,  ">", true)
+{
+	switch
+	{
+		case (!contains(AsciiString (Framedata, Frameoffset, 2),"<")): 
+			SIPDisplayName DisplayName = Formatstring(" %s",property.SIPDisplayName?property.SIPDisplayName: "");
+	}
+	
+	//Hide Tag Start "<" 
+	DynamicSwitch StringTerm(Ascii, "<", true, true, true)
+	{
+		default: struct{};
+	}
+	
+	SIPAddrSpec AddrSpec;
+	
+	//Hide Tag End ">" 
+	DynamicSwitch StringTerm(Ascii, ">", true, false, true)
+	{
+		default: struct{};
+	}
+	
+}
+
+// addr-spec =  SIP-URI / SIPS-URI / absoluteURI
+struct SIPAddrSpec
+{
+	DynamicSwitch StringTerm(Ascii, ":", 1, 0, 1)
+	{
+		case "sip":
+			SIPUri SIPUri; 
+		case "sips":
+			SIPUri SIPSUri; 
+		case "scheme":
+			StringTerm(Ascii, Property.SIPUriEnd, 1, 0, 0) AbsoluteURI  ;
+	}
+}
+
+//SIP URI &&SIPs URI
+struct SIPUri
+{	
+	switch
+	{
+		case contains(StringTerm (Framedata, Frameoffset,Ascii,Property.SIPUriEnd, 1, 1, 0),"@"):
+			StringTerm(Ascii, "@", 1, 0, 1) UserInfo;
+	}
+	
+	[property.SIPHost]
+	StringTerm(Ascii, Property.SIPHostEnd, 1, 0, 0) Host;
+	
+	switch
+	{
+		case (Asciistring(Framedata, Frameoffset,1) == ":"):
+			struct
+			{
+				// Consume ":"
+				DynamicSwitch AsciiString(1)
+				{				
+					default: struct{};
+				}
+				StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) Port;
+			}
+	}
+	
+	switch
+	{
+		case contains(AsciiString (Framedata, Frameoffset, 1) , ";"):
+		DynamicSwitch StringTerm(Ascii, ";", true, false, true)
+		{				
+			default: struct{};
+		}
+	}	
+	
+	while[ AsciiString(Framedata, Frameoffset, 1) != ">" && AsciiString (Framedata, Frameoffset, 2) != "\r\n"] 
+	{
+		[Local.SIPUriParameter = StringTerm (FrameData, FrameOffset, Ascii,Property.SIPUriEnd, 1, 0, 0) ]
+		switch
+		{
+			case Local.SIPUriParameter.contains("="):
+				DynamicSwitch StringTerm(Ascii, "=", true, false, true)
+				{
+					case "transport": 
+						[property.SIPTransportParam]
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) TransportParam;
+					case "user": 
+						[property.SIPUserParam]
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) UserParam;
+					case "method": 
+						[property.SIPMethodParam]
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) MethodParam;
+					case "ttl": 
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) TTLParam;
+					case "maddr": 
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) MaddrParam;
+					case "lr": 
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) LRParam;
+					default:
+						StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) DefaultName;
+				} 							
+			default: StringTerm (Ascii,Property.SIPUriEnd, 1, 0, 0) DefaultParameter;
+		}
+		
+		switch
+		{
+			case contains(AsciiString (Framedata, Frameoffset, 1) , ";"):
+				DynamicSwitch StringTerm(Ascii, ";", true, false, true)
+				{
+					default: struct{};
+				}
+		}
+	}
+}
+ 
+//Display-Name = *(token LWS)/Quoted-string
+struct SIPDisplayName
+{
+	[property.SIPDisplayName = StringTerm(Framedata, Frameoffset , Ascii , "<", 1, 0, 0)]
+	switch
+	{
+		case AsciiString (Framedata, Frameoffset, 2).contains("\""): //Quoted - string
+			SIPQuotedString QuotedString;
+		default:
+			SIPToken Token;
+	}
+}
+
+struct SIPQuotedString = formatstring(" %s ",local.QuotedStringContent?local.QuotedStringContent: "None")
+{
+	// Hide Quoted
+	DynamicSwitch StringTerm(Ascii, "\"", true, true, true)
+	{
+		default: struct{};
+	}
+	
+	switch
+	{
+		case contains(AsciiString (Framedata, Frameoffset, 1) , "\""):
+			DynamicSwitch StringTerm(Ascii, "\"", true, true, true)
+			{
+				default: struct{};
+			}
+		default: 
+			[Local.QuotedStringContent]
+			StringTerm (Ascii,"\"", 1, 0, 1) StringContent;
+	}
+} 
+
+struct SIPToken
+{
+	while [!AsciiString (Framedata, Frameoffset, 1).contains("<")]
+	{
+		StringTerm(Ascii, " ", 0, 0, 1) Token;
+	}
+}

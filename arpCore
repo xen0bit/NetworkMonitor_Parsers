@@ -1,0 +1,199 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Address Resolution Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2625
+//#                          http://www.networkdictionary.com/protocols/arp.php
+//#                          http://www.javvin.com/protocol/rfc2625.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+//[DefaultTimeOut = ARPConversationTimeout]
+
+Protocol ARP = ARPDescriptionTable(OpCode, ARPSrcHardAddress, ARPSrcAddress, ARPDstHardAddress, ARPDestAddress,SourceIPv4Alias,DestinationIPv4Alias)
+{
+	UINT16 HardwareType = HardwareTypeTable(this);
+	UINT16 ProtocolType = ProtocolTable(this);
+	UINT8 HardwareAddressLen;
+	UINT8 ProtocolAddressLen;
+	UINT16 OpCode = FormatString("%s, %d(%#x)",ARPOpCodeTable(this),this, this);
+	
+	switch(HardwareAddressLen)
+	{
+		case  6:
+			[ARPSrcHardAddress = this.toString]
+			MacAddress SendersMacAddress;
+		default:
+			[ARPSrcHardAddress = this.toString]
+			AsciiString(HardwareAddressLen) SendersHardwareAddress;
+	}
+	switch(ProtocolAddressLen)
+	{
+		case  4:
+			[	
+				ARPSrcAddress = this.toString, 
+				SenderProtocolAddress, 
+				SourceIPv4Alias = Global.AliasTable$[this],
+				SourceName = Global.NameTable$[this],
+				Source = SourceIPv4Alias ? SourceIPv4Alias
+						: Global.MultiIPAddress$[SourceName] ? this.ToDataTypeString
+						: SourceName ? SourceName
+						: this.ToDataTypeString
+			]
+			IPv4Address SendersIp4Address;
+		case 16:
+			[
+				ARPSrcAddress = this.toString,
+				SenderProtocolAddress,
+				SourceIPv6Alias = Global.AliasTable$[this],
+				SourceName = Global.NameTable$[this],
+				Source = SourceIPv6Alias ? SourceIPv6Alias
+						: Global.MultiIPAddress$[SourceName] ? this.ToDataTypeString
+						: SourceName ? SourceName
+						: this.ToDataTypeString
+			]
+			IPv6Address SendersIp6Address;
+		default:
+			[ARPSrcAddress = this.toString, SenderProtocolAddress, Source ]
+			AsciiString(ProtocolAddressLen) SendersAddress;
+	}
+	
+	switch(HardwareAddressLen)
+	{
+		case  6:
+			[ARPDstHardAddress = this.ToString]
+			MacAddress TargetMacAddress;
+		default:
+			[ARPDstHardAddress = this.ToString]
+			AsciiString(HardwareAddressLen) TargetHardwareAddress;
+	}
+//	[
+//		Post.BuildConversation(
+//							Property.SenderProtocolAddress < Property.TargetProtocolAddress ?
+//							MakeByteArray(Property.SenderProtocolAddress, Property.TargetProtocolAddress) :
+//							MakeByteArray(Property.TargetProtocolAddress, Property.SenderProtocolAddress)
+//							),
+//		Post.Conversation.ConversationDescription
+//			= FormatString("(%s - %s) ConvID = %d", ARPSrcAddress, ARPDestAddress,ConvID)
+//	]
+	switch(ProtocolAddressLen)
+	{
+		case  4:
+			[
+				ARPDestAddress = this.ToString,
+				TargetProtocolAddress,
+				DestinationIPv4Alias = Global.AliasTable$[this],
+				DestinationName = Global.NameTable$[this],
+				Destination = DestinationIPv4Alias ? DestinationIPv4Alias
+						: Global.MultiIPAddress$[DestinationName] ? this.ToDataTypeString
+						: DestinationName ? DestinationName
+						: this.ToDataTypeString
+			]
+			IPv4Address TargetIp4Address;
+		case 16:
+			[
+				ARPDestAddress = this.ToString,
+				TargetProtocolAddress,
+				DestinationIPv6Alias = Global.AliasTable$[this],
+				DestinationName = Global.NameTable$[this],
+				Destination = DestinationIPv6Alias ? DestinationIPv4Alias
+						: Global.MultiIPAddress$[DestinationName] ? this.ToDataTypeString
+						: DestinationName ? DestinationName
+						: this.ToDataTypeString
+			]
+			IPv6Address TargetIp6Address;
+		default:
+			[ARPDestAddress = this.ToString, TargetProtocolAddress, Destination ]
+			AsciiString(ProtocolAddressLen) TargetAddress;
+	}
+}
+Protocol IEEE1394ARP = FormatString("%s, Target IP = %s", ARPOpCodeTable(OpCode), Property.ARPDestAddress)
+{
+	UINT16 HardwareType = HardwareTypeTable(this);
+	UINT16 ProtocolType = ProtocolTable(this);
+	UINT8 HardwareAddressLen;
+	UINT8 ProtocolAddressLen;
+	UINT16 OpCode = FormatString("%s, %d(%#x)",ARPOpCodeTable(this),this, this);
+	UINT64 SenderUniqueID;
+	UINT8 SenderMaxRec;
+	UINT8 SSPD = IEEE1394ARPSSPDTable(this);
+	UINT48 FIFOOffset;
+	IPv4Address SenderIPAddress;
+	[ARPDestAddress = this.ToString]
+	IPv4Address TargerIPAddress;
+}
+//# [http://www.networksorcery.com/enp/default0701.htm RARP protocol]
+Table ARPOpCodeTable(value)
+{
+	switch(value)
+	{
+		case  1:"Request";
+		case  2:"Response";
+		case  3:"Request Reverse";
+		case  4:"Reply Reverse";
+		case  5:"DRARP Request";
+		case  6:"DRARP Reply";
+		case  7:"DRARP Error";
+		case  8:"InARP Request";
+		case  9:"InARP Reply";
+		case 10:"ARP NAK";
+		case 11:"MARS Request";
+		case 12:"MARS Multi";
+		case 13:"MARS MServ";
+		case 14:"MARS Join ";
+		case 15:"MARS Leave";
+		case 16:"MARS NAK";
+		case 17:"MARS Unserv";
+		case 18:"MARS SJoin";
+		case 19:"MARS SLeave";
+		case 20:"MARS Grouplist Request";
+		case 21:"MARS Grouplist Reply";
+		case 22:"MARS Redirect Map";
+		case 23:"MAPOS UNARP";
+		default:"Unknown Operation";
+	}
+}
+
+Table ARPDescriptionTable(OpCode, SrcHardAddress, SrcAddress, DstHardAddress, DstAddress, SourceIPv4Alias, DestinationIPv4Alias)
+{
+	switch(OpCode)
+	{
+		case  1:
+			FormatString(
+			             "Request, %s asks for %s", 
+					         SourceIPv4Alias ? FormatString("%s(%s)", SourceIPv4Alias, SrcAddress ): SrcAddress, 
+					         DestinationIPv4Alias ? FormatString("%s(%s)", DestinationIPv4Alias, DstAddress) : DstAddress
+									);
+		case  2:
+			FormatString(
+			             "Response, %s at %s", 
+					         SourceIPv4Alias ? FormatString("%s(%s)", SourceIPv4Alias, SrcAddress ): SrcAddress, 
+					         SrcHardAddress
+									);		
+		default:
+			ARPOpCodeTable(OpCode);
+	}
+}
+
+
+
+Table IEEE1394ARPSSPDTable(sspd)
+{
+	switch(sspd)
+	{
+		case  0:"S100";
+		case  1:"S200";
+		case  2:"S400";
+		case  3:"S800";
+		case  4:"S1600";
+		case  5:"S3200";
+		default:"Unknown speed";
+	}
+}
+
+

@@ -1,0 +1,2093 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  EventLog Remoting Protocol Version 6.0
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-EVEN6]: EventLog Remoting Protocol Version 6.0 Specification (7.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 6/3/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol EVEN6 = FormatString( "%s %s%s%s%s%s", 
+	Property.EVEN6MethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.EVEN6Summary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.EVEN6Summary : "" )
+{
+	[Property.EVEN6Summary = ""]
+	[Property.EVEN6MethodName = EVEN6MethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct EvtRpcRegisterRemoteSubscription
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( " ChannelPath = %s, Query = %s, BookmarkXml = %s", ChannelPath.ToString, Query.ToString, BookmarkXml.ToString)]
+									Struct
+									{
+										NdrWideStringPtr ChannelPath;
+										NdrWideString Query;
+										NdrWideStringPtr BookmarkXml;
+										Align4 Pad;
+										EVEN6EvtRpcRegisterRemoteSubscriptionFlags Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( " QueryChannelInfoSize = %u, ReturnValue = %s", QueryChannelInfoSize, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle Handle;
+										ContextHandle Control;
+										UINT32 QueryChannelInfoSize;
+										EVEN6TagRpcQueryChannelInfoPtr QueryChannelInfo;
+										Align4 Pad;
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct EvtRpcRemoteSubscriptionNextAsync
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumRequestedRecords = %u", NumRequestedRecords)]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 NumRequestedRecords;
+										UINT32 Flags = MustBeSetToTable( this, "0" );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumActualRecords = %u, ResultBufferSize = %u, ReturnValue = %s", NumActualRecords, ResultBufferSize, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumActualRecords;
+										EVEN6UINT32ConformantPtr EventDataIndices;
+										EVEN6UINT32ConformantPtr EventDataSizes;
+										UINT32 ResultBufferSize;
+										EVEN6ResultSetPtr ResultBuffer;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct EvtRpcRemoteSubscriptionNext
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumRequestedRecords = %u, TimeOut = %u", NumRequestedRecords, TimeOut)]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 NumRequestedRecords;
+										UINT32 TimeOut;
+										UINT32 Flags = MustBeSetToTable( this, "0" );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumActualRecords = %u, ResultBufferSize = %u, ReturnValue = %s", NumActualRecords, ResultBufferSize, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumActualRecords;
+										EVEN6UINT32ConformantPtr EventDataIndices;
+										EVEN6UINT32ConformantPtr EventDataSizes;
+										UINT32 ResultBufferSize;
+										EVEN6ResultSetPtr ResultBuffer;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct EvtRpcRemoteSubscriptionWaitAsync
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Handle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct EvtRpcRegisterControllableOperation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct EvtRpcRegisterLogQuery
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "Path = %s, Query = %s", Path.ToString, Query.ToString )]
+									Struct
+									{
+										NdrWideStringPtr Path;
+										NdrWideString Query;
+										Align4 Pad;
+										EVEN6EvtRpcRegisterLogQueryFlags Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "QueryChannelInfoSize = %u ReturnValue = %s", QueryChannelInfoSize, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle Handle;
+										ContextHandle OpControl;
+										UINT32 QueryChannelInfoSize;
+										EVEN6TagRpcQueryChannelInfoPtr QueryChannelInfo;
+										Align4 Pad;
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct EvtRpcClearLog
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ChannelPath = %s, BackupPath = %s", ChannelPath.ToString, BackupPath.ToString)]
+									Struct
+									{
+										ContextHandle Control;
+										NdrWideString ChannelPath;
+										NdrWideStringPtr BackupPath;
+										Align4 Pad;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct EvtRpcExportLog
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ChannelPath = %s, Query = %s, BackupPath = %s", ChannelPath.ToString, Query.ToString, BackupPath.ToString )]
+									Struct
+									{
+										ContextHandle Control;
+										NdrWideStringPtr ChannelPath;
+										NdrWideString Query;
+										NdrWideString BackupPath;
+										Align4 Pad;
+										EVEN6EvtRpcExportLogFlags Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct EvtRpcLocalizeExportLog
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "LogFilePath = %s, Locale = %u", LogFilePath.ToString, Locale )]
+									Struct
+									{
+										ContextHandle Control;
+										NdrWideString LogFilePath;
+										Align4 Pad;
+										UINT32 Locale;
+										UINT32 Flags = MustBeSetToTable( this, "0" );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct EvtRpcMessageRender
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "SizeEventId=%u, MessageId = %u, MaxSizeString = %u", SizeEventId, MessageId, MaxSizeString )]
+									Struct
+									{
+										ContextHandle PubCfgObj;
+										UINT32 SizeEventId;
+										EVEN6EventDescriptorConformant EventId;
+										Align4 Pad1;
+										UINT32 MessageId;
+										NdrAlign Pad2;
+										EVEN6TagEvtRpcVariantList Values;
+										Align4 Pad3;
+										UINT32 Flags = EVEN6EvtRpcMessageRenderFlagsTable(this);
+										UINT32 MaxSizeString;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ActualSizeString = %u, NeededSizeString = %u, ReturnValue = %s", ActualSizeString, NeededSizeString, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ActualSizeString;
+										UINT32 NeededSizeString;
+										EVEN6CHARConformantPtr String;
+										Align4 Pad;
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct EvtRpcMessageRenderDefault
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "SizeEventId = %u, MessageId = %u, MaxSizeString = %u", SizeEventId, MessageId, MaxSizeString )]
+									Struct
+									{
+										UINT32 SizeEventId;
+										EVEN6EventDescriptorConformant EventId;
+										Align4 Pad1;
+										UINT32 MessageId;
+										NdrAlign Pad2;
+										EVEN6TagEvtRpcVariantList Values;
+										Align4 Pad3;
+										UINT32 Flags = EVEN6EvtRpcMessageRenderFlagsTable(this);
+										UINT32 MaxSizeString;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ActualSizeString = %u, NeededSizeString = %u, ReturnValue = %s", ActualSizeString, NeededSizeString, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ActualSizeString;
+										UINT32 NeededSizeString;
+										EVEN6CHARConformantPtr String;
+										Align4 Pad;
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct EvtRpcQueryNext
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumRequestedRecords = %u, TimeOutEnd = %u", NumRequestedRecords, TimeOutEnd )]
+									Struct
+									{
+										ContextHandle LogQuery;
+										UINT32 NumRequestedRecords;
+										UINT32 TimeOutEnd;
+										UINT32 Flags = MustBeSetToTable( this, "0" );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumActualRecords = %u, ResultBufferSize = %u, ReturnValue = %s", NumActualRecords, ResultBufferSize, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumActualRecords;
+										EVEN6UINT32ConformantPtr EventDataIndices;
+										EVEN6UINT32ConformantPtr EventDataSizes;
+										UINT32 ResultBufferSize;
+										EVEN6ResultSetPtr ResultBuffer;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct EvtRpcQuerySeek
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "Pos = %d, BookmarkXml = %s, TimeOut = %u", Pos, BookmarkXml.ToString, TimeOut)]
+									Struct
+									{
+										ContextHandle LogQuery;
+										Align8 Pad1;
+										INT64 Pos;
+										NdrWideStringPtr BookmarkXml;
+										Align4 Pad2;
+										UINT32 TimeOut = MUSTBeSetToTable(this, "0");
+										EVEN6EvtRpcQuerySeekFlags Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct EvtRpcClose
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Handle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct EvtRpcCancel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle Handle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct EvtRpcAssertConfig
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "Path = %s", Path.ToString )]
+									Struct
+									{
+										NdrWideString Path;
+										Align4 Pad;
+										UINT32 Flags = EVEN6EvtRpcAssertConfigFlagsTable( this );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct EvtRpcRetractConfig
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "Path = %s", Path.ToString )]
+									Struct
+									{
+										NdrWideString Path;
+										Align4 Pad;
+										UINT32 Flags = EVEN6EvtRpcRetractConfigFlagsTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct EvtRpcOpenLogHandle
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "Channel = %s", Channel.ToString )]
+									Struct
+									{
+										NdrWideString Channel;
+										Align4 Pad;
+										UINT32 Flags = EVEN6EvtRpcOpenLogHandleFlagsTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle Handle;
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct EvtRpcGetLogFileInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "PropertyId = %u, PropertyValueBufferSize = %u", PropertyId, PropertyValueBufferSize )]
+									Struct
+									{
+										ContextHandle LogHandle;
+										UINT32 PropertyId = EVEN6EvtRpcGetLogFileInfoPropertyIdTable(this);
+										UINT32 PropertyValueBufferSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "PropertyValueBufferLength = %u, ReturnValue = %s", PropertyValueBufferLength, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6CHARConformant PropertyValueBuffer;
+										Align4 Pad;
+										UINT32 PropertyValueBufferLength;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct EvtRpcGetChannelList
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 Flags = MustBeSetToTable( this, "0" );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumChannelPaths = %u, ReturnValue = %s", NumChannelPaths, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumChannelPaths;
+										Even6NdrWideStringPtrPtr ChannelPaths;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct EvtRpcGetChannelConfig
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ChannelPath = %s", ChannelPath.ToString)]
+									Struct
+									{
+										NdrWideString ChannelPath;
+										Align4 Pad;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagEvtRpcVariantList Props;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 21:
+			_Struct EvtRpcPutChannelConfig
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ChannelPath = %s", ChannelPath.ToString)]
+									Struct
+									{
+										NdrWideString ChannelPath;
+										Align4 Pad1;
+										UINT32 Flags = EVEN6EvtRpcPutChannelConfigFlagsTable(this);
+										NdrAlign Pad2;
+										EVEN6TagEvtRpcVariantList Props;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagRpcInfo Error;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 22:
+			_Struct EvtRpcGetPublisherList
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumPublisherIds = %u, ReturnValue = %s", NumPublisherIds, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumPublisherIds;
+										Even6NdrWideStringPtrPtr PublisherIds;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct EvtRpcGetPublisherListForChannel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ChannelName = %s", ChannelName.ToString )]
+									Struct
+									{
+										NdrWideString ChannelName;
+										Align4 Pad;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumPublisherIds = %u, ReturnValue = %s", NumPublisherIds, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumPublisherIds;
+										Even6NdrWideStringPtrPtr PublisherIds;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct EvtRpcGetPublisherMetadata
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "PublisherId = %s, LogFilePath = %s, Locale = %u", PublisherId.ToString, LogFilePath.ToString, Locale )]
+									Struct
+									{
+										NdrWideStringPtr PublisherId;
+										NdrWideStringPtr LogFilePath;
+										Align4 Pad;
+										UINT32 Locale;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagEvtRpcVariantList PubMetadataProps;
+										Align4 Pad;
+										ContextHandle PubMetadata;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct EvtRpcGetPublisherResourceMetadata
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "PropertyId = %u", PropertyId )]
+									Struct
+									{
+										ContextHandle Handle;
+										UINT32 PropertyId = EVEN6EvtRpcGetPublisherResourceMetadataPropertyIdTable(this);
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										EVEN6TagEvtRpcVariantList PubMetadataProps;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct EvtRpcGetEventMetadataEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReservedForFilter = %s", ReservedForFilter.ToString )]
+									Struct
+									{
+										ContextHandle PubMetadata;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+										NdrWideStringPtr ReservedForFilter;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "ReturnValue = %s", WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										ContextHandle EventMetaDataEnum;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct EvtRpcGetNextEventMetadata
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumRequested = %u", NumRequested )]
+									Struct
+									{
+										ContextHandle EventMetaDataEnum;
+										UINT32 Flags = MUSTBeSetToTable(this, "0");
+										UINT32 NumRequested;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "NumReturned=%u ReturnValue = %s", NumReturned, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										UINT32 NumReturned;
+										EVEN6TagEvtRpcVariantListConformantPtr EventMetadataInstances;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct EvtRpcGetClassicLogDisplayName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "LogName = %s, Locale = %u", LogName.ToString, Locale)]
+									Struct
+									{
+										NdrWideString LogName;
+										Align4 Pad;
+										UINT32 Locale;
+										UINT32 Flags = EVEN6EvtRpcGetClassicLogDisplayNameFlagsTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[EVEN6Summary = FormatString( "DisplayName=%s ReturnValue = %s", DisplayName.ToString, WinErrorCodeNameTable( ReturnValue )  )]
+									Struct
+									{
+										NdrWideStringPtr DisplayName;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("EVEN6", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "EVEN6", "Unknown IEventService method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+Struct EVEN6EvtRpcRegisterRemoteSubscriptionFlags
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			UINT32 FlagsLE = UINT32( FrameData, FrameOffset ) & 0x00000003 == 0x00000003 ? "StartAfterBookmark - Get all events starting after the event indicated by the bookmark" : "StartAfterBookmark - Not set"
+			{
+				UINT32 ToFutureEvents: 1 = FormatString( "     (%s) %s", this.ToBitString, this ? "Get events starting from the present time" : "Not set");
+				UINT32 StartAtOldestRecord: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Get all events from the logs, and any future events" : "Not set");
+				UINT32 Unused1: 10 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Loose: 1 = FormatString( "              (%s) %s", this.ToBitString, this ? "Succeed even if not all channels are valid" : "Not set");
+				UINT32 Unused2: 3 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Strict: 1 = FormatString( "             (%s) %s", this.ToBitString, this ? "Fail if any events are missed for reasons such as log clearing" : "Not set");
+				UINT32 Unused3: 11 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Pull:1 = FormatString( "                (%s) %s", this.ToBitString, this ? "Subscription is going to be a pull subscription" : "Not set");
+				UINT32 Unused4: 3 = FormatString( "            (%s)", this.ToBitString );
+			}
+		Case BigEndian:
+			UINT32 FlagsBE = UINT32( FrameData, FrameOffset ) & 0x00000003 == 0x00000003 ? "StartAfterBookmark - Get all events starting after the event indicated by the bookmark" : "StartAfterBookmark - Not set"
+			{
+				UINT32 Unused4: 3 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Pull:1 = FormatString( "                (%s) %s", this.ToBitString, this ? "Subscription is going to be a pull subscription" : "Not set");
+				UINT32 Unused3: 11 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Strict: 1 = FormatString( "             (%s) %s", this.ToBitString, this ? "Fail if any events are missed for reasons such as log clearing" : "Not set");
+				UINT32 Unused2: 3 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 Loose: 1 = FormatString( "              (%s) %s", this.ToBitString, this ? "Succeed even if not all channels are valid" : "Not set");
+				UINT32 Unused1: 10 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 StartAtOldestRecord: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Get all events from the logs, and any future events" : "Not set");
+				UINT32 ToFutureEvents: 1 = FormatString( "     (%s) %s", this.ToBitString, this ? "Get events starting from the present time" : "Not set");
+			}	
+	}
+}
+			
+				
+Struct EVEN6EvtRpcRegisterLogQueryFlags
+{
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 ChannelPath: 1 = FormatString( "    (%s) %s", this.ToBitString, this ? "Path specifies a channel name" : "Not set");
+					UINT32 FilePath: 1 = FormatString( "       (%s) %s", this.ToBitString, this ? "Path specifies a file name" : "Not set");
+					UINT32 Unused1: 6 = FormatString( "        (%s)", this.ToBitString );
+					UINT32 EventReadOrder1: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Events are read from oldest to newest" : "Not set");
+					UINT32 EventReadOrder2: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Events are read from newest to oldest" : "Not set");
+					UINT32 Unused2: 2 = FormatString( "        (%s)", this.ToBitString );
+					UINT32 QueryReturned: 1 = FormatString( "  (%s) %s", this.ToBitString, this? "Specifies that the query result set should be returned even if one or more errors result from the query" : "Not set");
+					UINT32 Unused3: 19 = FormatString( "        (%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused3: 19 = FormatString( "        (%s)", this.ToBitString );
+					UINT32 QueryReturned: 1 = FormatString( "  (%s) %s", this.ToBitString, this? "Specifies that the query result set should be returned even if one or more errors result from the query" : "Not set");
+					UINT32 Unused2: 2 = FormatString( "        (%s)", this.ToBitString );
+					UINT32 EventReadOrder2: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Events are read from newest to oldest" : "Not set");
+					UINT32 EventReadOrder1: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "Events are read from oldest to newest" : "Not set");
+					UINT32 Unused1: 6 = FormatString( "        (%s)", this.ToBitString );
+					UINT32 FilePath: 1 = FormatString( "       (%s) %s", this.ToBitString, this ? "Path specifies a file name" : "Not set");
+					UINT32 ChannelPath: 1 = FormatString( "    (%s) %s", this.ToBitString, this ? "Path specifies a channel name" : "Not set");
+				}
+		}
+	}
+}
+
+Struct EVEN6EvtRpcExportLogFlags
+{
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 ChannelPath: 1 = FormatString( "        (%s) %s", this.ToBitString, this ? "Channel parameter specifies a channel name" : "Not set");
+					UINT32 FilePath: 1 = FormatString( "           (%s) %s", this.ToBitString, this ? "Channel parameter specifies a channel name" : "Not set");
+					UINT32 Unused1: 10 = FormatString( "            (%s)", this.ToBitString );
+					UINT32 TolerateQueryErrors: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "The query MUST succeed" : "Not set");
+					UINT32 Unused2: 19 = FormatString( "            (%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused2: 19 = FormatString( "            (%s)", this.ToBitString );
+					UINT32 TolerateQueryErrors: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "The query MUST succeed" : "Not set");
+					UINT32 Unused1: 10 = FormatString( "            (%s)", this.ToBitString );
+					UINT32 FilePath: 1 = FormatString( "           (%s) %s", this.ToBitString, this ? "Channel parameter specifies a channel name" : "Not set");
+					UINT32 ChannelPath: 1 = FormatString( "        (%s) %s", this.ToBitString, this ? "Channel parameter specifies a channel name" : "Not set");
+				}
+		}
+	}
+}
+
+Struct EVEN6EvtRpcQuerySeekFlags
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			UINT32 FlagsLE = UINT32( FrameData, FrameOffset ) & 0x00000003 == 0x00000003 ? "RelativeToCurrent - The offset is relative to the current cursor location" : "RelativeToCurrent - Not set"
+			{
+				UINT32 RelativeToFirst: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The offset is relative to the first entry in the result set and SHOULD be nonnegative" : "Not set");
+				UINT32 RelativeToLast: 1 = FormatString( "    (%s) %s", this.ToBitString, this ? "The offset is relative to the last entry in the result set and SHOULD be nonpositive" : "Not set");
+				UINT32 RelativeToBookmark: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "The offset is relative to the bookmark location" : "Not set");
+				UINT32 Unused1: 13 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 Strict: 1 = FormatString( "            (%s) %s", this.ToBitString, this ? "Query fails if the seek cannot go to the record indicated by the other flags/parameters" : "The seek uses a best effort");
+				UINT32 Unused2: 15 = FormatString( "           (%s)", this.ToBitString );
+			}
+		Case BigEndian:
+			UINT32 FlagsBE = UINT32( FrameData, FrameOffset ) & 0x00000003 == 0x00000003 ? "RelativeToCurrent - The offset is relative to the current cursor location" : "RelativeToCurrent - Not set"
+			{
+				UINT32 Unused2: 15 = FormatString( "           (%s)", this.ToBitString );	
+				UINT32 Strict: 1 = FormatString( "            (%s) %s", this.ToBitString, this ? "Query fails if the seek cannot go to the record indicated by the other flags/parameters" : "The seek uses a best effort");	
+				UINT32 Unused1: 13 = FormatString( "           (%s)", this.ToBitString );	
+				UINT32 RelativeToBookmark: 1 = FormatString( "(%s) %s", this.ToBitString, this ? "The offset is relative to the bookmark location" : "Not set");	
+				UINT32 RelativeToLast: 1 = FormatString( "    (%s) %s", this.ToBitString, this ? "The offset is relative to the last entry in the result set and SHOULD be nonpositive" : "Not set");	
+				UINT32 RelativeToFirst: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The offset is relative to the first entry in the result set and SHOULD be nonnegative" : "Not set");	
+			}	
+	}
+}
+
+Table EVEN6MethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "EvtRpcRegisterRemoteSubscription";
+		Case 1: "EvtRpcRemoteSubscriptionNextAsync";
+		Case 2: "EvtRpcRemoteSubscriptionNext";
+		Case 3: "EvtRpcRemoteSubscriptionWaitAsync";
+		Case 4: "EvtRpcRegisterControllableOperation";
+		Case 5: "EvtRpcRegisterLogQuery";
+		Case 6: "EvtRpcClearLog";
+		Case 7: "EvtRpcExportLog";
+		Case 8: "EvtRpcLocalizeExportLog";
+		Case 9: "EvtRpcMessageRender";
+		Case 10: "EvtRpcMessageRenderDefault";
+		Case 11: "EvtRpcQueryNext";
+		Case 12: "EvtRpcQuerySeek";
+		Case 13: "EvtRpcClose";
+		Case 14: "EvtRpcCancel";
+		Case 15: "EvtRpcAssertConfig";
+		Case 16: "EvtRpcRetractConfig";
+		Case 17: "EvtRpcOpenLogHandle";
+		Case 18: "EvtRpcGetLogFileInfo";
+		Case 19: "EvtRpcGetChannelList";
+		Case 20: "EvtRpcGetChannelConfig";
+		Case 21: "EvtRpcPutChannelConfig";
+		Case 22: "EvtRpcGetPublisherList";
+		Case 23: "EvtRpcGetPublisherListForChannel";
+		Case 24: "EvtRpcGetPublisherMetadata";
+		Case 25: "EvtRpcGetPublisherResourceMetadata";
+		Case 26: "EvtRpcGetEventMetadataEnum";
+		Case 27: "EvtRpcGetNextEventMetadata";
+		Case 28: "EvtRpcGetClassicLogDisplayName";
+		Default: "unknown";
+	}
+}
+
+Table EVEN6EvtRpcMessageRenderFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "EvtFormatMessageEvent - Locate the message for the event that corresponds to eventID, and then insert the values specified by the values parameter.";
+		Case 0x00000002: "EvtFormatMessageLevel - Extract the level field from eventID, and then return the localized name for that level.";
+		Case 0x00000003: "EvtFormatMessageTask - Extract the task field from eventID, and then return the localized name for that task.";
+		Case 0x00000004: "EvtFormatMessageOpcode - Extract the opcode field from eventID, and then return the localized name for that opcode.";
+		Case 0x00000005: "EvtFormatMessageKeyword - Extract the keyword field from eventID, and then return the localized name for that keyword.";
+		Case 0x00000006: "EvtFormatMessageChannel - Extract the channel field from eventID, and then return the localized name for that channel.";
+		Case 0x00000007: "EvtFormatMessageProvider - Return the localized name of the publisher.";
+		Case 0x00000008: "EvtFormatMessageId - Locate the message for the event corresponding to the messageId parameter, and then insert the values specified by the values parameter.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcAssertConfigFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "EvtRpcChannelPath - Path specifies a channel name.";
+		Case 0x00000001: "EvtRpcChannelName - Path specifies a publisher name.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcRetractConfigFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "EvtRpcChannelPath - Path specifies a channel name.";
+		Case 0x00000001: "EvtRpcChannelName - Path specifies a publisher name.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcOpenLogHandleFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "0x01 - Channel parameter specifies a channel name.";
+		Case 0x00000002: "0x02 - Channel parameter specifies a file name.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcGetLogFileInfoPropertyIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "EvtLogCreationTime - A FILETIME containing the creation time of the file.";
+		Case 0x00000001: "EvtLogLastAccessTime - A FILETIME containing the last access time of the file.";
+		Case 0x00000002: "EvtLogLastWriteTime - A FILETIME containing the last write time of the file.";
+		Case 0x00000003: "EvtLogFileSize - An unsigned 64-bit integer containing the size of the file.";
+		Case 0x00000004: "EvtLogAttributes - An unsigned 32-bit integer containing the attributes of the file. The attributes are implementation-specific, and clients MUSTFor more information on attributes, see [MSDN-FILEATT]. treat all values equally.";
+		Case 0x00000005: "EvtLogNumberOfLogRecords - An unsigned 64-bit integer containing the number of records in the file.";
+		Case 0x00000006: "EvtLogOldestRecordNumber - An unsigned 64-bit integer containing the oldest record number in the file.";
+		Case 0x00000007: "EvtLogFull - A BOOLEAN value; MUST be true if the log is full, and MUST be false otherwise.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcPutChannelConfigFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "0x00 - Overwrite existing log file or create new log file.";
+		Case 0x00000001: "0x01 - Only update existing log file.";
+		Case 0x00000002: "0x02 - Always create a new log file. Delete any existing log file.";
+		Case 0x00000003: "0x03 - Only create a new log file. Fail if it already exists.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcGetPublisherResourceMetadataPropertyIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000004: "0x04 - Publisher help link.";
+		Case 0x00000005: "0x05 - Publisher friendly name.";
+		Case 0x0000000C: "0x0C - Level information.";
+		Case 0x00000010: "0x10 - Task information.";
+		Case 0x00000015: "0x15 - Opcode information.";
+		Case 0x00000019: "0x19 - Keyword information.";
+		Default: "Unknown";
+	}
+}
+
+Table EVEN6EvtRpcGetClassicLogDisplayNameFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "0x0000 - If a locale is specified, that locale will be used and no fallback locale will be attempted if the locale is not present. If locale is 0, the system default fallback list will be used to choose a language.";
+		Case 0x00000100: "0x0100 - If set, instructs the server to pick the best locale, if the locale specified by the locale parameter is not present.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	tag_RpcInfo
+//	Alignment: Align4
+//
+Struct EVEN6TagRpcInfo = MError.ToString
+{
+	UINT32 MError = this ? "Failure" : "Success";
+	UINT32 MSubErr;
+	UINT32 MSubErrParam;
+}
+
+//
+//	_BooleanArray
+//	Alignment: NdrAlign
+//
+Struct EVEN6BooleanArray
+{
+	UINT32 Count;
+	[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+	NdrPtr EVEN6BooleanArrayPtr;
+}
+
+Struct EVEN6BooleanConformant
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			BOOLEAN Element[ Size.MaxCount ];
+	}
+}
+
+//
+//	_UInt32Array
+//	Alignment: NdrAlign
+//
+Struct EVEN6UInt32Array
+{
+	UINT32 Count;
+	[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+	NdrPtr EVEN6UInt32ArrayPtr;
+}
+
+Struct EVEN6UINT32Conformant
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			UINT32 Element[ Size.MaxCount ];
+	}
+}
+
+Struct EVEN6UINT32ConformantPtr
+{
+	NdrPtr UINT32ConformantPtr;
+	Switch
+	{
+		Case UINT32ConformantPtr.ReferentID != 0:
+			EVEN6UINT32Conformant UINT32Conformant;
+	}
+}
+
+//
+//	_UInt64Array
+//	Alignment: NdrAlign
+//
+Struct EVEN6UInt64Array
+{
+	UINT32 Count;
+	[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+	NdrPtr EVEN6UInt64ArrayPtr;
+}
+
+Struct EVEN6UINT64Conformant
+{
+	NdrConformant Size;
+	Align8 Pad; //ToDo: verify
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			UINT64 Element[ Size.MaxCount ];
+	}
+}
+
+//
+//	_StringArray
+//	Alignment: NdrAlign
+//
+Struct EVEN6StringArray
+{
+	UINT32 Count;
+	[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+	NdrPtr EVEN6StringArrayPtr;
+}
+
+Struct EVEN6StringArrayConformant
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			[ Local.PointerCount = 0, Local.StringLoop = 0 ]
+			Struct
+			{
+				While[ Local.StringLoop < Size.MaxCount ]
+				{
+					[
+						Local.StringLoop = Local.StringLoop + 1,
+						Local.PointerCount = Pointer.ReferentID ? Local.PointerCount + 1 : Local.PointerCount
+					]
+					NdrPtr Pointer;
+				}
+				NdrWideString String[ Local.PointerCount ];
+			}
+	}
+}
+
+//
+//	_GuidArray
+//	Alignment: NdrAlign
+//
+Struct EVEN6GuidArray
+{
+	UINT32 Count;
+	[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+	NdrPtr EVEN6GuidArrayPtr;
+}
+
+Struct EVEN6GuidArrayConformant
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			GUID(TRUE) Element[ Size.MaxCount ];
+	}
+}
+
+//
+//	tag_EvtRpcVariantType
+//
+Struct EVEN6TagEvtRpcVariantType
+{
+	NdrV1Enum(4) Value = EVENRpcVariantTypeTable( this );
+}
+
+Table EVEN6TagEvtRpcVariantFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "0x00 - Indicates no instance of an EvtRpcVariant structure was changed by the client.";
+		Case 0x0001: "0x01 - Indicates an EvtRpcVariant structure was changed by the client.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	tag_EvtRpcVariant
+//
+Struct EVEN6TagEvtRpcVariant = Formatstring("Flags = %u, Type = %s", Flags, EVENRpcVariantTypeTable( Type.Value ))
+{
+	Align8 Pad1;
+	EVEN6TagEvtRpcVariantType Type;
+	UINT32 Flags = EVEN6TagEvtRpcVariantFlagsTable(this);
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad1;
+	}
+	EVEN6NestedRpcVariantEvtRpcVariant RpcVariant;
+}
+
+//
+//	_nested_RpcVariant_EvtRpcVariant
+//	Alignment: Align8
+//
+Struct EVEN6NestedRpcVariantEvtRpcVariant
+{
+	EVEN6TagEvtRpcVariantType Type;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad2;
+	}
+	[ Property.EVEN6EvtRpcVariantPtr = 0 ]
+	Switch( Type.Value )
+	{
+		Case 0: //Null
+			INT32 NullVal = MUSTBeSetToTable(this, "0");
+		Case 1: //Boolean
+			BOOLEAN BooleanVal;
+		Case 2: //UInt32
+			UINT32 Uint32Val;
+		Case 3: //Uint64
+			Struct
+			{
+				ALign8 Pad;
+				UINT64 Uint64Val;
+			}
+		Case 4: //String
+			[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+			NdrPtr StringValPtr;
+		Case 5: //Guid
+			[ Property.Even6EvtRpcVariantPtr  = this.ReferentID ]
+			NdrPtr GuidValPtr;
+		Case 6: //BooleanArray
+			Struct
+			{
+				NdrAlign pad;
+				EVEN6BooleanArray BooleanArray;
+			}
+		Case 7: //Uint32Array
+			Struct
+			{
+				NdrAlign pad;
+				EVEN6UInt32Array Uint32Array;
+			}
+		Case 8: //Uint64Array
+			Struct
+			{
+				NdrAlign pad;
+				EVEN6UInt64Array Uint64Array;
+			}
+		Case 9: //StringArray
+			Struct
+			{
+				NdrAlign pad;
+				EVEN6StringArray StringArray;
+			}
+		Case 10: //GuidArray
+			Struct
+			{
+				NdrAlign pad;
+				EVEN6GuidArray GuidArray;
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "EVEN6", "Unknown Union Switch Value" ) Unknown;
+	}
+	[
+		Property.Even6EvtRpcVariantPtr > 0 ? Property.EVEN6EvtRpcVariantPtrCount = Property.EVEN6EvtRpcVariantPtrCount + 1 : "",
+		Property.Even6EvtRpcVariantPtr > 0 ? Property.EVEN6EvtRpcVariantType$[ Property.EVEN6EvtRpcVariantPtrCount ] =  Type.Value : ""
+	]
+	Struct {};
+}
+
+Struct EVEN6TagEvtRpcVariantConformant = Size.ToString
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0 :
+		[ Property.Even6EvtRpcVariantPtrCount = 0 ]
+		Struct
+		{
+			EVEN6TagEvtRpcVariant Element[ Size.MaxCount ];
+
+			[ Local.VariantLoop = 0 ]
+			While[ Local.VariantLoop < Property.Even6EvtRpcVariantPtrCount ]
+			{
+				[ Local.VariantLoop = Local.VariantLoop  + 1 ]
+				Switch( Property.EVEN6EvtRpcVariantType$[ Local.VariantLoop ] )
+				{
+					Case 4: //String
+						NdrWideString StringVal;
+
+					Case 5: //Guid
+						GUID(TRUE) GuidVal;
+
+					Case 6: //BooleanArray
+						EVEN6BooleanConformant BooleanArray;	
+
+					Case 7: //UINT32Array
+						EVEN6UINT32Conformant UINT32Array;
+					
+					Case 8: //UINT64Array
+						EVEN6UINT64Conformant UINT64Array;
+					
+					Case 9: //StringArray
+						EVEN6StringArrayConformant StringArray;
+
+					Case 10: //GuidArray
+						EVEN6GuidArrayConformant GuidArray;					
+				}
+			}
+		}		
+	}
+}
+
+//
+//	tag_EvtRpcVariantList
+//	Alignment: NdrAlign
+//
+Struct EVEN6TagEvtRpcVariantList
+{
+	UINT32 Count;
+	NdrPtr PropsPtr;
+	Switch
+	{
+		Case PropsPtr.ReferentID > 0 :
+				EVEN6TagEvtRpcVariantConformant Props;
+	}
+}
+
+Struct EVEN6TagEvtRpcVariantListHeader
+{
+	UINT32 Count;
+	[ Property.EVEN6VariantListPropsPtrCount = this.ReferentID > 0 ? Property.EVEN6VariantListPropsPtrCount + 1 : Property.EVEN6VariantListPropsPtrCount ]
+	NdrPtr PropsPtr;
+}
+
+Struct EVEN6TagEvtRpcVariantListConformantPtr
+{
+	NdrptrToConformant Conformant;
+	Switch
+	{
+		Case Conformant.ReferentID > 0:
+			Struct
+			{
+				[ Property.EVEN6VariantListPropsPtrCount = 0]
+				EVEN6TagEvtRpcVariantListHeader PropsHeader[ Conformant.MaxCount ] ;
+				EVEN6TagEvtRpcVariantConformant Props[ Property.EVEN6VariantListPropsPtrCount ];
+			}
+	}
+}
+
+//
+//	tag_EvtRpcQueryChannelInfo
+//
+Struct EVEN6TagRpcQueryChannelInfo
+{
+	[ Property.EVEN6TagRpcQueryChannelInfoNamePtrCount = this.ReferentID ? Property.EVEN6TagRpcQueryChannelInfoNamePtrCount + 1 : Property.EVEN6TagRpcQueryChannelInfoNamePtrCount ]
+	NdrPtr NamePtr;
+	UINT32 Status = this ? "Failure" : "Success";
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+}
+
+Struct EVEN6TagRpcQueryChannelInfoPtr
+{
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0 :
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0 :
+						Struct
+						{
+							[ Property.EVEN6TagRpcQueryChannelInfoNamePtrCount = 0 ]
+							EVEN6TagRpcQueryChannelInfo Element[ Size.MaxCount ];
+							NdrWideString Name[ Property.EVEN6TagRpcQueryChannelInfoNamePtrCount ];
+						}
+				}
+			}
+	}
+}
+
+Struct EVEN6CHARConformant
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			UINT8 Element[ Size.MaxCount ];
+	}
+}
+
+Struct EVEN6CHARConformantPtr
+{
+	NdrPtr CHARConformantPtr;
+	Switch
+	{
+		Case CHARConformantPtr.ReferentID != 0:
+			EVEN6CHARConformant CHARConformant;
+	}
+}
+
+//
+// ResultSet
+//
+[ DataTypeByteOrder = LittleEndian ]
+Struct EVEN6ResultSet
+{
+	[ Local.BinginOffset = FrameOffset ]
+	UINT32 TotalSize;
+	UINT32 HeaderSize =  MUSTBeSetToTable(this, "0x00000000");
+	UINT32 EventOffset =  MUSTBeSetToTable(this, "0x00000010");
+	UINT32 BookmarkOffset;
+	UINT32 BinXmlSize;
+	BLOB( BinXmlSize ) EventData;
+	UINT32 NumberOfSubqueryIDs;
+	Switch
+	{
+		Case NumberOfSubqueryIDs > 0:
+			UINT32 SubqueryIDs[ NumberOfSubqueryIDs ];
+	}
+	Switch
+	{
+		Case Frameoffset <= BookmarkOffset + Local.BinginOffset :
+			Struct BookMarkData
+			{
+				BLOB( BookmarkOffset + Local.BinginOffset - Frameoffset ) Pad;
+				[ Local.HeaderBinginOffset = FrameOffset ]
+				UINT32 BookmarkSize;
+				UINT32 HeaderSize = MUSTBeSetToTable( this, "0x00000018" );
+				UINT32 ChannelSize;
+				UINT32 CurrentChannel;
+				UINT32 ReadDirection;
+				UINT32 RecordIdsOffset;
+				Switch
+				{
+					Case FrameOffset <= RecordIdsOffset + Local.HeaderBinginOffset :
+						Struct
+						{
+							BLOB( RecordIdsOffset + Local.HeaderBinginOffset - Frameoffset ) Pad;
+							UINT64 LogRecordNumbers[ ChannelSize ];
+						}
+				}
+			}
+	}
+}
+
+Struct EVEN6ResultSetConformant
+{
+	NdrConformant Size;
+	[ Local.EndOffset = FrameOffset + Size.MaxCount ]
+	Switch
+	{
+		Case FrameLength < Local.EndOffset:
+			BLOB( FrameLength - FrameOffset ) UnparsedData = "Parse after reassembly";
+		Default:
+			Struct
+			{
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							EVEN6ResultSet ResultSet;
+						}
+				}
+				Switch
+				{
+					Case FrameOffset < Local.EndOffset:
+						BLOB( FrameLength < Local.EndOffset - FrameOffset ) Pad;
+				}
+			}
+	}
+}
+
+Struct EVEN6ResultSetPtr
+{
+	NdrPtr ResultSetPtr;
+	Switch
+	{
+		Case ResultSetPtr.ReferentID > 0:
+			EVEN6ResultSetConformant ResultSet;
+	}
+}
+
+//
+// EventDescriptor
+//
+[ DataTypeByteOrder = LittleEndian ]
+Struct EVEN6EventDescriptor
+{
+	UINT16 Id;
+	UINT8 Level;
+	UINT8 Channel;
+	UINT8 LevelSeverity;
+	UINT8 Opcode;
+	UINT16 Task;
+	UINT64 Keyword;
+}
+
+Struct EVEN6EventDescriptorConformant
+{
+	NdrConformant Size;
+	[ Local.EndOffset = FrameOffset + Size.MaxCount ]
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			EVEN6EventDescriptor EventDescriptor;
+	}
+	Switch
+	{
+		Case FrameOffset < Local.EndOffset:
+			BLOB( Local.EndOffset - FrameOffset ) Pad;
+	}
+}
+	
+Struct Even6NdrWideStringPtrPtr
+{
+	NdrPtr NdrWideStringPtrPtr;
+	Switch
+	{
+		Case NdrWideStringPtrPtr.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						[ Local.PointerCount = 0, Local.StringLoop = 0 ]
+						Struct
+						{
+							While[ Local.StringLoop < Size.MaxCount ]
+							{
+								[
+									Local.StringLoop = Local.StringLoop + 1,
+									Local.PointerCount = Pointer.ReferentID ? Local.PointerCount + 1 : Local.PointerCount
+								]
+								NdrPtr Pointer;
+							}
+							NdrWideString String[ Local.PointerCount ];
+						}
+				}
+			}
+	}
+}

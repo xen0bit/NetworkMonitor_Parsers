@@ -1,0 +1,3055 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Remote Desktop Protocol
+//#
+//#  Details:                Remote Desktop Protocol parser family - root parser
+//#
+//#  Microsoft References:   [MS-RDPEGDI]:  Remote Desktop Protocol: Graphics Device Interface (GDI) Acceleration Extensions (5.0.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/16/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEGDI
+{
+	switch 
+	{
+		case Property.RDPBCGRSecurityFlags & 0x0400:
+			// 2.2.3.1 Server Redirection Packet (RDP_SERVER_REDIRECTION_PACKET)
+			// Always encrypted
+			BLOB(FrameLength - FrameOffset) EncryptedRedirectPacket;
+		case ISOTS:
+			RDPEGDITsUpdateOrdersPduData TsUpdateOrdersPduData;
+		default:
+			RDPEGDITsFpUpdateOrders TsFpUpdateOrders;
+	}
+}
+
+// 2.2.1.1 Color Table Cache Capability Set (TS_COLORTABLE_CAPABILITYSET)
+struct RDPEGDITsColorTableCapabilitySet = FormatString("ColorTableCacheSize = %u", ColorTableCacheSize) //10
+{
+	UINT16 ColorTableCacheSize;
+	UINT16 Pad2octets;
+}
+
+// 2.2.1.3 Draw GDI+ Capability Set (TS_DRAW_GDIPLUS_CAPABILITYSET)
+Table RDPEGDIDrawGDIplusSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0: "GDI+ 1.1 is not supported";
+		case 1: "GDI+ 1.1 is supported";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEGDIGdipVersionTable(code)
+{
+	switch (code)
+	{
+		case 0: "GDI+ version 1.1 is supported";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEGDIDrawGdiPlusCacheLevelTable(code)
+{
+	switch (code)
+	{
+		case 0: "Caching of GDI+ 1.1 rendering primitives is not supported";
+		case 1: "Caching of GDI+ 1.1 rendering primitives is supported";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPEGDITsDrawGdiPlusCapabilitySet = "Version = " + RDPEGDIGdipVersionTable(GdipVersion) //22
+{
+	UINT32 DrawGDIplusSupportLevel = RDPEGDIDrawGDIplusSupportLevelTable(this);
+	UINT32 GdipVersion = RDPEGDIGdipVersionTable(this);
+	UINT32 DrawGdiplusCacheLevel = RDPEGDIDrawGdiPlusCacheLevelTable(this);
+	RDPEGDITsGdiPlusCacheEntries GdipCacheEntries;
+	RDPEGDITsGdiPlusCacheChunkSize GdipCacheChunkSize;
+	RDPEGDITsGdiPlusImageCacheProperties GdipImageCacheProperties;
+}
+
+// 2.2.1.3.1 GDI+ Cache Entries (TS_GDIPLUS_CACHE_ENTRIES)
+struct RDPEGDITsGdiPlusCacheEntries
+{
+	UINT16 GdipGraphicsCacheEntries;
+	UINT16 GdipBrushCacheEntries;
+	UINT16 GdipPenCacheEntries;
+	UINT16 GdipImageCacheEntries;
+	UINT16 GdipImageAttributesCacheEntries;
+}
+
+// 2.2.1.3.2 GDI+ Cache Chunk Size (TS_GDIPLUS_CACHE_CHUNK_SIZE)
+struct RDPEGDITsGdiPlusCacheChunkSize
+{
+	UINT16 GdipGraphicsCacheChunkSize;
+	UINT16 GdipObjectBrushCacheChunkSize;
+	UINT16 GdipObjectPenCacheChunkSize;
+	UINT16 GdipObjectImageAttributesCacheChunkSize;
+}
+
+// 2.2.1.3.3 GDI+ Image Cache Properties (TS_GDIPLUS_IMAGE_CACHE_PROPERTIES)
+struct RDPEGDITsGdiPlusImageCacheProperties
+{
+	UINT16 GdipObjectImageCacheChunkSize;
+	UINT16 GdipObjectImageCacheTotalSize;
+	UINT16 GdipObjectImageCacheMaxSizePerImage;
+}
+
+// 2.2.2.1 Orders Update (TS_UPDATE_ORDERS_PDU_DATA)
+struct RDPEGDITsUpdateOrdersPduData
+{
+	UINT16 UpdateType = RDPBCGRUpdatePDUUpdateTypeTable(this);
+	UINT16 Pad2OctetsA;
+	[Local.OrderCount]
+	UINT16 NumberOrders;
+	UINT16 Pad2OctetsB;
+	while[(FrameOffset < FrameLength) && (Local.OrderCount > 0)]
+	{
+		[ Local.OrderCount = Local.OrderCount - 1]
+		RDPEGDIDrawingOrder OrderData;
+	}
+}
+
+// 2.2.2.2 Fast-Path Orders Update (TS_FP_UPDATE_ORDERS)
+struct RDPEGDITsFpUpdateOrders
+{
+	[Local.OrderCount]
+	UINT16 NumberOrders;
+	while[(FrameOffset < FrameLength) && (Local.OrderCount > 0)]
+	{
+		[ Local.OrderCount = Local.OrderCount - 1]
+		RDPEGDIDrawingOrder OrderData;
+	}
+}
+
+// 2.2.2.2.1 Drawing Order (DRAWING_ORDER)
+struct RDPEGDIDrawingOrder = Local.RDPEGDIDrawingOrderType
+{
+	switch (UINT8(FrameData, FrameOffset) & 0x03)
+	{
+		case 0x01:
+			[Local.RDPEGDIDrawingOrderType = PrimaryDrawingOrder.ToString]
+			RDPEGDIPrimaryDrawingOrder PrimaryDrawingOrder;
+			
+		case 0x03:
+			[Local.RDPEGDIDrawingOrderType = SecondaryDrawingOrder.ToString]
+			RDPEGDISecondaryDrawingOrder SecondaryDrawingOrder;
+			
+		case 0x02:
+			[Local.RDPEGDIDrawingOrderType = AlternativeSecondaryDrawingOrder.ToString]
+			RDPEGDIAlternativeSecondaryDrawingOrder AlternativeSecondaryDrawingOrder;
+		
+		default:
+			[Local.RDPEGDIDrawingOrderType = "Bad Control Flags, May Need Reassembly"]
+			[Property.RDPBCGRPacketType = "Bad Control Flags, May Need Reassembly"]
+			ReportParserError(ParserErrorProtocolClassWindows, "RDPEGDI", "Bad Control Flags, May Need Reassembly") ParserError;
+	}
+}
+
+// 2.2.2.2.1.1.1.1 Coord Field (COORD_FIELD)
+struct RDPEGDICoordField = FormatString("%s = %d", Property.RDPEGDIDeltaCoordinates ? "Delta" : "Value", Property.RDPEGDICoordValue)
+{
+	switch (property.RDPEGDIDeltaCoordinates)
+	{
+		case 0:
+			[Property.RDPEGDICoordValue = ((WordCoordValue & 0x8000) ? WordCoordValue | 0xFFFF0000 : WordCoordValue)]
+			INT16 WordCoordValue;
+		default:
+			[Property.RDPEGDICoordValue = ((ByteCoordValue & 0x8000) ? ByteCoordValue | 0xFFFFFF00 : ByteCoordValue)]
+			INT8 ByteCoordValue;
+	}
+}
+
+// 2.2.2.2.1.1.1.4 Delta-Encoded Points (DELTA_PTS_FIELD)
+[DataTypeBitAlign]
+struct RDPEGDIDeltaPtsFieldField(Count)
+{
+	UINT8 Length;
+	[
+		DataFieldByteOrder = BigEndian,
+		Local.ZeroFlagsByteCount = (Count >> 2) + (Count % 4 ? 1 : 0),
+	]
+	BLOB(Local.ZeroFlagsByteCount) ZeroFlags
+	{
+		[MaxLoopCount = Count]
+		while [true]
+		{
+			[Local.PointZeroFlagArray.AddToProperty(this, 0)]
+			UINT8 PointZeroFlag:2 = (this == 0x3) ? FormatString("Point%d Not Present", Local.CurrentPoint) : FormatString("%s%sPresent", this & 0x2 ? "": "X ", this & 0x1 ? "": "Y ");
+		}
+	};
+	
+	[Local.CurrentX = 0, Local.CurrentY = 0, Local.CurrentPoint = 0]
+	[DataFieldFrameLength = FrameOffset + Length - Local.ZeroFlagsByteCount]
+	[MaxLoopCount = Count]
+	while [true]
+	{
+		[Post.Local.CurrentPoint = Local.CurrentPoint + 1]
+		struct Point = FormatString("Point%u:(%d, %d)",
+									Local.CurrentPoint + 1,
+									Local.CurrentX,
+									Local.CurrentY)
+		{
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentPoint] & 0x2):
+					[Post.Local.CurrentX = Local.CurrentX + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes X = FormatString(Local.CurrentX + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedX = FormatString("%d", Local.CurrentX){};
+			}
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentPoint] & 0x1):
+					[Post.Local.CurrentY = Local.CurrentY + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes Y = FormatString(Local.CurrentY + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedY = FormatString(Local.CurrentY){};
+			}
+		}
+	}
+}
+
+// 2.2.2.2.1.1.1.5 Delta-Encoded Rectangles (DELTA_RECTS_FIELD)
+[DataTypeBitAlign]
+struct RDPEGDIDeltaRectsField(Count)
+{
+	UINT16 Length;
+	[
+		DataFieldByteOrder = BigEndian,
+		Local.ZeroFlagsByteCount = (Count >> 1) + (Count % 2 ? 1 : 0),
+	]
+	BLOB(Local.ZeroFlagsByteCount) ZeroFlags
+	{
+		[MaxLoopCount = Count]
+		while [true]
+		{
+			[Local.PointZeroFlagArray.AddToProperty(this, 0)]
+			UINT8 RectZeroFlag:4 = (this == 0xF) ? FormatString("Rectangle%d Not Present", Local.CurrentRect) : FormatString("%s%s%s%sPresent", this & 0x8 ? "": "Left ", this & 0x4 ? "": "Top ", this & 0x2 ? "": "Right ", this & 0x1 ? "": "Bottom ");
+		}
+	}
+  
+	[Local.CurrentLeft = 0, Local.CurrentRight = 0, Local.CurrentTop = 0, Local.CurrentBottom = 0, Local.CurrentRect = 0]
+	[DataFieldFrameLength = FrameOffset + Length - Local.ZeroFlagsByteCount]
+	[MaxLoopCount = Count]
+	while [true]
+	{
+		[Post.Local.CurrentRect = Local.CurrentRect + 1]
+		struct Rectangle = FormatString("Rect%u:(%d, %d, %d, %d)",
+										Local.CurrentRect + 1,
+										Local.CurrentLeft,
+										Local.CurrentTop,
+										Local.CurrentRight,
+										Local.CurrentBottom)
+		{
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentRect] & 0x8):
+					[Post.Local.CurrentLeft = Local.CurrentLeft + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes Left = FormatString("%d", Local.CurrentLeft + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedLeft = FormatString(Local.CurrentLeft){};
+			}
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentRect] & 0x4):
+					[Post.Local.CurrentTop = Local.CurrentTop + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes Top = FormatString("%d", Local.CurrentTop + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedTop = FormatString(Local.CurrentTop){};
+			}
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentRect] & 0x2):
+					[Post.Local.CurrentRight = Local.CurrentRight + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes Right = FormatString("%d", Local.CurrentRight + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedRight = FormatString(Local.CurrentRight){};
+			}
+			switch
+			{
+				case !(Local.PointZeroFlagArray[Local.CurrentRect] & 0x1):
+					[Post.Local.CurrentBottom = Local.CurrentBottom + Property.RDPBCGREncodedValue]
+					RDPBCGRCommonEncodedSignedValue2Bytes Bottom = FormatString("%d", Local.CurrentBottom + Property.RDPBCGREncodedValue);
+				default:
+					struct OmitedBottom = FormatString(Local.CurrentBottom){};
+			}
+		}
+	}
+}
+
+// 2.2.2.2.1.1.1.6 Binary Raster Operation (ROP2_OPERATION)
+table RDPEGDIDrawingOrderROP2Table(value)
+{
+	switch(value)
+	{
+		case 0x01: "R2_BLACK(0)";
+		case 0x02: "R2_NOTMERGEPEN(DPon)";
+		case 0x03: "R2_MASKNOTPEN(DPna)";
+		case 0x04: "R2_NOTCOPYPEN(Pn)";
+		case 0x05: "R2_MASKPENNOT(PDna)";
+		case 0x06: "R2_NOT(Dn)";
+		case 0x07: "R2_XORPEN(DPx)";
+		case 0x08: "R2_NOTMASKPEN(DPan)";
+		case 0x09: "R2_MASKPEN(DPa)";
+		case 0x0A: "R2_NOTXORPEN(DPon)";
+		case 0x0B: "R2_NOP(D)";
+		case 0x0C: "R2_MERGENOTPEN(DPno)";
+		case 0x0D: "R2_COPYPEN(P)";
+		case 0x0E: "R2_MERGEPENNOT(PDno)";
+		case 0x0F: "R2_MERGEPEN(PDo)";
+		case 0x10: "R2_WHITE(1)";
+		default: "Unknown value";
+	}
+}
+
+// 2.2.2.2.1.1.1.7 Ternary Raster Operation Index (ROP3_OPERATION_INDEX)
+Table RDPEGDIRop3OperationIndexTable(value)
+{
+	switch(value)
+	{
+		case 0x00:"BLACKNESS 0x00000042(0)";
+		case 0x01:"0x00010289(DPSoon)";
+		case 0x02:"0x00020C89(DPSona)";
+		case 0x03:"0x000300AA(PSon)";
+		case 0x04:"0x00040C88(SDPona)";
+		case 0x05:"0x000500A9(DPon)";
+		case 0x06:"0x00060865(PDSxnon)";
+		case 0x07:"0x000702C5(PDSaon)";
+		case 0x08:"0x00080F08(SDPnaa)";
+		case 0x09:"0x00090245(PDSxon)";
+		case 0x0A:"0x000A0329(DPna)";
+		case 0x0B:"0x000B0B2A(PSDnaon)";
+		case 0x0C:"0x000C0324(SPna)";
+		case 0x0D:"0x000D0B25(PDSnaon)";
+		case 0x0E:"0x000E08A5(PDSonon)";
+		case 0x0F:"0x000F0001(Pn)";
+		case 0x10:"0x00100C85(PDSona)";
+		case 0x11:"NOTSRCERASE 0x001100A6(DSon)";
+		case 0x12:"0x00120868(SDPxnon)";
+		case 0x13:"0x001302C8(SDPaon)";
+		case 0x14:"0x00140869(DPSxnon)";
+		case 0x15:"0x001502C9(DPSaon)";
+		case 0x16:"0x00165CCA(PSDPSanaxx)";
+		case 0x17:"0x00171D54(SSPxDSxaxn)";
+		case 0x18:"0x00180D59(SPxPDxa)";
+		case 0x19:"0x00191CC8(SDPSanaxn)";
+		case 0x1A:"0x001A06C5(PDSPaox)";
+		case 0x1B:"0x001B0768(SDPSxaxn)";
+		case 0x1C:"0x001C06CA(PSDPaox)";
+		case 0x1D:"0x001D0766(DSPDxaxn)";
+		case 0x1E:"0x001E01A5(PDSox)";
+		case 0x1F:"0x001F0385(PDSoan)";
+		case 0x20:"0x00200F09(DPSnaa)";
+		case 0x21:"0x00210248(SDPxon)";
+		case 0x22:"0x00220326(DSna)";
+		case 0x23:"0x00230B24(SPDnaon)";
+		case 0x24:"0x00240D55(SPxDSxa)";
+		case 0x25:"0x00251CC5(PDSPanaxn)";
+		case 0x26:"0x002606C8(SDPSaox)";
+		case 0x27:"0x00271868(SDPSxnox)";
+		case 0x28:"0x00280369(DPSxa)";
+		case 0x29:"0x002916CA(PSDPSaoxxn)";
+		case 0x2A:"0x002A0CC9(DPSana)";
+		case 0x2B:"0x002B1D58(SSPxPDxaxn)";
+		case 0x2C:"0x002C0784(SPDSoax)";
+		case 0x2D:"0x002D060A(PSDnox)";
+		case 0x2E:"0x002E064A(PSDPxox)";
+		case 0x2F:"0x002F0E2A(PSDnoan)";
+		case 0x30:"0x0030032A(PSna)";
+		case 0x31:"0x00310B28(SDPnaon)";
+		case 0x32:"0x00320688(SDPSoox)";
+		case 0x33:"NOTSRCCOPY 0x00330008(Sn)";
+		case 0x34:"0x003406C4(SPDSaox)";
+		case 0x35:"0x00351864(SPDSxnox)";
+		case 0x36:"0x003601A8(SDPox)";
+		case 0x37:"0x00370388(SDPoan)";
+		case 0x38:"0x0038078A(PSDPoax)";
+		case 0x39:"0x00390604(SPDnox)";
+		case 0x3A:"0x003A0644(SPDSxox)";
+		case 0x3B:"0x003B0E24(SPDnoan)";
+		case 0x3C:"0x003C004A(PSx)";
+		case 0x3D:"0x003D18A4(SPDSonox)";
+		case 0x3E:"0x003E1B24(SPDSnaox)";
+		case 0x3F:"0x003F00EA(PSan)";
+		case 0x40:"0x00400F0A(PSDnaa)";
+		case 0x41:"0x00410249(DPSxon)";
+		case 0x42:"0x00420D5D(SDxPDxa)";
+		case 0x43:"0x00431CC4(SPDSanaxn)";
+		case 0x44:"SRCERASE 0x00440328(SDna)";
+		case 0x45:"0x00450B29(DPSnaon)";
+		case 0x46:"0x004606C6(DSPDaox)";
+		case 0x47:"0x0047076A(PSDPxaxn)";
+		case 0x48:"0x00480368(SDPxa)";
+		case 0x49:"0x004916C5(PDSPDaoxxn)";
+		case 0x4A:"0x004A0789(DPSDoax)";
+		case 0x4B:"0x004B0605(PDSnox)";
+		case 0x4C:"0x004C0CC8(SDPana)";
+		case 0x4D:"0x004D1954(SSPxDSxoxn)";
+		case 0x4E:"0x004E0645(PDSPxox)";
+		case 0x4F:"0x004F0E25(PDSnoan)";
+		case 0x50:"0x00500325(PDna)";
+		case 0x51:"0x00510B26(DSPnaon)";
+		case 0x52:"0x005206C9(DPSDaox)";
+		case 0x53:"0x00530764(SPDSxaxn)";
+		case 0x54:"0x005408A9(DPSonon)";
+		case 0x55:"DSTINVERT 0x00550009(Dn)";
+		case 0x56:"0x005601A9(DPSox)";
+		case 0x57:"0x00570389(DPSoan)";
+		case 0x58:"0x00580785(PDSPoax)";
+		case 0x59:"0x00590609(DPSnox)";
+		case 0x5A:"PATINVERT 0x005A0049(DPx)";
+		case 0x5B:"0x005B18A9(DPSDonox)";
+		case 0x5C:"0x005C0649(DPSDxox)";
+		case 0x5D:"0x005D0E29(DPSnoan)";
+		case 0x5E:"0x005E1B29(DPSDnaox)";
+		case 0x5F:"0x005F00E9(DPan)";
+		case 0x60:"0x00600365(PDSxa)";
+		case 0x61:"0x006116C6(DSPDSaoxxn)";
+		case 0x62:"0x00620786(DSPDoax)";
+		case 0x63:"0x00630608(SDPnox)";
+		case 0x64:"0x00640788(SDPSoax)";
+		case 0x65:"0x00650606(DSPnox)";
+		case 0x66:"SRCINVERT 0x00660046(DSx)";
+		case 0x67:"0x006718A8(SDPSonox)";
+		case 0x68:"0x006858A6(DSPDSonoxxn)";
+		case 0x69:"0x00690145(PDSxxn)";
+		case 0x6A:"0x006A01E9(DPSax)";
+		case 0x6B:"0x006B178A(PSDPSoaxxn)";
+		case 0x6C:"0x006C01E8(SDPax)";
+		case 0x6D:"0x006D1785(PDSPDoaxxn)";
+		case 0x6E:"0x006E1E28(SDPSnoax)";
+		case 0x6F:"0x006F0C65(PDSxnan)";
+		case 0x70:"0x00700CC5(PDSana)";
+		case 0x71:"0x00711D5C(SSDxPDxaxn)";
+		case 0x72:"0x00720648(SDPSxox)";
+		case 0x73:"0x00730E28(SDPnoan)";
+		case 0x74:"0x00740646(DSPDxox)";
+		case 0x75:"0x00750E26(DSPnoan)";
+		case 0x76:"0x00761B28(SDPSnaox)";
+		case 0x77:"0x007700E6(DSan)";
+		case 0x78:"0x007801E5(PDSax)";
+		case 0x79:"0x00791786(DSPDSoaxxn)";
+		case 0x7A:"0x007A1E29(DPSDnoax)";
+		case 0x7B:"0x007B0C68(SDPxnan)";
+		case 0x7C:"0x007C1E24(SPDSnoax)";
+		case 0x7D:"0x007D0C69(DPSxnan)";
+		case 0x7E:"0x007E0955(SPxDSxo)";
+		case 0x7F:"0x007F03C9(DPSaan)";
+		case 0x80:"0x008003E9(DPSaa)";
+		case 0x81:"0x00810975(SPxDSxon)";
+		case 0x82:"0x00820C49(DPSxna)";
+		case 0x83:"0x00831E04(SPDSnoaxn)";
+		case 0x84:"0x00840C48(SDPxna)";
+		case 0x85:"0x00851E05(PDSPnoaxn)";
+		case 0x86:"0x008617A6(DSPDSoaxx)";
+		case 0x87:"0x008701C5(PDSaxn)";
+		case 0x88:"SRCAND 0x008800C6(DSa)";
+		case 0x89:"0x00891B08(SDPSnaoxn)";
+		case 0x8A:"0x008A0E06(DSPnoa)";
+		case 0x8B:"0x008B0666(DSPDxoxn)";
+		case 0x8C:"0x008C0E08(SDPnoa)";
+		case 0x8D:"0x008D0668(SDPSxoxn)";
+		case 0x8E:"0x008E1D7C(SSDxPDxax)";
+		case 0x8F:"0x008F0CE5(PDSanan)";
+		case 0x90:"0x00900C45(PDSxna)";
+		case 0x91:"0x00911E08(SDPSnoaxn)";
+		case 0x92:"0x009217A9(DPSDPoaxx)";
+		case 0x93:"0x009301C4(SPDaxn)";
+		case 0x94:"0x009417AA(PSDPSoaxx)";
+		case 0x95:"0x009501C9(DPSaxn)";
+		case 0x96:"0x00960169(DPSxx)";
+		case 0x97:"0x0097588A(PSDPSonoxx)";
+		case 0x98:"0x00981888(SDPSonoxn)";
+		case 0x99:"0x00990066(DSxn)";
+		case 0x9A:"0x009A0709(DPSnax)";
+		case 0x9B:"0x009B07A8(SDPSoaxn)";
+		case 0x9C:"0x009C0704(SPDnax)";
+		case 0x9D:"0x009D07A6(DSPDoaxn)";
+		case 0x9E:"0x009E16E6(DSPDSaoxx)";
+		case 0x9F:"0x009F0345(PDSxan)";
+		case 0xA0:"0x00A000C9(DPa)";
+		case 0xA1:"0x00A11B05(PDSPnaoxn)";
+		case 0xA2:"0x00A20E09(DPSnoa)";
+		case 0xA3:"0x00A30669(DPSDxoxn)";
+		case 0xA4:"0x00A41885(PDSPonoxn)";
+		case 0xA5:"0x00A50065(PDxn)";
+		case 0xA6:"0x00A60706(DSPnax)";
+		case 0xA7:"0x00A707A5(PDSPoaxn)";
+		case 0xA8:"0x00A803A9(DPSoa)";
+		case 0xA9:"0x00A90189(DPSoxn)";
+		case 0xAA:"0x00AA0029(D)";
+		case 0xAB:"0x00AB0889(DPSono)";
+		case 0xAC:"0x00AC0744(SPDSxax)";
+		case 0xAD:"0x00AD06E9(DPSDaoxn)";
+		case 0xAE:"0x00AE0B06(DSPnao)";
+		case 0xAF:"0x00AF0229(DPno)";
+		case 0xB0:"0x00B00E05(PDSnoa)";
+		case 0xB1:"0x00B10665(PDSPxoxn)";
+		case 0xB2:"0x00B21974(SSPxDSxox)";
+		case 0xB3:"0x00B30CE8(SDPanan)";
+		case 0xB4:"0x00B4070A(PSDnax)";
+		case 0xB5:"0x00B507A9(DPSDoaxn)";
+		case 0xB6:"0x00B616E9(DPSDPaoxx)";
+		case 0xB7:"0x00B70348(SDPxan)";
+		case 0xB8:"0x00B8074A(PSDPxax)";
+		case 0xB9:"0x00B906E6(DSPDaoxn)";
+		case 0xBA:"0x00BA0B09(DPSnao)";
+		case 0xBB:"MERGEPAINT 0x00BB0226(DSno)";
+		case 0xBC:"0x00BC1CE4(SPDSanax)";
+		case 0xBD:"0x00BD0D7D(SDxPDxan)";
+		case 0xBE:"0x00BE0269(DPSxo)";
+		case 0xBF:"0x00BF08C9(DPSano)";
+		case 0xC0:"MERGECOPY 0x00C000CA(PSa)";
+		case 0xC1:"0x00C11B04(SPDSnaoxn)";
+		case 0xC2:"0x00C21884(SPDSonoxn)";
+		case 0xC3:"0x00C3006A(PSxn)";
+		case 0xC4:"0x00C40E04(SPDnoa)";
+		case 0xC5:"0x00C50664(SPDSxoxn)";
+		case 0xC6:"0x00C60708(SDPnax)";
+		case 0xC7:"0x00C707AA(PSDPoaxn)";
+		case 0xC8:"0x00C803A8(SDPoa)";
+		case 0xC9:"0x00C90184(SPDoxn)";
+		case 0xCA:"0x00CA0749(DPSDxax)";
+		case 0xCB:"0x00CB06E4(SPDSaoxn)";
+		case 0xCC:"SRCCOPY 0x00CC0020(S)";
+		case 0xCD:"0x00CD0888(SDPono)";
+		case 0xCE:"0x00CE0B08(SDPnao)";
+		case 0xCF:"0x00CF0224(SPno)";
+		case 0xD0:"0x00D00E0A(PSDnoa)";
+		case 0xD1:"0x00D1066A(PSDPxoxn)";
+		case 0xD2:"0x00D20705(PDSnax)";
+		case 0xD3:"0x00D307A4(SPDSoaxn)";
+		case 0xD4:"0x00D41D78(SSPxPDxax)";
+		case 0xD5:"0x00D50CE9(DPSanan)";
+		case 0xD6:"0x00D616EA(PSDPSaoxx)";
+		case 0xD7:"0x00D70349(DPSxan)";
+		case 0xD8:"0x00D80745(PDSPxax)";
+		case 0xD9:"0x00D906E8(SDPSaoxn)";
+		case 0xDA:"0x00DA1CE9(DPSDanax)";
+		case 0xDB:"0x00DB0D75(SPxDSxan)";
+		case 0xDC:"0x00DC0B04(SPDnao)";
+		case 0xDD:"0x00DD0228(SDno)";
+		case 0xDE:"0x00DE0268(SDPxo)";
+		case 0xDF:"0x00DF08C8(SDPano)";
+		case 0xE0:"0x00E003A5(PDSoa)";
+		case 0xE1:"0x00E10185(PDSoxn)";
+		case 0xE2:"0x00E20746(DSPDxax)";
+		case 0xE3:"0x00E306EA(PSDPaoxn)";
+		case 0xE4:"0x00E40748(SDPSxax)";
+		case 0xE5:"0x00E506E5(PDSPaoxn)";
+		case 0xE6:"0x00E61CE8(SDPSanax)";
+		case 0xE7:"0x00E70D79(SPxPDxan)";
+		case 0xE8:"0x00E81D74(SSPxDSxax)";
+		case 0xE9:"0x00E95CE6(DSPDSanaxxn)";
+		case 0xEA:"0x00EA02E9(DPSao)";
+		case 0xEB:"0x00EB0849(DPSxno)";
+		case 0xEC:"0x00EC02E8(SDPao)";
+		case 0xED:"0x00ED0848(SDPxno)";
+		case 0xEE:"SRCPAINT 0x00EE0086(DSo)";
+		case 0xEF:"0x00EF0A08(SDPnoo)";
+		case 0xF0:"PATCOPY 0x00F00021(P)";
+		case 0xF1:"0x00F10885(PDSono)";
+		case 0xF2:"0x00F20B05(PDSnao)";
+		case 0xF3:"0x00F3022A(PSno)";
+		case 0xF4:"0x00F40B0A(PSDnao)";
+		case 0xF5:"0x00F50225(PDno)";
+		case 0xF6:"0x00F60265(PDSxo)";
+		case 0xF7:"0x00F708C5(PDSano)";
+		case 0xF8:"0x00F802E5(PDSao)";
+		case 0xF9:"0x00F90845(PDSxno)";
+		case 0xFA:"0x00FA0089(DPo)";
+		case 0xFB:"PATPAINT 0x00FB0A09(DPSnoo)";
+		case 0xFC:"0x00FC008A(PSo)";
+		case 0xFD:"0x00FD0A0A(PSDnoo)";
+		case 0xFE:"0x00FE02A9(DPSoo)";
+		case 0xFF:"WHITENESS 0x00FF0062(1)";
+		default: "Undefined value: " + FormatString("%d", value);
+	}
+}
+
+// 2.2.2.2.1.1.1.8 Generic Color (TS_COLOR)
+struct RDPEGDITsColor
+{
+	switch(conversation.TCP.RDPBCGRColorDepth)
+	{
+		case 0xCA00:
+		case 0xCA01:
+		case 0x0008:
+			_struct
+			{
+				UINT8 PaletteIndex;
+				UINT16 Pad;
+			}
+		default:
+			_struct
+			{
+				UINT8 Red;
+				UINT8 Green;
+				UINT8 Blue;
+			}
+	}
+}
+
+// 2.2.2.2.1.1.1.9 Fill Mode (FILL_MODE)
+table RDPEGDIFillModeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "Alternate fill mode";
+		case 0x02: "Winding fill mode";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+// 2.2.2.2.1.1.2 Primary Drawing Order (PRIMARY_DRAWING_ORDER)
+Table RDPEGDIPrimaryDrawingOrderFieldFlagLengthTable(code)
+{
+	switch (code)
+	{
+		case 0: 1;
+		case 1: 2;
+		case 2: 1;
+		case 7: 1;
+		case 8: 1;
+		case 9: 2;
+		case 10: 1;
+		case 11: 1;
+		case 13: 2;
+		case 14: 3;
+		case 15: 1;
+		case 16: 2;
+		case 17: 2;
+		case 18: 2;
+		case 19: 2;
+		case 20: 1;
+		case 21: 2;
+		case 22: 1;
+		case 24: 2;
+		case 25: 1;
+		case 26: 2;
+		case 27: 3;
+
+	}
+}
+
+Table RDPEGDIPrimaryDrawingOrderTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "DstBlt";
+		case 1: "PatBlt";
+		case 2: "ScrBlt";
+		case 7: "DrawNineGrid";
+		case 8: "MultiDrawNineGrid";
+		case 9: "LineTo";
+		case 10: "OpaqueRect";
+		case 11: "SaveBitmap";
+		case 13: "MemBlt";
+		case 14: "Mem3Blt";
+		case 15: "MultiDstBlt";
+		case 16: "MultiPatBlt";
+		case 17: "MultiScrBlt";
+		case 18: "MultiOpaqueRect";
+		case 19: "FastIndex";
+		case 20: "PolygonSC";
+		case 21: "PolygonCB";
+		case 22: "PolyLine";
+		case 24: "FastGlyph";
+		case 25: "EllipseSC";
+		case 26: "EllipseCB";
+		case 27: "GlyphIndex";
+		case 0xFF:"Order type unchanged but last order type is missing";
+		default: "Undefined value: " + FormatString("(%d)", code);
+	}
+}
+
+struct RDPEGDIPrimaryDrawingOrder = RDPEGDIPrimaryDrawingOrderTypeTable(Property.RDPEGDICurrentStandardOrderType)
+{
+	UINT8 ControlFlags
+	{
+		UINT8 Standard:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Standard" : "Not Standard");
+		UINT8 Secondary:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Secondary" : "Not Secondary");
+		UINT8 Bounds:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Bounds" : "Not Bounds");
+		[
+		  Property.RDPEGDIOrderTypeChange = this + Property.RDPEGDIOrderTypeChange,
+		  Conversation.RDPEGDIFirstOrderTypeChange = (IsValueNone(Conversation.RDPEGDIFirstOrderTypeChange) || this == 1) ? this :
+			( Property.TCPLostSegment ? 0 : Conversation.RDPEGDIFirstOrderTypeChange)]
+		UINT8 TypeChange:1 = FormatString("       (%s) %s",this.ToBitString,this ? "TypeChange" : "Not TypeChange");
+		[property.RDPEGDIDeltaCoordinates]
+		UINT8 DeltaCoordinates:1 = FormatString(" (%s) %s",this.ToBitString,this ? "DeltaCoordinates" : "Not DeltaCoordinates");
+		UINT8 ZeroBoundsDeltas:1 = FormatString(" (%s) %s",this.ToBitString,this ? "ZeroBoundsDeltas" : "Not ZeroBoundsDeltas");
+		UINT8 ZeroFieldByteBit0:1 = FormatString("(%s) %s",this.ToBitString,this ? "ZeroFieldByteBit0" : "Not ZeroFieldByteBit0");
+		UINT8 ZeroFieldByteBit1:1 = FormatString("(%s) %s",this.ToBitString,this ? "ZeroFieldByteBit1" : "Not ZeroFieldByteBit1");
+	};
+	[Conversation.RDPEGDIFirstOrderTypeChangeMulti$[Framenumber, FrameOffset] = Conversation.RDPEGDIFirstOrderTypeChange]
+	switch
+	{
+		case (Property.RDPEGDIOrderTypeChange == 0) && ( FrameOffset < FrameLength):
+			switch
+			{
+				case Property.RDPEGDICurrentStandardOrderType == 0xFF:
+				case Property.TCPLostSegment:
+				case !Conversation.X224Connection && Conversation.RDPEGDIFirstOrderTypeChangeMulti$[Framenumber, FrameOffset] == 0:
+					struct
+					{
+						[ Property.RDPEGDICurrentStandardOrderType = 0xFF ]	
+						ReportParserWarning( "RDPEGDI", "Missing Last Order Type") ParserWarning;
+						BLOB(FrameLength - FrameOffset) UnparsedOrderData;
+					}
+			}
+	}
+	[Post.Local.FieldFlagLength = RDPEGDIPrimaryDrawingOrderFieldFlagLengthTable(RDPEGDICurrentStandardOrderType) - 
+			((ControlFlags.ZeroFieldByteBit1 << 1) + ControlFlags.ZeroFieldByteBit0)]
+	switch
+	{
+		case ControlFlags.TypeChange:
+			[property.RDPEGDICurrentStandardOrderType]
+			UINT8 OrderStateType = RDPEGDIPrimaryDrawingOrderTypeTable(this);
+	}
+	[Local.CurrentByte = 0, Property.RDPEGDIFieldFlag = 0]
+	while [Local.CurrentByte < Local.FieldFlagLength]
+	{
+		[Property.RDPEGDIFieldFlag = Property.RDPEGDIFieldFlag + (FieldFlagByte << (8 * Local.CurrentByte)), Post.Local.CurrentByte = Local.CurrentByte + 1]
+		UINT8 FieldFlagByte = FormatString("(%s) 0x%X", this.ToBitString, this);
+	}
+
+	switch
+	{
+		case ControlFlags.Bounds && (!ControlFlags.ZeroBoundsDeltas):
+			struct Bounds
+			{
+				UINT8 DescriptionByte = (Left ? "BOUND_LEFT " : "") +
+										(Top ? "BOUND_TOP " : "") +
+										(Right ? "BOUND_RIGHT " : "") +
+										(Bottom ? "BOUND_BOTTOM " : "") +
+										(DeltaLeft ? "BOUND_DELTA_LEFT " : "") +
+										(DeltaTop ? "BOUND_DELTA_TOP " : "") +
+										(DeltaRight ? "BOUND_DELTA_RIGHT " : "") +
+										(DeltaBottom ? "BOUND_DELTA_BOTTOM " : "")
+				{
+					UINT8 Left:1 = FormatString("       (%s) %s",this.ToBitString,this ? "BOUND_LEFT" : "BOUND_LEFT Absence");
+					UINT8 Top:1 = FormatString("        (%s) %s",this.ToBitString,this ? "BOUND_TOP" : "BOUND_TOP Absence");
+					UINT8 Right:1 = FormatString("      (%s) %s",this.ToBitString,this ? "BOUND_RIGHT" : "BOUND_RIGHT Absence");
+					UINT8 Bottom:1 = FormatString("     (%s) %s",this.ToBitString,this ? "BOUND_BOTTOM" : "BOUND_BOTTOM Absence");
+					UINT8 DeltaLeft:1 = FormatString("  (%s) %s",this.ToBitString,this ? "BOUND_DELTA_LEFT" : "BOUND_DELTA_LEFT Absence");
+					UINT8 DeltaTop:1 = FormatString("   (%s) %s",this.ToBitString,this ? "BOUND_DELTA_TOP" : "BOUND_DELTA_TOP Absence");
+					UINT8 DeltaRight:1 = FormatString(" (%s) %s",this.ToBitString,this ? "BOUND_DELTA_RIGHT" : "BOUND_DELTA_RIGHT Absence");
+					UINT8 DeltaBottom:1 = FormatString("(%s) %s",this.ToBitString,this ? "BOUND_DELTA_BOTTOM" : "BOUND_DELTA_BOTTOM Absence");
+				};
+				Switch
+				{
+					case DescriptionByte.DeltaLeft:
+						INT8 LeftDeltaBound;
+					Default:
+						Switch
+						{
+							case DescriptionByte.Left:
+								UINT16 LeftBound;
+						}
+				}
+				Switch
+				{
+					case DescriptionByte.DeltaTop:
+						INT8 TopDeltaBound;
+					Default:
+						Switch
+						{
+							case DescriptionByte.Top:
+								UINT16 TopBound;
+						}
+				}
+				Switch
+				{
+					case DescriptionByte.DeltaRight:
+						INT8 RightDeltaBound;
+					Default:
+						Switch
+						{
+							case DescriptionByte.Right:
+								UINT16 RightBound;
+						}
+				}
+				Switch
+				{
+					case DescriptionByte.DeltaBottom:
+						INT8 BottomDeltaBound;
+					Default:
+						Switch
+						{
+							case DescriptionByte.Bottom:
+								UINT16 BottomBound;
+						}		
+				}
+	   	}
+	}
+	switch (property.RDPEGDICurrentStandardOrderType)
+	{
+		case 0:
+			RDPEGDIDstBltOrder DstBltOrder;
+		case 1:
+			RDPEGDIPatBltOrder PatBltOrder;
+		case 2:
+			RDPEGDIScrBltOrder ScrBltOrder;
+		case 7:
+			RDPEGDIDrawNineGridOrder DrawNineGridOrder;
+		case 8:
+			RDPEGDIMultiDrawNineGridOrder MultiDrawNineGridOrder;
+		case 9:
+			RDPEGDILineToOrder LineToOrder;
+		case 10:
+			RDPEGDIOpaqueRectOrder OpaqueRectOrder;
+		case 11:
+			RDPEGDISaveBitmapOrder SaveBitmapOrder;
+		case 13:
+			RDPEGDIMemBltOrder MemBltOrder;
+		case 14:
+			RDPEGDIMem3BltOrder Mem3BltOrder;
+		case 15:
+			RDPEGDIMultiDstBltOrder MultiDstBltOrder;
+		case 16:
+			RDPEGDIMultiPatBltOrder MultiPatBltOrder;
+		case 17:
+			RDPEGDIMultiScrBltOrder MultiScrBltOrder;
+		case 18:
+			RDPEGDIMultiOpaqueRectOrder MultiOpaqueRectOrder;
+		case 19:
+			RDPEGDIFastIndexOrder FastIndexOrder;
+		case 20:
+			RDPEGDIPolygonSCOrder PolygonSCOrder;
+		case 21:
+			RDPEGDIPolygonCBOrder PolygonCBOrder;
+		case 22:
+			RDPEGDIPolyLineOrder PolyLineOrder;
+		case 24:
+			RDPEGDIFastGlyphOrder FastGlyphOrder;
+		case 25:
+			RDPEGDIEllipseSCOrder EllipseSCOrder;
+		case 26:
+			RDPEGDIEllipseCBOrder EllipseCBOrder;
+		case 27:
+			RDPEGDIGlyphIndexOrder GlyphIndexOrder;
+	}
+}
+
+// 2.2.2.2.1.1.2.1 DstBlt (DSTBLT_ORDER)
+struct RDPEGDIDstBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+}
+
+// 2.2.2.2.1.1.2.2 MultiDstBlt (MULTI_DSTBLT_ORDER)
+struct RDPEGDIMultiDstBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			[Property.RDPEGDICurrentMultiDstBltnDeltaEntries]
+			UINT8 nDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDIDeltaRectsField(Property.RDPEGDICurrentMultiDstBltnDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.3 PatBlt (PATBLT_ORDER)
+Table RDPEGDIDrawingOrderBrushStyleTable(value)
+{
+	switch(value)
+	{
+		case 0x81: "1 bit-per-pixel";
+		case 0x83: "8 bits-per-pixel";
+		case 0x84: "15 or 16 bits-per-pixel";
+		case 0x85: "24 bits-per-pixel";
+		case 0x00: "Solid color brush";
+		case 0x01: "Hollow brush";
+		case 0x02: "Hatched brush";
+		case 0x03: "Pattern brush";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+Table RDPEGDIDrawingOrderHatchedBrushTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "Horizontal hatch";
+		case 0x01: "Vertical hatch";
+		case 0x02: "45-degree downward, left-to-right hatch";
+		case 0x03: "45-degree upward, left-to-right hatch";	
+		case 0x04: "Horizontal and vertical cross-hatch";
+		case 0x05: "45-degree cross-hatch";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+struct RDPEGDIPatBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0001:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0002:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0004:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0008:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0010:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0020:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0040:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0080:
+			INT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			INT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			[Property.RDPEGDIBrushStyle]
+			UINT8 BrushStyle = RDPEGDIDrawingOrderBrushStyleTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			switch(Property.RDPEGDIBrushStyle)
+			{
+				case 0x02:
+					_struct Hatchedbrush
+					{
+						UINT8 BrushHatch = RDPEGDIDrawingOrderHatchedBrushTable(this);
+					}
+				default:
+					UINT8 BrushHatch;
+			}
+	}
+	switch
+	{
+		//only present when BrushStyle == 0x03
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			BLOB(7) BrushExtra;
+	}
+}
+
+// 2.2.2.2.1.1.2.4 MultiPatBlt (MULTI_PATBLT_ORDER)
+struct RDPEGDIMultiPatBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			[Property.RDPEGDIBrushStyle]
+			UINT8 BrushStyle = RDPEGDIDrawingOrderBrushStyleTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			switch(property.RDPEGDIBrushStyle)
+			{
+				case 0x02:
+					_struct Hatchedbrush
+					{
+						UINT8 BrushHatch = RDPEGDIDrawingOrderHatchedBrushTable(this);
+					}
+				default:
+					UINT8 BrushHatch;
+			}
+	}
+	switch
+	{
+		//only present when BrushStyle == 0x03
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			[Property.RDPEGDICurrentMultiPatBltnDeltaEntries]
+			UINT8 nDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x2000:
+			RDPEGDIDeltaRectsField(Property.RDPEGDICurrentMultiPatBltnDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.5 OpaqueRect (OPAQUERECT_ORDER)
+struct RDPEGDIOpaqueRectOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			switch(conversation.TCP.RDPBCGRColorDepth)
+			{
+				case 0xCA00:
+				case 0xCA01:
+				case 0x0008: 
+					UINT8 PaletteIndex;
+				default:
+					UINT8 Red;
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			UINT8 Green;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			UINT8 Blue;
+	}
+}
+
+// 2.2.2.2.1.1.2.6 MultiOpaqueRect (MULTI_OPAQUERECT_ORDER)
+struct RDPEGDIMultiOpaqueRectOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			switch(conversation.TCP.RDPBCGRColorDepth)
+			{
+				case 0xCA00:
+				case 0xCA01:
+				case 0x0008: 
+					UINT8 PaletteIndex;
+				default:
+					UINT8 Red;
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			UINT8 Green;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			UINT8 Blue;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			[Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries]
+			UINT8 nDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			RDPEGDIDeltaRectsField(Property.RDPEGDICurrentMultiOpaqueRectnDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.7 ScrBlt (SCRBLT_ORDER)
+struct RDPEGDIScrBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDICoordField nXSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField nYSrc;
+	}
+}
+
+// 2.2.2.2.1.1.2.8 MultiScrBlt (MULTI_SCRBLT_ORDER)
+struct RDPEGDIMultiScrBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDICoordField nXSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField nYSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			[Property.RDPEGDICurrentMultiScrBltnDeltaEntries]
+			UINT8 nDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			RDPEGDIDeltaRectsField(Property.RDPEGDICurrentMultiScrBltnDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.9 MemBlt (MEMBLT_ORDER)
+struct RDPEGDIMemBltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT16 cacheId;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField nXSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			RDPEGDICoordField nYSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			UINT16 cacheIndex;
+	}
+}
+
+// 2.2.2.2.1.1.2.10 Mem3Blt (MEM3BLT_ORDER)
+struct RDPEGDIMem3BltOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT16 cacheId;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nWidth;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField nHeight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			UINT8 bRop = RDPEGDIRop3OperationIndexTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField nXSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			RDPEGDICoordField nYSrc;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			[Property.RDPEGDIBrushStyle]
+			UINT8 BrushStyle = RDPEGDIDrawingOrderBrushStyleTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x2000:
+			switch(Property.RDPEGDIBrushStyle)
+			{
+				case 0x02:
+					_struct Hatchedbrush
+					{
+						UINT8 BrushHatch = RDPEGDIDrawingOrderHatchedBrushTable(this);
+					}
+				default:
+					UINT8 BrushHatch;
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x4000:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x8000:
+			UINT16 cacheIndex;
+	}
+}
+
+// 2.2.2.2.1.1.2.11 LineTo (LINETO_ORDER)
+table RDPEGDIDrawingOrderBackModeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "TRANSPARENT";
+		case 0x0002: "OPAQUE";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+struct RDPEGDILineToOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			INT16 BackMode = RDPEGDIDrawingOrderBackModeTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nXStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nYStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nXEnd;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField nYEnd;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDITsColor BackColor = "Always (0,0,0)";
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			UINT8 PenStyle = "Always PS_SOLID";
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			UINT8 PenWidth = "Always 1";
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			RDPEGDITsColor PenColor;
+	}
+}
+
+// 2.2.2.2.1.1.2.12 SaveBitmap (SAVEBITMAP_ORDER)
+table RDPEGDIDrawingOrderOperationTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "Save bitmap operation";
+		case 0x01: "Restore bitmap operation";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+struct RDPEGDISaveBitmapOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT32 SavedBitmapPosition;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField nLeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField nTopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField nRightRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField nBottomRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			UINT8 Operation = RDPEGDIDrawingOrderOperationTable(this);
+	}
+}
+
+// 2.2.2.2.1.1.2.13 GlyphIndex (GLYPHINDEX_ORDER)
+struct RDPEGDIFastGlyphIndexData(ulCharInc)
+{
+	UINT8 Length;
+	[DataFieldFrameLength = FrameOffset + Length]
+	while [FrameOffset < FrameLength]
+	{
+		switch (UINT8(FrameData, FrameOffset))
+		{
+			case 0xFE:
+				struct USE = FormatString("Index = %u", Index)
+				{
+					UINT8 Flag;
+					UINT8 Index;
+					switch(ulCharInc)
+					{
+						case 0x00:
+							switch(UINT8(FrameData, FrameOffset))
+							{
+								case 0x80:
+									_struct deltaValueUInt16
+									{
+										UINT8 Delta;
+										UINT16 ActualDistance;
+									}
+								default: UINT8 Delta;
+							}
+					}
+				}
+			
+			case 0xFF:
+				struct ADD = FormatString("Index = %u, Size = %u", Index, Size)
+				{
+					UINT8 Flag;
+					UINT8 Index;
+					UINT8 Size;
+				}
+				
+			default:
+				struct GLYPH = FormatString("Index = %u", Index)
+				{
+					UINT8 Index;
+					switch
+					{
+						case ulCharInc == 0:
+							switch 
+							{
+								case UINT8(FrameData, FrameOffset) == 0x80:
+									struct LargeDistance
+									{
+										UINT8 Delta;
+										UINT16 ActualDistance;
+									}
+								default:
+									UINT8 Delta;
+							}
+					}
+				}
+		}
+	}
+}
+
+struct RDPEGDIGlyphIndexOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT8 CacheId;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			UINT8 flAccel
+			{
+				UINT8 DefaultPlacement:1 = FormatString("  (%s) %s", this.ToBitString, this? "Set for legacy reasons, not used": "");
+				UINT8 Horizontal:1 = FormatString("        (%s) %s", this.ToBitString, this? "Text is horizontal": "");
+				UINT8 Vertical:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is vertical": "");
+				UINT8 Reversed:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is right-to-left": "Text is left-to-right");
+				UINT8 ZeroBearings:1 = FormatString("      (%s) %s", this.ToBitString, this? "Side bearing is 0": "");
+				UINT8 CharIncEqualBmBase:1 = FormatString("(%s) %s", this.ToBitString, this? "B-width equals the advance width of the glyph": "");
+				UINT8 MaxextEqualBmSide:1 = FormatString(" (%s) %s", this.ToBitString, this? "Height of the bitmap equal to the sum of the ascent and descent": "");
+				UINT8 Reserved:1 = FormatString("          (%s)", this.ToBitString);
+			};
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			[Property.RDPEGDICurrentGlyphIndexUlCharInc]
+			UINT8 ulCharInc = this == 0? "Not fixed-pitch font": FormatString("Fixed-pitch font, width: %u pixel(s)", this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			UINT8 fOpRedundant = this ? "Rectangle is redundant" : "Rectangle is not redundant";
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			INT16 BkLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			INT16 BkTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			INT16 BkRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			INT16 BkBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			INT16 OpLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			INT16 OpTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			INT16 OpRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x2000:
+			INT16 OpBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x4000:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x8000:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x010000:
+			UINT8 BrushStyle = FormatString("%u (Must set to BS_SOLID (0x00))", this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x020000:
+			UINT8 BrushHatch = FormatString("%u (Must set to 0)", this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x040000:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x080000:
+			INT16 X;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x100000:
+			INT16 Y;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x200000:
+			RDPEGDIFastGlyphIndexData(Property.RDPEGDICurrentGlyphIndexUlCharInc) GlyphData;
+	}
+}
+
+// 2.2.2.2.1.1.2.14 FastIndex (FASTINDEX_ORDER)
+struct RDPEGDIFastIndexOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT8 CacheId;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			UINT16 fDrawing
+			{
+				[Property.RDPEGDICurrentFastIndexUlCharInc]
+				UINT8 ulCharInc;
+				UINT8 fAccel
+				{
+					UINT8 DefaultPlacement:1 = FormatString("  (%s) %s", this.ToBitString, this? "Set for legacy reasons, not used": "");
+					UINT8 Horizontal:1 = FormatString("        (%s) %s", this.ToBitString, this? "Text is horizontal": "");
+					UINT8 Vertical:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is vertical": "");
+					UINT8 Reversed:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is right-to-left": "Text is left-to-right");
+					UINT8 ZeroBearings:1 = FormatString("      (%s) %s", this.ToBitString, this? "Side bearing is 0": "");
+					UINT8 CharIncEqualBmBase:1 = FormatString("(%s) %s", this.ToBitString, this? "B-width equals the advance width of the glyph": "");
+					UINT8 MaxextEqualBmSide:1 = FormatString(" (%s) %s", this.ToBitString, this? "Height of the bitmap equal to the sum of the ascent and descent": "");
+					UINT8 Reserved:1 = FormatString("          (%s)", this.ToBitString);
+				}
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField BkLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDICoordField BkTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField BkRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			RDPEGDICoordField BkBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			RDPEGDICoordField OpLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			// 2.2.2.3.1.1.2.14 FastIndex (FASTINDEX_ORDER)
+			_struct OpTop
+			{
+				switch
+				{
+					case (Property.RDPEGDIFieldFlag & 0x0400) && (Property.RDPEGDIFieldFlag & 0x0800):
+						_struct OpButtomHasRight
+						{
+							switch(property.RDPEGDIDeltaCoordinates)
+							{
+								case 0: [Local.OpBottomValue = UINT16(FrameData, FrameOffset + 2)] _struct {}
+								default: [Local.OpBottomValue = UINT16(FrameData, FrameOffset + 1)] _struct {}
+							}
+						}
+					case !(Property.RDPEGDIFieldFlag & 0x0400) && (Property.RDPEGDIFieldFlag & 0x0800):
+						_struct OpButtomNoRight
+						{
+							[Local.OpBottomValue = INT16(FrameData, FrameOffset)] _struct {}
+						}
+				}												
+				switch(Local.OpBottomValue & 0x0000FFFF)
+				{
+					case 0x00008000:
+						_struct OpTopAbsent
+						{
+							switch(property.RDPEGDIDeltaCoordinates)
+							{
+								case 0:
+									_struct OpTopFlagUINT16
+									{
+										UINT16 OpFlag
+										{
+											UINT16 Buttom:1 = FormatString("  (%s) %s", this.ToBitString, this? "Buttom coordinate is same as BkButtom":"");
+											UINT16 Right:1 = FormatString("   (%s) %s", this.ToBitString, this? "Right coordinate is same as BkRight": "");
+											UINT16 Top:1 = FormatString("     (%s) %s", this.ToBitString, this? "Top coordinate is same as BkTop": "");
+											UINT16 Left:1 = FormatString("    (%s) %s", this.ToBitString, this? "Left coordinate is same as BkLeft": "");
+											UINT16 Reserved:12 = FormatString("(%s)", this.ToBitString);
+										}
+									}
+								default:
+									_struct OpTopFlagUINT8
+									{
+										UINT8 OpFlag
+										{
+											UINT8 Buttom:1 = FormatString(" (%s) %s", this.ToBitString, this? "Buttom coordinate is same as BkButtom":"");
+											UINT8 Right:1 = FormatString("  (%s) %s", this.ToBitString, this? "Right coordinate is same as BkRight": "");
+											UINT8 Top:1 = FormatString("    (%s) %s", this.ToBitString, this? "Top coordinate is same as BkTop": "");
+											UINT8 Left:1 = FormatString("   (%s) %s", this.ToBitString, this? "Left coordinate is same as BkLeft": "");
+											UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+										}
+									}
+							}
+						}
+					default:
+						RDPEGDICoordField OpTop;
+				}
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			RDPEGDICoordField OpRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			RDPEGDICoordField OpBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			RDPEGDICoordField X;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x2000:
+			RDPEGDICoordField Y;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x4000:
+			RDPEGDIFastGlyphIndexData(Property.RDPEGDICurrentFastIndexUlCharInc) FastIndexData;
+	}
+}
+
+// 2.2.2.2.1.1.2.15 FastGlyph (FASTGLYPH_ORDER)
+struct RDPEGDIFastGlyphData = Length == 1 ? FormatString("Retrive From Index %u", Retrive.Index) : FormatString("Store '%s' At Index %u", Store.UnicodeChar, Store.Header.CacheIndex)
+{
+	UINT8 Length;
+	[Local.StartOffset = FrameOffset]
+	switch (Length)
+	{
+		case 0x01:
+			_struct Retrive
+			{
+				UINT8 Index;
+			}
+		default:
+			_struct Store
+			{
+				RDPEGDICacheGlyphDataRev2 Header;
+				UnicodeString(1) UnicodeChar;
+			}
+	}
+	switch
+	{
+		case FrameOffset < Local.StartOffset + Length:
+			BLOB(Local.StartOffset + Length - FrameOffset) Padding;
+	}
+}
+
+struct RDPEGDIFastGlyphOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			UINT8 CacheId;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			UINT16 fDrawing
+			{
+				UINT8 ulCharInc;
+				UINT8 fAccel
+				{
+					UINT8 DefaultPlacement:1 = FormatString("  (%s) %s", this.ToBitString, this? "Set for legacy reasons, not used": "");
+					UINT8 Horizontal:1 = FormatString("        (%s) %s", this.ToBitString, this? "Text is horizontal": "");
+					UINT8 Vertical:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is vertical": "");
+					UINT8 Reversed:1 = FormatString("          (%s) %s", this.ToBitString, this? "Text is right-to-left": "Text is left-to-right");
+					UINT8 ZeroBearings:1 = FormatString("      (%s) %s", this.ToBitString, this? "Side bearing is 0": "");
+					UINT8 CharIncEqualBmBase:1 = FormatString("(%s) %s", this.ToBitString, this? "B-width equals the advance width of the glyph": "");
+					UINT8 MaxextEqualBmSide:1 = FormatString(" (%s) %s", this.ToBitString, this? "Height of the bitmap equal to the sum of the ascent and descent": "");
+					UINT8 Reserved:1 = FormatString("          (%s)", this.ToBitString);
+				}
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDICoordField BkLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDICoordField BkTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDICoordField BkRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			RDPEGDICoordField BkBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			RDPEGDICoordField OpLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			//RDPEGDICoordField OpTop;
+			_struct OpTop
+			{
+				switch
+				{
+					case (Property.RDPEGDIFieldFlag & 0x0400) && (Property.RDPEGDIFieldFlag & 0x0800):
+						_struct OpButtomHasRight
+						{
+							switch(property.RDPEGDIDeltaCoordinates)
+							{
+								case 0: [Local.OpBottomValue = UINT16(FrameData, FrameOffset + 2)] _struct {}
+								default: [Local.OpBottomValue = UINT16(FrameData, FrameOffset + 1)] _struct {}
+							}
+						}
+					case !(Property.RDPEGDIFieldFlag & 0x0400) && (Property.RDPEGDIFieldFlag & 0x0800):
+						_struct OpButtomNoRight
+						{
+							[Local.OpBottomValue = INT16(FrameData, FrameOffset)] _struct {}
+						}
+				}												
+				switch(Local.OpBottomValue & 0x0000FFFF)
+				{
+					case 0x00008000:
+						_struct OpTopAbsent
+						{
+							switch(property.RDPEGDIDeltaCoordinates)
+							{
+								case 0:
+									_struct OpTopFlagUINT16
+									{
+										UINT16 OpFlag
+										{
+											UINT16 Buttom:1 = FormatString("  (%s) %s", this.ToBitString, this? "Buttom coordinate is same as BkButtom":"");
+											UINT16 Right:1 = FormatString("   (%s) %s", this.ToBitString, this? "Right coordinate is same as BkRight": "");
+											UINT16 Top:1 = FormatString("     (%s) %s", this.ToBitString, this? "Top coordinate is same as BkTop": "");
+											UINT16 Left:1 = FormatString("    (%s) %s", this.ToBitString, this? "Left coordinate is same as BkLeft": "");
+											UINT16 Reserved:12 = FormatString("(%s)", this.ToBitString);
+										}
+									}
+								default:
+									_struct OpTopFlagUINT8
+									{
+										UINT8 OpFlag
+										{
+											UINT8 Buttom:1 = FormatString(" (%s) %s", this.ToBitString, this? "Buttom coordinate is same as BkButtom":"");
+											UINT8 Right:1 = FormatString("  (%s) %s", this.ToBitString, this? "Right coordinate is same as BkRight": "");
+											UINT8 Top:1 = FormatString("    (%s) %s", this.ToBitString, this? "Top coordinate is same as BkTop": "");
+											UINT8 Left:1 = FormatString("   (%s) %s", this.ToBitString, this? "Left coordinate is same as BkLeft": "");
+											UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);																	
+										}
+									}
+							}
+						}
+					default:
+						RDPEGDICoordField OpTop;
+				}
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			RDPEGDICoordField OpRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			RDPEGDICoordField OpBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			RDPEGDICoordField X;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x2000:
+			RDPEGDICoordField Y;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x4000:
+			RDPEGDIFastGlyphData GlyphData;
+	}
+}
+
+// 2.2.2.2.1.1.2.16 PolygonSC (POLYGON_SC_ORDER)
+struct RDPEGDIPolygonSCOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField XStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField YStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			UINT8 FillMode = RDPEGDIFillModeTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDITsColor BrushColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			[Property.RDPEGDICurrentPolygonSCNumDeltaEntries]
+			UINT8 NumDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDIDeltaPtsFieldField(Property.RDPEGDICurrentPolygonSCNumDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.17 PolygonCB (POLYGON_CB_ORDER)
+struct RDPEGDIPolygonCBOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField XStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField YStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			UINT8 FillMode;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x80:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			[Property.RDPEGDIBrushStyle]
+			UINT8 BrushStyle = RDPEGDIDrawingOrderBrushStyleTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			switch(Property.RDPEGDIBrushStyle)
+			{
+				case 0x02:
+					_struct Hatchedbrush
+					{
+						UINT8 BrushHatch = RDPEGDIDrawingOrderHatchedBrushTable(this);
+					}
+				default:
+					UINT8 BrushHatch;
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			BLOB(7) BrushExtra;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			[Property.RDPEGDICurrentPolygonCBNumDeltaEntries]
+			UINT8 NumDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			RDPEGDIDeltaPtsFieldField(Property.RDPEGDICurrentPolygonCBNumDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.18 Polyline (POLYLINE_ORDER)
+struct RDPEGDIPolyLineOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField XStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField YStart;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			UINT16 BrushCacheEntry = FormatString("%u (Unused)", this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			RDPEGDITsColor PenColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			[Property.RDPEGDICurrentPolyLineNumDeltaEntries]
+			UINT8 NumDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDIDeltaPtsFieldField(Property.RDPEGDICurrentPolyLineNumDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.1.2.19 EllipseSC (ELLIPSE_SC_ORDER)
+struct RDPEGDIEllipseSCOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0001:
+			RDPEGDICoordField LeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0002:
+			RDPEGDICoordField TopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0004:
+			RDPEGDICoordField RightRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0008:
+			RDPEGDICoordField BottomRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0010:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0020:
+			UINT8 FillMode = RDPEGDIFillModeTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0040:
+			RDPEGDITsColor Color;
+	}
+}
+
+// 2.2.2.2.1.1.2.20 EllipseCB (ELLIPSE_CB_ORDER)
+struct RDPEGDIEllipseCBOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0001:
+			RDPEGDICoordField LeftRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0002:
+			RDPEGDICoordField TopRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0004:
+			RDPEGDICoordField RightRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0008:
+			RDPEGDICoordField BottomRect;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0010:
+			UINT8 ROP2 = RDPEGDIDrawingOrderROP2Table(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0020:
+			UINT8 FillMode = RDPEGDIFillModeTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0040:
+			RDPEGDITsColor BackColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0080:
+			RDPEGDITsColor ForeColor;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0100:
+			UINT8 BrushOrgX;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0200:
+			UINT8 BrushOrgY;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0400:
+			[Property.RDPEGDIBrushStyle]
+			UINT8 BrushStyle = RDPEGDIDrawingOrderBrushStyleTable(this);
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x0800:
+			switch(Property.RDPEGDIBrushStyle)
+			{
+				case 0x02:
+					_struct Hatchedbrush
+					{
+						UINT8 BrushHatch = RDPEGDIDrawingOrderHatchedBrushTable(this);
+					}
+				default:
+					UINT8 BrushHatch;
+			}
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x1000:
+			BLOB(7) BrushExtra;
+	}
+}
+
+// 2.2.2.2.1.1.2.21 DrawNineGrid (DRAWNINEGRID_ORDER)
+struct RDPEGDIDrawNineGridOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField srcLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField srcTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField srcRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField srcBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT16 bitmapID;
+	}
+}
+
+// 2.2.2.2.1.1.2.22 MultiDrawNineGrid (MULTI_DRAWNINEGRID_ORDER)
+struct RDPEGDIMultiDrawNineGridOrder
+{
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x01:
+			RDPEGDICoordField srcLeft;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x02:
+			RDPEGDICoordField srcTop;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x04:
+			RDPEGDICoordField srcRight;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x08:
+			RDPEGDICoordField srcBottom;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x10:
+			UINT16 bitmapID;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x20:
+			[Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries]
+			UINT8 nDeltaEntries;
+	}
+	switch
+	{
+		case Property.RDPEGDIFieldFlag & 0x40:
+			RDPEGDIDeltaRectsField(Property.RDPEGDICurrentMultiDrawNineGridnDeltaEntries) CodedDeltaList;
+	}
+}
+
+// 2.2.2.2.1.2.1.1 Secondary Drawing Order Header (SECONDARY_DRAWING_ORDER_HEADER)
+Table RDPEGDISecondaryDrawingOrderTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000000: "Cache uncompressed bitmap";
+		case 0x00000001: "Cache color table";
+		case 0x00000002: "Cache compressed bitmap";
+		case 0x00000003: "Cache glyph";
+		case 0x00000004: "Cache uncompressed bitmap, revision 2";
+		case 0x00000005: "Cache compressed bitmap, revision 2";
+		case 0x00000007: "Cache brush";
+		case 0x00000008: "Cache bitmap compressed, revision 3";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+table RDPEGDIDrwaingOrderBitsPerPixelIDTable(value)
+{
+	switch(value)
+	{
+		case 0x3: "8 bits-per-pixel";
+		case 0x4: "16 bits-per-pixel";
+		case 0x5: "24 bits-per-pixel";
+		case 0x6: "32 bits-per-pixel";
+		default:
+			"Unknown value";
+	}
+}
+
+struct RDPEGDISecondaryDrawingOrderHeader = RDPEGDISecondaryDrawingOrderTypeTable(OrderType)
+{
+	// The orderLength field MUST be adjusted by adding 13 bytes
+	UINT16 OrderLength = FormatString("Length: %u byte(s)", this + 13);
+	switch (UINT8(FrameData, FrameOffset + 2))
+	{
+		case 0:
+		case 2:
+			UINT16 CacheBitmapOrderHeaderExtraFlags
+			{
+				UINT16 Unused1:10 = FormatString("               (%s)", this.ToBitString);
+				UINT16 NoBitmapCompressionHdr:1 = FormatString("(%s) %s", this.ToBitString, this ? "BitmapCompressionHdr Not Present" : "BitmapCompressionHdr Present");
+				UINT16 Unused2:5 = FormatString("               (%s)", this.ToBitString);
+			};
+		case 3:
+			UINT16 CacheGlyphRev2OrderHeaderExtraFlags
+			{
+				UINT16 GlyphCacheID:4 = FormatString("  (%s) %u", this.ToBitString, this);
+				UINT16 GlyphUnicode:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Unicode" : "Ascii");
+				UINT16 GlyphRev2Order:1 = FormatString("(%s) %s", this.ToBitString, this ? "Rev2" : "Not Rev2");
+				UINT16 Unused:2 = FormatString("        (%s)", this.ToBitString);
+				UINT16 cGlyphs:8 = FormatString("       (%s) %u", this.ToBitString, this);
+			};
+		case 4:
+		case 5:
+			UINT16 CacheBitmapOrderRev2HeaderExtraFlags
+			{
+				UINT16 BitmapCacheID:3 = FormatString("         (%s) %u", this.ToBitString, this);
+				UINT16 BitsPerPixelID:4 = FormatString("        (%s) %s", this.ToBitString, RDPEGDIDrwaingOrderBitsPerPixelIDTable(this));
+				UINT16 BHeightSameAsWidth:1 = FormatString("    (%s) %s", this.ToBitString, this ? "BHeightSameAsWidth" : "Not BHeightSameAsWidth");
+				UINT16 BKeyPresent:1 = FormatString("           (%s) %s", this.ToBitString, this ? "BKeyPresent" : "Not BKeyPresent");
+				UINT16 Unused1:1 = FormatString("               (%s)", this.ToBitString);
+				UINT16 NoBitmapCompressionHdr:1 = FormatString("(%s) %s", this.ToBitString, this ? "BitmapCompressionHdr Not Present" : "BitmapCompressionHdr Present");
+				UINT16 DoNotCache:1 = FormatString("            (%s) %s", this.ToBitString, this? "CacheIndex field ignored":"");
+				UINT16 Unused2:4 = FormatString("               (%s)", this.ToBitString);
+			};
+		case 8:
+			UINT16 CacheBitmapRev3OrderHeaderExtraFlags
+			{
+				UINT16 BitmapCacheID:3 = FormatString("  (%s) %u", this.ToBitString, this);
+				UINT16 BitsPerPixelID:4 = FormatString(" (%s) %s", this.ToBitString, RDPEGDIDrwaingOrderBitsPerPixelIDTable(this));
+				UINT16 Unused1:3 = FormatString("        (%s)", this.ToBitString);
+				UINT16 IgnorableFlag:1 = FormatString("  (%s) %s", this.ToBitString, this ? "This flag has no meaning and its value is ignored by the client." : "This flag has no meaning and its value is ignored by the client.");
+				UINT16 DoNotCache:1 = FormatString("     (%s) %s", this.ToBitString, this? "CacheIndex field ignored":"");
+				UINT16 Unused2:4 = FormatString("        (%s)", this.ToBitString);
+			};
+		default:
+			UINT16 UnusedExtraFlags;
+	}
+	UINT8 OrderType = RDPEGDISecondaryDrawingOrderTypeTable(this);
+}
+
+// 2.2.2.2.1.2.1.2 Two-Byte Unsigned Encoding (TWO_BYTE_UNSIGNED_ENCODING) something need to change, it should not combine Unsingned and Signed
+[DataTypeByteOrder = BigEndian]
+struct RDPEGDITwoByteUnsignedEncoding = Formatstring("%d", property.RDPEGDIEncodedValue)
+{
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+			[property.RDPEGDIEncodedValue = this & 0x7FFF]
+			UINT16 WordLValue =  this & 0x7FFF;
+		default:
+			[property.RDPEGDIEncodedValue = this & 0x7F]
+			UINT8 ByteValue = this & 0x7F;
+	}
+}
+
+//2.2.2.2.1.2.1.3   Two-Byte Signed Encoding (TWO_BYTE_SIGNED_ENCODING)
+[DataTypeByteOrder = BigEndian]
+struct RDPEGDITwoByteSignedEncoding = Formatstring("%d", property.RDPEGDIEncodedValue)
+{
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+			[property.RDPEGDIEncodedValue = this&0x40 ? this | (~0x3FFF) : this & 0x3FFF]
+			UINT16 WordLValue =  FormatString("%d" ,this&0x40 ? this | (~0x3FFF) : this & 0x3FFF);
+		default:
+			[property.RDPEGDIEncodedValue = this&0x40 ? this | (~0x3F) : this & 0x3F]
+			UINT8 ByteValue = FormatString("%d", this&0x40 ? this | (~0x3F) : this & 0x3F);
+	}
+}
+
+// 2.2.2.2.1.2.1.4 Four-Byte Unsigned Encoding (FOUR_BYTE_UNSIGNED_ENCODING)
+[DataTypeByteOrder = BigEndian]
+struct RDPEGDIFourByteUnsignedEncoding = Formatstring("%u", property.RDPEGDIEncodedValue)
+{
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0xC0) == 0xC0:
+			[property.RDPEGDIEncodedValue = this & 0x3FFFFFFF]
+			UINT32 DWordValue = this & 0x3FFFFFFF;
+		case (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+			[property.RDPEGDIEncodedValue = this & 0x3FFFFF]
+			UINT24 TripleValue = this & 0x3FFFFF;
+		case (UINT8( Framedata, Offset ) & 0x40) == 0x40:
+			[property.RDPEGDIEncodedValue = this & 0x3FFF]
+			UINT16 WordValue= this & 0x3FFF;
+		default:
+			[property.RDPEGDIEncodedValue]
+			UINT8 ByteValue;
+	}
+}
+
+// 2.2.2.2.1.2.2 Cache Bitmap - Revision 1 (CACHE_BITMAP_ORDER)
+table RDPEGDIDrawingOrderBitmapBitsTable(value)
+{
+	switch(value)
+	{
+		case 0x08: "8-bit color depth";
+		case 0x10: "16-bit color depth";
+		case 0x18: "24-bit color depth";
+		case 0x20: "32-bit color depth";
+		default:
+			"Undefined value: " + FormatString("%d", value);
+	}
+}
+
+struct RDPEGDICacheBitmapOrder(NoBitmapCompressionHdr, OrderType)
+{
+	UINT8 CacheID;
+	UINT8 Pad1octet;
+	UINT8 BitmapWidth;
+	UINT8 BitmapHeight;
+	UINT8 BitmapBitsPerPel = RDPEGDIDrawingOrderBitmapBitsTable(this);
+	UINT16 BitmapLength;
+	UINT16 CacheIndex;
+	[Local.HeaderLength = 0]
+	switch
+	{
+		case !NoBitmapCompressionHdr &&
+				OrderType == 0x00000002:
+			[Local.HeaderLength = 8]
+			RDPBCGRTsCdHeader TsCdHeader;
+	}
+	RDPBCGRTsBitmapData BitmapData;
+}
+
+// 2.2.2.2.1.2.3 Cache Bitmap - Revision 2 (CACHE_BITMAP_REV2_ORDER)
+struct RDPEGDICacheBitmapRev2Order(BKeyPresent, BHeightSameAsWidth, NoBitmapCompressionHdr, OrderType)
+{
+	switch
+	{
+		case BKeyPresent:
+			_struct
+			{
+				UINT32 Key1;
+				UINT32 Key2;
+			}
+	}
+	RDPEGDITwoByteUnsignedEncoding BitmapWidth;
+	switch
+	{
+		case !BHeightSameAsWidth:
+			RDPEGDITwoByteUnsignedEncoding BitmapHeight;
+	}
+	[Post.Local.TsCacheBitmapOrderRev2BitmapLength = property.RDPEGDIEncodedValue]
+	RDPEGDIFourByteUnsignedEncoding BitmapLength;
+	RDPEGDITwoByteUnsignedEncoding CacheIndex;
+	[Local.HeaderLength = 0]
+	switch
+	{
+		case !NoBitmapCompressionHdr &&
+				OrderType == 0x00000005:
+			[Local.HeaderLength = 8]
+			RDPBCGRTsCdHeader TsCdHeader;
+	}
+	BLOB(Local.TsCacheBitmapOrderRev2BitmapLength - Local.HeaderLength) BitmapData;
+}
+
+// 2.2.2.2.1.2.4 Cache Color Table (CACHE_COLOR_TABLE_ORDER)
+struct RDPEGDICacheColorTableOrder = FormatString("NumberColors = %u", NumberColors)
+{
+	UINT8 CacheIndex;
+	UINT16 NumberColors;
+	RDPEGDITsColorQuad ColorTable[numberColors];
+}
+
+// 2.2.2.2.1.2.4.1 Color Quad (TS_COLOR_QUAD)
+struct RDPEGDITsColorQuad = FormatString("RGB(%u, %u, %u)", red, green, blue)
+{
+	UINT8 red;
+	UINT8 green;
+	UINT8 blue;
+	UINT8 pad1octet;
+}
+
+// 2.2.2.2.1.2.5 Cache Glyph - Revision 1 (CACHE_GLYPH_ORDER)
+struct RDPEGDICacheGlyphOrder(GlyphUnicode) = FormatString("CharCount = %u", cGlyphs)
+{
+	UINT8 CacheID;
+	UINT8 cGlyphs;
+	RDPEGDICacheGlyphData GlyphData[cGlyphs];
+	switch
+	{
+		case GlyphUnicode:
+			UnicodeString(cGlyphs) UnicodeCharacters;
+	}
+}
+
+// 2.2.2.2.1.2.5.1 Cache Glyph Data (TS_CACHE_GLYPH_DATA)
+struct RDPEGDICacheGlyphData = FormatString("CacheIndex = %u", CacheIndex)
+{
+	UINT16 cacheIndex;
+	UINT16 x;
+	UINT16 y;
+	UINT16 cx;
+	UINT16 cy;
+	[Local.StructOffset = FrameOffset]
+	BLOB(((cx + 7) / 8) * cy) aj;
+	Align(Local.StructOffset, 4) Padding;
+}
+
+// 2.2.2.2.1.2.6 Cache Glyph - Revision 2 (CACHE_GLYPH_REV2_ORDER)
+struct RDPEGDICacheGlyphRev2Order(cGlyphs, GlyphUnicode) = FormatString("CharCount = %u", cGlyphs)
+{
+	RDPEGDICacheGlyphDataRev2 GlyphDataRev2[cGlyphs];
+	switch
+	{
+		case GlyphUnicode:
+			UnicodeString(cGlyphs) UnicodeCharacters;
+	}
+}
+
+// 2.2.2.2.1.2.6.1 Cache Glyph Data - Revision 2 (TS_CACHE_GLYPH_DATA_REV2)
+struct RDPEGDICacheGlyphDataRev2 = FormatString("CacheIndex = %u", CacheIndex)
+{
+	UINT8 CacheIndex;
+	RDPEGDITwoByteSignedEncoding x;
+	RDPEGDITwoByteSignedEncoding y;
+	[Post.Local.cxValue = property.RDPEGDIEncodedValue]
+	RDPEGDITwoByteUnsignedEncoding cx;
+	[Post.Local.cyValue = property.RDPEGDIEncodedValue]
+	RDPEGDITwoByteUnsignedEncoding cy;
+	[Local.StructOffset = FrameOffset]
+	BLOB(((Local.cxValue + 7) / 8) * Local.cyValue) glyphData;
+	Align(Local.StructOffset, 4) Padding;
+}
+
+// 2.2.2.2.1.2.7 Cache Brush (CACHE_BRUSH_ORDER)
+Table RDPEGDICacheBrushOrderBitmapFormatTable(code)
+{
+	switch (code)
+	{
+		case 0x00000001: "Monochrome brush";
+		case 0x00000003: "256-color brush";
+		case 0x00000004: "16-bpp brush";
+		case 0x00000005: "24-bpp brush";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPEGDICacheBrushOrder = RDPEGDICacheBrushOrderBitmapFormatTable(iBitmapFormat) + " - " + FormatString("(%ux%u)", cx, cy)
+{
+	UINT8 cacheEntry;
+	UINT8 iBitmapFormat = RDPEGDICacheBrushOrderBitmapFormatTable(this);
+	UINT8 cx;
+	UINT8 cy;
+	UINT8 style = FormatString("%u (Unused)", this);
+	UINT8 iBytes;
+	BLOB(iBytes) brushData;
+}
+
+// 2.2.2.2.1.2.8   Cache Bitmap - Revision 3 (CACHE_BITMAP_REV3_ORDER)
+Struct RDPEGDICacheBitmapRev3Order(DoNotCache)
+{
+	UINT16 CacheIndex = DoNotCache ? MustBeSetToTable(this,"0x7FFF") : "The bitmap cache index MUST be in the range negotiated by the Bitmap Cache Capability Set (Revision 2).";
+	UINT32 Key1;
+	UINT32 Key2;
+	RDPBCGRBitmapDataEx BitmapData;
+}
+
+// 2.2.2.2.1.2 Secondary Drawing Orders
+struct RDPEGDISecondaryDrawingOrder = RDPEGDISecondaryDrawingOrderTypeTable(SecondaryDrawingOrderHeader.OrderType)
+{
+	UINT8 ControlFlags
+	{
+		UINT8 Standard:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Standard" : "Not Standard");
+		UINT8 Secondary:1 = FormatString("(%s) %s",this.ToBitString,this ? "Secondary" : "Not Secondary");
+		UINT8 Reserved:6 = FormatString(" (%s)",this.ToBitString);
+	};
+	RDPEGDISecondaryDrawingOrderHeader SecondaryDrawingOrderHeader;
+	switch (SecondaryDrawingOrderHeader.OrderType)
+	{
+		case 0x00000000:
+		case 0x00000002:
+			RDPEGDICacheBitmapOrder(
+				SecondaryDrawingOrderHeader.CacheBitmapOrderHeaderExtraFlags.NoBitmapCompressionHdr, 
+				SecondaryDrawingOrderHeader.OrderType) 
+					CacheBitmapOrder;
+		case 0x00000001:
+			RDPEGDICacheColorTableOrder CacheColorTableOrder;
+		case 0x00000003:
+			switch
+			{
+				case SecondaryDrawingOrderHeader.CacheGlyphRev2OrderHeaderExtraFlags.GlyphRev2Order:
+					RDPEGDICacheGlyphRev2Order(
+						SecondaryDrawingOrderHeader.CacheGlyphRev2OrderHeaderExtraFlags.cGlyphs,
+						SecondaryDrawingOrderHeader.CacheGlyphRev2OrderHeaderExtraFlags.GlyphUnicode
+										 ) CacheGlyphRev2Order;
+				default:
+					RDPEGDICacheGlyphOrder(SecondaryDrawingOrderHeader.CacheGlyphRev2OrderHeaderExtraFlags.GlyphUnicode) CacheGlyphOrder;
+			}
+		case 0x00000004:
+		case 0x00000005:
+			RDPEGDICacheBitmapRev2Order(
+				SecondaryDrawingOrderHeader.CacheBitmapOrderRev2HeaderExtraFlags.BKeyPresent, 
+				SecondaryDrawingOrderHeader.CacheBitmapOrderRev2HeaderExtraFlags.BHeightSameAsWidth, 
+				SecondaryDrawingOrderHeader.CacheBitmapOrderRev2HeaderExtraFlags.NoBitmapCompressionHdr, 
+				SecondaryDrawingOrderHeader.OrderType) 
+					CacheBitmapRev2Order;
+		case 0x00000007:
+			RDPEGDICacheBrushOrder CacheBrushOrder;
+		case 0x00000008:
+			RDPEGDICacheBitmapRev3Order(SecondaryDrawingOrderHeader.CacheBitmapRev3OrderHeaderExtraFlags.DoNotCache) CacheBitmapRev3Order;
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows, "RDPEGDI", "Unknown Order type" ) ParserError;
+	}
+}
+
+// 2.2.2.2.1.3 Alternate Secondary Drawing Orders
+Table RDPEGDIAlternativeSecondaryDrawingOrderTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "TS_SWITCH_SURFACE_ORDER";
+		case 1: "TS_CREATE_OFFSCR_BITMAP_ORDER";
+		case 2: "TS_STREAM_BITMAP_FIRST_PDU";
+		case 3: "TS_STREAM_BITMAP_NEXT_PDU";
+		case 4: "TS_CREATE_NINEGRID_BITMAP_ORDER";
+		case 5: "TS_DRAW_GDIPLUS_ORDER_FIRST";
+		case 6: "TS_DRAW_GDIPLUS_ORDER_NEXT";
+		case 7: "TS_DRAW_GDIPLUS_ORDER_END";
+		case 8: "TS_DRAW_GDIPLUS_CACHE_ORDER_FIRST";
+		case 9: "TS_DRAW_GDIPLUS_CACHE_ORDER_NEXT";
+		case 10: "TS_DRAW_GDIPLUS_CACHE_ORDER_END";
+		case 11: "TS_WINDOW_ORDER";
+		case 12: "RDPEDC";
+		case 13: "TS_ALTSEC_FRAME_MARKER";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPEGDIAlternativeSecondaryDrawingOrder = RDPEGDIAlternativeSecondaryDrawingOrderTypeTable(ControlFlags.Order)
+{
+	UINT8 ControlFlags
+	{
+		UINT8 Standard:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Standard" : "Not Standard");
+		UINT8 Secondary:1 = FormatString("(%s) %s",this.ToBitString,this ? "Secondary" : "Not Secondary");
+		UINT8 Order:6 = FormatString("    (%s) %s",this.ToBitString,RDPEGDIAlternativeSecondaryDrawingOrderTypeTable(this));
+	};
+	switch (ControlFlags.Order)
+	{
+		case 0:
+			RDPEGDISwitchSurfaceOrder SwitchSurfaceOrder;
+		case 1:
+			RDPEGDICreateOffscrBitmapOrder CreateOffscrBitmapOrder;
+		case 2:
+			RDPEGDIStreamBitmapFirstOrder StreamBitmapFirstOrder;
+		case 3:
+			RDPEGDIStreamBitmapNextOrder StreamBitmapNextOrder;
+		case 4:
+			RDPEGDICreateNineGridBitmapOrder CreateNineGridBitmapOrder;
+		case 5:
+			RDPEGDIDrawGdiPlusFirstOrder DrawGdiPlusFirstOrder;
+		case 6:
+			RDPEGDIDrawGdiPlusNextOrder DrawGdiPlusNextOrder;
+		case 7:
+			RDPEGDIDrawGdiPlusEndOrder DrawGdiPlusEndOrder;
+		case 8:
+			RDPEGDIDrawGdiPlusCacheFirstOrder DrawGdiPlusCacheFirstOrder;
+		case 9:
+			RDPEGDIDrawGdiPlusCacheNextOrder DrawGdiPlusCacheNextOrder;
+		case 10:
+			RDPEGDIDrawGdiPlusCacheEndOrder DrawGdiPlusCacheEndOrder;
+		case 11:
+			RDPERPTsWindowOrder WindowOrder;
+		case 12:
+			RDPEDC RDPEDC;
+		case 13:
+			RDPEGDIFrameMarker FrameMarker;
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows, "RDPEGDI", "Unknown Alternative Secondary Drawing Order type" ) ParserError;
+	}
+}
+
+//2.2.2.2.1.3.7   Frame Marker
+Table RDPEGDIFrameMarkerActionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:"TS_FRAME_START,Start of a logical frame of graphics data";
+		case 0x00000001:"TS_FRAME_END,End of a logical frame of graphics data";
+		default:"Unknown";
+	}
+}
+
+struct RDPEGDIFrameMarker
+{
+	UINT32 action  = RDPEGDIFrameMarkerActionTable(this);
+}
+
+// 2.2.2.2.1.3.2 Create Offscreen Bitmap (CREATE_OFFSCR_BITMAP_ORDER)
+struct RDPEGDICreateOffScrBitmapOrder
+{
+	UINT16 Flags
+	{
+		UINT16 EntryLocation:15 = FormatString("          (%s) %u", this.ToBitString, this);
+		UINT16 OffscreenBMPDelListPresent:1 = FormatString("(%s) %s",this.ToBitString,this ? "Offscreen bitmap delete list appended" : "Offscreen bitmap delete list not appended");
+	};
+	UINT16 cx;
+	UINT16 cy;
+	switch
+	{
+		case Flags.OffscreenBMPDelListPresent:
+			RDPEGDIOffScrDeleteList OffScrDeleteList;
+	}
+}
+
+// 2.2.2.2.1.3.2.1 Offscreen Cache Delete List (OFFSCR_DELETE_LIST)
+struct RDPEGDIOffScrDeleteList
+{
+	UINT16 CIndices;
+	UINT16 Indices[CIndices];
+}
+
+// 2.2.2.2.1.3.3 Switch Surface (SWITCH_SURFACE_ORDER)
+struct RDPEGDISwitchSurfaceOrder
+{
+	UINT16 BitmapID = this == 0xFFFF? "SCREEN_BITMAP_SURFACE": FormatString("%u", this);
+}
+
+// 2.2.2.2.1.3.4 Create NineGrid Bitmap (CREATE_NINEGRID_BITMAP_ORDER)
+struct RDPEGDICreateNineGridBitmapOrder
+{
+	UINT8 BitmapBpp = FormatString("%u (Must set to 32 bits-per-pixel (0x20))", this);
+	UINT16 BitmapID;
+	UINT16 cx;
+	UINT16 cy;
+	RDPEGDINineGridBitmapInfo NineGridInfo;
+}
+
+// 2.2.2.2.1.3.4.1 NineGrid Bitmap Information (NINEGRID_BITMAP_INFO)
+struct RDPEGDINineGridBitmapInfo
+{
+	UINT32 flFlags
+	{
+		UINT32 Stretch:1 = FormatString("      (%s) %s",this.ToBitString,this ? "DSDNG_STRETCH" : "Not DSDNG_STRETCH");
+		UINT32 Tile:1 = FormatString("         (%s) %s",this.ToBitString,this ? "DSDNG_TILE" : "Not DSDNG_TILE");
+		UINT32 Perpixelalpha:1 = FormatString("(%s) %s",this.ToBitString,this ? "DSDNG_PERPIXELALPHA" : "Not DSDNG_PERPIXELALPHA");
+		UINT32 Transparent:1 = FormatString("  (%s) %s",this.ToBitString,this ? "DSDNG_TRANSPARENT" : "Not DSDNG_TRANSPARENT");
+		UINT32 Mustflip:1 = FormatString("     (%s) %s",this.ToBitString,this ? "DSDNG_MUSTFLIP" : "Not DSDNG_MUSTFLIP");
+		UINT32 Truesize:1 = FormatString("     (%s) %s",this.ToBitString,this ? "DSDNG_TRUESIZE" : "Not DSDNG_TRUESIZE");
+		UINT32 Reserved:26 = FormatString("     (%s)",this.ToBitString);
+	};
+	UINT16 ulLeftWidth;
+	UINT16 ulRightWidth;
+	UINT16 ulTopHeight;
+	UINT16 ulBottomHeight;
+	RDPEGDITsColorRef crTransparent = flFlags.Transparent ? "" : "Not used";
+}
+
+// 2.2.2.2.1.3.4.1.1 Color Reference (TS_COLORREF)
+struct RDPEGDITsColorRef
+{
+	UINT8 Red;
+	UINT8 Green;
+	UINT8 Blue;
+	UINT8 ZeroPad = MustBeSetToTable(this, "0");
+}
+
+// 2.2.2.2.1.3.5.1 Stream Bitmap First (STREAM_BITMAP_FIRST_ORDER)
+struct RDPEGDIStreamBitmapFirstOrder
+{
+	UINT8 BitmapFlags
+	{
+		UINT8 End:1 = FormatString("       (%s) %s",this.ToBitString,this ? "TS_STREAM_BITMAP_END" : "Not TS_STREAM_BITMAP_END");
+		UINT8 Compressed:1 = FormatString("(%s) %s",this.ToBitString,this ? "TS_STREAM_BITMAP_COMPRESSED" : "Not TS_STREAM_BITMAP_COMPRESSED");
+		UINT8 Rev2:1 = FormatString("      (%s) %s",this.ToBitString,this ? "TS_STREAM_BITMAP_REV2" : "Not TS_STREAM_BITMAP_REV2");
+		UINT8 Reserved:5 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT8 BitmapBpp;
+	UINT16 BitmapType = FormatString("%u (Must set to 0x01)", this);
+	UINT16 BitmapWidth;
+	UINT16 BitmapHeight;
+	switch (BitmapFlags.Rev2)
+	{
+		case 0:
+			UINT16 WordBitmapSize;
+		case 1:
+			UINT32 DWordBitmapSize;
+	}
+	UINT16 BitmapBlockSize;
+	BLOB(BitmapBlockSize) BitmapBlock;
+}
+
+// 2.2.2.2.1.3.5.2 Stream Bitmap Next (STREAM_BITMAP_NEXT_ORDER)
+struct RDPEGDIStreamBitmapNextOrder
+{
+	UINT8 BitmapFlags
+	{
+		UINT8 End:1 = FormatString("       (%s) %s",this.ToBitString,this ? "TS_STREAM_BITMAP_END" : "Not TS_STREAM_BITMAP_END");
+		UINT8 Compressed:1 = FormatString("(%s) %s",this.ToBitString,this ? "TS_STREAM_BITMAP_COMPRESSED" : "Not TS_STREAM_BITMAP_COMPRESSED");
+		UINT8 Reserved:6 = FormatString("  (%s)",this.ToBitString);
+	};
+	UINT16 BitmapType = FormatString("%u (Must set to 0x01)", this);
+	UINT16 BitmapBlockSize;
+	BLOB(BitmapBlockSize) BitmapBlock;
+}
+
+// 2.2.2.2.1.3.6.1.1 GDI+ Cache Type (DRAW_GDIPLUS_CACHE_TYPE)
+Table RDPEGDIDrawGdiPlusCacheOrderCacheTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "GDIP_CACHE_GRAPHICS_DATA";
+		case 2: "GDIP_CACHE_OBJECT_BRUSH";
+		case 3: "GDIP_CACHE_OBJECT_PEN";
+		case 4: "GDIP_CACHE_OBJECT_IMAGE";
+		case 5: "GDIP_CACHE_OBJECT_IMAGEATTRIBUTES";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+// 2.2.2.2.1.3.6.2 Draw GDI+ Cache First (DRAW_GDIPLUS_CACHE_FIRST_ORDER)
+struct RDPEGDIDrawGdiPlusCacheFirstOrder
+{
+	UINT8 Flags
+	{
+		UINT8 CacheFlag:1 = FormatString("(%s) %s",this.ToBitString,this ? "TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY" : "Not TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY");
+		UINT8 Reserved:7 = FormatString(" (%s)",this.ToBitString);
+	};
+	UINT16 CacheType = RDPEGDIDrawGdiPlusCacheOrderCacheTypeTable(this);
+	UINT16 CacheIndex;
+	UINT16 cbSize;
+	UINT32 cbTotalSize;
+	BLOB(cbSize) EmfRecords;
+}
+
+// 2.2.2.2.1.3.6.3 Draw GDI+ Cache Next (DRAW_GDIPLUS_CACHE_NEXT_ORDER)
+struct RDPEGDIDrawGdiPlusCacheNextOrder
+{
+	UINT8 Flags
+	{
+		UINT8 CacheFlag:1 = FormatString("(%s) %s",this.ToBitString,this ? "TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY" : "Not TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY");
+		UINT8 Reserved:7 = FormatString(" (%s)",this.ToBitString);
+	};
+	UINT16 CacheType = RDPEGDIDrawGdiPlusCacheOrderCacheTypeTable(this);
+	UINT16 CacheIndex;
+	UINT16 cbSize;
+	BLOB(cbSize) EmfRecords;
+}
+
+// 2.2.2.2.1.3.6.4 Draw GDI+ Cache End (DRAW_GDIPLUS_CACHE_END_ORDER)
+struct RDPEGDIDrawGdiPlusCacheEndOrder
+{
+	UINT8 Flags
+	{
+		UINT8 CacheFlag:1 = FormatString("(%s) %s",this.ToBitString,this ? "TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY" : "Not TS_GDIPLUS_CACHE_ORDER_REMOVE_CACHEENTRY");
+		UINT8 Reserved:7 = FormatString(" (%s)",this.ToBitString);
+	};
+	UINT16 CacheType = RDPEGDIDrawGdiPlusCacheOrderCacheTypeTable(this);
+	UINT16 CacheIndex;
+	UINT16 cbSize;
+	UINT32 cbTotalSize;
+	BLOB(cbSize) EmfRecords;
+}
+
+// 2.2.2.2.1.3.6.5 Draw GDI+ First (DRAW_GDIPLUS_FIRST_ORDER)
+struct RDPEGDIDrawGdiPlusFirstOrder
+{
+	UINT8 Flags = "Not used";
+	UINT16 cbSize;
+	UINT32 cbTotalSize;
+	UINT32 cbTotalEmfSize;
+	BLOB(cbSize) EmfRecords;
+}
+
+// 2.2.2.2.1.3.6.6 Draw GDI+ Next (DRAW_GDIPLUS_NEXT_ORDER)
+struct RDPEGDIDrawGdiPlusNextOrder
+{
+	UINT8 Flags = "Not used";
+	UINT16 cbSize;
+	BLOB(cbSize) EmfRecords;
+}
+
+// 2.2.2.2.1.3.6.7 Draw GDI+ End (DRAW_GDIPLUS_END_ORDER)
+struct RDPEGDIDrawGdiPlusEndOrder
+{
+	UINT8 Flags = "Not used";
+	UINT16 cbSize;
+	UINT32 cbTotalSize;
+	UINT32 cbTotalEmfSize;
+	BLOB(cbSize) EmfRecords;
+}

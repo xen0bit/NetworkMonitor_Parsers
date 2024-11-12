@@ -1,0 +1,211 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Microsoft SQL Server Resolution Protocol (SSRP)
+//#
+//#  Details:                SSRP is the protocol used between Microsoft SQL Server Browser
+//#
+//#                          and the corresponding Microsoft SQL Server clients to obtain
+//#
+//#                          connectivity information for installed Microsoft SQL Server instances
+//#
+//#  Microsoft References:      [MC-SQLR]: SQL Server Resolution Protocol Specification (0.6.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 2/3/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+// Packet Types according to the spec
+const CLNT_BCAST_EX	= 0x02;
+const CLNT_UCAST_EX	= 0x03;
+const CLNT_UCAST_INST	= 0x04;
+const SVR_RESP 		= 0x05;
+const CLNT_UCAST_DAC	= 0x0F;
+
+// [PARSER-ONLY TAG!]
+// Additional type to distinguish DAC response
+const SVR_RESP_DAC 	= 0xFF;
+
+// Fixed protocol version
+const SSRP_PROTOCOL_VERSION	= 0x01;
+const SSRP_PROTOCOL_VERSION_STR = "0x01";
+
+// String representation for displaying
+const CLNT_BCAST_EX_STR		= "CLNT_BCAST_EX";
+const CLNT_UCAST_EX_STR		= "CLNT_UCAST_EX";
+const CLNT_UCAST_INST_STR	= "CLNT_UCAST_INST";
+const SVR_RESP_STR 		= "SVR_RESP";
+const CLNT_UCAST_DAC_STR	= "CLNT_UCAST_DAC";
+const SVR_RESP_DAC_STR		= "SVR_RESP_DAC";
+const UNDEFINED_PACKET_STR	= "ERROR: Undefined packet type";
+
+// SSRP packet format
+[DataTypeByteOrder = LittleEndian]
+Protocol Ssrp = FormatString("%s, SrcPort=%d, DstPort=%d%s", 
+		SSRP_PacketTypeTable(Property.Is_SVR_RESP_DAC ? SVR_RESP_DAC : PacketType),
+		Property.SourcePort,
+		Property.DestinationPort,
+		Property.SSRPErrorSummary ? ", " + Property.SSRPErrorSummary : "")
+{
+	UINT8 PacketType = FormatString("%s, %d (0x%02X)", SSRP_PacketTypeTable( this ), this, this);
+	switch ( PacketType )
+	{
+		// case CLNT_BCAST_EX: no actual data
+		// case CLNT_UCAST_EX: no actual data
+		case CLNT_UCAST_INST:
+			SSRP_Clnt_Ucast_Inst clnt_ucast_inst;
+		case CLNT_UCAST_DAC: 
+			SSRP_Clnt_Ucast_Dac clnt_ucast_dac;
+		case SVR_RESP:
+			switch (UINT8( Framedata, Offset + 2 ))
+			{
+				case SSRP_PROTOCOL_VERSION:
+					[Property.Is_SVR_RESP_DAC = true]
+					SSRP_Svr_Resp_Dac svr_resp_dac;
+				default:	
+					SSRP_Svr_Resp svr_resp;
+			}
+	}
+}
+
+
+
+// Convert types into names
+Table SSRP_PacketTypeTable( value )
+{
+	switch( value )
+	{
+		case CLNT_BCAST_EX:
+			CLNT_BCAST_EX_STR;
+		case CLNT_UCAST_EX:
+			CLNT_UCAST_EX_STR;
+		case CLNT_UCAST_INST:
+			CLNT_UCAST_INST_STR;
+		case SVR_RESP:
+			SVR_RESP_STR;
+		case CLNT_UCAST_DAC:
+			CLNT_UCAST_DAC_STR;
+		case SVR_RESP_DAC:
+			SVR_RESP_DAC_STR;
+		default:
+			UNDEFINED_PACKET_STR;
+	}
+}
+
+// CLNT_BCAST_EX - no actual data
+// CLNT_UCAST_EX - no actual data
+
+// Describe CLNT_UCAST_INST payload
+struct SSRP_Clnt_Ucast_Inst = InstanceName
+{
+	// Due to limitation of NPL's MbcString, MBCS fields are parsed as Ascii.
+	AsciiString InstanceName;
+}
+
+// Describe CLNT_UCAST_DAC payload
+struct SSRP_Clnt_Ucast_Dac = FormatString("Version = %d, Instance = %s", ProtocolVersion, InstanceName)
+{
+	UINT8 ProtocolVersion = (this == SSRP_PROTOCOL_VERSION) ? SSRP_PROTOCOL_VERSION_STR : "Invalid PROTOCOLVERSION value.";
+	// Due to limitation of NPL's MbcString, MBCS fields are parsed as Ascii.
+	AsciiString InstanceName;
+}
+
+// Describe SVR_RESP payload for DAC
+struct SSRP_Svr_Resp_Dac = FormatString("Version = %d, TcpPort = %d", ProtocolVersion, TcpPort)
+{
+	UINT16 ResponseSize;
+	UINT8 ProtocolVersion = (this == SSRP_PROTOCOL_VERSION) ? SSRP_PROTOCOL_VERSION_STR : "Invalid PROTOCOLVERSION value.";
+	UINT16 TcpPort;
+}
+
+// Banyan VINES info consists of 3 parts
+struct SSRP_BanyanVines = FormatString("Item = %s, Group = %s, Org = %s", ItemName, GroupName, OrgName)
+{
+	AsciiStringTerm(";") ItemName;
+	AsciiStringTerm(";") GroupName;
+	AsciiStringTerm(";") OrgName;
+}
+
+struct SSRP_Clnt_Ucast_Inst_Response = FormatString("Server = %s, Instance = %s, IsClustered = %s, Version = %s", ServerName, InstanceName, IsClustered, Version)
+{
+	DynamicSwitch AsciiStringTerm(";")
+	{
+		case "ServerName":
+			AsciiStringTerm(";") ServerName;
+		default:
+			[Property.SSRPErrorSummary = Property.SSRPErrorSummary + ", ERROR: Invalid 'ServerName' tag"]
+			AsciiStringTerm(";") DefaultName = FormatString("Invalid 'ServerName' tag with value '%s'", this);
+	}
+	DynamicSwitch AsciiStringTerm(";")
+	{
+		case "InstanceName":
+			AsciiStringTerm(";") InstanceName;
+		default:
+			[Property.SSRPErrorSummary = Property.SSRPErrorSummary + ", ERROR: Invalid 'InstanceName' tag"]
+			AsciiStringTerm(";") DefaultName = FormatString("Invalid 'InstanceName' tag with value '%s'", this);
+	}
+	DynamicSwitch AsciiStringTerm(";")
+	{
+		case "IsClustered":
+			AsciiStringTerm(";") IsClustered;
+		default:
+			[Property.SSRPErrorSummary = Property.SSRPErrorSummary + ", ERROR: Invalid 'IsClustered' tag"]
+			AsciiStringTerm(";") DefaultName = FormatString("Invalid 'IsClustered' tag with value '%s'", this);
+	}
+	DynamicSwitch AsciiStringTerm(";")
+	{
+		case "Version":
+			AsciiStringTerm(";") Version;
+		default:
+			[Property.SSRPErrorSummary = Property.SSRPErrorSummary + ", ERROR: Invalid 'Version' tag"]
+			AsciiStringTerm(";") DefaultName = FormatString("Invalid 'Version' tag with value '%s'", this);
+	}
+	
+	// An SQL instance will end with ";"
+	While [!(UINT8( Framedata, Offset ) == 0x3B)]
+	{
+		DynamicSwitch AsciiStringTerm(";")
+		{
+			case "np":
+				AsciiStringTerm(";") np;
+			case "tcp":
+				AsciiStringTerm(";") tcp;
+			case "via":
+				AsciiStringTerm(";") via;
+			case "rpc":
+				AsciiStringTerm(";") rpc;
+			case "spx":
+				AsciiStringTerm(";") spx;
+			case "adsp":
+				AsciiStringTerm(";") adsp;
+			case "bv":
+				SSRP_BanyanVines bv;
+			default:
+				[Property.SSRPErrorSummary = Property.SSRPErrorSummary + ", ERROR: Invalid protocol tag"]
+				AsciiStringTerm(";") DefaultName = FormatString("Invalid protocol tag with value '%s'", this);
+		}
+	}
+	switch (UINT8( Framedata, Offset ))
+	{
+		case 0x3B: // ";"
+			DynamicSwitch AsciiStringTerm(";")
+			{
+				default: struct{}
+			}
+	}
+}
+
+//	Describe SVR_RESP payload
+struct SSRP_Svr_Resp = FormatString("%d instance%s", Local.InstCnt, Local.InstCnt > 1 ? "s" : "")
+{
+	UINT16 ResponseSize;
+	[Local.InstCnt = 0]
+	while [FrameOffset < FrameLength]
+	{
+		[Local.InstCnt = Local.InstCnt + 1]
+		SSRP_Clnt_Ucast_Inst_Response clnt_ucast_inst_response;
+	}
+}
+

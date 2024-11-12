@@ -1,0 +1,786 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IP Security (IPsec) Extension for Group Policy
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-GPIPSEC]: Group Policy: IP Security (IPSec) Protocol Extension (7.1.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 8/27/2009
+//#
+//####
+
+struct IPSecModifyGPExtension
+{
+	AsnBerInfo OuterSequenceHeader;
+	[property.ModifyLoopSeqEndOffset = frameOffset + Property.LengthValue]
+	while GPIPSecLoop[ frameOffset < Property.ModifyLoopSeqEndOffset ]
+	{
+		[post.AttributeSummary = AttributeSummary + AttributeValue]
+		struct Modification = FormatString("<%s> %s = %s",
+										LDAPModifyOperationTable(Property.AsnIntValue),
+										Type.ToString,
+										AttributeValue)
+		{
+			AsnBerInfo InnerSequence;
+			AsnBerEnumerated Operation = FormatString("%s, %d(0x%X)", LDAPModifyOperationTable(Property.AsnIntValue), Property.AsnIntValue, Property.AsnIntValue);
+			AsnBerInfo ModificationHeader;
+
+			[property.IPSecModifyType = Type.ToString]
+			AsnBerOctetString Type;
+			
+			AsnBerInfo AttributesHeader;
+			[property.AttributeDescriptionListEndOffset = frameOffset + Property.LengthValue, AttributeValue = ""]
+			while AttributeLoop[ frameOffset < Property.AttributeDescriptionListEndOffset ]
+			{
+				switch(property.IPSecModifyType)
+				{
+					case "ipsecData":
+						_struct ipsecData
+						{
+							AsnBerInfo AsnOctetStringHeader;
+							switch
+							{
+								case property.AttributeSummary.contains("ipsecPolicy"):
+									ipsecPolicyIPSecData ipsecPolicyData;
+								case property.AttributeSummary.contains("ipsecISAKMPPolicy"): 
+									ipsecISAKMPPolicyIPSecData ipsecISAKMPPolicyData;
+								case property.AttributeSummary.contains("ipsecNFA"): 
+									ipsecNFAIPSecData ipsecNFAData;
+								case property.AttributeSummary.contains("ipsecNegotiationPolicy"): 
+									ipsecNegotiationPolicyIPSecData ipsecNegotiationPolicyData;
+								case property.AttributeSummary.contains("ipsecFilter"): 
+									ipsecFilterIPSecData ipsecFilterData;
+								default:
+									AsciiString(Property.LengthValue) OctetStream;
+							}
+						}
+					case "ipsecNegotiationPolicyType":
+						_struct ipsecNegotiationPolicyType
+						{
+							switch
+							{
+								case property.AttributeSummary.contains("ipsecNegotiationPolicy"):
+									[AttributeValue = Property.AttributeValue + "( " + this.ToString + " )",
+										Post.GPGUID = GPGUID + GPExtensionGUIDTable(NegotiationPolicyType.octetStream)]
+									AsnBerOctetString NegotiationPolicyType = ipsecNegotiationPolicyTypeTable(this.ToString);
+								default:
+									[AttributeValue = Property.AttributeValue + "( " + this.ToString + " )",
+										Post.GPGUID = GPGUID + GPExtensionGUIDTable(Attribute.octetStream)]						
+									AsnBerOctetString Attribute;									
+							}
+						}
+					case "ipsecNegotiationPolicyAction":
+						_struct ipsecNegotiationPolicyAction
+						{
+							switch
+							{
+								case property.AttributeSummary.contains("ipsecNegotiationPolicy"):
+									[AttributeValue = Property.AttributeValue + "( " + this.ToString + " )",
+										Post.GPGUID = GPGUID + GPExtensionGUIDTable(NegotiationPolicyAction.octetStream)]
+									AsnBerOctetString NegotiationPolicyAction = ipsecNegotiationPolicyActionTable(this.ToString);
+								default:
+									[AttributeValue = Property.AttributeValue + "( " + this.ToString + " )",
+										Post.GPGUID = GPGUID + GPExtensionGUIDTable(Attribute.octetStream)]						
+									AsnBerOctetString Attribute;
+							}
+						}
+					default:
+						[AttributeValue = Property.AttributeValue + "( " + this.ToString + " )",
+							Post.GPGUID = GPGUID + GPExtensionGUIDTable(Attribute.octetStream)]						
+						AsnBerOctetString Attribute;
+				}											
+			}
+		}
+	}
+}
+			
+//2.2.1.1.1	ipsecPolicy
+[DataTypeByteOrder = LittleEndian]
+struct ipsecPolicyIPSecData
+{
+	// {22202163-4f4c-11d1-863b-00a0248d3021}
+	GUID(true) IPSecPolicyID;
+	UINT32 DataLength = FormatString("%d (This must be 4)", this);
+	UINT32 PollingInterval = FormatString("%d sec(s)", this);
+	UINT8 Pad;
+}
+
+table ISAKMPOptionsTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "No policy modifier";
+		case 0x00000001: "Certificate-mapping";
+		case 0x00000002: "Not send certificate request payload";
+		case 0x00000003: "Certificate-mapping and Not send certificate request payload";
+		default:
+			"Unknown value";
+	}
+}	
+
+table NewDH1234Table(value)
+{
+	switch(value)
+	{
+		case 0x00: "File is not used";
+		case 0x01: "ISAKMP policy setting is Encryption:DES; Integrity:MD5; Diffie-Hellman:DH-2048";
+		case 0x02: "ISAKMP policy setting is Encryption:DES; Integrity:SHA-1; Diffie-Hellman:DH-2048";
+		case 0x03: "ISAKMP policy setting is Encryption:3DES; Integrity:MD5; Diffie-Hellman:DH-2048";
+		case 0x04: "ISAKMP policy setting is Encryption:3DES; Integrity:SHA-1; Diffie-Hellman:DH-2048";
+		default:
+			"Unknown value";
+	}
+}
+
+//2.2.1.2	ipsecISAKMPPolicy
+[DataTypeByteOrder = LittleEndian]
+struct ipsecISAKMPPolicyIPSecData
+{
+	// {80DC20B8-2EC8-11D1-A89E-00A0248D3021}
+	GUID(true) ISAKMPPolicyTypeID;
+	UINT32 DataLength = FormatString("%u byte(s)", this);
+	GUID(true) ISAKMPPolicyInstance;	
+	UINT32 Zero1 = MustBeSetToTable(this,"0x00000000");
+	UINT32 MasterPFS = this == 0? "Master PFS not required": (this == 1? "Master PFS Required": "Unknown value");
+	UINT32 ISAKMPOptions = ISAKMPOptionsTable(this);
+	UINT8 NewDH1 = NewDH1234Table(this);
+	UINT8 NewDH2 = NewDH1234Table(this);
+	UINT8 NewDH3 = NewDH1234Table(this);
+	UINT8 NewDH4 = NewDH1234Table(this);
+	UINT32 QMLimite = this == 0? "No limite": FormatString("%u", this);
+	UINT32 MMLifetime = this == 0? "main-mode key lifetime is set to 28,800 seconds":FormatString("%u sec(s)", this);
+	BLOB(20) Zero2 = MustBeSetToTable(this,"0");
+	UINT32 SecurityMethodCount;
+	ipsecISAKMPPolicySecurityMethodDef SecurityMethod[SecurityMethodCount];
+}
+
+table NewDHGroupIDTable(value)
+{
+	switch(value)
+	{
+		case 0x0000000000000000: "Field is not used";
+		case 0x0000000000000001: "Active policy in NewDH1 field";
+		case 0x0000000000000002: "Active policy in NewDH2 field";
+		case 0x0000000000000003: "Active policy in NewDH3 field";
+		case 0x0000000000000004: "Active policy in NewDH4 field";
+		default:
+			"Unknonw value";
+	}
+}
+
+table OakleyGroupTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "This field is not used";
+		case 0x00000001: "Group 1";
+		case 0x00000002: "Group 2";
+		case 0x10000001: "Group 14";
+		default:
+			"Unknown value";
+	}
+}
+
+table EncryptionAlgorithmIDTalbe(value)
+{
+	switch(value)
+	{
+		case 0x0000000000000000: "None";
+		case 0x0000000000000001: "DES-CBC";
+		case 0x0000000000000002: "3DES-CBC";
+		case 0x0000000000000003: "3DES-CBC";
+		default:
+			"Unknown value";
+	}
+}
+
+table HashAlgorithmIDTable(value)
+{
+	Switch(value)
+	{
+		case 0x0000000000000000 : "None";
+		case 0x0000000000000001 : "MD5";
+		case 0x0000000000000002 : "SHA-1";
+		default :
+				"Unknown value";
+	}
+}
+
+table RandomFuntionTable(value)
+{
+	Switch(value)
+	{
+		case 0x01: "Encryption-Algorithm-ID:DES,Hash-Algorithm-ID:MD5,Oakley-Group:Group-14";
+		case 0x02: "Encryption-Algorithm-ID:DES,Hash-Algorithm-ID:SHA,Oakley-Group:Group-14";
+		case 0x03: "Encryption-Algorithm-ID:3DES,Hash-Algorithm-ID:MD5,Oakley-Group:Group-14";
+		case 0x04: "Encryption-Algorithm-ID:3DES,Hash-Algorithm-ID:SHA,Oakley-Group:Group-14";
+		default:
+			"Unknown value";
+	}
+		
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecISAKMPPolicySecurityMethodDef
+{
+	UINT8 MajorVersion = MustBeSetToTable(this,"0x00");
+	UINT8 MinorVersion = MustBeSetToTable(this,"0x00");
+	BLOB(2) Zero3 = MustBeSetToTable(this,"0");
+	UINT64 EncryptionAlgorithmID = EncryptionAlgorithmIDTalbe(this);
+	BLOB(4) Zero4 = MustBeSetToTable(this,"0");
+	//UINT64 NewDHGroupID = NewDHGroupIDTable(this);
+	UINT64 HashAlgorithmID = HashAlgorithmIDTable(this);
+	BLOB(4) Zero5 = MustBeSetToTable(this,"0");
+	BLOB(8) Zero6 = MustBeSetToTable(this,"0");
+	UINT8 RandomFuntion = RandomFuntionTable(this);
+	BLOB(7) Zero7 = MustBeSetToTable(this,"0");
+	UINT32 OakleyGroup = OakleyGroupTable(this);
+	UINT32 QMLimite = this == 0? "No limite": FormatString("%u", this);
+	UINT32 OakleyLifetimeKb = FormatString("%u kilobytes", this);
+	UINT32 OakleyLifetimeSecs = FormatString("%u sec(s)", this);
+	UINT32 PFSIdentityRequired = this == 0x00000000?"PFS Identity is not required":(this == 0x00000001? "PFS identity is required": "Unknown value");
+}
+
+table InterfaceTypeTable(value)
+{
+	switch(value)
+	{
+		case 0xFFFFFFFF: "Apply to Dial-up interfaces only";
+		case 0xFFFFFFFE: "Apply to LAN interfaces only";
+		case 0xFFFFFFFD: "Apply to all interfaces";
+		default:
+			"Unknown value";
+	}
+}
+
+//2.2.1.3	ipsecNFA
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNFAIPSecData
+{
+	// {11BBAC00-498D-11D1-8639-00A0248D3021}
+	GUID(true) NFAPolicyID;
+	UINT32 DataLength = FormatString("%u byte(s)", this);
+	[local.DataPayloadStart = frameOffset]
+	UINT32 AuthMethodCount;
+	ipsecNFAAuthMethodDef AuthMethod[AuthMethodCount];
+	UINT32 InterfaceType = InterfaceTypeTable(this);
+	UINT32 InterfaceNameLength = FormatString("%u byte(s)", this);
+	//#? end with 0x0000 or not?
+	UnicodeString(InterfaceNameLength) InterfaceName;
+	switch(UINT32(FrameData, FrameOffset + 4))
+	{
+		case 0x00000001:
+			IPv4Address TunnelAddress;
+		default:
+			BLOB(4) Pad1;
+	}
+	UINT32 IsTunnelSpecifier = this == 0x00000000? "This NFA is NOT a tunnel filter":"This filter is a tunnel filter";
+	UINT32 IsActiveSpecifier = this == 0x00000000? "This NFA is NOT active":"This filter is active";
+	UINT32 TunnelEndPointNameLength = FormatString("%u byte(s)", this);
+	switch
+	{
+		case IsTunnelSpecifier == 0x00000001 && TunnelEndPointNameLength > 0:
+			//#? end with 0x0000 or not?
+			UnicodeString(TunnelEndPointNameLength) TunnelEndPointName;
+	}
+	
+	GUID(true) AltAuthMethodId1;
+	UINT32 AltAuthNumMethodsCount;
+	ipsecNFAAltAuthMethodDef AltAuthMethod[AltAuthNumMethodsCount];
+	GUID(true) AltAuthMethodId2;
+	BLOB(4) Pad2 = MustBeSetToTable(this,"0");
+	[MaxLoopCount = AltAuthNumMethodsCount]
+	while [true]
+	{
+		UINT32 AltAuthMethodFlags = AltAuthMethodFlagsTable(this);
+	}
+	GUID(true) IPv6TunnelModeID;
+	//new from ms-gpipsec 0.09
+	switch
+	{
+		case local.DataPayloadStart + ipsecNFAIPSecData.DataLength > FrameOffset:
+			//IPv6 exists
+			_struct IPv6Exists
+			{
+				GUID(true) IPv6TunnelModeID;
+				IPv6Address IPv6TunnelModeAddress;
+			}
+	}	
+}
+
+table AltAuthMethodFlagsTable(value)
+{
+	Switch(value)
+	{
+		case 0x00000000: "Auth method is not a certificate";
+		case 0x00000001: "Enable certificate to account mapping";
+		case 0x00000002: "Exclude CA name from certificate request";
+		default:
+				"Unknown value";
+	}
+}
+table AltAuthTypeTable(value)
+{
+	Switch(value)
+	{
+		case 0x00000001: "Authenticate by using a pre-shared key (PSK)";
+		case 0x00000003: "Authenticate by using an X.509 certificate";
+		case 0x00000005: "Authenticate by using the Kerberos authentication system";
+		default:
+				"Unknown value";
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNFAAltAuthMethodDef
+{
+	UINT32 AltAuthType = ipsecNFAAuthMethodDefAuthTypeTable(this);
+	UINT32 AltAuthMethodLength = FormatString("%u byte(s)", this);
+	switch(AltAuthType)
+	{
+		case 0x00000001: UnicodeString PSK;
+		case 0x00000003: UnicodeString X509CertName;
+		case 0x00000005: UINT32 KerberosCert = FormatString("0x%04X (must be 0x00000000)", this);
+	}
+}
+
+table ipsecNFAAuthMethodDefAuthTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "Authenticate using a pre-shared key (PSK)";
+		case 0x00000003: "Authenticate using a X.509 certificate";
+		case 0x00000005: "Authenticate using the Kerberos";
+		default:
+			"Unknown value";
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNFAAuthMethodDef
+{
+	UINT32 AuthType = ipsecNFAAuthMethodDefAuthTypeTable(this);
+	UINT32 AuthLength = FormatString("%u byte(s)", this);
+	switch(AuthType)
+	{
+		case 0x00000001: UnicodeString PSK;
+		case 0x00000003: UnicodeString X509CertName;
+		case 0x00000005: UINT32 KerberosCert = FormatString("0x%04X (must be 0x00000000)", this);
+	}
+}
+
+table ipsecNegotiationPolicyTypeTable(value)
+{
+	switch(value)
+	{
+		case "{62F49E13-6C37-11D1-864C-14A3-00000000}": "Default Response Rule for SA negotiation";
+		case "{62F49E10-6C37-11D1-864C-14A3-00000000}": "Standard negotiation type ";
+		default:
+			"Unknown value";
+	}
+}
+
+table ipsecNegotiationPolicyActionTable(value)
+{
+	switch(value)
+	{
+		case "{3F91A819-7647-11D1-864D-D46A00000000}": "Block";
+		case "{8A171DD2-77E3-11d1-8659-A04F00000000}": "Permit";
+		case "{8A171DD3-77E3-11D1-8659-A04F00000000}": "Secure";
+		case "{3F91A81A-7647-11D1-864D-D46A00000000}": "Inbound pass-through";
+		default:
+			"Unknonw value";
+	}
+}
+
+//2.2.1.4	ipsecNegotiationPolicy
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNegotiationPolicyIPSecData
+{
+	// {80DC20B9-2EC8-11D1-A89E-00A0248D3021}
+	GUID(true) NegotiationPolicyID;
+	UINT32 DataLength;
+	UINT32 SecurityOfferCount;
+	ipsecNegotiationPolicySecurityOfferDataDef SecurityOfferData[SecurityOfferCount];
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNegotiationPolicySecurityOfferDataDef
+{
+	UINT32 LifetimeSeconds = FormatString("%d Sec(s)", this);
+	UINT32 LifetimeKBytes = FormatString("%d KB(s)", this);
+	UINT32 NegotiationOptions = FormatString("0x%08X (This must be 0x00000000)", this);
+	UINT32 PFSQMRequired = this == 0x00000000? "QM-PFS should be used": (this == 0x00000001? "QM-PFS should not be used": "Unknown value");
+	UINT32 AlgorithmOfferCount;
+	ipsecNegotiationPolicyAlgorithmOfferDataDef AlgorithmOfferData[AlgorithmOfferCount];
+}
+
+table ipsecNegotiationPolicyAlgorithmOfferDataDefAlgorithmIdentifierTableAH(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "AH framing with MD5";
+		case 0x00000002: "AH framing with SHA-1";
+		default:
+			"Unknonw value";
+	}
+}
+
+table ipsecNegotiationPolicyAlgorithmOfferDataDefAlgorithmIdentifierTableESP(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "ESP encapsulation with no encryption";
+		case 0x00000001: "ESP encapsulation with DES encryption";
+		case 0x00000002: "ESP encapsulation with 3DES encryption";
+		default:
+			"Unknown value";
+	}
+}
+
+table ipsecNegotiationPolicyAlgorithmOfferDataDefESPIntegrityIdentifierTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "None";
+		case 0x00000001: "ESP integrity with MD5";
+		case 0x00000002: "ESP integrity with SHA-1";
+		default:
+			"Unknown value";
+	}	
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecNegotiationPolicyAlgorithmOfferDataDef
+{
+	switch(UINT32(FrameData, FrameOffset + 8))
+	{
+		case "0x00000002": UINT32 AlgorithmIdentifierAH = ipsecNegotiationPolicyAlgorithmOfferDataDefAlgorithmIdentifierTableAH(this);
+		case "0x00000003": UINT32 AlgorithmIdentifierESP = ipsecNegotiationPolicyAlgorithmOfferDataDefAlgorithmIdentifierTableESP(this);
+		default:
+			UINT32 AlgorithmIdentifierUnknown;
+	}
+	UINT32 ESPIntegrityIdentifier = ipsecNegotiationPolicyAlgorithmOfferDataDefESPIntegrityIdentifierTable(this);
+	UINT32 OfferType = this == 0x00000002? "Authentication Header (AH) encapsulation":
+											(this == 0x00000003? "Encapsulation Security Payload (ESP) encapsulation": "Unknown value");
+	BLOB(8) Pad;	
+}
+
+table ipsecFilterIPSecDataProtocolTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "Any Protocol";
+		case 0x00000006: "TCP";
+		case 0x00000011: "UDP";
+		default:
+			"Unknown value";
+	}
+}
+
+table ipsecFilterIPSecDataSpecialFilterTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "This is NOT a special filter";
+		case 0x01: "Local DNS server(s) IP address as source address";
+		case 0x02: "Local WINS server(s) IP address as source address";
+		case 0x03: "Local DHCP server IP address as source address";
+		case 0x04: "Default-Gateway IP address as source address";
+		case 0x81: "Local DNS server(s) IP address as destination address";
+		case 0x82: "Local WINS server(s) IP address as destination address.";
+		case 0x83: "Local DHCP server IP address as destination address";
+		case 0x84: "Default-Gateway IP address as destination address";
+		default:
+			"Unknown value";
+	}
+}
+		
+//2.2.1.5	ipsecFilter	
+[DataTypeByteOrder = LittleEndian]
+struct ipsecFilterIPSecData
+{
+	//BLOB(8) Pad1;
+	//UnicodeString FilterDescription;
+	// {80DC20B5-2EC8-11D1-A89E-00A0248D3021}
+	// or for vista longhorn {35FECD3D-AE29-4373-8A6A-C5D8FAB2FB08}
+	GUID(true) FilterPolicyID1 = FormatString("%s (%s)", this, ipsecFilterIPSecDataFilterPolicyIDTable(this));
+	UINT32 DataLength1;
+	UINT32 NumberOfFilters1;
+	IpsecFilterSpec1 IpsecFilterSpec1[NumberOfFilters1];
+	GUID(true) FilterPolicyID2 = FormatString("%s (%s)", this, ipsecFilterIPSecDataFilterPolicyIDTable(this));
+	UINT32 DataLength2;
+	UINT32 NumberOfFilters11;
+	UINT32 NumberOfFilters2;
+	IpsecFilterSpec2 IpsecFilterSpec2[NumberOfFilters2];
+	UINT32 MirrorOptions = this == 0x00000000? "This filter is NOT mirrored": 
+												(this == 0x00000001? "This filter is mirrored": "Unknonw value");
+	IPv4Address SourceAddress = this == 0x00000000? "Any IP Address": this;
+	IPv4Address SourceMask;
+	IPv4Address DestinationAddress = this == 0x00000000? "Any IP Address": this;
+	IPv4Address DestinationMask;
+	switch(UINT8(FrameData, FrameOffset + 24))
+	{
+		case 0x01: IPv4Address TunnelAddress;
+		default: BLOB(4) Pad2;
+	}
+	//#? more protocol type to go?
+	UINT32 Protocol = ipsecFilterIPSecDataProtocolTable(this);
+	UINT16 SourcePort = this == 0x0000? "Any Port": this;
+	UINT16 DestinationPort = this == 0x0000? "Any Port": this;
+	UINT8 IsTunnel = this == 0x00? "This filter is NOT a tunnel filter": (this == 0x01? "This filter is a tunnel filter": "Unknown value");
+	UINT8 SpecialFilter = ipsecFilterIPSecDataSpecialFilterTable(this);
+	UINT16 FilterOptions = FormatString("0x%04X (This must be 0x0000)", this);
+	
+	//add-ons below
+	ipsecFilterIPSecAddressData SourceAddressData;
+	ipsecFilterIPSecAddressData DestinationAddressData;
+	ipsecFilterIPSecPortData SourcePortData;
+	ipsecFilterIPSecPortData DestinationPortData;
+	UINT32 FilterProtocol = ipsecFilterIPSecDataProtocolTable(this);
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x00000000:
+			UINT32 NoFlag = FormatString("0X%08X (No flag value)", this);
+		case 0x00000008:
+			UINT32 FilterFlag = FormatString("0X%08X (Use Version-2 (v2) filter ranges)", this);
+		default:
+			BLOB(4) Pad2;
+	}	
+}
+
+[DataTypeByteOrder = LittleEndian]
+Struct IpsecFilterSpec2
+{
+	UINT32 SourceLengthOfDNSName2;
+	AsciiString(SourceLengthOfDNSName2) SourceDNSName2;
+	UINT32 DestinationLengthOfDNSName2;
+	AsciiString(DestinationLengthOfDNSName2) DestinationDNSName2;
+	UINT32 FilterDescriptionLength2;
+	AsciiString(FilterDescriptionLength2) FilterDescription2;
+	GUID(true) FilterSpecificationID2;
+	UINT32 MirrorFlags = this == 0? "This filter is not mirrored":(this == 1? "This filter is mirrored":"Unknown Value");
+	ipsecFilterIPSecAddressData SourceAddressData;
+	ipsecFilterIPSecAddressData DestinationAddressData;
+	ipsecFilterIPSecPortData SourcePortData;
+	ipsecFilterIPSecPortData DestinationPortData;
+	UINT32 FilterProtocol = ipsecFilterIPSecDataProtocolTable(this);
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x00000000:
+			UINT32 NoFlag = FormatString("0X%08X (No flag value)", this);
+		case 0x00000008:
+			UINT32 FilterFlag = FormatString("0X%08X (Use Version-2 (v2) filter ranges)", this);
+		default:
+			BLOB(4) Pad2;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+Struct IpsecFilterSpec1
+{
+	UINT32 SourceLengthOfDNSName1;
+	AsciiString(SourceLengthOfDNSName1) SourceDNSName1;
+	UINT32 DestinationLengthOfDNSName1;
+	AsciiString(DestinationLengthOfDNSName1) DestinationDNSName1;
+	UINT32 FilterDescriptionLength1;
+	AsciiString(FilterDescriptionLength1) FilterDescription1;
+	GUID(true) FilterSpecificationID1;
+	UINT32 LegacyMirrorOptions = this == 0? "This filter is not mirrored":(this == 0x01? "This filter is mirrored":"Unknown value");
+	UINT32 LegacySourceAddress = this == 0? "Any IP address": this;
+	UINT32 LegacySourceMask;
+	UINT32 LegacyDestinationAddress = this == 0? "Any IP address": this;
+	UINT32 LegacyDestinationMask;
+	UINT32 LegacyTunnelAddress;
+	UINT32 LegacyProtocol = this == 0? "Any protocol": this;
+	UINT16 LegacySourcePort = this == 0? "Any port": this;
+	UINT16 LegacyDestinationPort = this == 0? "Any port": this;
+	UINT8 LegacyIsTunnel = this == 0x00? "This filter is not a tunnel filter":(this == 0x01? "This filter is a tunnel filter":"Unknown value");
+	UINT8 LegacySpecialFilter = LegacySpecialFilterTable(this);
+	BLOB(2) LegacyFilterOptions;
+}
+
+table LegacySpecialFilterTable(value)
+{
+	switch(value)
+		{
+			case 0x00: "This is not a special filter";
+			case 0x01: "This filter is to use the local system's NS server(s) (IPv4) IP address for the source address";
+			case 0x02: "This filter is to use the local system's WINS server(s) (IPv4) IP address for the source address";
+			case 0x03: "This filter is to use the local system's DHCP server (IPv4) IP address for the source address";
+			case 0x04: "This filter is to use the local system's default-gateway (IPv4) IP address for the source address";
+			case 0x81: "This filter is to use the local system's DNS server(s) (IPv4) IP address for the destination address";
+			case 0x82: "This filter is to use the local system's WINS server(s) (IPv4) IP address for the destination address";
+			case 0x83: "This filter is to use the local system's DHCP server (IPv4) IP address for the destination address";
+			case 0x84: "This filter is to use the local system's default-gateway (IPv4) IP address for the destination address";
+			default:
+					"Unknown value";
+
+		}
+}
+
+table ipsecFilterIPSecDataFilterPolicyIDTable(value)
+{
+	switch(value)
+	{
+		case "{80DC20B5-2EC8-11D1-A89E-00A0248D3021}": "Legacy filter, the Legacy- fields below MUST be interpreted";
+		case "{35FECD3D-AE29-4373-8A6A-C5D8FAB2FB08}": "Newer filter, the Legacy- fields below MUST be ignored";
+		default:
+			"Unknown value";
+	}
+}
+
+table ipsecFilterIPSecAddressDataIPSecAddressTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "Applies to all IP traffic";
+		case 0x00000001: "Single IP address filter";
+		case 0x00000002: "Specifies a range of IP addresses";
+		case 0x00000004: "Specifies an IP subnet";
+		case 0x00000008: "Use local system's IP address(es)";
+		case 0x00000010: "Use local system's DNS server(s) IP address";
+		case 0x00000020: "Use local system's WINS server(s) IP address";
+		case 0x00000040: "Use local system's DHCP server IP address";
+		case 0x00000080: "Use local system's Default-Gateway IP address";
+		default:
+			"Unknown value";
+	}
+}
+
+table ipsecFilterIPSecAddressDataIPSecAddresVersionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "IP version 4 (IPv4) address";
+		case 0x00000002: "IP version 6 (IPv6) address";
+		case 0x00000003: "Both an IP version 4 (IPv4) address and an IP version 6 (IPv6) address";
+		default:
+			"Unknown value";			
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecFilterIPSecAddressData
+{
+	// One or Combination?
+	UINT32 IPSecAddressType = ipsecFilterIPSecAddressDataIPSecAddressTypeTable(this);
+	UINT32 IPSecAddresVersion = ipsecFilterIPSecAddressDataIPSecAddresVersionTable(this);
+	switch(IPSecAddressType)
+	{
+		case 0x00000002:
+			switch(IPSecAddresVersion)
+			{
+				case 0x00000001:
+					_struct IPv4
+					{
+						IPv4Address FirstIPAddress;
+						BLOB(12) Pad;
+					}
+				case 0x00000002:
+					IPv6Address FirstIPv6Address;
+				default:
+					BLOB(16) PadBlob;
+			}			
+		case 0x00000001:
+		case 0x00000004:
+			switch(IPSecAddresVersion)
+			{
+				case 0x00000001:
+					_struct IPv4
+					{
+						IPv4Address IPAddress;
+						BLOB(12) Pad;
+					}
+				case 0x00000002:
+					IPv6Address IPv6Address;
+				default:
+					BLOB(16) PadBlob;
+			}
+		default:
+			BLOB(16) Pads;
+	}
+	switch(IPSecAddressType)
+	{
+		case 0x00000002:
+			switch(IPSecAddresVersion)
+			{
+				case 0x00000001:
+					_struct IPv4
+					{
+						IPv4Address LastIPAddress;
+						BLOB(12) Pad;						
+					}
+				case 0x00000002:
+					IPv6Address LastIPv6Address;
+				default:
+					BLOB(16) PadBlob;
+			}
+		case 0x00000004:
+			switch(IPSecAddresVersion)
+			{
+				case 0x00000001:
+					_struct IPv4AddressMask
+					{
+						IPv4Address IPAddressMask;
+						BLOB(12) Pad;
+					}
+				case 0x00000002:
+					_struct IPv6Mask
+					{
+						//#? IPv6Mask is one byte?
+						UINT8 IPv6AddressMask = FormatString("0X%02x", this);
+						BLOB(15) Pad;
+					}
+				default:
+					BLOB(16) PadBlob;
+			}
+		default:
+			BLOB(16) Pads;
+	}
+}
+
+table ipsecFilterIPSecPortDataIPsecSourcePortTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "Applies to all ports";
+		case 0x00000001: "Specifies a single port";
+		case 0x00000002: "Specifies a range of ports";
+		default:
+			"Unknown value";
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ipsecFilterIPSecPortData
+{
+	UINT32 IPsecSourcePortType = ipsecFilterIPSecPortDataIPsecSourcePortTypeTable(this);
+	switch(IPsecSourcePortType)
+	{
+		case 0x00000000:
+			_struct Blobs
+			{
+				BLOB(2) Pad1;
+				BLOB(2) Pad2;
+			}
+		case 0x00000001:
+			_struct SinglePort
+			{
+				UINT16 IPFilterPort;
+				BLOB(2) Pad;
+			}
+		case 0x00000002:
+			_struct PortRange
+			{
+				UINT16 FirstIPFilterPort;
+				UINT16 LastIPFilterPort;
+			}
+		default:
+			BLOB(4) ShouldntGoHere;
+	}
+	
+}

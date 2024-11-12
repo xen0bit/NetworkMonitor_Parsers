@@ -1,0 +1,492 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Microsoft Internet Information Services Svc Control Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-IISS]: Internet Information Services (IIS) Service Control Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 6/10/2009
+//#                          Minor, 4/20/2010
+//#
+//####
+
+Protocol IISS = FormatString( "%s %s%s%s%s%s", 
+	Property.IISSMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.IISSSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.IISSSummary : "" )
+{
+	[Property.IISSSummary = ""]
+	[Property.IISSMethodName = IISSMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		case 0x03:
+			_struct GetTypeInfoCount
+			{
+				switch(property.MSRPCptype)
+				{
+					case 0x00:
+						_struct Request
+						{
+						}
+					case 0x02:
+						_struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										UINT32 pctInfo;
+										[RAPRDecomResult = HResult.ToString]
+										HRESULT HResult;
+									}
+							}
+						}
+				}
+			}
+		case 0x04:
+			_struct GetTypeInfo
+			{
+				switch(property.MSRPCptype)
+				{
+					case 0x00:
+						_struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										UINT32 iTInfo;
+										OLEAUTLCID Lcid;
+									}
+							}
+						}
+					case 0x02:
+						_struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										NdrPtr pTInfo;
+										switch
+										{
+											case pTInfo.ReferentID:
+												DCOMMInterfacePointer TInfo;
+										}
+										[RAPRDecomResult = HResult.ToString]
+										HRESULT HResult;
+									}
+							}
+						}
+				}
+			}
+		case 0x05:
+			_struct GetIDsOfNames
+			{
+				switch (Property.MSRPCptype)
+				{
+					case 0x00:
+						_struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										OLEAUTRefIId riid;
+										NdrConformant NamesCount;
+										OLEAUTLPOLESTR(NamesCount.MaxCount) rgszNames;
+										Align4 pad;
+										UINT32 cNames;
+										OLEAUTLCID lcid;
+									}
+							}
+						}
+					case 0x02:
+						_struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										NdrConformant prgDispId;
+										OLEAUTDISPID rgDispId[prgDispId.MaxCount];
+										[RAPRDecomResult = HResult.ToString]
+										HRESULT HResult;
+									}
+							}
+						}
+				}
+			}
+		case 0x06:
+			_struct Invoke
+			{
+				switch (Property.MSRPCptype)
+				{
+					case 0x00:
+					_struct Request
+					{
+						Switch
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									OLEAUTDISPID dispIdMember;
+									OLEAUTRefIId riid;
+									OLEAUTLCID lcid;
+									switch( Property.MSRPCByteOrder )
+									{
+										case LittleEndian:
+											_struct LittleEndian
+											{
+												UINT32 dwFlags
+												{
+													[Local.InvocationType = this ? "Method" : Local.InvocationType]
+													UINT32 Method:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Invoked as a method" : "Not invoked as a method");
+													[Local.InvocationType = this ? "PropertyGet" : Local.InvocationType]
+													UINT32 PropertyGet:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Retrieved as a property or data membe" : "Not retrieved as a property or data membe");
+													[Local.InvocationType = this ? "PropertyPut" : Local.InvocationType]
+													UINT32 PropertyPut:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Changed as a property or data member" : "Not changed as a property or data member");
+													[Local.InvocationType = this ? "PropertyPutRef" : Local.InvocationType]
+													UINT32 PropertyPutRef:1 = FormatString("(%s) %s", this.ToBitString, this ? "Changed by a reference assignment" : "Not changed by a value assignment");
+													UINT32 Reserved1:13 = FormatString("     (%s)", this.ToBitString);
+													UINT32 ZeroVarResult:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pVarResult argument" : "Interested in the actual pVarResult argument");
+													UINT32 ZeroExcepInfo:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pExcepInfo argument" : "Interested in the actual pExcepInfo argument");
+													UINT32 ZeroArgErr:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Not interested in the actual pArgerr argument" : "Interested in the actual pArgerr argument");
+													UINT32 Reserved2:12 = FormatString("     (%s)", this.ToBitString);
+												}
+											}
+										default:
+											_struct BigEndian
+											{
+												UINT32 dwFlags
+												{
+													UINT32 Reserved2:12 = FormatString("     (%s)", this.ToBitString);
+													UINT32 ZeroArgErr:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Not interested in the actual pArgerr argument" : "Interested in the actual pArgerr argument");
+													UINT32 ZeroExcepInfo:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pExcepInfo argument" : "Interested in the actual pExcepInfo argument");
+													UINT32 ZeroVarResult:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pVarResult argument" : "Interested in the actual pVarResult argument");
+													UINT32 Reserved1:13 = FormatString("     (%s)", this.ToBitString);
+													[Local.InvocationType = this ? "PropertyPutRef" : Local.InvocationType]
+													UINT32 PropertyPutRef:1 = FormatString("(%s) %s", this.ToBitString, this ? "Changed by a reference assignment" : "changed by a value assignment");
+													[Local.InvocationType = this ? "PropertyPut" : Local.InvocationType]
+													UINT32 PropertyPut:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Changed as a property or data member" : "Not changed as a property or data member");
+													[Local.InvocationType = this ? "PropertyGet" : Local.InvocationType]
+													UINT32 PropertyGet:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Retrieved as a property or data membe" : "Not retrieved as a property or data membe");
+													[Local.InvocationType = this ? "Method" : Local.InvocationType]
+													UINT32 Method:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Invoked as a method" : "Not invoked as a method");
+												}
+											}
+									}
+									[Local.DecomParameters = FormatString("dispIdMemeber = %s, InvocationType = %s", dispIdMember.ToString, Local.InvocationType)]
+									OLEAUTDISPPARAMS DispParams;
+									UINT32 cVarRef;
+									NdrConformant VarRefIdxConformant;
+									UINT32 rgVarRefIdx[VarRefIdxConformant.MaxCount];
+									OLEAUTSafeArrVariant VarRef;
+								}
+						}
+					}
+					case 0x02:
+					_struct Response
+					{
+						Switch
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									OLEAUTVariant VarResult;
+									NdrAlign pad;
+									OLEAUTExcepInfo ExcepInfo;
+									UINT32 Argerr;
+									OLEAUTSafeArrVariant rgVarRef;
+									Align4 padding;
+									[RAPRDecomResult = HResult.ToString]
+									HRESULT HResult;
+								}
+						}
+					}
+				}
+			}
+		Case 7:
+			_Struct Stop
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[IISSSummary = FormatString( "TimeoutMsecs=0x%X Force=0x%X", TimeoutMsecs, Force )]
+									Struct
+									{
+										UINT32 TimeoutMsecs;
+										UINT32 Force = IISSStopForceTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct Start
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[IISSSummary = FormatString( "TimeoutMsecs=0x%X", TimeoutMsecs )]
+									Struct
+									{
+										UINT32 TimeoutMsecs;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct Reboot
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[IISSSummary = FormatString( "TimeoutMsecs=0x%X ForceAppsClosed=0x%X", TimeoutMsecs, ForceAppsClosed )]
+									Struct
+									{
+										UINT32 TimeoutMsecs;
+										UINT32 ForceAppsClosed = IISSRebootForceAppsClosedTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct Status
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[IISSSummary = FormatString( "BufferSize=0x%X", BufferSize )]
+									Struct
+									{
+										UINT32 BufferSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[IISSSummary = FormatString( "MDRequiredBufferSize=0x%X NumServices=0x%X", MDRequiredBufferSize, NumServices )]
+									Struct
+									{
+										NdrConformant Buffer;
+										IISSSerializedEnumServiceStatus StatusArray[Buffer.MaxCount];
+										IISSSerializedEnumServiceStatusInfo StatusInfo[Buffer.MaxCount];
+										Align4 pad;
+										UINT32 MDRequiredBufferSize;
+										UINT32 NumServices;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct Kill
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;	
+								Default:
+									Struct
+									{
+									}							
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "IISS", "Unknown IIisServiceControl method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+Table IISSMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "IIisServiceControl_Opnum0DummyMethod";
+		Case 1: "IIisServiceControl_Opnum1DummyMethod";
+		Case 2: "IIisServiceControl_Opnum2DummyMethod";
+		Case 3: "IIisServiceControl_Opnum3DummyMethod";
+		Case 4: "IIisServiceControl_Opnum4DummyMethod";
+		Case 5: "IIisServiceControl_Opnum5DummyMethod";
+		Case 6: "IIisServiceControl_Opnum6DummyMethod";
+		Case 7: "Stop";
+		Case 8: "Start";
+		Case 9: "Reboot";
+		Case 10: "Status";
+		Case 11: "Kill";
+		Default: "unknown";
+	}
+}
+
+
+[DataTypeByteOrder = LittleEndian]
+Struct IISSSerializedEnumServiceStatus
+{
+	UINT32 IServiceName;
+	UINT32 IDisplayName;
+	SCMRServiceStatus ServiceStatus;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct IISSSerializedEnumServiceStatusInfo
+{
+	UnicodeString ServiceName;
+	UnicodeString DisplayName;
+}
+
+
+Table IISSRebootForceAppsClosedTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "TRUE - Applications MUST be forced to close.";
+		Case 0x00000000: "FALSE - Applications MUST NOT be forced to close.";
+		Default: "Unknown";
+	}
+}
+
+Table IISSStopForceTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "TRUE - Services MUST be forced to terminate.";
+		Case 0x00000000: "FALSE - Services MUST NOT be forced to terminate.";
+		Default: "Unknown";
+	}
+}
+

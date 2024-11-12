@@ -1,0 +1,4029 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Certificate Services Remote Administration Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-CSRA]: Certificate Services Remote Administration Protocol Specification (10.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 5/19/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Const CertAdminCRPropFileVersion		= 0x00000001;
+Const CertAdminCRPropProductVersion		= 0x00000002;
+Const CertAdminCRPropExitCount			= 0x00000003;
+Const CertAdminCRPropExitDescription		= 0x00000004;
+Const CertAdminCRPropPolicyDescription		= 0x00000005;
+Const CertAdminCRPropCAName			= 0x00000006;
+Const CertAdminCRPropSanitizedCAName		= 0x00000007;
+Const CertAdminCRPropSharedFolder		= 0x00000008;
+Const CertAdminCRPropParentCA			= 0x00000009;
+Const CertAdminCRPropCAType			= 0x0000000A;
+Const CertAdminCRPropCASIGCertCount		= 0x0000000B;
+Const CertAdminCRPropCASIGCert			= 0x0000000C;
+Const CertAdminCRPropCASIGCertChain		= 0x0000000D;
+Const CertAdminCRPropCAXCHGCertCount		= 0x0000000E;
+Const CertAdminCRPropCAXCHGCert			= 0x0000000F;
+Const CertAdminCRPropCAXCHGCertChain		= 0x00000010;
+Const CertAdminCRPropBaseCRL			= 0x00000011;
+Const CertAdminCRPropDeltaCRL			= 0x00000012;
+Const CertAdminCRPropCACertState		= 0x00000013;
+Const CertAdminCRPropCRLState			= 0x00000014;
+Const CertAdminCRPropCAPropIDMax		= 0x00000015;
+Const CertAdminCRPropDNSName			= 0x00000016;
+Const CertAdminCRPropRoleSeparationEnabled	= 0x00000017;
+Const CertAdminCRPropKRACertUsedCount		= 0x00000018;
+Const CertAdminCRPropKRACertCount		= 0x00000019;
+Const CertAdminCRPropKRACert			= 0x0000001A;
+Const CertAdminCRPropKRACertState		= 0x0000001B;
+Const CertAdminCRPropAdvancedServer		= 0x0000001C;
+Const CertAdminCRPropTemplates			= 0x0000001D;
+Const CertAdminCRPropBaseCRLPublishStatus	= 0x0000001E;
+Const CertAdminCRPropDeltaCRLPublishStatus	= 0x0000001F;
+Const CertAdminCRPropCASIGCertCRLChain		= 0x00000020;
+Const CertAdminCRPropCAXchGCertCRLChain		= 0x00000021;
+Const CertAdminCRPropCACertStatusCODE		= 0x00000022;
+Const CertAdminCRPropCAForwardCrossCert		= 0x00000023;
+Const CertAdminCRPropCABackwardCrossCert	= 0x00000024;
+Const CertAdminCRPropCAForwardCrossCertState	= 0x00000025;
+Const CertAdminCRPropCABackwardCrossCertState	= 0x00000026;
+Const CertAdminCRPropCACertVERSION		= 0x00000027;
+Const CertAdminCRPropSanitizedCAShortName	= 0x00000028;
+
+Protocol CSRA = FormatString( "%s %s%s%s%s%s", 
+	Property.CSRAMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.CSRASummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.CSRASummary : "" )
+{
+	[Property.CSRASummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{D99E6E71-FC88-11D0-B498-00A0C90312F3}":
+			[Property.CSRAMethodName = "ICertAdminD:" + CertAdminMethodTable( Property.MSRPCOpnum )]
+			_Struct ICertAdminD
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct SetExtension
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u ExtensionName=%s Type=%u Flags=%u", Authority.ToString, RequestId, ExtensionName.ToString, Type, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 RequestId;
+													NdrWideStringPtr ExtensionName;
+													Align4 Pad2;
+													[Property.CSRASetExtensionType]
+													UINT32 Type = CSRASetExtensionTypeTable(this);
+													UINT32 Flags = CSRASetExtensionFlagsTable(this);
+													NdrAlign Pad3;
+													CSRACerttransblob PctbValue;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct SetAttributes
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u Attributes=%s", Authority.ToString, RequestId, Attributes.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 RequestId;
+													NdrWideStringPtr Attributes;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct ResubmitRequest
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u", Authority.ToString, RequestId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 pad;
+													UINT32 RequestId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Disposition=%u ReturnValue=%s", Disposition, ReturnValue.tostring )]
+												Struct
+												{
+													UINT32 Disposition;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct DenyRequest
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u", Authority.ToString, RequestId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 pad;
+													UINT32 RequestId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct IsValidCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s SerialNumber=%s", Authority.ToString, SerialNumber.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr SerialNumber;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "RevocationReason=%d Disposition=%d ReturnValue=%s", RevocationReason, Disposition, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 RevocationReason = CSRAIsValidCertificateRevocationReasonTable(this);
+													INT32 Disposition = CSRAIsValidCertificateDispositionTable(this);
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct PublishCRL
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align8 pad;
+													FILETIME FileTime;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct GetCRL
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CSRACerttransblob  PctbCRL;
+													Align4 pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 10:
+						_Struct RevokeCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s SerialNumber=%s Reason=%u", Authority.ToString, SerialNumber.ToString, Reason )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr SerialNumber;
+													Align4 Pad1;
+													UINT32 Reason = CSRARevokeCertificateReasonTable(this);
+													Align8 Pad2;
+													FILETIME FileTime;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 11:
+						_Struct EnumViewColumn
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s IColumn=%u CColumn=%u", Authority.ToString, IColumn, CColumn )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 IColumn;
+													UINT32 CColumn;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcColumn=%u ReturnValue=%s", PcColumn, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PcColumn;
+													NdrAlign pad1;
+													CSRACerttransblob PctbColumnInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 12:
+						_Struct GetViewDefaultColumnSet
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s IColumnSetDefault=%u", Authority.ToString, IColumnSetDefault )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 IColumnSetDefault = CSRAGetViewDefaultColumnSetIColumnSetDefaultTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcColumn=%u ReturnValue=%s", PcColumn, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PcColumn;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbColumnInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 13:
+						_Struct EnumAttributesOrExtensions
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RowId=%u Flags=%u Last=%s Celt=%u", Authority.ToString, RowId, Flags, Last.ToString, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 RowId;
+													[Conversation.CertAdminEnumType$[Property.MSRPCCallId] ]
+													UINT32 Flags = CSRAEnumAttributesOrExtensionsFlagsTable(this);
+													NdrWideStringPtr Last;
+													Align4 Pad2;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring)]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbOut;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 14:
+						_Struct OpenView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Ccvr=%u CcolOut=%u Ielt=%u Celt=%u", Authority.ToString, Ccvr, CcolOut, Ielt, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													[CertAdminCount]
+													UINT32 Ccvr;
+													CSRACertviewrestriction Acvr;
+													Align4 pad2;
+													UINT32 CcolOut;
+													CSRAUINT32Conformant AcolOut;
+													UINT32 Ielt;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbResultRows;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 15:
+						_Struct EnumView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Ielt=%u Celt=%u", Authority.ToString, Ielt, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 Ielt;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbResultRows;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 16:
+						_Struct CloseView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 17:
+						_Struct ServerControl
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s ControlFlags=%u", Authority.ToString, ControlFlags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 ControlFlags = CSRAServerControlControlFlagsTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CSRACerttransblob PctbOut;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 18:
+						_Struct Ping
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 19:
+						_Struct GetServerState
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "State=%u ReturnValue=%s", State, ReturnValue.tostring )]
+												Struct
+												{
+													UINT32 State;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 20:
+						_Struct BackupPrepare
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s GrbitJet=%u BackupFlags=%u BackupAnnotation=%c ClientIdentifier=%u", Authority.ToString, GrbitJet, BackupFlags, BackupAnnotation, ClientIdentifier )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 GrbitJet = CSRABackupPrepareGrbitJetTable(this);
+													UINT32 BackupFlags = MustBeSetToTable(this,"0");
+													WCHAR BackupAnnotation = FormatString("%s", "MUST be empty string");
+													Align4 pad2;
+													UINT32 ClientIdentifier = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 21:
+						_Struct BackupEnd
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 22:
+						_Struct BackupGetAttachmentInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcDBFiles=%d ReturnValue=%s", PcwcDBFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzDBFiles;
+													Align4 Pad;
+													INT32 PcwcDBFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 23:
+						_Struct BackupGetBackupLogs
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcLogFiles=%d ReturnValue=%s", PcwcLogFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzLogFiles;
+													Align4 Pad;
+													INT32 PcwcLogFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 24:
+						_Struct BackupOpenFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Path=%s", Path.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PliLength=%u ReturnValue=%s", PliLength, ReturnValue.tostring )]
+												Struct
+												{
+													UINT64 PliLength;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 25:
+						_Struct BackupReadFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "CbBuffer=%d", CbBuffer )]
+												Struct
+												{
+													INT32 CbBuffer;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcbRead=%d ReturnValue=%s", PcbRead, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAUINT8Conformant Buffer;
+													Align4 Pad;
+													INT32 PcbRead;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 26:
+						_Struct BackupCloseFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 27:
+						_Struct BackupTruncateLogs
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 28:
+						_Struct ImportCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Flags=%d", Authority.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbCertificate;
+													Align4 pad2;
+													INT32 Flags = CSRAImportCertificateFlagsTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "RequestId=%d ReturnValue=%s", RequestId, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 RequestId;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 29:
+						_Struct BackupGetDynamicFiles
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcFiles=%d ReturnValue=%s", PcwcFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzFiles;
+													Align4 align;
+													INT32 PcwcFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 30:
+						_Struct RestoreGetDatabaseLocations
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcPaths=%d ReturnValue=%s", PcwcPaths, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzDatabaseLocations;
+													Align4 align;
+													INT32 PcwcPaths;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("CSRA", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "CSRA", "Unknown ICertAdminD method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{7FE0D935-DDA6-443F-85D0-1CFB58FE41DD}":
+			[Property.CSRAMethodName = "ICertAdminD2:" + CertAdminMethodTable( Property.MSRPCOpnum )]
+			_Struct ICertAdminD2
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct SetExtension
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u ExtensionName=%s Type=%u Flags=%u", Authority.ToString, RequestId, ExtensionName.ToString, Type, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 RequestId;
+													NdrWideStringPtr ExtensionName;
+													Align4 Pad2;
+													[Property.CSRASetExtensionType]
+													UINT32 Type = CSRASetExtensionTypeTable(this);
+													UINT32 Flags = CSRASetExtensionFlagsTable(this);
+													NdrAlign Pad3;
+													CSRACerttransblob PctbValue;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct SetAttributes
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u Attributes=%s", Authority.ToString, RequestId, Attributes.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 RequestId;
+													NdrWideStringPtr Attributes;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct ResubmitRequest
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u", Authority.ToString, RequestId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 pad;
+													UINT32 RequestId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Disposition=%u ReturnValue=%s", Disposition, ReturnValue.tostring )]
+												Struct
+												{
+													UINT32 Disposition;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct DenyRequest
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u", Authority.ToString, RequestId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 pad;
+													UINT32 RequestId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct IsValidCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s SerialNumber=%s", Authority.ToString, SerialNumber.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr SerialNumber;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "RevocationReason=%d Disposition=%d ReturnValue=%s", RevocationReason, Disposition, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 RevocationReason = CSRAIsValidCertificateRevocationReasonTable(this);
+													INT32 Disposition = CSRAIsValidCertificateDispositionTable(this);
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct PublishCRL
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align8 pad;
+													FILETIME FileTime;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct GetCRL
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CSRACerttransblob  PctbCRL;
+													Align4 pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 10:
+						_Struct RevokeCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s SerialNumber=%s Reason=%u", Authority.ToString, SerialNumber.ToString, Reason )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr SerialNumber;
+													Align4 Pad1;
+													UINT32 Reason = CSRARevokeCertificateReasonTable(this);
+													Align8 Pad2;
+													FILETIME FileTime;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 11:
+						_Struct EnumViewColumn
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s IColumn=%u CColumn=%u", Authority.ToString, IColumn, CColumn )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 IColumn;
+													UINT32 CColumn;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcColumn=%u ReturnValue=%s", PcColumn, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PcColumn;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbColumnInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 12:
+						_Struct GetViewDefaultColumnSet
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s IColumnSetDefault=%u", Authority.ToString, IColumnSetDefault )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 IColumnSetDefault = CSRAGetViewDefaultColumnSetIColumnSetDefaultTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcColumn=%u ReturnValue=%s", PcColumn, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PcColumn;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbColumnInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 13:
+						_Struct EnumAttributesOrExtensions
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RowId=%u Flags=%u Last=%s Celt=%u", Authority.ToString, RowId, Flags, Last.ToString, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 RowId;
+													[Conversation.CertAdminEnumType$[Property.MSRPCCallId] ]
+													UINT32 Flags = CSRAEnumAttributesOrExtensionsFlagsTable(this);
+													NdrWideStringPtr Last;
+													Align4 Pad2;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring)]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbOut;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 14:
+						_Struct OpenView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Ccvr=%u CcolOut=%u Ielt=%u Celt=%u", Authority.ToString, Ccvr, CcolOut, Ielt, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 Ccvr;
+													CSRACertviewrestriction Acvr;
+													Align4 pad2;
+													UINT32 CcolOut;
+													CSRAUINT32Conformant AcolOut;
+													UINT32 Ielt;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													CSRACerttransblob  PctbResultRows;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 15:
+						_Struct EnumView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Ielt=%u Celt=%u", Authority.ToString, Ielt, Celt )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 Ielt;
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PceltFetched=%u ReturnValue=%s", PceltFetched, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PceltFetched;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbResultRows;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 16:
+						_Struct CloseView
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 17:
+						_Struct ServerControl
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s ControlFlags=%u", Authority.ToString, ControlFlags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 ControlFlags = CSRAServerControlControlFlagsTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CSRACerttransblob  PctbOut;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 18:
+						_Struct Ping
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 19:
+						_Struct GetServerState
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "State=%u ReturnValue=%s", State, ReturnValue.tostring )]
+												Struct
+												{
+													UINT32 State;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 20:
+						_Struct BackupPrepare
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s GrbitJet=%u BackupFlags=%u BackupAnnotation=%c ClientIdentifier=%u", Authority.ToString, GrbitJet, BackupFlags, BackupAnnotation, ClientIdentifier )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 GrbitJet = CSRABackupPrepareGrbitJetTable(this);
+													UINT32 BackupFlags = MustBeSetToTable(this,"0");
+													WCHAR BackupAnnotation;
+													Align4 pad2;
+													UINT32 ClientIdentifier = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 21:
+						_Struct BackupEnd
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 22:
+						_Struct BackupGetAttachmentInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcDBFiles=%d ReturnValue=%s", PcwcDBFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzDBFiles;
+													Align4 Pad;
+													INT32 PcwcDBFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 23:
+						_Struct BackupGetBackupLogs
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcLogFiles=%d ReturnValue=%s", PcwcLogFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzLogFiles;
+													Align4 Pad;
+													INT32 PcwcLogFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 24:
+						_Struct BackupOpenFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Path=%s", Path.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PliLength=%u ReturnValue=%s", PliLength, ReturnValue.tostring )]
+												Struct
+												{
+													UINT64 PliLength;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 25:
+						_Struct BackupReadFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "CbBuffer=%d", CbBuffer )]
+												Struct
+												{
+													INT32 CbBuffer;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcbRead=%d ReturnValue=%s", PcbRead, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAUINT8Conformant Buffer;
+													Align4 Pad;
+													INT32 PcbRead;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 26:
+						_Struct BackupCloseFile
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 27:
+						_Struct BackupTruncateLogs
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 28:
+						_Struct ImportCertificate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Flags=%d", Authority.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrAlign Pad1;
+													CertAdminCertTransBlobASN  PctbCertificate;
+													Align4 pad2;
+													INT32 Flags = CSRAImportCertificateFlagsTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "RequestId=%d ReturnValue=%s", RequestId, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 RequestId;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 29:
+						_Struct BackupGetDynamicFiles
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcFiles=%d ReturnValue=%s", PcwcFiles, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzFiles;
+													Align4 align;
+													INT32 PcwcFiles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 30:
+						_Struct RestoreGetDatabaseLocations
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcwcPaths=%d ReturnValue=%s", PcwcPaths, ReturnValue.tostring )]
+												Struct
+												{
+													CSRAWCHARConformantPtr PpwszzDatabaseLocations;
+													Align4 align;
+													INT32 PcwcPaths;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 31:
+						_Struct PublishCRLs
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Flags=%s", Authority.ToString, Flags.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													FILETIME FileTime;
+													CSRAPublishCRLsFlags Flags;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 32:
+						_Struct GetCAProperty
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s PropId=%d PropIndex=%d PropType=%d", Authority.ToString, PropId, PropIndex, PropType )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													[Conversation.CSRAPropId$[Property.MSRPCCallId]]
+													INT32 PropId = WCCEPropIDTable(this);
+													INT32 PropIndex;
+													[Conversation.CSRAPropType$[Property.MSRPCCallId]]
+													INT32 PropType = CSRAGetCAPropertyPropTypeTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													[
+														Conversation.CSRAPropId$[FrameNumber] = Conversation.CSRAPropId$[Property.MSRPCCallId],
+														Property.CSRAPropId = Conversation.CSRAPropId$[FrameNumber],
+														Conversation.CSRAPropType$[FrameNumber] = Conversation.CSRAPropType$[Property.MSRPCCallId],
+														Property.CSRAPropType = Conversation.CSRAPropType$[FrameNumber],
+													]
+													CertAdminCertTransBlobGetCAProperty PctbPropertyValue;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 33:
+						_Struct SetCAProperty
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s PropId=%d PropIndex=%d PropType=%d", Authority.ToString, PropId, PropIndex, PropType )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													INT32 PropId = CSRASetCAPropertyPropIdTable(this);
+													INT32 PropIndex;
+													INT32 PropType = CSRASetCAPropertyPropTypeTable(this);
+													Switch( PropId )
+													{
+														Case 0x00000018: 
+														Case 0x00000019: 
+															CertAdminCertTransBlobUInt32 value;
+														Case 0x0000001A: 
+															CertAdminCertTransBlobASN  Certificat;
+														Default: 
+															CertAdminCertTransBlob CertTransBlob;
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 34:
+						_Struct GetCAPropertyInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcProperty=%d ReturnValue=%s", PcProperty, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													INT32 PcProperty;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbPropInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 35:
+						_Struct EnumViewColumnTable
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s ITable=%u IColumn=%u CColumn=%u", Authority.ToString, ITable, IColumn, CColumn )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 ITable = CSRAEnumViewColumnTableITableTable(this);
+													UINT32 IColumn;
+													UINT32 CColumn;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcColumn=%u ReturnValue=%s", PcColumn, ReturnValue.tostring )]
+												Struct
+												{
+													[CertAdminCount]
+													UINT32 PcColumn;
+													NdrAlign Pad1;
+													CSRACerttransblob  PctbColumnInfo;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 36:
+						_Struct GetCASecurity
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CSRACerttransblob  PctbSD;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 37:
+						_Struct SetCASecurity
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrAlign Pad;
+													CSRACerttransblob  PctbSD;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 38:
+						_Struct Ping2
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 39:
+						_Struct GetArchivedKey
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u", Authority.ToString, RequestId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 RequestId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													CertAdminCertTransBlob PctbArchivedKey;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 40:
+						_Struct GetAuditFilter
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Filter=%u ReturnValue=%s", Filter, ReturnValue.tostring )]
+												Struct
+												{
+													UINT32 Filter = CSRAGetAuditFilterFilterTable(this);
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 41:
+						_Struct SetAuditFilter
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Filter=%u", Authority.ToString, Filter )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad;
+													UINT32 Filter;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 42:
+						_Struct GetOfficerRights
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PfEnabled=%d ReturnValue=%s", PfEnabled, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 PfEnabled;
+													NdrAlign Padding;
+													CertAdminCertTransBlobUint32 PctbSD;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 43:
+						_Struct SetOfficerRights
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Enable=%d", Authority.ToString, Enable )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													CSRAfEnable Enable;
+													NdrAlign Pad2;
+													CSRACerttransblob  PctbSD;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 44:
+						_Struct GetConfigEntry
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s NodePath=%s Entry=%s", Authority.ToString, NodePath.ToString, Entry.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr NodePath;
+													NdrWideString Entry;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													OLEAUTVariant	Variant;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 45:
+						_Struct SetConfigEntry
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s NodePath=%s Entry=%s", Authority.ToString, NodePath.ToString, Entry.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													NdrWideStringPtr NodePath;
+													NdrWideString Entry;
+													NdrAlign Pad;
+													OLEAUTVariant		Variant;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 46:
+						_Struct ImportKey
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s RequestId=%u CertHash=%s Flags=%u", Authority.ToString, RequestId, CertHash.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 RequestId;
+													NdrWideStringPtr CertHash;
+													Align4 Pad2;
+													UINT32 Flags = CSRAImportKeyFlagsTable(this);
+													NdrAlign Pad3;
+													CSRACerttransblob  PctbKey;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "ReturnValue=%s", ReturnValue.tostring )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 47:
+						_Struct GetMyRoles
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Roles=%d ReturnValue=%s", Roles, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 Roles;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 48:
+						_Struct DeleteRow
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "Authority=%s Flags=%u Table=%u RowId=%u", Authority.ToString, Flags, Table, RowId )]
+												Struct
+												{
+													NdrWideStringPtr Authority;
+													Align4 Pad1;
+													UINT32 Flags = CSRADeleteRowFlagsTable(this);
+													Align8 Pad2;
+													FILETIME FileTime;
+													UINT32 Table = CSRADeleteRowTableTable(this);
+													UINT32 RowId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[CSRASummary = FormatString( "PcDeleted=%d ReturnValue=%s", PcDeleted, ReturnValue.tostring )]
+												Struct
+												{
+													INT32 PcDeleted;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("CSRA", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "CSRA", "Unknown ICertAdminD2 method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+	}
+	}
+
+Table CSRABackupPrepareGrbitJetTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Prepare for full backup of the CA database.";
+		Case 0x00000001: "Prepare for an incremental backup as opposed to a full backup. This means that only the log files since the last full or incremental backup will be backed up.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	CERTTRANSBLOB
+//	NdrAlign
+//
+
+Struct CSRACerttransblob
+{
+	UINT32	cb;
+	NdrPtr	pb;
+	Switch 
+	{
+		Case pb.ReferentId > 0:
+			Struct 
+			{
+				NdrConformant Size;
+				[DataFieldFrameLength = FrameOffset + Size.MaxCount]
+				switch(Property.MSRPCOPNUM)
+				{
+					case 3:
+						struct
+						{
+							switch( Property.CSRASetExtensionType )
+							{
+								Case 1: 
+									[ CertAdminDataValue = this.ToString ]
+									UINT32 UIntVal;
+								Case 2: 
+									[ CertAdminDataValue = this.ToString ]
+									FILETIME Date;
+								Case 3:
+									[ CertAdminDataValue = this.ToString ]
+									Blob( cb ) BinaryData;
+								Case 4: 
+									[ CertAdminDataValue = this.ToString ]
+									[DataFieldByteOrder = LittleEndian]
+									UnicodeString string[cb];
+								default:
+									struct
+									{
+										Blob(Size.MaxCount) Blob;
+										ReportParserError(ParserErrorProtocolClassWindows, "CSRA", "Unknown type" ) ParserError;
+									}
+							}
+						}
+					case 9:
+						X509CertificateList CRL;
+					case 11:
+					case 35:
+						CertAdminCertTransBlobDBColumn ColumnInfo;
+					case 12:
+						[local.ElementSize = Size.MaxCount / 4]
+						UINT32 Element[ local.ElementSize ];
+					case 13:
+						struct
+						{
+							Switch( Conversation.CertAdminEnumType$[Property.MSRPCCallId] )
+							{
+								Case 0x00:
+									CertAdminCertTransBlobDBAttribute AttributesOut;
+								Case 0x01:
+									CertAdminCertTransBlobDBExtension ExtensionsOut;
+							}
+						}
+					case 14:
+					case 15: CertAdminCertTransBlobDBResultRow(Size.MaxCount) ResultRows;
+					case 32: CertAdminCAInfo CAInfo;
+					case 34: CertAdminCertTransBlobCATransProp PropInfo;
+					case 36:
+					case 37:
+					case 43:
+						NdrSecurityDescriptor Sd;
+					case 46:PKCS7 PKCS7;
+					default:
+						Blob( Size.MaxCount ) BlobData;
+				}
+				
+		}
+	}
+}
+
+Struct CertAdminCertTransBlobUint32 = FormatString( "cb=%d bytes", cb )
+{
+	UINT32	cb;
+	NdrPtr	pb;
+	Switch {
+		Case pb.ReferentId > 0:
+		Struct 
+		{
+			CSRAUINT32Conformant Value;
+		}
+	}
+}
+
+Struct CertAdminCertTransBlobASN = FormatString( "cb=%d bytes", cb )
+{
+	UINT32	cb;
+	NdrPtr	pb;
+	Switch {
+		Case pb.ReferentId > 0:
+		Struct 
+		{
+			NdrConformant Size;
+			X509Certificate X509Certificate;
+		}
+	}
+}
+
+//
+// CERTTRANSDBCOLUMN
+//
+
+Table CertAdminColType( value )
+{
+	Switch( value & 0x00000007 )
+	{
+		Case 0x00000001: "Signed Integer";
+		Case 0x00000002: "Date";
+		Case 0x00000003: "Binary Data";
+		Case 0x00000004: "String";
+		Default: "(unknown)";
+	}
+}
+
+Struct CertAdminCertTransBlobDBColumn
+{
+	[CertAdminDataOffset = FrameOffset]
+	CertAdminCertTransDBColumn  Col[Property.CertAdminCount];
+	CertAdminCertTransDBColumnData  ColData[Property.CertAdminCount];
+}
+
+Struct CertAdminCertTransDBColumn = FormatString( "Index=0x%04X, NameOffset=0x%04X", Index, NameOffset + CertAdminDataOffset )
+{
+	UINT32		Type = FormatString( "(0x%X)%s, %s", this, CertAdminColType( this ), (this & 0x10000) ? "Column values are indexed" : "Column values are NOT indexed" );
+	UINT32		Index;
+	UINT32		cbMax;
+	UINT32		NameOffset = FormatString( "0x%04X, Offset=0x%04X", this, this + CertAdminDataOffset );
+	UINT32		DisplayNameOffset = FormatString( "0x%04X, Offset=0x%04X", this, this + CertAdminDataOffset );
+}
+
+Struct CertAdminCertTransDBColumnData = FormatString( "NameOffset=0x%04X, Name='%s', DisplayName='%s'", 
+	CertAdminDataOffset, Name.ToString, DisplayName.ToString )
+{
+	[CertAdminDataOffset = FrameOffset]
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString Name;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad1;
+	}
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString DisplayName;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad;
+	}
+}
+
+//
+//	CERTTRANSDBATTRIBUTE
+//
+
+Struct CertAdminCertTransBlobDBAttribute
+{
+	[CertAdminDataOffset = FrameOffset]
+	CertAdminCertTransDBAttribute Attribute[Property.CertAdminCount];
+	CertAdminCertTransDBAttributeData AttributeData[Property.CertAdminCount];
+}
+
+Struct CertAdminCertTransDBAttribute = FormatString( "NameOffset=0x%04X, ValueOffset=0x%04X", 
+	NameOffset + CertAdminDataOffset, ValueOffset + CertAdminDataOffset )
+{
+	UINT32		NameOffset = FormatString( "%X, Offset=%X", this, this + CertAdminDataOffset );
+	UINT32		ValueOffset = FormatString( "%X, Offset=%X", this, this + CertAdminDataOffset );
+}
+
+Struct CertAdminCertTransDBAttributeData = FormatString( "NameOffset=0x%04X, Name='%s', Value='%s'", 
+	CertAdminDataOffset, Name.ToString, Value.ToString )
+{
+	[CertAdminDataOffset = FrameOffset]
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString Name;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad1;
+	}
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString Value;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad;
+	}
+}
+
+//
+//	CERTTRANSDBEXTENSION
+//
+
+Table CertAdminDBExtFlags( value )
+{
+	Switch( value )
+	{
+		Case 0x00000001: "This is a critical extension.";
+		Case 0x00000002: "The extension will not be used.";
+		Default: "unknown";
+	}
+}
+
+Struct CertAdminCertTransBlobDBExtension
+{
+	[CertAdminDataOffset = FrameOffset]
+	CertAdminCertTransDBExtension Extension[Property.CertAdminCount];
+	CertAdminCertTransDBExtensionData ExtensionData[Property.CertAdminCount];
+}
+
+Struct CertAdminCertTransDBExtension = FormatString( "NameOffset=0x%04X, ValueOffset=0x%04X", 
+	NameOffset + CertAdminDataOffset, ValueOffset + CertAdminDataOffset )
+{
+	UINT32		NameOffset = FormatString( "%X, Offset=%X", this, this + CertAdminDataOffset );
+	INT32		ExtFlags = FormatString( "(0x%X)%s", this, CertAdminDBExtFlags( this ) );
+	UINT32		cbValue;
+	UINT32		ValueOffset = FormatString( "%X, Offset=%X", this, this + CertAdminDataOffset );
+}
+
+Struct CertAdminCertTransDBExtensionData = FormatString( "NameOffset=0x%04X, Name='%s'", CertAdminDataOffset, Name.ToString )
+{
+	[CertAdminDataOffset = FrameOffset]
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString Name;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad1;
+	}
+	AsnBerAnyByOid( Name.ToString ) Value;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad;
+	}
+}
+
+//
+//	CERTTRANSDBRESULTROW
+//
+
+Struct CertAdminCertTransBlobDBResultRow(Size)
+{
+	[CertAdminResultBufferOffset = FrameOffset]
+	CertAdminCertTransDBResultRow Row[Property.CertAdminCount];
+	Switch {
+		Case FrameOffset < CertAdminResultBufferOffset + Size:
+			CertAdminCertTransDBResultRow End = FormatString( "Total row count:%d", End.rowid);
+		}
+}
+
+Struct CertAdminCertTransDBResultColumn = FormatString( "Index=0x%04X, Offset=0x%04X, Type=%s", Index, obValue ? obValue + CertAdminDataOffset : 0, CertAdminColType( Type ) )
+{
+	UINT32		Type = FormatString( "(0x%X)%s, %s", this, CertAdminColType( this ), (this & 0x10000) ? "Column values are indexed" : "Column values are NOT indexed" );
+	UINT32		Index;
+	[CertAdminType$[ obValue + CertAdminDataOffset ] = (Type & 0x00000007), CertAdminCount = CertAdminCount + ( obValue ? 1 : 0 )]
+	UINT32		obValue = FormatString( "0x%X%s", this, this ? FormatString( ", Offset=0x%04X", this + CertAdminDataOffset ) : "" );
+	[CertAdminCountTable$[ cValue ? obValue + CertAdminDataOffset : 0 ] = cValue]
+	UINT32		cValue;
+}
+
+Struct CertAdminCertTransDBResultRow = FormatString("rowid = %s", rowid)
+{
+	[CertAdminDataOffset = FrameOffset]
+	UINT32		rowid;
+	UINT32		ccol;
+	UINT32		cbrow;
+	[ CertAdminCount = 0 ]
+	CertAdminCertTransDBResultColumn
+				Col[ccol];
+	CertAdminCertTransDBResultColumnData
+				ColData[CertAdminCount];
+}
+
+//
+//	CERTTRANSDBRESULTCOLUMN
+//
+
+Struct CertAdminCertTransDBResultColumnData = FormatString( "Offset=0x%04X, Value=%s", CertAdminDataOffset, CertAdminDataValue )
+{
+	[ CertAdminDataOffset = FrameOffset ]
+	Switch( CertAdminType$[ FrameOffset ] )
+	{
+		Case 1: 
+			[ CertAdminDataValue = this.ToString ]
+			UINT32 UIntVal;
+		Case 2: 
+			[ CertAdminDataValue = this.ToString ]
+			FILETIME Date;
+		Case 3:
+			[ CertAdminDataValue = this.ToString ]
+			Blob( CertAdminCountTable$[ CertAdminDataOffset ] ) BinaryData;
+		Case 4: 
+			[ CertAdminDataValue = this.ToString ]
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString String;
+	}
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad;
+	}
+}
+
+Struct CertAdminCertTransBlob = FormatString( "cb=%d bytes", cb )
+{
+	UINT32	cb;
+	NdrPtr	pb;
+	Switch {
+		Case pb.ReferentId > 0:
+		Struct 
+		{
+			NdrConformant Size;
+			Blob( Size.MaxCount ) blob;
+		}
+	}
+}
+
+Table CertAdminCAType( value )
+{
+	Switch( value )
+	{
+		Case 0x00000000: "ENUM_ENTERPRISE_ROOTCA - CA is an enterprise root (self-signed) CA.";
+		Case 0x00000001: "ENUM_ENTERPRISE_SUBCA - CA is an enterprise subordinate CA.";
+		Case 0x00000003: "ENUM_STANDALONE_ROOTCA - CA is a stand-alone root (self-signed) CA.";
+		Case 0x00000004: "ENUM_STANDALONE_SUBCA - CA is a stand-alone subordinate CA.";
+		Case 0x00000005: "ENUM_UNKNOWN_CA - CA type is unknown.";
+		Default: "unknown";
+	}
+}
+
+Struct CertAdminCAInfo
+{
+	UINT32	cbSize;
+	INT32	CAType = FormatString( "(0x%X)%s", this, CertAdminCAType( this ) );
+	UINT32	cCASignatureCerts;
+	UINT32	cCAExchangeCerts;
+	UINT32	cExitModules;
+	INT32	PropIdMax;
+	INT32	RoleSeperationEnabled;
+	UINT32	cKRACertUsedCount;
+	UINT32	cKRACertCount;
+	UINT32	fAdvancedServer;
+}
+
+Struct CertAdminCertTransBlobUnicodeString = FormatString( "cb=%d bytes", cb )
+{
+	UINT32	cb;
+	NdrPtr	pb;
+	Switch {
+		Case pb.ReferentId > 0:
+		Struct 
+		{
+			NdrConformant Size;
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString String;
+		}
+	}
+}
+
+//
+//	CATRANSPROP
+//
+
+table CertAdminCATransPropTable(value)
+{
+	switch(value)
+	{
+		case 1: "PROPTYPE_LONG";
+		case 2:	"PROPTYPE_DATE";
+		case 3:	"PROPTYPE_BINARY";
+		case 4:	"PROPTYPE_STRING";
+		default:"unknown";
+	}
+}
+
+Struct CertAdminCertTransBlobCATransProp
+{
+	[CertAdminDataOffset = FrameOffset]
+	CertAdminCATransProp Prop[Property.CertAdminCount];
+	CertAdminCATransPropData PropData[Property.CertAdminCount];
+}
+
+Struct CertAdminCATransProp = FormatString( "PropID=0x%04X, NameOffset=0x%04X", 
+	lPropId, DisplayNameOffset + CertAdminDataOffset )
+{
+	INT32		lPropID;
+	UINT8		propType = CertAdminCATransPropTable(this);
+	UINT8		Reserved;
+	Align2		Pad1;
+	INT16		lPropFlags = FormatString("%s", this ? "a property is indexed" : "the property is not indexed");
+	Align4		Pad2;
+	UINT32		DisplayNameOffset = FormatString( "0x%X, Offset=0x%X", this, this + CertAdminDataOffset );
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad3;
+	}
+}
+
+Struct CertAdminCATransPropData = FormatString( "NameOffset=0x%04X, DisplayName='%s'", CertAdminDataOffset, DisplayName.ToString )
+{
+	[CertAdminDataOffset = FrameOffset]
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString DisplayName;
+	Switch {
+		Case CurrentProtocolOffset % 4: Align4 pad;
+	}
+}
+
+struct CSRAfEnable
+{
+	INT32		fEnable
+	{
+		Switch( ByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT32 Bit00To15:16 = FormatString("    (%s) %s", this.ToBitString, this ? "Enable (officer or enrollment agent) access rights" : "Disable (officer or enrollment agent) access rights and ignore the value of pctbSD");
+				UINT32 Bit16To31:16 = FormatString("    (%s) %s", this.ToBitString, this ? "Security descriptor in the pctbSD is for the enrollment agents." : "Security descriptor in the pctbSD parameter is for officer rights.");
+			}
+			Default:
+			Struct
+			{
+				UINT32 Bit16To31:16 = FormatString("    (%s) %s", this.ToBitString, this ? "Security descriptor in the pctbSD is for the enrollment agents." : "Security descriptor in the pctbSD parameter is for officer rights.");
+				UINT32 Bit00To15:16 = FormatString("    (%s) %s", this.ToBitString, this ? "Enable (officer or enrollment agent) access rights" : "Disable (officer or enrollment agent) access rights and ignore the value of pctbSD");
+			}
+		}
+	};
+}
+
+struct CertAdminCertTransBlobGetCAProperty
+{
+	Switch( Property.CSRAPropType )
+	{
+		Case 0x0001: //PROPTYPE_LONG
+		
+			Switch( Property.CSRAPropId )
+			{
+				Case CertAdminCRPropCAType:
+				Case CertAdminCRPropCASIGCertCount:
+				Case CertAdminCRPropCAXCHGCertCount:
+				Case CertAdminCRPropExitCount:
+				Case CertAdminCRPropCAPropIDMax:
+				Case CertAdminCRPropKRACertUsedCount:
+				Case CertAdminCRPropRoleSeparationEnabled:
+				Case CertAdminCRPropKRACertCount:
+				Case CertAdminCRPROPADVANCEDSERVER:
+					CSRACerttransblob CAInfo;
+				Default:
+					CertAdminCertTransBlob ByteArray;
+			}
+			
+		Case 0x0003: //PROPTYPE_BINARY
+			Struct CertTransBlob = FormatString( "cb=%d bytes", cb )
+			{
+				UINT32	cb;
+				NdrPtr	pb;
+				Switch {
+					Case pb.ReferentId > 0:
+					Struct 
+					{
+						NdrConformant Size;
+						Switch( Property.CSRAPropId )
+						{
+							Case CertAdminCRPropCASIGCert:
+							Case CertAdminCRPropCAForwardCrossCert:
+							Case CertAdminCRPropCABackwardCrossCert:
+							Case CertAdminCRPropCAXchgCert:
+								X509Certificate X509Certificate;
+							Case CertAdminCRPropBaseCRL:
+							Case CertAdminCRPropDeltaCRL:
+							Case CertAdminCRPropKRACert:
+								X509CertificateList CRL;
+							Case CertAdminCRPropCASIGCertChain:
+							Case CertAdminCRPropCASIGCertCRLChain:
+							Case CertAdminCRPropCAXchgCertChain:
+							Case CertAdminCRPropCAXchgCertCRLChain:
+								CmsContentInfo CMSMessage;
+						}
+					}
+				}
+			}
+			
+		Case 0x0004: //PROPTYPE_STRING
+			CertAdminCertTransBlobUnicodeString	CertTransBlobString;
+			
+		Default:
+			CertAdminCertTransBlob PropertyValue;
+	}
+}
+
+//
+//	_CERTVIEWRESTRICTION
+//
+
+Struct CSRACertviewrestrictionPtr
+{
+	UINT32 ColumnIndex;
+	INT32 SeekOperator = CSRACertviewrestrictionSeekOperatorTable(this);
+	INT32 SortOrder = CSRACertviewrestrictionSortOrderTable(this);
+	[Property.CSRAValuePtr.AddToProperty(ValuePtr.ReferentID, 0)]
+	NdrPtr ValuePtr;
+	UINT32 CbValue;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+}
+
+Struct CSRACertviewrestriction
+{
+	NdrConformant Size;
+	CSRACertviewrestrictionPtr Certviewrestriction[Size.MaxCount];
+	[local.CSRACertAdminCount = 0]
+	While[local.CSRACertAdminCount < Size.MaxCount]
+	{
+		Switch {
+			Case CSRAValuePtr[CertAdminCount]== 0:
+				CSRAUINT8Conformant Value;
+		}
+	}
+}
+
+
+Table CSRACertviewrestrictionSeekOperatorTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Equal to";
+		Case 0x00000002: "Less than";
+		Case 0x00000004: "Less than or equal to";
+		Case 0x00000008: "Greater than or equal to";
+		Case 0x00000010: "Greater than";
+		Default: "Unknown";
+	}
+}
+
+Table CSRACertviewrestrictionSortOrderTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "No sort order";
+		Case 0x00000001: "Ascending";
+		Case 0x00000002: "Descending";
+		Default: "Unknown";
+	}
+}
+
+Table CSRADeleteRowFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Delete the individual row.";
+		Case 0x00000001: "Delete the rows that contain expired certificates.";
+		Case 0x00000002: "Delete the rows that contain pending or failed requests.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRADeleteRowTableTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Delete the Requesttable rows.";
+		Case 0x00003000: "Delete the Extensiontable rows.";
+		Case 0x00004000: "Delete the Attributetable rows.";
+		Case 0x00005000: "Delete the CRLtable rows.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAEnumAttributesOrExtensionsFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Enumerate attributes";
+		Case 0x00000001: "Enumerate extensions";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAEnumViewColumnTableITableTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Requesttable";
+		Case 0x00003000: "Extensiontable";
+		Case 0x00004000: "Attributetable";
+		Case 0x00005000: "CRLtable";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAGetAuditFilterFilterTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Audit CA server for the following events:ServerControlRegistration of the ICertAdminD interface.Unregistration of the ICertAdminD interface.";
+		Case 0x00000002: "Audit CA server for the following method calls:BackupPrepareBackupEnd";
+		Case 0x00000004: "Audit CA server for the following method calls:ICertRequestD::RequestResubmitRequestDenyRequestSetAttributesSetExtensionsImportCertificateDeleteRow";
+		Case 0x00000008: "Audit CA server for the following method calls:RevokeCertificatePublishCRLPublishCRLs";
+		Case 0x00000010: "Audit CA server for the following method calls:SetCASecuritySetOfficerRights";
+		Case 0x00000020: "Audit CA server for the following method calls:GetArchivedKeyImportKey";
+		Case 0x00000040: "Audit CA server for the following method calls:SetCAPropertySetConfigEntry";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAGetCAPropertyPropTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROPTYPE_LONG - The property type is a signed long integer or a byte array.";
+		Case 0x00000003: "PROPTYPE_BINARY - The property type is binary data.";
+		Case 0x00000004: "PROPTYPE_STRING - The property type is a Unicode string.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAGetViewDefaultColumnSetIColumnSetDefaultTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0xFFFFFFFF: "Pending requests";
+		Case 0xFFFFFFFE: "Issued and revoked certificates in addition to failed requests";
+		Case 0xFFFFFFFD: "Failed requests";
+		Case 0xFFFFFFFC: "Extensions";
+		Case 0xFFFFFFFB: "Attributes";
+		Case 0xFFFFFFFA: "CRLs";
+		Case 0xFFFFFFF9: "Revoked certificates";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAImportCertificateFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "If this value is set, the CA server does not allow certificates that are not issued by it to be imported into its database.";
+		Case 0x00010000: "FLAG_ALLOW_IMPORT_FOREIGN - A request to the CA server to allow certificates that are not issued by it to be imported into its database.";
+		Case 0x00020000: "ICF_EXISTINGROW - A request to the CA to associate the imported certificates with an existing request row.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAImportKeyFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00010000: "Overwrite the existing archived key, if present.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAIsValidCertificateDispositionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000002: "The certificate has been revoked.";
+		Case 0x00000003: "certificate is still valid.";
+		Case 0x00000004: "The certificate was never issued.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAIsValidCertificateRevocationReasonTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "unspecified";
+		Case 1: "keyCompromise";
+		Case 2: "cACompromise";
+		Case 3: "affiliationChanged";
+		Case 4: "superseded";
+		Case 5: "cessationOfOperation";
+		Case 6: "certificateHold";
+		Default: "Unknown";
+	}
+}
+
+Struct CSRAPublishCRLsFlags = Value
+{
+	UINT32 Value
+	{
+		Switch( ByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT32 B:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST publish Base CRL" : "CA not required to publish Base CRL");
+				UINT32 D:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST publish Delta CRL" : "CA not required to publish Delta CRL");
+				UINT32 Unused:2 = FormatString("   (%s)", this.ToBitString);
+				UINT32 F:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST republish the existing CRLs" : "CA not required to republish the existing CRLs");
+				UINT32 Reserved:28 = FormatString(" (%s)", this.ToBitString);
+			}
+			Default:
+			Struct
+			{
+				UINT32 Reserved:28 = FormatString(" (%s)", this.ToBitString);
+				UINT32 F:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST republish the existing CRLs" : "CA not required to republish the existing CRLs");
+				UINT32 Unused:2 = FormatString("   (%s)", this.ToBitString);
+				UINT32 D:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST publish Delta CRL" : "CA not required to publish Delta CRL");
+				UINT32 B:1 = FormatString("        (%s) %s", this.ToBitString, this ? "CA MUST publish Base CRL" : "CA not required to publish Base CRL");
+			}
+		}
+	}
+}
+
+Table CSRARevokeCertificateReasonTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "unspecified";
+		Case 1: "keyCompromise";
+		Case 2: "cACompromise";
+		Case 3: "affiliationChanged";
+		Case 4: "superseded";
+		Case 5: "cessationOfOperation";
+		Case 6: "certificateHold";
+		Case 8: "removeFromCRL";
+		Case 0xfffffffd: "See processing rules, beginning with rule 2.";
+		Case 0xfffffffe: "See processing rules, beginning with rule 3.";
+		Case 0xffffffff: "Released from hold. (See processing rules, beginning with rule 4.)";
+		Default: "Unknown";
+	}
+}
+
+Table CSRAServerControlControlFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x000000001: "Request unregister for DCOM interfaces for the certificate server.";
+		Case 0x000000002: "Not currently used.";
+		Case 0x000000003: "Not currently used.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRASetCAPropertyPctbPropertyValueTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000018: "CR_PROP_KRACERTUSEDCOUNT - pb member of CERTTRANSBLOB MUST point to unsigned integer value (little-endian format) and cb member of CERTTRANSBLOB MUST contain the length of the bytes containing the value.";
+		Case 0x00000019: "CR_PROP_KRACERTCOUNT - pb member of CERTTRANSBLOB MUST point to unsigned integer value (little-endian format) and cb member of CERTTRANSBLOB MUST contain the length of the bytes containing the value.";
+		Case 0x0000001a: "CR_PROP_KRACERT - pb member of CERTTRANSBLOB MUST point to ASN.1 DER (as specified in [ITUX690]) encoded byte array of Certificate. cb member of CERTTRANSBLOB MUST contain the length of the array.";
+		Case 0x0000001d: "CR_PROP_TEMPLATES - As specified in [MS-WCCE] section .";
+		Default: "Unknown";
+	}
+}
+
+Table CSRASetCAPropertyPropIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000001a: "A binary object that contains the CA'skey recovery agent (KRA)certificate to be added at the index specified by PropIndex parameter.";
+		Case 0x00000019: "The maximum number of KRAcertificates available on the certification authority.";
+		Case 0x00000018: "The minimum number of KRAs to use when archiving a private key. For more information on KRA usage, see [MSFT-ARCHIVE].";
+		Case 0x0000001d: "A collection of name and OID pairs that identify the templates supported by a CA.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRASetCAPropertyPropTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROPTYPE_LONG - Signed LONG data";
+		Case 0x00000003: "PROPTYPE_BINARY - Binary data";
+		Case 0x00000004: "PROPTYPE_STRING - Unicode String data";
+		Default: "Unknown";
+	}
+}
+
+Table CSRASetExtensionFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "This is a critical extension.";
+		Case 2: "The extension MUST NOT be used on issued certificates.";
+		Default: "Unknown";
+	}
+}
+
+Table CSRASetExtensionTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Unsigned long data";
+		Case 0x00000002: "Date/time";
+		Case 0x00000003: "Binary data";
+		Case 0x00000004: "Unicode";
+		Default: "Unknown";
+	}
+}
+
+Struct CSRAUINT32Conformant
+{
+	NdrConformant Size;
+	[local.ElementSize = Size.MaxCount / 4]
+	UINT32 Element[ local.ElementSize ];
+}
+
+Struct CSRAUINT8Conformant
+{
+	NdrConformant Size;
+	UINT8 Element[ Size.MaxCount ];
+}
+
+Struct CSRAWCHARConformant
+{
+	NdrConformant Size;
+	WCHAR Element[ Size.MaxCount ];
+}
+
+Struct CSRAWCHARConformantPtr
+{
+	NdrPtr WCHARConformantPtr;
+	Switch {
+		Case WCHARConformantPtr.ReferentID != 0:
+			CSRAWCHARConformant WCHARConformant;
+	}
+}
+
+Table CertAdminMethodTable( value )
+{
+	Switch( value )
+	{
+		Case 3: "SetExtension";
+		Case 4: "SetAttributes";
+		Case 5: "ResubmitRequest";
+		Case 6: "DenyRequest";
+		Case 7: "IsValidCertificate";
+		Case 8: "PublishCRL";
+		Case 9: "GetCRL";
+		Case 10: "RevokeCertificate";
+		Case 11: "EnumViewColumn";
+		Case 12: "GetViewDefaultColumnSet";
+		Case 13: "EnumAttributesOrExtensions";
+		Case 14: "OpenView";
+		Case 15: "EnumView";
+		Case 16: "CloseView";
+		Case 17: "ServerControl";
+		Case 18: "Ping";
+		Case 19: "GetServerState";
+		Case 20: "BackupPrepare";
+		Case 21: "BackupEnd";
+		Case 22: "BackupGetAttachmentInformation";
+		Case 23: "BackupGetBackupLogs";
+		Case 24: "BackupOpenFile";
+		Case 25: "BackupReadFile";
+		Case 26: "BackupCloseFile";
+		Case 27: "BackupTruncateLogs";
+		Case 28: "ImportCertificate";
+		Case 29: "BackupGetDynamicFiles";
+		Case 30: "RestoreGetDatabaseLocations";
+		Case 31: "PublishCRLS";
+		Case 32: "GetCAProperty";
+		Case 33: "SetCAProperty";
+		Case 34: "GetCAPropertyInfo";
+		Case 35: "EnumViewColumnTable";
+		Case 36: "GetCASecurity";
+		Case 37: "SetCASecurity";
+		Case 38: "Ping2";
+		Case 39: "GetArchivedKey";
+		Case 40: "GetAuditFilter";
+		Case 41: "SetAuditFilter";
+		Case 42: "GetOfficerRights";
+		Case 43: "SetOfficerRights";
+		Case 44: "GetConfigEntry";
+		Case 45: "SetConfigEntry";
+		Case 46: "ImportKey";
+		Case 47: "GetMyRoles";
+		Case 48: "DeleteRow";
+		Default: "unknown";
+	}
+}

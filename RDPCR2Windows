@@ -1,0 +1,2073 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Composited Remoting Protocol
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPCR2]: Remote Desktop Protocol: Composited Remoting V2 Specification (2.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 5/22/2009
+//#                          Minor, 6/3/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+[BuildConversationWithParent]
+Protocol RDPCR2 = RDPCR2PacketControlCodeTable(ControlCode)
+{
+	UINT32 ControlCode = RDPCR2PacketControlCodeTable(this);
+	[Property.MessageSize]
+	UINT32 MessageSize;
+	[
+		Post.Conversation.ConversationDescription = 
+			Conversation.RDPCR2.ConversationDescription? Conversation.RDPCR2.ConversationDescription :
+			FormatString("(ConnectionType: %s) ConvID = %d",Property.RDPCR2ConnectionType, ConvID)
+	]
+	switch (ControlCode)
+	{
+		case 0x01:
+			RDPCR2MilCtrlCmdVersionRequest MilCtrlCmdVersionRequest;
+		case 0x02:
+			RDPCR2MilCtrlCmdVersionAnnouncement MilCtrlCmdVersionAnnouncement;
+		case 0x03:
+			RDPCR2MilCtrlCmdOpenConnection MilCtrlCmdOpenConnection;
+		case 0x04:
+			RDPCR2MilCtrlCmdCloseConnection MilCtrlCmdCloseConnection;
+		case 0x05:
+			RDPCR2MilCtrlCmdOpenChannel MilCtrlCmdOpenChannel;
+		case 0x06:
+			RDPCR2MilCtrlCmdCloseChannel MilCtrlCmdCloseChannel;
+		case 0x07:
+			RDPCR2MilCtrlCmdDataOnChannel MilCtrlCmdDataOnChannel;
+		case 0x09:
+			RDPCR2MilCtrlCmdConnectionNotification MilCtrlCmdConnectionNotification;
+		case 0x0A:
+			RDPCR2MilCtrlCmdChannelNotification MilCtrlCmdChannelNotification;
+		case 0x0B:
+			RDPCR2MilCtrlCmdConnectionBroadcast MilCtrlCmdConnectionBroadcast;
+		case 0x0C:
+			RDPCR2MilHandleSurfaceManagerEvent MilHandleSurfaceManagerEvent;
+		default:
+			BLOB(Property.MessageSize - 8) UnkownCmd;
+	}
+}
+
+table RDPCR2ResourceTypesTable
+{
+	switch(value)
+	{
+		case 0x00000001: "TYPE_SCENE3D - Represents a 3-D scene described by a set of models, a camera, and a viewport rectangle.";
+		case 0x00000003: "TYPE_MATRIXCAMERA - Represents a camera that specifies the view and projection transforms as 3-D matrix objects.";
+		case 0x00000005: "TYPE_MODEL3DGROUP - This resource represents a group of 3-D model resources, that can be treated as a single, compound 3-D model.";
+		case 0x00000007: "TYPE_AMBIENTLIGHT - This resource represents a light object that applies light to objects uniformly, regardless of their shape.";
+		case 0x00000008: "TYPE_GEOMETRYMODEL3D - This resource represents a 3-D model comprised of a mesh geometry 3-D and a material.";
+		case 0x0000000A: "TYPE_MESHGEOMETRY3D - This resource represents a triangle primitive for building a 3-D shape.";
+		case 0x0000000C: "TYPE_MESHGEOMETRY2D - This resource represents a mesh that draws a 2-D shape by defining vertices and triangles.";
+		case 0x0000000D: "TYPE_GEOMETRY2DGROUP - This resource represents a group of 2-D geometry resources, which can be treated as a single, compound 2-D geometry.";
+		case 0x00000010: "TYPE_MATRIXTRANSFORM3D - This resource creates a transformation specified by a 4x4 matrix, used to manipulate objects or coordinate systems in 3-D world space.";
+		case 0x00000011: "TYPE_GLYPHCACHE - The glyph cache is a resource used to cache glyph bitmaps used by glyph run resources to render text.";
+		case 0x00000012: "TYPE_VISUAL - Represents a grouping of related graphical objects.";
+		case 0x00000013: "TYPE_WINDOWNODE - Represents a visual with a sprite or a child scene graph as its content.";
+		case 0x00000014: "TYPE_GLYPHRUN - The GlypRun resource is used to render text as an array of glyph bitmaps.";
+		case 0x00000015: "TYPE_RENDERDATA - Represents a drawing instruction stream.";
+		case 0x00000018: "TYPE_HWNDRENDERTARGET - Represents a window rendering target destination.";
+		case 0x00000019: "TYPE_DESKTOPRENDERTARGET - Represents a desktop rendering target destination.";
+		case 0x0000001C: "TYPE_DOUBLERESOURCE - Stores a single value of type 'double'.";
+		case 0x0000001D: "TYPE_COLORRESOURCE - Stores a single value of type 'color'.";
+		case 0x0000001E: "TYPE_POINTRESOURCE - Stores a single value of type 'point'.";
+		case 0x0000001F: "TYPE_RECTRESOURCE - Stores a single value of type 'rect'.";
+		case 0x00000020: "TYPE_SIZERESOURCE - Stores a single value of type 'size'.";
+		case 0x00000021: "TYPE_MATRIXRESOURCE - Stores a single value of type 'matrix'.";
+		case 0x00000022: "TYPE_COLORTRANSFORMRESOURCE - Stores a single value of type 'color transform'.";
+		case 0x00000023: "TYPE_METABITMAPRENDERTARGET - Represents an offscreen render target.";
+		case 0x00000025: "TYPE_CACHEDVISUALIMAGE - This resource represents a bitmap that contains a rasterization of a visual tree. The rasterization is cached from frame to frame, such that if the contained visual tree does not change then it does not need to be traversed in subsequent frames.";
+		case 0x00000027: "TYPE_TRANSFORMGROUP - This resource represents a group of transform resources, which behave as a single, compound transform.";
+		case 0x00000028: "TYPE_TRANSLATETRANSFORM - This resource represents a translation transform of an object in 2-D space.";
+		case 0x00000029: "TYPE_SCALETRANSFORM - This resource represents a scale transform of an object in 2-D space.";
+		case 0x0000002A: "TYPE_MATRIXTRANSFORM - This resource represents an arbitrary affine matrix transformation that is used to manipulate objects or coordinate systems in 2-D space.";
+		case 0x0000002C: "TYPE_RECTANGLEGEOMETRY - This resource represents a rectangle-shaped geometry with optionally rounded corners.";
+		case 0x0000002D: "TYPE_COMBINEDGEOMETRY - This resource represents the result of the combination of two geometry objects.";
+		case 0x0000002E: "TYPE_PATHGEOMETRY - This resource represents a complex shape. The path is defined by a series of figures, each of which is defined by a series of segments.";
+		case 0x00000030: "TYPE_SOLIDCOLORBRUSH - This resource represents a brush that fills an area with a solid color.";
+		case 0x00000032: "TYPE_LINEARGRADIENTBRUSH - This resource represents a brush that fills an area with a linear gradient.";
+		case 0x00000034: "TYPE_IMAGEBRUSH - This resource represents a brush that fills an area by tiling an image.";
+		case 0x00000035: "TYPE_VISUALGROUP - Represents a group of visuals.";
+		case 0x00000036: "TYPE_BITMAPSOURCE - Represents a bitmap resource that can be rendered in a drawing context.";
+		case 0x00000038: "TYPE_GDISPRITEBITMAP - Represents a GDI sprite.";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2DxgiFormatTable(value)
+{
+	switch(value)
+	{
+		case  0: "DXGI_FORMAT_UNKNOWN - An unknown format";
+		case  1: "DXGI_FORMAT_R32G32B32A32_TYPELESS - A four-component, 128-bit typeless format";
+		case  2: "DXGI_FORMAT_R32G32B32A32_FLOAT - A four-component, 128-bit floating-point format";
+		case  3: "DXGI_FORMAT_R32G32B32A32_UINT - A four-component, 128-bit unsigned-integer format";
+		case  4: "DXGI_FORMAT_R32G32B32A32_SINT - A four-component, 128-bit signed-integer format";
+		case  5: "DXGI_FORMAT_R32G32B32_TYPELESS - A three-component, 96-bit typeless format";
+		case  6: "DXGI_FORMAT_R32G32B32_FLOAT - A three-component, 96-bit floating-point format";
+		case  7: "DXGI_FORMAT_R32G32B32_UINT - A three-component, 96-bit unsigned-integer format";
+		case  8: "DXGI_FORMAT_R32G32B32_SINT - A three-component, 96-bit signed-integer format";
+		case  9: "DXGI_FORMAT_R16G16B16A16_TYPELESS - A four-component, 64-bit typeless format";
+		case  10: "DXGI_FORMAT_R16G16B16A16_FLOAT - A four-component, 64-bit floating-point format";
+		case  11: "DXGI_FORMAT_R16G16B16A16_UNORM - A four-component, 64-bit unsigned-integer format";
+		case  12: "DXGI_FORMAT_R16G16B16A16_UINT - A four-component, 64-bit unsigned-integer format";
+		case  13: "DXGI_FORMAT_R16G16B16A16_SNORM - A four-component, 64-bit signed-integer format";
+		case  14: "DXGI_FORMAT_R16G16B16A16_SINT - A four-component, 64-bit signed-integer format";
+		case  15: "DXGI_FORMAT_R32G32_TYPELESS - A two-component, 64-bit typeless format";
+		case  16: "DXGI_FORMAT_R32G32_FLOAT - A two-component, 64-bit floating-point format";
+		case  17: "DXGI_FORMAT_R32G32_UINT - A two-component, 64-bit unsigned-integer format";
+		case  18: "DXGI_FORMAT_R32G32_SINT - A two-component, 64-bit signed-integer format";
+		case  19: "DXGI_FORMAT_R32G8X24_TYPELESS - A two-component, 64-bit typeless format";
+		case  20: "DXGI_FORMAT_D32_FLOAT_S8X24_UINT - A 32-bit floating-point component, and two unsigned-integer components (with an additional 32 bits)";
+		case  21: "DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS - A 32-bit floating-point component, and two typeless components (with an additional 32 bits)";
+		case  22: "DXGI_FORMAT_X32_TYPELESS_G8X24_UINT - A 32-bit typeless component, and two unsigned-integer components (with an additional 32 bits)";
+		case  23: "DXGI_FORMAT_R10G10B10A2_TYPELESS - A four-component, 32-bit typeless format";
+		case  24: "DXGI_FORMAT_R10G10B10A2_UNORM - A four-component, 32-bit unsigned-integer format";
+		case  25: "DXGI_FORMAT_R10G10B10A2_UINT - A four-component, 32-bit unsigned-integer format";
+		case  26: "DXGI_FORMAT_R11G11B10_FLOAT - A three-component, 32-bit floating-point format";
+		case  27: "DXGI_FORMAT_R8G8B8A8_TYPELESS - A three-component, 32-bit typeless format";
+		case  28: "DXGI_FORMAT_R8G8B8A8_UNORM - A four-component, 32-bit unsigned-integer format";
+		case  29: "DXGI_FORMAT_R8G8B8A8_UNORM_SRGB - A four-component, 32-bit unsigned-normalized integer sRGB format";
+		case  30: "DXGI_FORMAT_R8G8B8A8_UINT - A four-component, 32-bit unsigned-integer format";
+		case  31: "DXGI_FORMAT_R8G8B8A8_SNORM - A three-component, 32-bit signed-integer format";
+		case  32: "DXGI_FORMAT_R8G8B8A8_SINT - A three-component, 32-bit signed-integer format";
+		case  33: "DXGI_FORMAT_R16G16_TYPELESS - A two-component, 32-bit typeless format";
+		case  34: "DXGI_FORMAT_R16G16_FLOAT - A two-component, 32-bit floating-point format";
+		case  35: "DXGI_FORMAT_R16G16_UNORM - A two-component, 32-bit unsigned-integer format";
+		case  36: "DXGI_FORMAT_R16G16_UINT - A two-component, 32-bit unsigned-integer format";
+		case  37: "DXGI_FORMAT_R16G16_SNORM - A two-component, 32-bit signed-integer format";
+		case  38: "DXGI_FORMAT_R16G16_SINT - A two-component, 32-bit signed-integer format";
+		case  39: "DXGI_FORMAT_R32_TYPELESS - A single-component, 32-bit typeless format";
+		case  40: "DXGI_FORMAT_D32_FLOAT - A single-component, 32-bit floating-point format";
+		case  41: "DXGI_FORMAT_R32_FLOAT - A single-component, 32-bit floating-point format";
+		case  42: "DXGI_FORMAT_R32_UINT - A single-component, 32-bit unsigned-integer format";
+		case  43: "DXGI_FORMAT_R32_SINT - A single-component, 32-bit signed-integer format";
+		case  44: "DXGI_FORMAT_R24G8_TYPELESS - A two-component, 32-bit typeless format";
+		case  45: "DXGI_FORMAT_D24_UNORM_S8_UINT - A 32-bit z-buffer format that uses 24 bits for the depth channel and 8 bits for the stencil channel";
+		case  46: "DXGI_FORMAT_R24_UNORM_X8_TYPELESS - A 32-bit format, that contains a 24-bit, single-component, unsigned-normalized integer, with an additional typeless 8 bits";
+		case  47: "DXGI_FORMAT_X24_TYPELESS_G8_UINT - A 32-bit format, that contains a 24-bit, single-component, typeless format, with an additional 8-bit unsigned integer component";
+		case  48: "DXGI_FORMAT_R8G8_TYPELESS - A two-component, 16-bit typeless format";
+		case  49: "DXGI_FORMAT_R8G8_UNORM - A two-component, 16-bit unsigned-integer format";
+		case  50: "DXGI_FORMAT_R8G8_UINT - A two-component, 16-bit unsigned-integer format";
+		case  51: "DXGI_FORMAT_R8G8_SNORM - A two-component, 16-bit signed-integer format";
+		case  52: "DXGI_FORMAT_R8G8_SINT - A two-component, 16-bit signed-integer format";
+		case  53: "DXGI_FORMAT_R16_TYPELESS - A single-component, 16-bit typeless format";
+		case  54: "DXGI_FORMAT_R16_FLOAT - A single-component, 16-bit floating-point format";
+		case  55: "DXGI_FORMAT_D16_UNORM - A single-component, 16-bit unsigned-normalized integer format";
+		case  56: "DXGI_FORMAT_R16_UNORM - A single-component, 16-bit unsigned-integer format";
+		case  57: "DXGI_FORMAT_R16_UINT - A single-component, 16-bit unsigned-integer format";
+		case  58: "DXGI_FORMAT_R16_SNORM - A single-component, 16-bit signed-integer format";
+		case  59: "DXGI_FORMAT_R16_SINT - A single-component, 16-bit signed-integer format";
+		case  60: "DXGI_FORMAT_R8_TYPELESS - A single-component, 8-bit typeless format";
+		case  61: "DXGI_FORMAT_R8_UNORM - A single-component, 8-bit unsigned-integer format";
+		case  62: "DXGI_FORMAT_R8_UINT - A single-component, 8-bit unsigned-integer format";
+		case  63: "DXGI_FORMAT_R8_SNORM - A single-component, 8-bit signed-integer format";
+		case  64: "DXGI_FORMAT_R8_SINT - A single-component, 8-bit signed-integer format";
+		case  65: "DXGI_FORMAT_A8_UNORM - A single-component, 8-bit unsigned-integer format";
+		case  66: "DXGI_FORMAT_R1_UNORM - A single-component, 1-bit unsigned-normalized integer format";
+		case  67: "DXGI_FORMAT_R9G9B9E5_SHAREDEXP - A four-component, 32-bit floating-point format";
+		case  68: "DXGI_FORMAT_R8G8_B8G8_UNORM - A four-component, 32-bit unsigned-normalized integer format";
+		case  69: "DXGI_FORMAT_G8R8_G8B8_UNORM - A four-component, 32-bit unsigned-normalized integer format";
+		case  70: "DXGI_FORMAT_BC1_TYPELESS - A four-component typeless block-compression format";
+		case  71: "DXGI_FORMAT_BC1_UNORM - A four-component block-compression format";
+		case  72: "DXGI_FORMAT_BC1_UNORM_SRGB - A four-component block-compression format for sRGB data";
+		case  73: "DXGI_FORMAT_BC2_TYPELESS - A four-component typeless block-compression format";
+		case  74: "DXGI_FORMAT_BC2_UNORM - A four-component block-compression format";
+		case  75: "DXGI_FORMAT_BC2_UNORM_SRGB - A four-component block-compression format for sRGB data";
+		case  76: "DXGI_FORMAT_BC3_TYPELESS - A four-component typeless block-compression format";
+		case  77: "DXGI_FORMAT_BC3_UNORM - A four-component block-compression format";
+		case  78: "DXGI_FORMAT_BC3_UNORM_SRGB - A four-component block-compression format for sRGB data";
+		case  79: "DXGI_FORMAT_BC4_TYPELESS - A one-component typeless block-compression format";
+		case  80: "DXGI_FORMAT_BC4_UNORM - A one-component block-compression format";
+		case  81: "DXGI_FORMAT_BC4_SNORM - A one-component block-compression format";
+		case  82: "DXGI_FORMAT_BC5_TYPELESS - A two-component typeless block-compression format";
+		case  83: "DXGI_FORMAT_BC5_UNORM - A two-component block-compression format";
+		case  84: "DXGI_FORMAT_BC5_SNORM - A two-component block-compression format";
+		case  85: "DXGI_FORMAT_B5G6R5_UNORM - A three-component, 16-bit unsigned-normalized integer format";
+		case  86: "DXGI_FORMAT_B5G5R5A1_UNORM - A four-component, 16-bit unsigned-normalized integer format that supports 1-bit alpha";
+		case  87: "DXGI_FORMAT_B8G8R8A8_UNORM - A four-component, 16-bit unsigned-normalized integer format that supports 8-bit alpha";
+		case  88: "DXGI_FORMAT_B8G8R8X8_UNORM - A four-component, 16-bit unsigned-normalized integer format";
+		default:
+			FormatString("Undefined format: %u", value);
+	}
+}
+
+Table RDPCR2ChannelMessagesTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "MILCMD_TRANSPORT_SYNCFLUSH";
+		case 0x00000003: "MILCMD_TRANSPORT_ROUNDTRIPREQUEST";
+		case 0x00000004: "MILCMD_TRANSPORT_ASYNCFLUSH";
+		case 0x00000005: "MILCMD_PARTITION_REGISTERFORNOTIFICATIONS";
+		case 0x00000009: "MILCMD_CHANNEL_REQUESTTIER";
+		case 0x0000000A: "MILCMD_CHANNEL_CREATERESOURCE";
+		case 0x0000000B: "MILCMD_CHANNEL_DELETERESOURCE";
+		case 0x0000000C: "MILCMD_CHANNEL_DUPLICATEHANDLE";
+		case 0x0000000E: "MILCMD_BITMAP_PIXELS";
+		case 0x0000000F: "MILCMD_BITMAP_COMPRESSEDPIXELS";
+		case 0x00000012: "MILCMD_DOUBLERESOURCE";
+		case 0x00000013: "MILCMD_COLORRESOURCE";
+		case 0x00000014: "MILCMD_POINTRESOURCE";
+		case 0x00000015: "MILCMD_RECTRESOURCE";
+		case 0x00000016: "MILCMD_SIZERESOURCE";
+		case 0x00000017: "MILCMD_MATRIXRESOURCE";
+		case 0x00000018: "MILCMD_COLORTRANSFORMRESOURCE";
+		case 0x00000019: "MILCMD_RENDERDATA";
+		case 0x0000001A: "MILCMD_TILEBRUSH_SETSOURCEMODIFICATIONS";
+		case 0x0000001C: "MILCMD_VISUAL_SETOFFSET";
+		case 0x0000001D: "MILCMD_VISUAL_SETTRANSFORM";
+		case 0x0000001E: "MILCMD_VISUAL_SETCLIP";
+		case 0x0000001F: "MILCMD_VISUAL_SETALPHA";
+		case 0x00000020: "MILCMD_VISUAL_SETRENDEROPTIONS";
+		case 0x00000021: "MILCMD_VISUAL_SETCONTENT";
+		case 0x00000022: "MILCMD_VISUAL_REMOVEALLCHILDREN";
+		case 0x00000023: "MILCMD_VISUAL_REMOVECHILD";
+		case 0x00000024: "MILCMD_VISUAL_INSERTCHILDAT";
+		case 0x00000025: "MILCMD_VISUAL_SETCOLORTRANSFORM";
+		case 0x00000026: "MILCMD_VISUAL_ADDRENDERPARAMETER";
+		case 0x00000027: "MILCMD_VISUAL_REMOVERENDERPARAMETER";
+		case 0x00000028: "MILCMD_VISUAL_SETCONTEXTUALIZEDOPACITY";
+		case 0x00000029: "MILCMD_VISUAL_SETCOLORTRANSFORMROOT";
+		case 0x0000002A: "MILCMD_VISUAL_SETRENDERFORCAPTURE";
+		case 0x0000002B: "MILCMD_WINDOWNODE_CREATE";
+		case 0x0000002C: "MILCMD_WINDOWNODE_DETACH";
+		case 0x0000002E: "MILCMD_WINDOWNODE_SETBOUNDS";
+		case 0x00000030: "MILCMD_WINDOWNODE_UPDATESPRITEHANDLE";
+		case 0x00000032: "MILCMD_WINDOWNODE_SETSPRITEIMAGE";
+		case 0x00000034: "MILCMD_WINDOWNODE_SETLOGICALSURFACEIMAGE";
+		case 0x00000035: "MILCMD_WINDOWNODE_SETSPRITECLIP";
+		case 0x00000036: "MILCMD_WINDOWNODE_SETDXCLIP";
+		case 0x00000037: "MILCMD_WINDOWNODE_SETSOURCEMODIFICATIONS";
+		case 0x00000038: "MILCMD_WINDOWNODE_SETALPHAMARGINS";
+		case 0x00000039: "MILCMD_WINDOWNODE_SETCOMPOSEONCE";
+		case 0x0000003A: "MILCMD_WINDOWNODE_COPYCOMPOSITOROWNEDRESOURCES";
+		case 0x0000003B: "MILCMD_WINDOWNODE_SETMAXIMIZEDCLIPMARGINS";
+		case 0x0000003C: "MILCMD_WINDOWNODE_NOTIFYVISRGNUPDATE";
+		case 0x0000003F: "MILCMD_WINDOWNODE_PROTECTCONTENT";
+		case 0x00000041: "MILCMD_VISUALGROUP";
+		case 0x00000042: "MILCMD_HWNDTARGET_CREATE";
+		case 0x00000043: "MILCMD_TARGET_UPDATEWINDOWSETTINGS";
+		case 0x00000045: "MILCMD_TARGET_SETROOT";
+		case 0x00000046: "MILCMD_TARGET_SETCLEARCOLOR";
+		case 0x00000047: "MILCMD_TARGET_INVALIDATE";
+		case 0x00000049: "MILCMD_TARGET_CAPTUREBITS";
+		case 0x0000004A: "MILCMD_METABITMAPRENDERTARGET_CAPTUREBITS";
+		case 0x0000004B: "MILCMD_METABITMAPRENDERTARGET_CREATE";
+		case 0x0000004C: "MILCMD_METABITMAPRENDERTARGET_SETTRANSFORM";
+		case 0x0000004D: "MILCMD_METABITMAPRENDERTARGET_SETCOLORTRANSFORM";
+		case 0x0000004E: "MILCMD_METABITMAPRENDERTARGET";
+		case 0x00000050: "MILCMD_METABITMAPRENDERTARGET_SETFILTERLIST";
+		case 0x00000052: "MILCMD_GLYPHCACHE_ADDBITMAPS";
+		case 0x00000053: "MILCMD_GLYPHCACHE_REMOVEBITMAPS";
+		case 0x00000054: "MILCMD_GLYPHRUN_CREATE";
+		case 0x00000055: "MILCMD_GLYPHRUN_ADDREALIZATION";
+		case 0x00000056: "MILCMD_GLYPHRUN_REMOVEREALIZATION";
+		case 0x00000057: "MILCMD_GDISPRITEBITMAP";
+		case 0x00000058: "MILCMD_GDISPRITEBITMAP_UPDATEMARGINS";
+		case 0x00000059: "MILCMD_GDISPRITEBITMAP_UPDATESURFACE";		
+		case 0x0000005A: "MILCMD_GDISPRITEBITMAP_UNMAPSECTION";
+		case 0x0000005B: "MILCMD_GDISPRITEBITMAP_NOTIFYDIRTY";
+		case 0x00000066: "MILCMD_MESHGEOMETRY2D_SETCONSTANTOPACITY";
+		case 0x00000067: "MILCMD_CACHEDVISUALIMAGE_FREEZE";
+		case 0x00000079: "MILCMD_GLYPHBITMAP";
+		case 0x0000007A: "MILCMD_SCENE3D";
+		case 0x0000007B: "MILCMD_MATRIXCAMERA";
+		case 0x0000007C: "MILCMD_MODEL3DGROUP";
+		case 0x0000007D: "MILCMD_AMBIENTLIGHT";
+		case 0x0000007E: "MILCMD_GEOMETRYMODEL3D";
+		case 0x0000007F: "MILCMD_MESHGEOMETRY3D";
+		case 0x00000080: "MILCMD_MESHGEOMETRY2D";
+		case 0x00000081: "MILCMD_GEOMETRY2DGROUP";
+		case 0x00000082: "MILCMD_MATRIXTRANSFORM3D";
+		case 0x00000083: "MILCMD_CACHEDVISUALIMAGE";
+		case 0x00000084: "MILCMD_TRANSFORMGROUP";
+		case 0x00000085: "MILCMD_TRANSLATETRANSFORM";
+		case 0x00000086: "MILCMD_SCALETRANSFORM";
+		case 0x00000087: "MILCMD_MATRIXTRANSFORM";
+		case 0x00000088: "MILCMD_RECTANGLEGEOMETRY";
+		case 0x00000089: "MILCMD_COMBINEDGEOMETRY";
+		case 0x0000008A: "MILCMD_PATHGEOMETRY";
+		case 0x0000008B: "MILCMD_SOLIDCOLORBRUSH";
+		case 0x0000008C: "MILCMD_LINEARGRADIENTBRUSH";
+		case 0x0000008D: "MILCMD_IMAGEBRUSH";
+		default:
+			FormatString("Unkown value: %u", value);
+	}
+}
+
+Table RDPCR2MilBitmapInterpolationModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "NearestNeighbor";
+		case  0x00000001: "Linear";
+		case  0x00000002: "Cubic";
+		case  0x00000003: "Fant";
+		case  0x00000004: "TriLinear";
+		case  0x00000005: "Anisotropic";
+		case  0x00000006: "SuperSample";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilBitmapScalingModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Unspecified";
+		case  0x00000001: "LowQuality";
+		case  0x00000002: "HighQuality";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilBrushMappingModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Absolute";
+		case  0x00000001: "RelativeToBoundingBox";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilCachingHintTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Unspecified";
+		case  0x00000001: "Cache";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilColorInterpolationModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "ScRgbLinearInterpolation";
+		case  0x00000001: "SRgbLinearInterpolation";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilCompositingModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "SourceOver";
+		case  0x00000001: "SourceCopy";
+		case  0x00000002: "SourceAdd";
+		case  0x00000003: "SourceAlphaMultiply";
+		case  0x00000004: "SourceInverseAlphaMultiply";
+		case  0x00000005: "SourceUnder";
+		case  0x00000006: "SourceOverNonPremultiplied";
+		case  0x00000007: "SourceInverseAlphaOverNonPremultiplied";
+		case  0x00000008: "DestInvert";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilCompositionDeviceStateTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Normal";
+		case  0x00000001: "NoDevice";
+		case  0x00000002: "Occluded";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilConnectionTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Default";
+		case  0x00000001: "IsDwm";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilFillRuleTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "EvenOdd";
+		case  0x00000001: "Nonzero";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilGeometryCombineModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Union";
+		case  0x00000001: "Intersect";
+		case  0x00000002: "Xor";
+		case  0x00000003: "Exclude";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilGradientSpreadMethodTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Pad";
+		case  0x00000001: "Reflect";
+		case  0x00000002: "Repeat";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilHorizontalAlignmentTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Left";
+		case  0x00000001: "Center";
+		case  0x00000002: "Right";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilOpacityRootModifierTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "DesktopRootContextType";
+		case  0x00000001: "MagnifierControlContextType";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+struct RDPCR2MilPathFigureFlags
+{
+	UINT32 Flags
+	{
+		UINT32 Gaps:1 = FormatString("         (%s) %s", this.ToBitString, this? "PathFigureFlagsHasGaps": "");
+		UINT32 Reserved1:1 = FormatString("    (%s)", this.ToBitString);
+		UINT32 Closed:1 = FormatString("       (%s) %s", this.ToBitString, this? "PathFigureFlagsIsClosed": "");
+		UINT32 Fillable:1 = FormatString("     (%s) %s", this.ToBitString, this? "PathFigureFlagsIsFillable": "");
+		UINT32 RectangleData:1 = FormatString("(%s) %s", this.ToBitString, this? "PathFigureFlagsIsRectangleData": "");
+		UINT32 Reserved2:27 = FormatString("   (%s)", this.ToBitString);
+	}
+}
+
+struct RDPCR2MilPathGeometryFlags
+{
+	UINT32 Flags
+	{
+		UINT32 Reserved1:1 = FormatString("  (%s)", this.ToBitString);
+		UINT32 BoundsValid:1 = FormatString("(%s) %s", this.ToBitString, this? "PathGeometryFlagsBoundsValid": "");
+		UINT32 Gaps:1 = FormatString("       (%s) %s", this.ToBitString, this? "PathGeometryFlagsHasGaps": "");
+		UINT32 Hollows:1 = FormatString("    (%s) %s", this.ToBitString, this? "PathGeometryFlagsHasHollows": "");
+		UINT32 RegionData:1 = FormatString(" (%s) %s", this.ToBitString, this? "PathGeometryFlagsIsRegionData": "");
+		UINT32 Reserved2:27 = FormatString("  (%s)", this.ToBitString);
+	}
+}
+
+struct RDPCR2MilPathSegmentFlags
+{
+	UINT32 Flags
+	{
+		UINT32 Reserved1:2 = FormatString(" (%s)", this.ToBitString);
+		UINT32 Gap:1 = FormatString("       (%s) %s", this.ToBitString, this? "PathSegmentFlagsIsAGap": "");
+		UINT32 SmoothJoin:1 = FormatString("(%s) %s", this.ToBitString, this? "PathSegmentFlagsSmoothJoin": "");
+		UINT32 Closed:1 = FormatString("    (%s) %s", this.ToBitString, this? "PathSegmentFlagsClosed": "");
+		UINT32 Curved:1 = FormatString("    (%s) %s", this.ToBitString, this? "PathSegmentFlagsIsCurved": "");
+		UINT32 Reserved2:26 = FormatString("(%s)", this.ToBitString);
+	}
+}
+
+Table RDPCR2MilPixelFormatTable(value)
+{
+	switch(value)
+	{
+		case  0x00000001: "MILPixelFormat1bppIndexed";
+		case  0x00000002: "MILPixelFormat2bppIndexed";
+		case  0x00000003: "MILPixelFormat4bppIndexed";
+		case  0x00000004: "MILPixelFormat8bppIndexed";
+		case  0x00000005: "MILPixelFormatBlackWhite";
+		case  0x00000006: "MILPixelFormat2bppGray";
+		case  0x00000007: "MILPixelFormat4bppGray";
+		case  0x00000008: "MILPixelFormat8bppGray";
+		case  0x00000009: "MILPixelFormat16bppBGR555";
+		case  0x0000000A: "MILPixelFormat16bppBGR565";
+		case  0x0000000B: "MILPixelFormat16bppGray";
+		case  0x0000000C: "MILPixelFormat24bppBGR";
+		case  0x0000000D: "MILPixelFormat24bppRGB";
+		case  0x0000000E: "MILPixelFormat32bppBGR";
+		case  0x0000000F: "MILPixelFormat32bppBGRA";
+		case  0x00000010: "MILPixelFormat32bppPBGRA";
+		case  0x00000011: "MILPixelFormat32bppGrayFloat";
+		case  0x00000012: "MILPixelFormat48bppRGBFixedPoint";
+		case  0x00000013: "MILPixelFormat16bppGrayFixedPoint";
+		case  0x00000014: "MILPixelFormat32bppBGR101010";
+		case  0x00000015: "MILPixelFormat48bppRGB";
+		case  0x00000016: "MILPixelFormat64bppRGBA";
+		case  0x00000017: "MILPixelFormat64bppPRGBA";
+		case  0x00000018: "MILPixelFormat96bppBGRFixedPoint";
+		case  0x00000019: "MILPixelFormat128bppRGBAFloat";
+		case  0x0000001A: "MILPixelFormat128bppPRGBAFloat";
+		case  0x0000001B: "MILPixelFormat128bppRGBFloat";
+		case  0x0000001C: "MILPixelFormat32bppCMYK";
+		case  0x0000001D: "MILPixelFormat64bppRGBAFixedPoint";
+		case  0x0000001E: "MILPixelFormat128bppRGBAFixedPoint";
+		case  0x0000001F: "MILPixelFormat64bppCMYK";
+		case  0x0000002C: "MILPixelFormat40bppCMYKAlpha";
+		case  0x0000002D1: "MILPixelFormat80bppCMYKAlpha";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+struct RDPCR2MilRenderOptionFlags
+{
+	UINT32 Flags
+	{
+		UINT32 BitmapScalingMode:1 = FormatString("   (%s) %s", this.ToBitString, this? "BitmapScalingMode": "");
+		UINT32 TrilinearFiltering:1 = FormatString("  (%s) %s", this.ToBitString, this? "DisableTrilinearFiltering": "");
+		UINT32 ZBuffer:1 = FormatString("             (%s) %s", this.ToBitString, this? "DisableZBuffer": "");
+		UINT32 Reserved1:1 = FormatString("           (%s)", this.ToBitString);
+		UINT32 InterpolationMode:1 = FormatString("   (%s) %s", this.ToBitString, this? "InterpolationMode": "");
+		UINT32 CompositingMode:1 = FormatString("     (%s) %s", this.ToBitString, this? "CompositingMode": "");
+		UINT32 AnisotropicFiltering:1 = FormatString("(%s) %s", this.ToBitString, this? "DisableAnisotropicFiltering": "");
+		UINT32 Reserved2:25 = FormatString("           (%s)", this.ToBitString);
+	}
+}
+
+Table RDPCR2MilRTInitializationTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Default";
+		case  0x00000004: "PresentImmediately";
+		case  0x00000008: "PresentRetainContents";
+		case  0x00000010: "FullScreen";
+		case  0x00000020: "LinearGamma";
+		case  0x00000040: "NeedDestinationAlpha";
+		case  0x00000080: "AllowLowPrecision";
+		case  0x00000200: "RenderNonClient";
+		case  0x00000400: "PresentFlip";
+		case  0x00000800: "FullScreenNoAutoRotate";
+		case  0x00001000: "DisableDisplayClipping";
+		case  0x00010000: "EnableOcclusion";
+		case  0x10000000: "FullScreenTransposeXY";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilSegmentTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000001: "MilSegmentLine";
+		case  0x00000005: "MilSegmentPolyLine";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilSourceModificationTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "None";
+		case  0x00000001: "IgnoreAlpha";
+		case  0x00000002: "ColorKey";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilStretchTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "None";
+		case  0x00000001: "Fill";
+		case  0x00000002: "Uniform";
+		case  0x00000003: "UniformToFill";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilTileModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Extend";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+Table RDPCR2MilTransparencyFlagsTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Opaque";
+		case  0x00000001: "ConstantAlpha";
+		case  0x00000002: "PerPixelAlpha";
+		case  0x00000004: "ColorKey";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilVerticalAlignmentTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "Top";
+		case  0x00000001: "Center";
+		case  0x00000002: "Bottom";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilVisualRenderParameterTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000002: "ContextualizedOpacityMultiplier";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilWindowLayerTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "NotLayered";
+		case  0x00000001: "SystemManagedLayer";
+		case  0x00000002: "ApplicationManagedLayer";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2MilWindowTargetCachingModeTable(value)
+{
+	switch(value)
+	{
+		case  0x00000000: "NotCached";
+		case  0x00000001: "Cached";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+Table RDPCR2PacketControlCodeTable(code)
+{
+	switch (code)
+	{
+		case 0x01: "MilCtrlCmdVersionRequest";
+		case 0x02: "MilCtrlCmdVersionAnnouncement";
+		case 0x03: "MilCtrlCmdOpenConnection";
+		case 0x04: "MilCtrlCmdCloseConnection";
+		case 0x05: "MilCtrlCmdOpenChannel";
+		case 0x06: "MilCtrlCmdCloseChannel";
+		case 0x07: "MilCtrlCmdDataOnChannel";
+		case 0x09: "MilCtrlCmdConnectionNotification";
+		case 0x0A: "MilCtrlCmdChannelNotification";
+		case 0x0B: "MilCtrlCmdConnectionBroadcast";
+		case 0x0C: "MilHandleSurfaceManagerEvent";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+struct RDPCR2MAGNUpdateTexturesParam
+{
+	INT32 OffsetX;
+	INT32 OffsetY;
+	Double m11;
+	Double m22;
+	Double dx;
+	Double dy;
+}
+
+struct RDPCR2Mil3x2Matrix 	
+{	
+	Double m11;
+	Double m12;
+	Double m21;
+	Double m22;
+	Double OffsetX;
+	Double OffsetY;
+}	
+	
+struct RDPCR2Mil4x4Matrix 	
+{	
+	Float m11;
+	Float m12;
+	Float m13;
+	Float m14;
+	Float m21;
+	Float m22;
+	Float m23;
+	Float m24;
+	Float m31;
+	Float m32;
+	Float m33;
+	Float m34;
+	Float OffsetX;
+	Float OffsetY;
+	Float OffsetZ;
+	Float m44;
+}
+
+struct RDPCR2MilColor 	
+{	
+	Float R;
+	Float G;
+	Float B;
+	Float A;
+}
+
+struct RDPCR2MilColorTransform 	
+{	
+	Float m11;
+	Float m12;
+	Float m13;
+	Float m14;
+	Float m15;
+	Float m21;
+	Float m22;
+	Float m23;
+	Float m24;
+	Float m25;
+	Float m31;
+	Float m32;
+	Float m33;
+	Float m34;
+	Float m35;
+	Float m41;
+	Float m42;
+	Float m43;
+	Float m44;
+	Float m45;
+	Float m51;
+	Float m52;
+	Float m53;
+	Float m54;
+	Float m55;
+}
+
+struct RDPCR2MilGlyphBitmap 	
+{	
+	INT32 horOriginX;
+	INT32 horOriginY;
+	INT32 horAdvance;
+	INT32 verOriginX;
+	INT32 verOriginY;
+	UINT32 Width;
+	UINT32 Height;
+	UINT32 Stride;
+}
+
+struct RDPCR2MilGraphicsAccelerationAssessment
+{
+	UINT32 VideoMemoryBandwidth;
+	UINT32 VideoMemorySize;
+}
+
+struct RDPCR2MilGraphicsAccelerationCaps
+{
+	INT32 TierValue;
+	BOOL HasWDDMSupport;
+	UINT32 PixelShaderVersion;
+	UINT32 VertexShaderVersion;
+	UINT32 MaxTextureWidth;
+	UINT32 MaxTextureHeight;
+	BOOL WindowCompatibleMode;
+	BOOL FullScreenCompatibleMode;
+	UINT32 BitsPerPixel;
+}
+
+struct RDPCR2MilPoint 	
+{	
+	Double X;
+	Double Y;
+}
+
+struct RDPCR2Mil3DPoint
+{
+	Double X;
+	Double Y;
+	Double Z;
+}
+
+struct RDPCR2MilRect 	
+{	
+	Double X;
+	Double Y;
+	Double Width;
+	Double Height;
+}
+
+struct RDPCR2MilRectI 	
+{	
+	INT32 Left;
+	INT32 Top;
+	INT32 Right;
+	INT32 Bottom;
+}
+
+struct RDPCR2MilRectRB 	
+{	
+	Double Left;
+	Double Top;
+	Double Right;
+	Double Bottom;
+}
+
+struct RDPCR2MilRenderOptions 	
+{	
+	RDPCR2MilRenderOptionFlags Flags;
+	UINT32 InterpolationMode = RDPCR2MilBitmapInterpolationModeTable(this);
+	UINT32 CompositingMode = RDPCR2MilCompositingModeTable(this);
+	UINT32 BitmapScalingMode = RDPCR2MilBitmapScalingModeTable(this);
+	UINT32 ForcePacking;
+}
+
+struct RDPCR2MilSize 	
+{	
+	Double Width;
+	Double Height;
+}
+
+struct RDPCR2MilGradientStop
+{
+	Double Offset;
+	Float R;
+	Float G;
+	Float B;
+	Float A;
+}
+
+struct RDPCR2MilVisualRenderParameter
+{
+	UINT32 ParameterType = RDPCR2MilVisualRenderParameterTypeTable(this);
+	UINT32 Unused0[5];
+	Double ContextualizedOpacityMultiplier;
+	UINT32 Unused1;
+}
+
+struct RDPCR2MilWindowMargins 	
+{	
+	INT32 cxLeftWidth;
+	INT32 cxRightWidth;
+	INT32 cyTopHeight;
+	INT32 cyBottomHeight;
+}
+
+struct RDPCR2OffScreenRTOffset
+{
+	UINT32 Offset;
+	UINT32 Unused0;
+	UINT64 Unused1;
+	UINT64 Unused2;
+}
+
+struct RDPCR2OffScreenRTOffsets
+{
+	UINT32 SurfacesCount;
+	UINT32 DxgiFormat = RDPCR2DXGIFORMATTable(this);
+	UINT32 Width;
+	UINT32 Height;
+	struct Surfaces
+	{
+		RDPCR2OffScreenRTOffset Surface[8];
+	}
+}
+
+struct RDPCR2OffScreenRTTexture
+{
+	UINT64 Unused0;
+	UINT64 Unused1;
+	UINT64 Unused2;
+}
+
+struct RDPCR2OffScreenRTTextures
+{
+	UINT32 SurfacesCount;
+	UINT32 DxgiFormat = RDPCR2DXGIFORMATTable(this);
+	UINT32 Width;
+	UINT32 Height;
+	struct Surfaces
+	{
+		RDPCR2OFFSCREENRTTEXTURE Surface[8];
+	}
+}
+
+struct RDPCR2MilSegmentLine
+{
+	UINT32 Type = RDPCR2MilSegmentTypeTable(this);
+	RDPCR2MilPathSegmentFlags Flags;
+	UINT32 BackSize;
+	UINT32 Unused;
+	RDPCR2MilPoint Point;
+}
+
+struct RDPCR2MilSegmentPoly
+{
+	UINT32 Type = RDPCR2MilSegmentTypeTable(this);
+	RDPCR2MilPathSegmentFlags Flags;
+	UINT32 BackSize;
+	UINT32 Count;
+	RDPCR2MilPoint Point[Count];
+}
+
+struct RDPCR2MilPathFigure
+{
+	UINT32 BackSize;
+	RDPCR2MilPathFigureFlags Flags;
+	UINT32 SegmentCount;
+	UINT32 MessageSize;
+	RDPCR2MilPoint StartPoint;
+	UINT32 OffsetToLastSegment;
+	UINT32 Unused;
+	struct Segments
+	{
+		switch(UINT32(FrameData, FrameOffset))
+		{
+			case 0x00000001:
+				RDPCR2MILSEGMENTLINE Segment1[SegmentCount];
+			default:
+				RDPCR2MILSEGMENTPOLY Segment2[SegmentCount];
+		}
+	}
+}
+
+struct RDPCR2MilPathGeometry
+{
+	UINT32 MessageSize;
+	RDPCR2MilPathGeometryFlags Flags;
+	RDPCR2MilRectRB Bounds;
+	UINT32 FigureCount;
+	UINT32 Unused;
+	struct Figures
+	{
+		RDPCR2MILPATHFIGURE Figure[FigureCount];
+	}
+}
+
+struct RDPCR2MilCtrlCMDVersionRequest
+{
+	UINT32 Unused0;
+	UINT32 Unused1;
+}
+
+Table RDPCR2ProtocolVersionTable(value)
+{
+	switch(value)
+	{
+		case  0x613d468c: "MIL_SDK_VERSION";
+		default:
+			FormatString("Unknown value: %u", value);
+	}
+}
+
+struct RDPCR2MilCtrlCMDVersionAnnouncement
+{
+	UINT32 ProtocolVersion = RDPCR2ProtocolVersionTable(this);
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCtrlCMDOpenConnection
+{
+	UINT32 Unused0;
+	[Property.RDPCR2ConnectionType = RDPCR2MilConnectionTable(this)]
+	UINT32 ConnectingFlags = RDPCR2MilConnectionTable(this);	
+}
+
+struct RDPCR2MilCtrlCMDCloseConnection
+{
+	UINT32 Unused0;
+	UINT32 Unused1;
+}
+
+struct RDPCR2MilCtrlCMDOpenChannel
+{
+	UINT32 ChannelHandle;
+	UINT32 SourceChannelHandle;
+}
+
+struct RDPCR2MilCtrlCMDCloseChannel
+{
+	UINT32 ChannelHandle;
+	UINT32 Unused0;
+}
+struct RDPCR2MilCmdTransportRoundtripRequest
+{
+	UINT32 RequestUniquenessId;
+}
+
+struct RDPCR2MilCmdTransportAsyncFlush
+{
+	UINT32 ResponseToken;
+	UINT32 ProcessToken = SHOULDBeSetToTable(this, "zero");
+}
+
+struct RDPCR2MilCmdPartitionRegisterForNotifications
+{
+	Bool Enable;
+}
+
+struct RDPCR2MilCmdChannelRequesttier
+{
+	Bool ReturnCommonMinimum;
+}
+
+struct RDPCR2MilCmdChannelCreateResource
+{
+	UINT32 HNewResource;
+	UINT32 ResType = RDPCR2ResourceTypesTable(this);
+}
+
+struct RDPCR2MilCmdChannelDeleteResource
+{
+	UINT32 HTargetResource;
+	UINT32 ResType = RDPCR2ResourceTypesTable(this);
+}
+
+struct RDPCR2MilCmdChannelDuplicateHandle
+{
+	UINT32 Original;
+	UINT32 TargetChannel;
+	UINT32 Duplicate;
+}
+
+struct RDPCR2MilCmdBitmapPixels
+{
+	UINT32 TargetResource;
+	UINT32 Width;
+	UINT32 Height;
+	UINT32 Format = RDPCR2MilPixelFormatTable(this);
+	UINT32 Stride;
+	UINT32 Offset;
+	UINT32 Unused;
+	UINT32 UiPaletteColorCount;
+	DOUBLE DpiX;
+	DOUBLE DpiY;
+	[Local.StartOffset = FrameOffset]
+	BLOB(Height * Stride) ImageBitmap;
+	Align(Local.StartOffset, 4) Padding;
+	BLOB(UiPaletteColorCount * 4) ImagePalette;
+}
+
+struct RDPCR2MilCmdBitmapCompressedPixels
+{
+	UINT32 TargetResource;
+	DOUBLE DpiX;
+	DOUBLE DpiY;
+	BLOB( FrameLength - FrameOffset ) CompressedImageBitmap;
+}
+
+struct RDPCR2MilCmdDoubleResource
+{
+	UINT32 TargetResource;
+	DOUBLE Value;
+}
+
+struct RDPCR2MilCmdColorResource
+{
+	UINT32 TargetResource;
+	RDPCR2MilColor Value;
+}
+
+struct RDPCR2MilCmdPointResource
+{
+	UINT32 TargetResource;
+	RDPCR2MilPoint Value;
+}
+
+struct RDPCR2MilCmdRectResource
+{
+	UINT32 TargetResource;
+	RDPCR2MilRect Value;
+}
+
+struct RDPCR2MilCmdSizeResource
+{
+	UINT32 TargetResource;
+	RDPCR2MilSize Value;
+}
+
+struct RDPCR2MilCmdMatrixResource
+{
+	UINT32 TargetResource;
+	RDPCR2Mil3x2Matrix Value;
+}
+
+struct RDPCR2MilCmdColorTransformResource
+{
+	UINT32 TargetResource;
+	RDPCR2MilColorTransform Value;
+}
+
+Table RDPCR2RenderDataMessageTable(value)
+{
+	switch(value)
+	{
+		case 0x00000068: "MILCMD_DRAW_BITMAP";
+		case 0x00000069: "MILCMD_DRAW_GLASS";
+		case 0x0000006A: "MILCMD_DRAW_MESH2D";
+		case 0x0000006B: "MILCMD_DRAW_OCCLUSIONRECTANGLE";
+		case 0x0000006C: "MILCMD_DRAW_VISUAL";
+		case 0x0000006D: "MILCMD_DRAW_RECTANGLE";
+		case 0x0000006E: "MILCMD_DRAW_RECTANGLE_ANIMATE";
+		case 0x0000006F: "MILCMD_DRAW_GEOMETRY";
+		case 0x00000070: "MILCMD_DRAW_IMAGE";
+		case 0x00000071: "MILCMD_DRAW_IMAGE_ANIMATE";
+		case 0x00000072: "MILCMD_DRAW_GLYPH_RUN";
+		case 0x00000073: "MILCMD_DRAW_SCENE3D";
+		case 0x00000074: "MILCMD_PUSH_CLIP";
+		case 0x00000075: "MILCMD_PUSH_OPACITY";
+		case 0x00000076: "MILCMD_PUSH_OPACITY_ANIMATE";
+		case 0x00000077: "MILCMD_PUSH_TRANSFORM";
+		case 0x00000078: "MILCMD_POP";
+		default:
+			FormatString("Unkown value: %u", value);
+	}
+}
+
+struct RDPCR2MilCmdRenderData
+{
+	UINT32 TargetResource;
+	UINT32 CbData;
+	while [FrameOffset < FrameLength]
+	{
+		struct Payload = RDPCR2RenderDataMessageTable(ControlCode)
+		{
+			UINT32 MessageSize;
+			UINT32 ControlCode = RDPCR2RenderDataMessageTable(this);
+			switch (ControlCode)
+			{
+				case 0x00000068: RDPCR2MilCmdDrawBitmap MilCmdDrawBitmap;
+				case 0x00000069: RDPCR2MilCmdDrawGlass MilCmdDrawGlass;
+				case 0x0000006A: RDPCR2MilCmdDrawMesh2D MilCmdDrawMesh2D;
+				case 0x0000006B: RDPCR2MilCmdDrawOcclusionRectangle MilCmdDrawOcclusionRectangle;
+				case 0x0000006C: RDPCR2MilCmdDrawVisual MilCmdDrawVisual;
+				case 0x0000006D: RDPCR2MilCmdDrawRectangle MilCmdDrawRectangle;
+				case 0x0000006E: RDPCR2MilCmdDrawRectangleAnimate MilCmdDrawRectangleAnimate;
+				case 0x0000006F: RDPCR2MilCmdDrawGeometry MilCmdDrawGeometry;
+				case 0x00000070: RDPCR2MilCmdDrawImage MilCmdDrawImage;
+				case 0x00000071: RDPCR2MilCmdDrawImageAnimate MilCmdDrawImageAnimate;
+				case 0x00000072: RDPCR2MilCmdDrawGlyphRun MilCmdGlyphRun;
+				case 0x00000073: RDPCR2MilCmdDrawScene3D MilCmdDrawScene3D;
+				case 0x00000074: RDPCR2MilCmdPushClip MilCmdPushClip;
+				case 0x00000075: RDPCR2MilCmdPushOpacity MilCmdPushOpacity;
+				case 0x00000076: RDPCR2MilCmdPushOpacityAnimate MilCmdPushOpacityAnimate;
+				case 0x00000077: RDPCR2MilCmdPushTransform MilCmdPushTransform;
+				case 0x00000078: _struct RDPCR2MilCmdPop{};
+			}
+		}
+	}
+}
+
+struct RDPCR2MilCmdDrawBitmap
+{
+	UINT32 HBitmap;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdPushTransform
+{
+	UINT32 HTransform;
+	UINT32 Unused0;
+}
+
+Table RDPCR2OpacityValueTable(value)
+{
+	switch(value)
+	{
+		case 0x0000000000000000: "Transparent opacity is used with blending";
+		case 0x0000000000000001: "Drawing primitives are opaque";
+		default:
+			FormatString("Unkown value: %u", value);
+	}
+}
+
+struct RDPCR2MilCmdPushOpacityAnimate
+{
+	Double Opacity = RDPCR2OpacityValueTable(this);
+	UINT32 HOpacityAnimations;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdPushOpacity
+{
+	Double Opacity;
+}
+
+struct RDPCR2MilCmdPushClip
+{
+	UINT32 HClipGeometry;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdDrawScene3D
+{
+	UINT32 HScene3D;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdDrawGlyphRun
+{
+	UINT32 HForegroundBrush;
+	UINT32 HGlyphRun;
+}
+
+struct RDPCR2MilCmdDrawImageAnimate
+{
+	RDPCR2MilRect Rectangle;
+	UINT32 HImageSource;
+	UINT32 HRectangleAnimations;
+}
+
+struct RDPCR2MilCmdDrawImage
+{
+	RDPCR2MilRect Rectangle;
+	UINT32 HImageSource;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdDrawGeometry
+{
+	UINT32 HBrush;
+	UINT32 HGeometry;
+}
+
+struct RDPCR2MilCmdDrawRectangleAnimate
+{
+	RDPCR2MilRect Rectangle;
+	UINT32 HBrush;
+	UINT32 HRectangleAnimations;
+}
+
+struct RDPCR2MilCmdDrawRectangle
+{
+	RDPCR2MilRect Rectangle;
+	UINT32 HBrush;
+	UINT32 Unused0;
+}
+
+struct RDPCR2MilCmdDrawVisual
+{
+	UINT32 HVisual;
+}
+
+struct RDPCR2MilCmdDrawOcclusionRectangle
+{
+	RDPCR2MilRect Rectangle;
+}
+
+struct RDPCR2MilCmdDrawMesh2D
+{
+	UINT32 HMesh;
+	UINT32 HImageSource;
+}
+
+struct RDPCR2MilCmdDrawGlass
+{
+	UINT32 HGeometry0;
+	UINT32 HGeometry1;
+	UINT32 HGeometry2;
+	UINT32 HGeometry3;
+	UINT32 HColor;
+	UINT32 HAfterglow;
+	UINT32 HColorBalance;
+	UINT32 HAfterglowBalance;
+	UINT32 HBlurBalance;
+}
+
+struct RDPCR2MilCmdTileBrushSetsourcemoDifications
+{
+	UINT32 TargetResource;
+	UINT32 SourceModifications = RDPCR2MilSourceModificationTable(this);
+	UINT32 LowColorKey;
+	UINT32 HighColorKey;
+}
+
+struct RDPCR2MilCmdVisualSetOffset
+{
+	UINT32 TargetResource;
+	Double OffsetX;
+	Double OffsetY;
+}
+
+struct RDPCR2MilCmdVisualSetTransform
+{
+	UINT32 TargetResource;
+	UINT32 HTransform;
+}
+
+struct RDPCR2MilCmdVisualSetClip
+{
+	UINT32 TargetResource;
+	UINT32 HClip;
+}
+
+struct RDPCR2MilCmdVisualSetAlpha
+{
+	UINT32 TargetResource;
+	Double Alpha;
+}
+
+struct RDPCR2MilCmdVisualSetRenderOptions
+{
+	UINT32 TargetResource;
+	RDPCR2MilRenderOptions MilRenderOptions;
+}
+
+struct RDPCR2MilCmdVisualSetContent
+{
+	UINT32 TargetResource;
+	UINT32 HContent;
+}
+
+struct RDPCR2MilCmdVisualRemoveAllChildren
+{
+	UINT32 TargetResource;
+}
+
+struct RDPCR2MilCmdVisualRemoveChild
+{
+	UINT32 TargetResource;
+	UINT32 HChild;
+}
+
+struct RDPCR2MilCmdVisualInsertChildAt
+{
+	UINT32 TargetResource;
+	UINT32 HChild;
+	UINT32 Index;
+}
+
+struct RDPCR2MilCmdVisualSetColorTransform
+{
+	UINT32 TargetResource;
+	UINT32 HTransform;
+}
+
+struct RDPCR2MilCmdVisualAddRenderParameter
+{
+	UINT32 TargetResource;
+	RDPCR2MilVisualRenderParameter RenderParameter;
+}
+
+struct RDPCR2MilCmdVisualRemoveRenderParameter
+{
+	UINT32 TargetResource;
+	UINT32 ParameterType = RDPCR2MilVisualRenderParameterTypeTable(this);
+}
+
+struct RDPCR2MilCmdVisualSetContextualizedOpacity
+{
+	UINT32 TargetResource;
+	Bool ContextualizedOpacity;
+}
+
+struct RDPCR2MilCmdVisualSetColorTransformRoot
+{
+	UINT32 TargetResource;
+	Bool FColorTransformRoot;
+}
+
+struct RDPCR2MilCmdVisualSetRenderForCapture
+{
+	UINT32 TargetResource;
+	Bool RenderForCapture;
+}
+
+struct RDPCR2MilCmdWindownodeCreate
+{
+	UINT32 TargetResource;
+	UINT64 Hsprite;
+	UINT64 Hwnd;
+	UINT32 WindowTargetCachingMode = RDPCR2MilWindowTargetCachingModeTable(this);
+}
+
+struct RDPCR2MilCmdWindownodeDetach
+{
+	UINT32 TargetResource;
+}
+
+struct RDPCR2MilCmdWindownodeSetbounds
+{
+	UINT32 TargetResource;
+	RDPCR2MilRectI RcWindow;
+	RDPCR2MilRectI RcClient;
+	RDPCR2MilRectI RcContent;
+}
+
+struct RDPCR2MilCmdWindownodeUpdateSpriteHandle
+{
+	UINT32 TargetResource;
+	UINT64 Hsprite;
+}
+
+struct RDPCR2MilCmdWindownodeSetSpriteImage
+{
+	UINT32 TargetResource;
+	UINT32 HImage;
+}
+
+struct RDPCR2MilCmdWindownodeSetLogicalSurfaceImage
+{
+	UINT32 TargetResource;
+	UINT32 HImage;
+}
+
+struct RDPCR2MilCmdWindownodeSetSpriteClip
+{
+	UINT32 TargetResource;
+	BOOL FForDirtyAccum;
+	UINT32 HClip;
+}
+
+struct RDPCR2MilCmdWindownodeSetDxClip
+{
+	UINT32 TargetResource;
+	UINT32 HClip;
+}
+
+struct RDPCR2MilCmdWindownodeSetSourceModifications
+{
+	UINT32 TargetResource;
+	UINT32 SourceModifications = RDPCR2MilSourceModificationTable(this);
+	UINT32 LowColorKey;
+	UINT32 HighColorKey;
+}
+
+struct RDPCR2MilCmdWindownodeSetAlphaMargins
+{
+	UINT32 TargetResource;
+	RDPCR2MilWindowMargins Margins;
+}
+
+struct RDPCR2MilCmdWindownodeSetComposeonce
+{
+	UINT32 TargetResource;
+	Bool FComposeOnce;
+}
+
+struct RDPCR2MilCmdWindownodeCopyCompositorOwnedResources
+{
+	UINT32 TargetResource;
+	UINT32 HSourceNode;
+}
+
+struct RDPCR2MilCmdWindownodeSetmaximizedClipMargins
+{
+	UINT32 TargetResource;
+	RDPCR2MilWindowMargins MaximizedClipMargins;
+}
+
+struct RDPCR2MilCmdWindownodeNotifyvisrgnUpdate
+{
+	UINT32 TargetResource;
+}
+
+struct RDPCR2MilCmdWindowNodeProtectContent
+{
+	UINT32 TargetResource;
+	Bool Protected;
+}
+
+struct RDPCR2MilCmdVisualGroup
+{
+	UINT32 TargetResource;
+	UINT32 ExcludeVisualCollectionSize;
+	UINT32 IncludeVisualCollectionSize;
+	UINT32 ExcludeVisualCollection[ExcludeVisualCollectionSize / 4];
+	UINT32 IncludeVisualCollection[IncludeVisualCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdHwndtargetCreate
+{
+	UINT32 TargetResource;
+	UINT64 Hwnd;
+	UINT32 Width;
+	UINT32 Height;
+	RDPCR2MilColor ClearColor;
+	UINT32 Flags = RDPCR2MilRTInitializationTable(this);
+	UINT32 PreFilteringDisabled;
+}
+
+struct RDPCR2MilCmdTargetUpdateWindowSettings
+{
+	UINT32 TargetResource;
+	RDPCR2MilRectI WindowRect;
+	UINT32 WindowLayerType = RDPCR2MilWindowLayerTypeTable(this);
+	UINT32 TransparencyMode = RDPCR2MilTransparencyFlagsTable(this);
+	Float ConstantAlpha;
+	BOOL IsChild;
+	BOOL IsRTL;
+	BOOL RenderingEnabled;
+	RDPCR2MilColor ColorKey;
+	UINT32 DisableCookie;
+}
+
+struct RDPCR2MilCmdTargetSetRoot
+{
+	UINT32 TargetResource;
+	UINT32 HRoot;
+}
+
+struct RDPCR2MilCmdTargetSetClearColor
+{
+	UINT32 TargetResource;
+	RDPCR2MilColor ClearColor;
+}
+
+struct RDPCR2MilCmdTargetInvalidate
+{
+	UINT32 TargetResource;
+	RDPCR2MilRectI Rc;
+}
+
+struct RDPCR2MilCmdTargetCapturebits
+{
+	UINT32 TargetResource;
+	UINT32 X;
+	UINT32 Y;
+	UINT32 Width;
+	UINT32 Height;
+	UINT32 DxgiFormat = RDPCR2DxgiFormatTable(this);
+	UINT64 Unused;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTargetCaptureBits
+{
+	UINT32 TargetResource;
+	UINT32 Width;
+	UINT32 Height;
+	UINT64 UpdateId;
+	UINT32 IncludeCursors;
+	UINT32 Unused;
+	RDPCR2MAGNUpdateTexturesParam UpdateParam;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTargetCreate
+{
+	UINT32 TargetResource;
+	UINT64 Unused;
+	RDPCR2OffScreenRTTextures Textures;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTArgetSetTransform
+{
+	UINT32 TargetResource;
+	UINT32 HTransform ;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTargetSetColorTransform
+{
+	UINT32 TargetResource;
+	UINT32 HTransform ;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTarget
+{
+	UINT32 TargetResource;
+	RDPCR2OffScreenRTTextures Textures;
+}
+
+struct RDPCR2MilCmdMetaBitmapRenderTargetSetFilterList
+{
+	UINT32 TargetResource;
+	UINT32 HIncExcVisuals;
+}
+
+struct RDPCR2MilCmdGlyphCacheAddBitmaps
+{
+	UINT32 TargetResource;
+	UINT32 FontFaceHandle;
+	UINT32 GlyphCount;
+	RDPCR2MilGlyphBitmap BitmapsToAdd[GlyphCount];
+}
+
+struct RDPCR2MilCmdGlyphcacheRemoveBitmaps
+{
+	UINT32 TargetResource;
+	UINT32 FontFaceHandle;
+	UINT32 GlyphCount;
+	UINT32 BitmapsToRemove[GlyphCount];
+}
+
+struct RDPCR2MilCmdGlyphRunCreate
+{
+	UINT32 TargetResource;
+	UINT32 HGlyphCache;
+	UINT32 GlyphCount;
+	INT32 PrecontrastLevel;
+	UINT32 GlyphIndices[GlyphCount];
+}
+
+struct RDPCR2MilCmdGlyphRunAddrealization
+{
+	UINT32 TargetResource;
+	UINT32 RealizationHandle;
+	UINT32 FontFaceHandle;
+}
+
+struct RDPCR2MilCmdGlyphRunRemoveRealization
+{
+	UINT32 TargetResource;
+	UINT32 RealizationHandle;
+}
+
+struct RDPCR2MilCmdGdiSpriteBitmap
+{
+	UINT32 TargetResource;
+	UINT64 Hsprite;
+	UINT64 Hlsurface;
+}
+
+struct RDPCR2MilCmdGdiSpriteBitmapUpdateMargins
+{
+	UINT32 TargetResource;
+	RDPCR2MilWindowMargins Margins;
+}
+
+struct RDPCR2MilCmdGdiSpriteBitmapUpdateSurface
+{
+	UINT32 TargetResource;
+	UINT32 DxgiFmtRealization = RDPCR2DxgiFormatTable(this);
+}
+
+struct RDPCR2MilCmdGdiSpriteBitmapUnmapsection
+{
+	UINT32 TargetResource;
+}
+
+struct RDPCR2MilCmdGdiSpriteBitmapNotifyDirty
+{
+	UINT32 TargetResource;
+	INT32 DirtyFlags;
+	INT64 NotificationCookie;
+}
+
+struct RDPCR2MilCmdMeshGeometry2DSetConstantOpacity
+{
+	UINT32 TargetResource;
+	INT32 Opacity;
+}
+
+struct RDPCR2MilCmdCachedVisualImageFreeze
+{
+	UINT32 TargetResource;
+}
+
+struct RDPCR2MilCmdGlyphBitmap
+{
+	UINT32 TargetResource;
+	INT32 HorOriginX;
+	INT32 HorOriginY;
+	INT32 HorAdvance;
+	INT32 VerOriginX;
+	INT32 VerOriginY;
+	UINT32 Width;
+	UINT32 Height;
+	UINT32 Stride;
+}
+
+struct RDPCR2MilCmdScene3D
+{
+	UINT32 TargetResource;
+	RDPCR2MilRect Viewport;
+	UINT32 Hmodels;
+	UINT32 Hcamera;
+	UINT32 HViewportAnimations;
+}
+
+struct RDPCR2MilCmdMatrixCamera
+{
+	UINT32 TargetResource;
+	RDPCR2Mil4x4Matrix ViewMatrix;
+	RDPCR2Mil4x4Matrix ProjectionMatrix;
+	UINT32 Htransform;
+}
+
+struct RDPCR2MilCmdModel3DGroup
+{
+	UINT32 TargetResource;
+	UINT32 Htransform;
+	UINT32 ChildrenCollectionSize;
+	UINT32 ChildrenCollection[ChildrenCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdAmbientLight
+{
+	UINT32 TargetResource;
+	RDPCR2MilColor Color;
+	UINT32 HTransform;
+	UINT32 HColorAnimations;
+}
+
+struct RDPCR2MilCmdGeometryModel3D
+{
+	UINT32 TargetResource;
+	UINT32 HTransform;
+	UINT32 HGeometry;
+	UINT32 HBrush;
+}
+
+struct RDPCR2MilCmdMeshGeometry3D
+{
+	UINT32 TargetResource;
+	UINT32 PositionsCollectionSize;
+	UINT32 TextureCoordinatesCollectionSize;
+	UINT32 TriangleIndicesCollectionSize;
+	UINT32 BlendColorsCollectionSize;
+	RDPCR2Mil3DPoint PositionsCollection[PositionsCollectionSize / 12];
+	RDPCR2MilPoint TextureCoordinatesCollection[TextureCoordinatesCollectionSize / 16];
+	UINT32 TriangleIndicesCollection[TriangleIndicesCollectionSize / 4];
+	UINT32 BlendColorsCollection[BlendColorsCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdMeshGeometry2D
+{
+	UINT32 TargetResource;
+	UINT32 PositionsCollectionSize;
+	UINT32 TextureCoordinatesCollectionSize;
+	UINT32 VertexOpacitiesCollectionSize;
+	UINT32 TriangleIndicesCollectionSize;
+	RDPCR2Mil3DPoint PositionsCollection[PositionsCollectionSize / 12];
+	RDPCR2MilPoint TextureCoordinatesCollection[TextureCoordinatesCollectionSize /16];
+	UINT32 VertexOpacitiesCollection[VertexOpacitiesCollectionSize / 4];
+	UINT32 TriangleIndicesCollection[TriangleIndicesCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdGeometry2DGroup
+{
+	UINT32 TargetResource;
+	UINT32 ChildrenCollectionSize;
+	UINT32 ChildrenCollection[ChildrenCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdMatrixTransform3D
+{
+	UINT32 TargetResource;
+	RDPCR2Mil4x4Matrix Matrix;
+}
+
+struct RDPCR2MilCmdCachedVisualImage
+{
+	UINT32 TargetResource;
+	RDPCR2MilRect Viewbox;
+	RDPCR2MilSize RealizationSize;
+	UINT32 HViewboxAnimations;
+	UINT32 HRealizationSizeAnimations;
+	UINT32 HVisual;
+	UINT32 ViewboxUnits = RDPCR2MilBrushMappingModeTable(this);
+	UINT32 Unused0;
+	UINT32 Unused1;
+	UINT32 Unused2;
+}
+
+struct RDPCR2MilCmdTransformGroup
+{
+	UINT32 TargetResource;
+	UINT32 ChildrenCollectionSize;
+	UINT32 ChildrenCollection[ChildrenCollectionSize / 4];
+}
+
+struct RDPCR2MilCmdTranslateTransform
+{
+	UINT32 TargetResource;
+	Double X;
+	Double Y;
+	UINT32 HXAnimations;
+	UINT32 HYAnimations;
+}
+
+struct RDPCR2MilCmdScaleTransform
+{
+	UINT32 TargetResource;
+	Double ScaleX;
+	Double ScaleY;
+	Double CenterX;
+	Double CenterY;
+	UINT32 HScaleXAnimations;
+	UINT32 HScaleYAnimations;
+	UINT32 HCenterXAnimations;
+	UINT32 HCenterYAnimations;
+}
+
+struct RDPCR2MilCmdMatrixTransform
+{
+	UINT32 TargetResource;
+	RDPCR2Mil3x2Matrix Matrix;
+	UINT32 HMatrixAnimations;
+}
+
+struct RDPCR2MilCmdRectangleGeometry
+{
+	UINT32 TargetResource;
+	RDPCR2MilRect Rect;
+	UINT32 HRectAnimations;
+}
+
+struct RDPCR2MilCmdCombinedGeometry
+{
+	UINT32 TargetResource;
+	UINT32 GeometryCombineMode = RDPCR2MilGeometryCombineModeTable(this);
+	UINT32 HGeometry1;
+	UINT32 HGeometry2;
+}
+
+struct RDPCR2MilCmdPathGeometry
+{
+	UINT32 TargetResource;
+	UINT32 FillRule = RDPCR2MilFillRuleTable(this);
+	UINT32 FiguresCollectionSize;
+	RDPCR2MilPathFigure FiguresCollection[FiguresCollectionSize / 28];
+}
+
+struct RDPCR2MilCmdSolidColorBrush
+{
+	UINT32 TargetResource;
+	Double Opacity;
+	RDPCR2MilColor Color;
+	UINT32 HOpacityAnimations;
+	UINT32 HTransform;
+	UINT32 HRelativeTransform;
+	UINT32 HColorAnimations;
+}
+
+struct RDPCR2MilCmdLineargradientBrush
+{
+	UINT32 TargetResource;
+	Double Opacity;
+	RDPCR2MilPoint StartPoint;
+	RDPCR2MilPoint EndPoint;
+	UINT32 HOpacityAnimations;
+	UINT32 HTransform;
+	UINT32 HRelativeTransform;
+	UINT32 ColorInterpolationMode = RDPCR2MilColorInterpolationModeTable(this);
+	UINT32 MappingMode = RDPCR2MilBrushMappingModeTable(this);
+	UINT32 SpreadMethod = RDPCR2MilGradientSpreadMethodTable(this);
+	UINT32 GradientStopsCollectionSize;
+	UINT32 HStartPointAnimations;
+	UINT32 HEndPointAnimations;
+	RDPCR2MilGradientStop GradientStopsCollection[GradientStopsCollectionSize / 24];
+}
+
+struct RDPCR2MilCmdImageBrush
+{
+	UINT32 TargetResource;
+	Double Opacity;
+	RDPCR2MilRect Viewport;
+	RDPCR2MilRect Viewbox;
+	Double CacheInvalidationThresholdMinimum;
+	Double CacheInvalidationThresholdMaximum;
+	UINT32 HOpacityAnimations;
+	UINT32 HTransform;
+	UINT32 HRelativeTransform;
+	UINT32 ViewportUnits = RDPCR2MilBrushMappingModeTable(this);
+	UINT32 ViewboxUnits = RDPCR2MilBrushMappingModeTable(this);
+	UINT32 HViewportAnimations;
+	UINT32 HViewboxAnimations;
+	UINT32 Stretch = RDPCR2MilStretchTable(this);
+	UINT32 TileMode = RDPCR2MilTileModeTable(this);
+	UINT32 AlignmentX = RDPCR2MilHorizontalAlignmentTable(this);
+	UINT32 AlignmentY = RDPCR2MilVerticalAlignmentTable(this);
+	UINT32 CachingHint = RDPCR2MilCachingHintTable(this);
+	UINT32 HImageSource;
+}
+
+struct RDPCR2MilCtrlCmdDataOnChannel
+{
+	UINT32 HChannel;
+	UINT32 Unused0;
+	while [FrameOffset < FrameLength]
+	{
+		struct Payload = RDPCR2ChannelMessagesTable(ControlCode)
+		{
+			UINT32 MessageSize;
+			UINT32 ControlCode = RDPCR2ChannelMessagesTable(this);
+			switch (ControlCode)
+			{
+				case 0x00000001: _struct RDPCR2MilCmdTransportSyncFlush{};
+				case 0x00000003: RDPCR2MilCmdTransportRoundtripRequest MilCmdTransportRoundtripRequest;
+				case 0x00000004: RDPCR2MilCmdTransportAsyncFlush MilCmdTransportAsyncFlush;
+				case 0x00000005: RDPCR2MilCmdPartitionRegisterForNotifications MilCmdPartitionRegisterForNotifications;
+				case 0x00000009: RDPCR2MilCmdChannelRequesttier MilCmdChannelRequesttier;
+				case 0x0000000A: RDPCR2MilCmdChannelCreateResource MilCmdChannelCreateResource;
+				case 0x0000000B: RDPCR2MilCmdChannelDeleteResource MilCmdChannelDeleteResource;
+				case 0x0000000C: RDPCR2MilCmdChannelDuplicateHandle MilCmdChannelDuplicateHandle;
+				case 0x0000000E: RDPCR2MilCmdBitmapPixels MilCmdBitmapPixels;
+				case 0x0000000F: RDPCR2MilCmdBitmapCompressedPixels MilCmdBitmapCompressedPixels;
+				case 0x00000012: RDPCR2MilCmdDoubleResource MilCmdDoubleResource;
+				case 0x00000013: RDPCR2MilCmdColorResource MilCmdColorResource;
+				case 0x00000014: RDPCR2MilCmdPointResource MilCmdPointResource;
+				case 0x00000015: RDPCR2MilCmdRectResource MilCmdRectResource;
+				case 0x00000016: RDPCR2MilCmdSizeResource MilCmdSizeResource;
+				case 0x00000017: RDPCR2MilCmdMatrixResource MilCmdMatrixResource;
+				case 0x00000018: RDPCR2MilCmdColorTransformResource MilCmdColorTransformResource;
+				case 0x00000019: RDPCR2MilCmdRenderData MilCmdRenderData;
+				case 0x0000001A: RDPCR2MilCmdTileBrushSetsourcemoDifications MilCmdTileBrushSetsourcemoDifications;
+				case 0x0000001C: RDPCR2MilCmdVisualSetOffset MilCmdVisualSetOffset;
+				case 0x0000001D: RDPCR2MilCmdVisualSetTransform MilCmdVisualSetTransform;
+				case 0x0000001E: RDPCR2MilCmdVisualSetClip MilCmdVisualSetClip;
+				case 0x0000001F: RDPCR2MilCmdVisualSetAlpha MilCmdVisualSetAlpha;
+				case 0x00000020: RDPCR2MilCmdVisualSetRenderOptions MilCmdVisualSetRenderOptions;
+				case 0x00000021: RDPCR2MilCmdVisualSetContent MilCmdVisualSetContent;
+				case 0x00000022: RDPCR2MilCmdVisualRemoveAllChildren MilCmdVisualRemoveAllChildren;
+				case 0x00000023: RDPCR2MilCmdVisualRemoveChild MilCmdVisualRemoveChild;
+				case 0x00000024: RDPCR2MilCmdVisualInsertChildAt MilCmdVisualInsertChildAt;
+				case 0x00000025: RDPCR2MilCmdVisualSetColorTransform MilCmdVisualSetColorTransform;
+				case 0x00000026: RDPCR2MilCmdVisualAddRenderParameter MilCmdVisualAddRenderParameter;
+				case 0x00000027: RDPCR2MilCmdVisualRemoveRenderParameter MilCmdVisualRemoveRenderParameter;
+				case 0x00000028: RDPCR2MilCmdVisualSetContextualizedOpacity MilCmdVisualSetContextualizedOpacity;
+				case 0x00000029: RDPCR2MilCmdVisualSetColorTransformRoot MilCmdVisualSetColorTransformRoot;
+				case 0x0000002A: RDPCR2MilCmdVisualSetRenderForCapture MilCmdVisualSetRenderForCapture;
+				case 0x0000002B: RDPCR2MilCmdWindownodeCreate MilCmdWindownodeCreate;
+				case 0x0000002C: RDPCR2MilCmdWindownodeDetach MilCmdWindownodeDetach;
+				case 0x0000002E: RDPCR2MilCmdWindownodeSetbounds MilCmdWindownodeSetbounds;
+				case 0x00000030: RDPCR2MilCmdWindownodeUpdateSpriteHandle MilCmdWindownodeUpdateSpriteHandle;
+				case 0x00000032: RDPCR2MilCmdWindownodeSetSpriteImage MilCmdWindownodeSetSpriteImage;
+				case 0x00000034: RDPCR2MilCmdWindownodeSetLogicalSurfaceImage MilCmdWindownodeSetLogicalSurfaceImage;
+				case 0x00000035: RDPCR2MilCmdWindownodeSetSpriteClip MilCmdWindownodeSetSpriteClip;
+				case 0x00000036: RDPCR2MilCmdWindownodeSetDxClip MilCmdWindownodeSetDxClip;
+				case 0x00000037: RDPCR2MilCmdWindownodeSetSourceModifications MilCmdWindownodeSetSourceModifications;
+				case 0x00000038: RDPCR2MilCmdWindownodeSetAlphaMargins MilCmdWindownodeSetAlphaMargins;
+				case 0x00000039: RDPCR2MilCmdWindownodeSetComposeonce MilCmdWindownodeSetComposeonce;
+				case 0x0000003A: RDPCR2MilCmdWindownodeCopyCompositorOwnedResources MilCmdWindownodeCopyCompositorOwnedResources;
+				case 0x0000003B: RDPCR2MilCmdWindownodeSetmaximizedClipMargins MilCmdWindownodeSetmaximizedClipMargins;
+				case 0x0000003C: RDPCR2MilCmdWindownodeNotifyvisrgnUpdate MilCmdWindownodeNotifyvisrgnUpdate;
+				case 0x0000003F: RDPCR2MilCmdWindowNodeProtectContent MilCmdWindowNodeProtectContent;
+				case 0x00000041: RDPCR2MilCmdVisualGroup MilCmdVisualGroup;
+				case 0x00000042: RDPCR2MilCmdHwndtargetCreate MilCmdHwndtargetCreate;
+				case 0x00000043: RDPCR2MilCmdTargetUpdateWindowSettings MilCmdTargetUpdateWindowSettings;
+				case 0x00000045: RDPCR2MilCmdTargetSetRoot MilCmdTargetSetRoot;
+				case 0x00000046: RDPCR2MilCmdTargetSetClearColor MilCmdTargetSetClearColor;
+				case 0x00000047: RDPCR2MilCmdTargetInvalidate MilCmdTargetInvalidate;
+				case 0x00000049: RDPCR2MilCmdTargetCapturebits MilCmdTargetCapturebits;
+				case 0x0000004A: RDPCR2MilCmdMetaBitmapRenderTargetCaptureBits MilCmdMetaBitmapRenderTargetCaptureBits;
+				case 0x0000004B: RDPCR2MilCmdMetaBitmapRenderTargetCreate MilCmdMetaBitmapRenderTargetCreate;
+				case 0x0000004C: RDPCR2MilCmdMetaBitmapRenderTArgetSetTransform MilCmdMetaBitmapRenderTArgetSetTransform;
+				case 0x0000004D: RDPCR2MilCmdMetaBitmapRenderTargetSetColorTransform MilCmdMetaBitmapRenderTargetSetColorTransform;
+				case 0x0000004E: RDPCR2MilCmdMetaBitmapRenderTarget MilCmdMetaBitmapRenderTarget;
+				case 0x00000050: RDPCR2MilCmdMetaBitmapRenderTargetSetFilterList MilCmdMetaBitmapRenderTargetSetFilterList;
+				case 0x00000052: RDPCR2MilCmdGlyphCacheAddBitmaps MilCmdGlyphCacheAddBitmaps;
+				case 0x00000053: RDPCR2MilCmdGlyphCacheRemoveBitmaps MilCmdGlyphCacheRemoveBitmaps;
+				case 0x00000054: RDPCR2MilCmdGlyphRunCreate MilCmdGlyphRunCreate;
+				case 0x00000055: RDPCR2MilCmdGlyphRunAddrealization MilCmdGlyphRunAddrealization;
+				case 0x00000056: RDPCR2MilCmdGlyphRunRemoveRealization MilCmdGlyphRunRemoveRealization;
+				case 0x00000057: RDPCR2MilCmdGdiSpriteBitmap MilCmdGdiSpriteBitmap;
+				case 0x00000058: RDPCR2MilCmdGdiSpriteBitmapUpdateMargins MilCmdGdiSpriteBitmapUpdateMargins;
+				case 0x00000059: RDPCR2MilCmdGdiSpriteBitmapUpdateSurface MilCmdGdiSpriteBitmapUpdateSurface;
+				case 0x0000005A: RDPCR2MilCmdGdiSpriteBitmapUnmapsection MilCmdGdiSpriteBitmapUnmapsection;
+				case 0x0000005B: RDPCR2MilCmdGdiSpriteBitmapNotifyDirty MilCmdGdiSpriteBitmapNotifyDirty;
+				case 0x00000066: RDPCR2MilCmdMeshGeometry2DSetConstantOpacity MilCmdMeshGeometry2DSetConstantOpacity;
+				case 0x00000067: RDPCR2MilCmdCachedVisualImageFreeze MilCmdCachedVisualImageFreeze;
+				case 0x00000079: RDPCR2MilCmdGlyphBitmap MilCmdGlyphBitmap;
+				case 0x0000007A: RDPCR2MilCmdScene3D MilCmdScene3D;
+				case 0x0000007B: RDPCR2MilCmdMatrixCamera MilCmdMatrixCamera;
+				case 0x0000007C: RDPCR2MilCmdModel3DGroup MilCmdModel3DGroup;
+				case 0x0000007D: RDPCR2MilCmdAmbientLight MilCmdAmbientLight;
+				case 0x0000007E: RDPCR2MilCmdGeometryModel3D MilCmdGeometryModel3D;
+				case 0x0000007F: RDPCR2MilCmdMeshGeometry3D MilCmdMeshGeometry3D;
+				case 0x00000080: RDPCR2MilCmdMeshGeometry2D MilCmdMeshGeometry2D;
+				case 0x00000081: RDPCR2MilCmdGeometry2DGroup MilCmdGeometry2DGroup;
+				case 0x00000082: RDPCR2MilCmdMatrixTransform3D MilCmdMatrixTransform3D;
+				case 0x00000083: RDPCR2MilCmdCachedVisualImage MilCmdCachedVisualImage;
+				case 0x00000084: RDPCR2MilCmdTransformGroup MilCmdTransformGroup;
+				case 0x00000085: RDPCR2MilCmdTranslateTransform MilCmdTranslateTransform;
+				case 0x00000086: RDPCR2MilCmdScaleTransform MilCmdScaleTransform;
+				case 0x00000087: RDPCR2MilCmdMatrixTransform MilCmdMatrixTransform;
+				case 0x00000088: RDPCR2MilCmdRectangleGeometry MilCmdRectangleGeometry;
+				case 0x00000089: RDPCR2MilCmdCombinedGeometry MilCmdCombinedGeometry;
+				case 0x0000008A: RDPCR2MilCmdPathGeometry MilCmdPathGeometry;
+				case 0x0000008B: RDPCR2MilCmdSolidColorBrush MilCmdSolidColorBrush;
+				case 0x0000008C: RDPCR2MilCmdLineargradientBrush MilCmdLineargradientBrush;
+				case 0x0000008D: RDPCR2MilCmdImageBrush MilCmdImageBrush;			
+			}
+		}
+	}
+}
+
+struct RDPCR2MilCtrlCmdConnectionNotification
+{
+	UINT32 Unused0;
+	UINT32 Unused1;
+	Blob(Property.MessageSize - 16) Notification;
+	//2.2.8.3   MILMSG_VERSIONREPLY: Notification payload, client to server message, always encrypted
+}
+
+struct RDPCR2MilCtrlCmdChannelNotification
+{
+	UINT32 ChannelHandle;
+	UINT32 Unused0;
+	Blob(Property.MessageSize - 16) Notification;
+	//2.2.8.1   MILMSG_SYNCFLUSHREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.2   MILMSG_CAPTUREBITSREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.4   MILMSG_HARDWARETIER: Notification payload, client to server message, always encrypted
+	//2.2.8.5   MILMSG_COMPOSITIONDEVICESTATECHANGE: Notification payload, client to server message, always encrypted
+	//2.2.8.6   MILMSG_PARTITIONISZOMBIE: Notification payload, client to server message, always encrypted
+	//2.2.8.7   MILMSG_NOTIFYCOMPOSITIONTIMEEXCEEDED: Notification payload, client to server message, always encrypted
+	//2.2.8.8   MILMSG_NOTIFYROUNDTRIPREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.9   MILMSG_CONNECTIONLOST: Notification payload, client to server message, always encrypted
+	//2.2.8.10   MILMSG_SYSMEMUSAGE: Notification payload, client to server message, always encrypted
+	//2.2.8.11   MILMSG_ASYNCFLUSHREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.12   MILMSG_RENDERSTATUS: Notification payload, client to server message, always encrypted
+	//2.2.8.13   MILMSG_DISABLECOMPOSITION: Notification payload, client to server message, always encrypted
+	//2.2.8.14   MILMSG_METARTCAPTUREBITSREPLY: Notification payload, client to server message, always encrypted
+}
+
+struct RDPCR2MilCtrlCmdConnectionBroadcast
+{
+	UINT32 Unused0;
+	UINT32 Unused1;
+	Blob(Property.MessageSize - 16) Notification;
+	//2.2.8.1   MILMSG_SYNCFLUSHREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.2   MILMSG_CAPTUREBITSREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.4   MILMSG_HARDWARETIER: Notification payload, client to server message, always encrypted
+	//2.2.8.5   MILMSG_COMPOSITIONDEVICESTATECHANGE: Notification payload, client to server message, always encrypted
+	//2.2.8.6   MILMSG_PARTITIONISZOMBIE: Notification payload, client to server message, always encrypted
+	//2.2.8.7   MILMSG_NOTIFYCOMPOSITIONTIMEEXCEEDED: Notification payload, client to server message, always encrypted
+	//2.2.8.8   MILMSG_NOTIFYROUNDTRIPREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.9   MILMSG_CONNECTIONLOST: Notification payload, client to server message, always encrypted
+	//2.2.8.10   MILMSG_SYSMEMUSAGE: Notification payload, client to server message, always encrypted
+	//2.2.8.11   MILMSG_ASYNCFLUSHREPLY: Notification payload, client to server message, always encrypted
+	//2.2.8.12   MILMSG_RENDERSTATUS: Notification payload, client to server message, always encrypted
+	//2.2.8.13   MILMSG_DISABLECOMPOSITION: Notification payload, client to server message, always encrypted
+	//2.2.8.14   MILMSG_METARTCAPTUREBITSREPLY: Notification payload, client to server message, always encrypted
+}
+
+struct RDPCR2MilHandleSurfaceManagerEvent
+{
+	UINT32 HSourceChannel;
+	Bool FSetHandleSFMEvent;
+}

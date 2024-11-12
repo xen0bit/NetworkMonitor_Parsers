@@ -1,0 +1,218 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Session Description Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2327, 4556
+//#  Microsoft References:   [MS-SDP]: Session Description Protocol (SDP) Extensions (0.5.5)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/25/2010
+//#
+//####
+
+Protocol SDP = FormatString("%s; SDP:%s, MediaDescription=%s", SIPSummary,SDPSummary,SDPMediaDescSummary)
+{
+	[Post.SDPSummary = "SessionName=" + SDPSubject + ", Version=" + SDPVersion]
+	[Post.Global.SDPAddressTable$[MakeByteArray(property.SDPAddress, StringToNumber(property.SDPMediaPort))] = property.SDPMediaProtocol]
+	[Property.SDPEnd.AddToProperty(" ", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.SDPEnd.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+	while Data[FrameOffset < FrameLength - 1]
+	{
+		DynamicSwitch AsciiStringTerm("=")
+		{
+			case "v": [SDPVersion] AsciiStringTerm("\r\n") ProtocolVersion;
+			case "o":
+				_struct SDPOrigin = SDPOriginSummary
+				{
+					[SDPOriginSummary = FormatString("%s %s %s %s %s %s",UserName,SessionID,SessionVersion,NetworkType,AddressType,Address)]
+					AsciiStringTerm("\r\n") Origin
+					{
+						AsciiStringTerm(' ') UserName;
+						AsciiStringTerm(' ') SessionID;
+						AsciiStringTerm(' ') SessionVersion;
+						AsciiStringTerm(' ') NetworkType;
+						AsciiStringTerm(' ') AddressType;
+						AsciiString Address;
+					}
+				}
+			case "c":
+				_struct SDPConnectionInfo = SDPConnectionInfoSummary
+				{
+					[SDPConnectionInfoSummary = FormatString("%s %s %s",NetworkType,AddressType,Address)]
+					AsciiStringTerm("\r\n") ConnectionInfo
+					{
+						AsciiStringTerm(' ') NetworkType;
+						AsciiStringTerm(' ') AddressType;
+						
+						[Local.SDPConnAddressTerm.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)] 
+						[Local.SDPConnAddressTerm.AddToProperty("/", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+						[property.SDPAddress = StringTerm(FrameData, FrameOffset, Ascii, Local.SDPConnAddressTerm,0,0,0)]
+						// skip "\r\n"
+						AsciiStringTerm("\r\n") Address;
+					}
+				}
+			case "b":
+				_struct SDPBandwidthInfo = SDPBandwidthInfoSummary
+				{
+					[SDPBandwidthInfoSummary = FormatString("%s %s",BandWidthModifier,BandWidthValue)]
+					AsciiStringTerm("\r\n") BandwidthInfo
+					{
+						AsciiStringTerm(':') BandWidthModifier;
+						AsciiString BandWidthValue;
+					}
+				}
+			case "a":
+				_struct SDPSessionAttribute = SDPSessionAttributeSummary
+				{
+					[SDPSessionAttributeSummary = FormatString("%s %s",FieldName,FieldValue)]
+					AsciiStringTerm("\r\n") SessionAttribute
+					{
+						AsciiStringTerm(':') FieldName;
+						switch(FieldName)
+						{
+							//SessionAttribute, such as: rtpmap:96 x-asf-pf/1000
+							case "rtpmap":
+								[post.Global.RTPRADPayloadFlag$[StringToNumber(DynamicMediaValue)]
+									= DynamicMediaType.contains("red") ? true : Global.RTPRADPayloadFlag$[StringToNumber(DynamicMediaValue)]]
+								[post.Global.SDPMediaType$[StringToNumber(DynamicMediaValue), DynamicMediaType] = true]
+								struct
+								{
+									AsciiStringTerm(" ") DynamicMediaValue;
+									AsciiString DynamicMediaType;
+								}
+							case "pgmpu":
+								struct
+								{
+									AsciiStringTerm(":") Data;
+									[Property.SDPDataTypeEncoding = FALSE]
+									[
+										Local.SDPMediatypeTerm.AddToProperty(",", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+										Local.SDPMediatypeTerm.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+									]
+									[Property.SDPMediatype = this]
+									StringTerm(Ascii, Local.SDPMediatypeTerm, true, false, true) Mediatype;
+									Switch
+									{
+										case StringTerm(Framedata, Frameoffset, Ascii, ",", true, false, false).Contains("base64"):
+											[ Property.SDPDataTypeEncoding = TRUE]
+											AsciiStringTerm(",") Base64;
+									}
+									Switch
+									{
+										case Property.SDPMediatype == "application/vnd.ms.wms-hdr.asfv1":
+										[ DataTypeEncoding = Property.SDPDataTypeEncoding ? 1 : 0 ]
+											ASF ASF;
+										case Property.SDPMediatype == "application/x-wms-contentdesc":
+											while [FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset)==0x0A0D)]
+											{
+												WMSPContentDescription ContentDescription;	
+											}
+										default:
+											AsciiString DataValue1;
+									}
+								}
+							default:
+								AsciiString FieldValue;
+						}
+					}
+				}
+			case "m":
+				_struct SDPMediaDesc = SDPMediaDescSummary
+				{
+					[SDPMediaDescSummary = FormatString("%s %s %s %s", MediaType, MediaPort, MediaProtocol, SDPMediaFormat)]
+					AsciiStringTerm("\r\n") MediaDescription
+					{
+						AsciiStringTerm(' ') MediaType;
+						[property.SDPMediaPort]
+						AsciiStringTerm(' ') MediaPort;
+						[property.SDPMediaProtocol]
+						AsciiStringTerm(' ') MediaProtocol;
+						switch(MediaProtocol)
+						{
+							case "RTP/AVP":
+							case "RTP/SAVP":
+								_struct RTPAVP
+								{
+									[SDPMediaFormat]
+									AsciiStringTerm("\r\n") MediaFormat
+									{
+										while [FrameOffset < FrameLength]
+										{
+											AsciiStringTerm(' ')  MediaFormat = RTPPayloadTypeTable(StringToNumber(this));
+										}
+									}
+								}
+							default:
+								[SDPMediaFormat]
+								AsciiString MediaFormat;
+						}
+					}
+				}
+			case "t": 
+				_struct SDPActiveTime = SDPActiveTimeSummary
+				{
+					[SDPActiveTimeSummary = FormatString("%s %s",SessionStartTime,SessionStopTime)]
+					AsciiStringTerm("\r\n") ActiveTime
+					{
+						AsciiStringTerm(' ') SessionStartTime;
+						AsciiString SessionStopTime;
+					}
+				}
+			case "r":
+				_struct SDPRepeatTime = SDPRepeatTimeSummary
+				{
+					[SDPRepeatTimeSummary = FormatString("%s %s %s",Interval,Duration,Offset)]
+					AsciiStringTerm("\r\n") RepeatTime
+					{
+						AsciiStringTerm(' ') Interval;
+						AsciiStringTerm(' ') Duration;
+						while [FrameOffset < FrameLength]
+						{
+							AsciiStringTerm(' ') Offset;
+						}
+					}
+				}
+			case "z":
+				_struct SDPTimeZone = SDPTimeZoneSummary
+				{
+					[SDPTimeZoneSummary = FormatString("%s %s",AdjustmentTime,Offset)]
+					AsciiStringTerm("\r\n") TimeZone
+					{
+						while [FrameOffset < FrameLength]
+						{
+							AsciiStringTerm(' ') AdjustmentTime;
+							AsciiStringTerm(' ') Offset;
+						}
+					}
+				}
+			case "k":
+				_struct SDPEncryption = FormatString("Method = %s",EncryptionMethod.Method)
+				{
+					AsciiStringTerm("\r\n") EncryptionMethod
+					{
+						AsciiStringTerm(":") Method;
+						switch
+						{
+							case FrameOffset < FrameLength:
+								AsciiString Key;
+						}
+					}
+				}
+			case "i": AsciiStringTerm("\r\n") SessionDescription;
+			case "u": AsciiStringTerm("\r\n") URI;
+			case "e": AsciiStringTerm("\r\n") Email;
+			case "p": AsciiStringTerm("\r\n") Phone;
+			case "s": [SDPSubject] AsciiStringTerm("\r\n") SessionName;
+						
+			default:
+				switch
+				{
+					case FrameOffset < FrameLength:
+						AsciiStringTerm("\r\n") DefaultName;
+				}
+		}
+	}
+}

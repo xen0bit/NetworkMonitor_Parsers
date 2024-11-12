@@ -1,0 +1,302 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Assistance Protocol Binary
+//#
+//#  Details:                rides on RDP
+//#
+//#  Microsoft References:   [MS-RA]: Remote Assistance Protocol Specification (3.0.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/24/2009
+//#                          Minor, 6/26/2009
+//#
+//####
+
+Protocol RA = FormatString ("Packet Type = %s%s ", Property.RAPRPacketType, RAPFrameSummary)
+{
+	switch 
+	{
+		case Property.RDPBCGREncrypted:
+			[RAPRPacketType = "Encrypted RAP Packet"]
+			Blob(FrameLength - FrameOffset) EncryptedData;
+		default:
+			[DataFieldByteOrder = LittleEndian]
+			_struct RAUnencrptedPacket
+			{
+				RARemoteDesktopCtlPacketHeader packetHeader;
+				switch 
+				{
+					case packetHeader.ChannelName == "70":
+						[RAPRPacketType = "RAP Chat"]
+						UnicodeString(packetHeader.channelBufHeader.DataLen / 2) ChatData;
+					case packetHeader.ChannelName == "71":
+						UnicodeString(packetHeader.channelBufHeader.DataLen / 2) RAPAppData
+						{
+							UnicodeString(1) BeginXML;
+							UnicodeStringTerm(" ") BeginCommand;
+							while [UnicodeString(FrameData, FrameOffset, 2) != "/>"]
+							{
+								[CommandKey = UnicodeStringTerm(FrameData, FrameOffset, "="), LeftCommandData = UnicodeStringTerm(FrameData, FrameOffset, " ")]
+								_struct GetCommandData{};
+								
+								DynamicSwitch UnicodeStringTerm("=")
+								{
+									case "NAME": 
+										[Post.RAPRPacketType = Property.RAXmlElementValue, Post.RAPAppCommandName = Property.RAXmlElementValue]
+										RAXmlElementValue NAME;
+									
+									case "FILENAME":
+										[Post.RAPFrameSummary = RAPFrameSummary + " Name = " + Property.RAXmlElementValue]
+										RAXmlElementValue FILENAME;
+									case "FILESIZE":
+										[Post.RAPFrameSummary = RAPFrameSummary + " Size = " + Property.RAXmlElementValue]
+										RAXmlElementValue FILESIZE;
+									case "CHANNELID":
+										_struct RAPAppChannelID
+										{
+											switch (RAPAppCommandName)
+											{
+												case "FILEXFER":
+													[Post.Conversation.RAPChannels$[Property.RAXmlElementValue] = RAPAppCommandName]
+													RAXmlElementValue FILEXFERCHANNELID;
+												default:
+													[Post.Conversation.RAPChannels$[Property.RAXmlElementValue] = RAPAppCommandName]
+													RAXmlElementValue CHANNELID;
+											}
+										}
+									case "INTERNALDATA":
+										[Post.RAPFrameSummary = RAPFrameSummary + " InternalData = " + Property.RAXmlElementValue]
+										RAXmlElementValue INTERNALDATA;
+									case "VOIPVER":
+										[Post.RAPFrameSummary = RAPFrameSummary + " VoipVer = " + Property.RAXmlElementValue]
+										RAXmlElementValue VOIPVER;
+									case "VOIPGOKEY":
+										[Post.RAPFrameSummary = RAPFrameSummary + " VoipGoKey = " + Property.RAXmlElementValue]
+										RAXmlElementValue VOIPGOKEY;
+									case "VOIPIPLIST":
+										[Post.RAPFrameSummary = RAPFrameSummary + " VoipIPList = " + Property.RAXmlElementValue]
+										RAXmlElementValue VOIPIPLIST;
+									case "EXPERTIPDATA":
+										[Post.RAPFrameSummary = RAPFrameSummary + " ExpertIPData = " + Property.RAXmlElementValue]
+										RAXmlElementValue EXPERTIPDATA;
+									case "PROPERTY":
+										[Post.RAPFrameSummary = RAPFrameSummary + " Property = " + Property.RAXmlElementValue]
+										RAXmlElementValue PROPERTY;
+									case "VALUE":
+										[Post.RAPFrameSummary = RAPFrameSummary + " Value = " + Property.RAXmlElementValue]
+										RAXmlElementValue VALUE;
+									
+									default:
+										RAXmlElementValue DefaultName;
+								}
+							}
+							UnicodeString(2) EndXML;
+						}
+					case Conversation.RAPChannels$[packetHeader.ChannelName] == "FILEXFER":
+					case RAPChannelName.Contains("1000."):
+					case RAPChannelName.Contains("RA_FX"):
+						[DataFieldByteOrder = LittleEndian]
+						switch
+						{
+							case UnicodeString(FrameData, FrameOffset, 11) == "FILEXFERACK":
+								[RAPRPacketType = "FILEXFERACK"]
+								UnicodeString(11) FILEXFERACK;
+							case UnicodeString(FrameData, FrameOffset, 11) == "FILEXFEREND":
+								[RAPRPacketType = "FILEXFEREND"]
+								UnicodeString(11) FILEXFEREND;
+							case UnicodeString(FrameData, FrameOffset, 14) == "FILEXFERREJECT":
+								[RAPRPacketType = "FILEXFERREJECT"]
+								UnicodeString(14) FILEXFERREJECT;
+							default:
+								[RAPRPacketType = "FILEXFERDATA"]
+								Blob(FrameLength - FrameOffset) FileData;
+						}
+					case packetHeader.ChannelName == "RC_CTL":
+						_struct GeneralPacket
+						{
+							RARemoteDesktopCtlBufHeader msgHeader;
+							switch (msgHeader.msgType)
+							{
+							//case 1:RARemoteDesktopRcCtlRequestPacket,client to server message always encrypted
+								case 2:
+									[RAPRPacketType = "Result"]
+									RARemoteDesktopRcCtlResultPacket RARemoteDesktopRcCtlResultPacket;
+							//case 3:RARemoteDesktopCtlAuthenticatePacket,client to server message always encrypted
+								case 4: 
+									[RAPRPacketType = "ServerAnnounce"]
+									_struct RemoteDesktopCtlServerAnnouncePacket{};
+								case 5:
+									[RAPRPacketType = "Disconnect"]
+									_struct RemoteDesktopCtlDisconnectPacket{};
+								case 6:
+									[RAPRPacketType = "VersionInfo"]
+									RARemoteDesktopCtlVersionInfoPacket RARemoteDesktopCtlVersionInfoPacket;
+								case 7:
+									[RAPRPacketType = "IsConnected"]
+									_struct RemoteDesktopCtlIsConnectedPacket{};
+							//case 8:RABstrVerifyPassword,client to server message always encrypted
+							//case 9:RABstrVistaExpert,client to server message always encrypted
+								case 10:
+									[RAPRPacketType = "RaNoviceName"]
+									RABstrRaNoviceName RemoteDesktopCtlRaNoviceName;
+								case 11:
+									[RAPRPacketType = "RaExpertName"]
+									RABstrRaExpertName RemoteDesktopCtlRaExpertName;
+								case 12:
+									[RAPRPacketType = "TOKEN"]
+									RARemoteDesktopCtlToken RemoteDesktopCtlToken;
+							}
+						}
+					default:
+						[RAPRPacketType = "ApplicationSpecificData", RAPFrameSummary = " ChannelName = " + packetHeader.ChannelName]
+						_struct RAApplicationSpecificData
+						{
+							Blob(packetHeader.channelBufHeader.DataLen) appData;
+						}
+				}
+			}
+	}
+}
+
+Table RAMsgTypeTable(code)
+{
+	switch (code)
+    {
+		case 1: "REMOTEDESKTOP_CTL_REMOTE_CONTROL_DESKTOP";
+		case 2: "REMOTEDESKTOP_CTL_RESULT";
+		case 3: "REMOTEDESKTOP_CTL_AUTHENTICATE";
+		case 4: "REMOTEDESKTOP_CTL_SERVER_ANNOUNCE";
+		case 5: "REMOTEDESKTOP_CTL_DISCONNECT";
+		case 6: "REMOTEDESKTOP_CTL_VERSIONINFO";
+		case 7: "REMOTEDESKTOP_CTL_ISCONNECTED";
+		case 8: "REMOTEDESKTOP_CTL_VERIFY_PASSWORD";
+		case 9: "REMOTEDESKTOP_CTL_VISTA_EXPERT";
+		case 10:"REMOTEDESKTOP_CTL_RANOVICE_NAME";
+		case 11:"REMOTEDESKTOP_CTL_RAEXPERT_NAME";
+		case 12:"REMOTEDESKTOP_CTL_TOKEN";
+		default: "Undefined value: " + FormatString("%d", code);
+    }
+}
+
+Table RAErrorCodeTable(code)
+{
+	switch (code)
+    {
+    	case 0: "SAFERROR_NOERROR";
+			case 1: "SAFERROR_NOINFO";
+			case 3: "SAFERROR_LOCALNOTERROR";
+			case 4: "SAFERROR_REMOTEBYUSER";
+			case 5: "SAFERROR_BYSERVER";
+			case 6: "SAFERROR_DNSLOOKUPFAILED";
+			case 7: "SAFERROR_OUTOFMEMORY";
+			case 8: "SAFERROR_CONNECTIONTIMEDOUT";
+			case 9: "SAFERROR_SOCKETCONNECTFAILED";
+			case 11: "SAFERROR_HOSTNOTFOUND";
+			case 12: "SAFERROR_WINSOCKSENDFAILED";
+			case 14: "SAFERROR_INVALIDIPADDR";
+			case 15: "SAFERROR_SOCKETRECVFAILED";
+			case 18: "SAFERROR_INVALIDENCRYPTION";
+			case 20: "SAFERROR_GETHOSTBYNAMEFAILED";
+			case 21: "SAFERROR_LICENSINGFAILED";
+			case 22: "SAFERROR_ENCRYPTIONERROR";
+			case 23: "SAFERROR_DECRYPTIONERROR";
+			case 24: "SAFERROR_INVALIDPARAMETERSTRING";
+			case 25: "SAFERROR_HELPSESSIONNOTFOUND";
+			case 26: "SAFERROR_INVALIDPASSWORD";
+			case 27: "SAFERROR_HELPSESSIONEXPIRED";
+			case 28: "SAFERROR_CANTOPENRESOLVER";
+			case 29: "SAFERROR_UNKNOWNSESSMGRERROR";
+			case 30: "SAFERROR_CANTFORMLINKTOUSERSESSION";
+			case 32: "SAFERROR_RCPROTOCOLERROR";
+			case 33: "SAFERROR_RCUNKNOWNERROR";
+			case 34: "SAFERROR_INTERNALERROR";
+			case 35: "SAFERROR_HELPEERESPONSEPENDING";
+			case 36: "SAFERROR_HELPEESAIDYES";
+			case 37: "SAFERROR_HELPEEALREADYBEINGHELPED";
+			case 38: "SAFERROR_HELPEECONSIDERINGHELP";
+			case 39: "SAFERROR_HELPEENOTFOUND";
+			case 40: "SAFERROR_HELPEENEVERRESPONDED";
+			case 41: "SAFERROR_HELPEESAIDNO";
+			case 42: "SAFERROR_HELPSESSIONACCESSDENIED";
+			case 43: "SAFERROR_USERNOTFOUND";
+			case 44: "SAFERROR_SESSMGRERRORNOTINIT";
+			case 45: "SAFERROR_SELFHELPNOTSUPPORTED";
+			case 47: "SAFERROR_INCOMPATIBLEVERSION";
+			case 48: "SAFERROR_SESSIONNOTCONNECTED";
+			case 50: "SAFERROR_SYSTEMSHUTDOWN";
+			case 51: "SAFERROR_STOPLISTENBYUSER";
+			case 52: "SAFERROR_WINSOCK_FAILED";
+			case 53: "SAFERROR_MISMATCHPARMS";
+			case 300: "SAFERROR_SHADOWEND_BASE";
+			case 301: "SAFERROR_SHADOWEND_CONFIGCHANGE";
+			case 302: "SAFERROR_SHADOWEND_UNKNOWN";
+			default: "Undefined value: " + FormatString("%d", code);
+    }
+}
+struct RARemoteDesktopChannelBufHeader
+{
+	UINT32 ChannelNameLen;
+	UINT32 DataLen;
+}
+
+struct RARemoteDesktopCtlBufHeader = "MsgType = " + RAMsgTypeTable(msgType)
+{
+	UINT32 msgType = RAMsgTypeTable(this);
+}
+
+struct RARemoteDesktopCtlPacketHeader = "ChannelName = " + ChannelName
+{
+	RARemoteDesktopChannelBufHeader channelBufHeader;
+	[RAPChannelName]
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString(channelBufHeader.ChannelNameLen/2) ChannelName;
+}
+
+struct RARemoteDesktopCtlVersionInfoPacket = FormatString("Version = %d.%d", VersionMajor, VersionMinor)
+{
+	UINT32 VersionMajor;
+	UINT32 VersionMinor;
+}
+
+struct RARemoteDesktopRcCtlResultPacket = RAErrorCodeTable(result)
+{
+	INT32 result = RAErrorCodeTable(this);
+}
+
+struct RABstrRaNoviceName = FormatString(" %s",value.toString)
+{
+	BSTR Value;
+}
+
+struct RABstrRaExpertName = FormatString(" %s",value.toString)
+{
+	BSTR Value;
+}
+
+struct RARemoteDesktopCtlToken = FormatString(" %s",value.toString)
+{
+	BSTR Value;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RAXmlElementValue = Property.RAXmlElementValue
+{
+	while [UnicodeString(FrameData, FrameOffset, 1) == " "]
+	{
+		UnicodeString(1) StartSpace;
+	}
+	UnicodeString(1) ValueStart;
+	[Property.RAXmlElementValue = ""]
+	while [UnicodeString(FrameData, FrameOffset, 1) != ValueStart]
+	{
+		[Property.RAXmlElementValue = Property.RAXmlElementValue + UniChar]
+		UnicodeString(1) UniChar;
+	}
+	UnicodeString(1) ValueEnd;
+	while [UnicodeString(FrameData, FrameOffset, 1) == " "]
+	{
+		UnicodeString(1) EndSpace;
+	}
+}
+

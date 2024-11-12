@@ -1,0 +1,380 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Media HTTP Streaming Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WMSP]: Windows Media HTTP Streaming Protocol Specification(3.0.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 8/28/2009
+//#                          Minor, 6/7/2010
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+[WMSPPacketName = ""]
+Protocol WMSP = WMSPVersionTable(conversation.WMSP1Point1) + property.WMSPPacketName + (property.WMSASFDataType == "" ? "" : " - ") + property.WMSASFDataType
+{
+	switch
+	{
+		case Property.HttpContentType.Contains("application/x-wms-sendevent"):
+			WMSPRemoteEvent WMSPRemoteEvent;
+		default:
+			[WMSFrameOffsetBegin = FrameOffset,]
+			while Fields[FrameLength > FrameOffset]
+			{
+				[WMSAsfDataType = ""]
+				switch(UINT16(FrameData,FrameOffset))
+				{
+					case 0x4324:
+					case 0x43A4:
+						WMSPStreamChangeNotification StreamChangeNotificationPacket;
+					case 0x4424:
+					case 0x44A4:
+						WMSPData DataPacket;
+					case 0x4524:
+					case 0x45A4:
+						WMSPEndOfStreamNotification EndOfStreamNotificationPacket;
+					case 0x4824:
+					case 0x48A4:
+						WMSPHeader HeadPacket;
+					case 0x4D24:
+					case 0x4DA4:
+						WMSPMetaData MetaDataPacket;
+					case 0x5024:
+					case 0x50A4:
+						WMSPPacketPair PacketPairPacket;
+					case 0x5424:
+					case 0x54A4:
+						WMSPTestDataNotification TestDataNotificationPacket;
+					default:
+						Blob(FrameLength - FrameOffset) WMSBlob;
+				}
+			}
+	}
+}
+
+//
+//	_36_C
+//
+Struct WMSPStreamChangeNotification
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	INT32 Reason = FormatString("%i - %s",this,this < 0?"changed due to an error":"changed through a normal event");
+}
+
+//
+//	_36_D
+//
+[WMSAsfDataType = ""]
+Struct WMSPData = property.WMSASFDataType + " ; " + FormatString("Payload Number = %d",ASFDataNumberOfPayloads)
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	WMSPMmsDataPacket HeaderType;
+	ASFDataPackets Payload;
+}
+
+//
+//	_36_E
+//
+Struct WMSPEndOfStreamNotification
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	INT32 Reason = WMSPEndOfStreamReason(this);
+}
+
+Table WMSPEndOfStreamReason(value)
+{
+	switch(value)
+	{
+		Case 0x00000000: "S_OK - The server has finished streaming and no more $D packets  will be transmitted until the next Play request .";
+		Case 0x00000001: "S_FALSE - The server has finished streaming the current playlist entry. Other playlist entries still remain to  be streamed.  The server will transmit a $C packet when it switches to the next entry.";
+		Case 0x000D2F09: "NS_S_EOS_RECEDING - The server was rewinding the content (streaming the content backward) and has reached the beginning of the current playlist entry.  No more $D packets will be transmitted until the next Play request.";
+		Default: "Unknown";
+	}
+}
+
+struct WMSPAsfHeader
+{
+	ASFHeaderObject ASFHeaderObject;
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) FileID;
+	UINT64     TotalDataPackets;
+	UINT16     Reserved = ShouldBeSetToTable(this,"0x0101");
+}
+
+//
+//	_36_H
+//
+Struct WMSPHeader
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	WMSPMmsDataPacket HeaderType;
+	[DatafieldFramelength = FrameOffset + HeaderType.PacketSize]
+	WMSPAsfHeader ASFHeader;
+}
+
+//
+//	_36_M
+//
+[WMSPAsfMetadataInfo = ""]
+struct WMSPMetaData = WMSPAsfMetadataInfo
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	WMSPMmsDataPacket HeaderType;
+	while Fields[!(UINT8( FrameData, FrameOffset - 1 ) == 0x00) && !(UINT8( FrameData, FrameOffset) == 0x00) ]
+	{
+		DynamicSwitch AsciiStringTerm("=")
+		{
+			case "playlist-gen-id": 
+				[WMSPAsfMetadataInfo = "playlist_gen_id = " + this]
+				AsciiStringTerm(", ") playlist_gen_id;
+			case "broadcast-id"   : 
+				[WMSPAsfMetadataInfo = WMSPAsfMetadataInfo + " ; broadcast_id = " + this]
+				AsciiStringTerm(", ") broadcast_id;
+			default               : 
+				AsciiStringTerm("\0") DefaultName;
+		}
+	}
+	while MetaDatas[!(UINT16 (FrameData, FrameOffset) == 0x0A0D)]
+	{
+		[WMSPAsfMetadataName = "" , WMSPAsfMetadataValue = ""]
+		struct MetaData = property.WMSPAsfMetadataName + "=" + property.WMSPAsfMetadataValue + " (Type=" + WMSPValueTypeTable(property.WMSPAsfMetadataValueType) + ")"
+		{
+			AsciiStringTerm(",") NameLength;
+			[WMSPAsfMetadataName]
+			AsciiStringTerm(",") Name;
+			[WMSPAsfMetadataValueType]
+			AsciiStringTerm(",") ValueType = FormatString("%s:%s",this,WMSPValueTypeTable(this));
+			[MetadataValueLength = StringToNumber(ValueLength)]
+			AsciiStringTerm(",") ValueLength;
+			[WMSPAsfMetadataValue = ""]
+			switch
+			{
+				case ValueLength > 0:
+					[WMSPAsfMetadataValue]
+					AsciiString(MetadataValueLength) MetadataValue;
+			}
+			switch
+			{
+				case UINT8( Framedata, Offset ) == 0x2C:
+					AsciiString(1) Structend;
+			}
+		}
+	}
+	switch
+	{
+		case UINT16(FrameData,FrameOffset) == 0x0A0D:
+			UINT16 TerminalFlag = "CRLF";
+	}
+}
+
+//
+//	_36_P
+//
+[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(0x50) + property.WMSPPacketPairCont]
+struct WMSPPacketPair
+{
+	switch
+	{
+		case property.HTTPIsFirst:
+			struct
+			{
+				[property.WMSPPacketPairCont = ""]
+				[WMSPPacketPairLenFirst = PacketPairHeadFirst.FramingHeader.PacketLength]
+				WMSPPacketPairHead PacketPairHeadFirst = FormatString("First Payload Length = %d",this.FramingHeader.PacketLength);
+				
+				switch
+				{
+					case frameLength > frameOffset:
+						struct
+						{
+							[WMSPPacketPairLenSecond = PacketPairHeadSecond.FramingHeader.PacketLength]
+							WMSPPacketPairHead PacketPairHeadSecond = FormatString("Second Payload Length = %d",PacketPairHeadSecond.FramingHeader.PacketLength);
+							WMSPPacketPairPayload(WMSPPacketPairLenSecond) PacketPairPayloadSecond;
+						}
+				}
+				
+				switch
+				{
+					case frameLength > frameOffset:
+						struct
+						{
+							[WMSPPacketPairLenThird = PacketPairHeadThird.FramingHeader.PacketLength]
+							WMSPPacketPairHead PacketPairHeadThird = FormatString("Third Payload Length = %d",PacketPairHeadThird.FramingHeader.PacketLength);
+							WMSPPacketPairPayload(WMSPPacketPairLenThird) PacketPairPayloadThird;
+							WMSPPacketPairPayload(WMSPPacketPairLenFirst) PacketPairPayloadFirst;
+						}
+				}
+			}
+		default:
+			[property.WMSPPacketPairCont = " Continuation"]
+			BLOB(FrameLength - FrameOffset) ContinueBlob;
+	}
+}
+
+//
+//	_36_T
+//
+struct WMSPTestDataNotification
+{
+	[POST.WMSPPacketName = WMSPPacketName + (WMSPPacketName == ""?"":" & ") + WMSPPacketNameTable(FramingHeader.PacketID)]
+	WMSPFramingHeader FramingHeader;
+	switch
+	{
+		case FramingHeader.PacketLength > 0:
+			BLOB(FramingHeader.PacketLength) TestData;
+	}
+}
+
+//
+//	Framing_Header
+//
+Struct WMSPFramingHeader = FormatString("%s",WMSPPacketNameTable(PacketID))
+{
+	UINT8 B:1;
+	UINT8 Frame:7 = "0x24 - Possible value."; 
+	UINT8 PacketID = FormatString("%s",WMSPPacketIdTable(this));
+	INT16 PacketLength;
+}
+
+
+//
+//	MMS_data_packet
+//
+[DataTypeByteOrder = LittleEndian]
+Struct WMSPMmsDataPacket = FormatString("LocationId = %d ; PacketSize = %d",LocationId,PacketSize)
+{
+	UINT32 LocationId;
+	UINT8  Incarnation;
+	UINT8  AFFLAGS;
+	UINT16 PacketSize = FormatString("%u",this);
+}
+
+Table WMSPPacketIdTable(value)
+{
+	switch(value)
+	{
+		case 0x43: "Indicates stream-change notification";
+		case 0x44: "Indicates data packet";
+		case 0x45: "Indicates end-of-stream notification";
+		case 0x46: "Indicates padding data message";
+		case 0x48: "Indicates header packet";
+		case 0x4D: "Indicates metadata packet";
+		case 0x50: "Indicates packet-pair data packet";
+		case 0x54: "Indicates test data message";
+		default    : "UnDefine Value";
+	}
+}
+
+Table WMSPPacketNameTable(value)
+{
+	switch(value)
+	{
+		case 0x43: "$C Stream-change Notification packet";
+		case 0x44: "$D Data packet";
+		case 0x45: "$E End-of-stream Notification packet";
+		case 0x46: "$F Padding packet";
+		case 0x48: "$H Header packet";
+		case 0x4D: "$M Metadata packet";
+		case 0x50: "$P Packet-Pair packet";
+		case 0x54: "$T Test Data Notification packet";
+		default    : "UnDefine Value";
+	}
+}
+
+Table WMSPValueTypeTable(value)
+{
+	switch(value)
+	{
+		case "2" : "VT_I2 ";
+		case "3" : "VT_I4 ";
+		case "6" : "VT_CY ";
+		case "8" : "VT_BSTR ";
+		case "10": "VT_ERROR ";
+		case "11": "VT_BOOL ";
+		case "16": "VT_I1 ";
+		case "17": "VT_UI1 ";
+		case "18": "VT_UI2 ";
+		case "19": "VT_UI4 ";
+		case "22": "VT_INT ";
+		case "23": "VT_UINT ";
+		case "31": "VT_LPWSTR ";
+	}
+}
+
+Table WMSPVersionTable(value)
+{
+	switch(value)
+	{
+		case TRUE : "WMSP1.1 ";
+		case FALSE: "WMSP1.0 ";
+	}
+}
+
+
+struct WMSPPacketPairHead
+{
+	WMSPFramingHeader FramingHeader;
+	INT32 Reason;
+}
+
+struct WMSPPacketPairPayload(Len) = FormatString("Payload Length is %d",Len)
+{
+	BLOB(Len) PackerPairPayload;
+}
+
+struct WMSPRemoteEvent
+{
+	AsciiStringTerm("\r\n") EncodingFormat;
+	AsciiStringTerm(",") EncodingVersion;
+	AsciiStringTerm(",") EventType = WMSPEventTypeTable(StringToNumber(this));
+	AsciiStringTerm("\r\n") EventReason;
+	AsciiStringTerm("\r\n") FirstContentDescription
+	{
+		while [FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset) ==0x0A0D)]
+		{
+			WMSPContentDescription ContentDescription;
+		}
+	}
+	AsciiStringTerm("\r\n") SecondContentDescription
+	{
+		while [FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset) ==0x0A0D)]
+		{
+			WMSPContentDescription ContentDescription;
+		}
+	}
+}
+
+Table WMSPEventTypeTable(value)
+{
+	switch(value)
+	{
+		case 28:"Remote-open event";
+		case 29:"Remote-close event";
+		case 30:"Remote-log event";
+		default:"Wrong value";
+	}
+}
+
+struct WMSPContentDescription
+{
+	AsciiStringTerm(",") NameLength;
+	AsciiStringTerm(",") Name;
+	AsciiStringTerm(",") ValueType = WMSPValueTypeTable(this);
+	AsciiStringTerm(",") ValueLength;
+	switch (Name)
+	{
+		case "@ REMOTE_LOG":
+			XmlElement(true) XmlElementNode;
+		default: AsciiStringTerm(",") Value;
+	}	
+}

@@ -1,0 +1,234 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Dynamic Channel Virtual Channel
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEDYC]: Remote Desktop Protocol: Dynamic Channel Virtual Channel Extension (2.1.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 5/13/2009
+//#                          Minor, 5/22/2009
+//#
+//####
+
+Protocol RDPEDYC = property.RDPEDYCSummary
+{
+	[Post.Conversation.ConversationDescription = FormatString("(Channel: %s) ConvID = %d", conversation.RDPEDYCChannel$[property.RDPEDYCChannelID], ConvID)]
+	[property.RDPEDYCServerManager = property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress? false: true]
+	[property.RDPEDYCCommand = (UINT8(FrameData, FrameOffset) & 0xF0) >> 4]
+	switch(property.RDPEDYCCommand)
+	{
+		// DYNVC_CAPS_VERSION1 & 2
+		case 0x05:
+			[property.RDPEDYCSummary = DVCCapabilitiesRequestPDU.ToString]
+			struct DVCCapabilitiesRequestPDU = FormatString("%s %s",
+														property.RDPEDYCServerManager? "DVC Server Manager": "DVC Client Manager",
+														"Version = " + Version.ToString
+														)
+			{
+				RDPEDYCHeader("Sp") DycHeader;
+				UINT8 Pad;
+				UINT16 Version;
+				// sent by the DVC server manager
+				switch
+				{
+					case Version == 0x0002 && property.RDPEDYCServerManager:
+						_struct version2ext
+						{
+							UINT16 PriorityClass0 = FormatString("%d (Unused)", this);
+							UINT16 PriorityClass1 = FormatString("%d (Unused)", this);
+							UINT16 PriorityClass2 = FormatString("%d (Unused)", this);
+							UINT16 PriorityClass3 = FormatString("%d (Unused)", this);
+						}
+				}
+			}
+		//DYNVC_CREATE_REQ
+		case 0x01:
+			[property.RDPEDYCSummary = DVCRequestOpenChannel.ToString]
+			struct DVCRequestOpenChannel = FormatString("%s %s",
+													property.RDPEDYCServerManager? "DVC Server Manager": "DVC Client Manager",
+													property.RDPEDYCServerManager? "ChannelName = " + ChannelName.ToString: "CreateStatus = " + CreateStatus.ToString
+													)
+			{
+				RDPEDYCHeader("Pri") DycHeader;
+				RDPEDYCChannelID(property.RDPEDYCChIDLength) ChannelID;
+				[BuildConversationWithParent(property.RDPEDYCChannelID)]
+				switch(property.RDPEDYCServerManager)
+				{
+					// sent by the DVC server manager
+					case true:
+						[conversation.RDPEDYCChannel$[property.RDPEDYCChannelID] = ChannelName.ToString]
+						AsciiString ChannelName;
+					// sent by the DVC client manager
+					default: UINT32 CreateStatus;
+				}
+			}
+		// DYNVC_DATA_FIRST, server & client
+		case 0x02:
+			[property.RDPEDYCSummary = FormatString("%s, %s", "DataFragment", DVCDataFirst.ToString)]
+			struct DVCDataFirst = "TotalLength = " + TotalLength.ToString
+			{
+				[local.HeaderStart = FrameOffset]
+				RDPEDYCHeader("Len") DycHeader;
+				RDPEDYCChannelID(property.RDPEDYCChIDLength) ChannelID;
+				[BuildConversationWithParent(property.RDPEDYCChannelID)]
+				RdpExtDycDataLength(property.RDPEDYCSpPriLen) TotalLength;
+				[local.HeaderLength = FrameOffset - local.HeaderStart]
+
+				[
+//					property.TestRdpDyc = Property.RDPEDYCTotalDataLength,
+					conversation.RDPEDYCRemainLength = Property.RDPEDYCTotalDataLength - (property.RDPBCGRPDUHeaderLength - local.HeaderLength)
+				]
+
+				[
+				PayloadStart(
+							NetworkDirection, /* direction */
+							property.RDPEDYCChannelID,	//identifier
+							0, //sequence token
+							0, //next sequence
+							Property.RDPEDYCTotalDataLength, //total payload length
+							1, //is first
+							0, //is last
+		                    RssmblyIndStartBit+RssmblyIndLengthBit 		//has start and end indication
+                            )
+                ]
+				switch(conversation.RDPEDYCChannel$[property.RDPEDYCChannelID])
+				{
+					case "PNPDR": RDPEPNPDeviceInfo RDPEPNPDeviceInfo;
+					case "FileRedirectorChannel": RDPEPNPDeviceIO RDPEPNPDeviceIO;
+					case "XPSRD": RDPEXPSPrintDriver RDPEXPSPrintDriver;
+					case "TSVCTKT": RDPEXPSPrintTicket RDPEXPSPrintTicket;
+					case "uceprox": RDPCr RDPCr;
+					case "dwmprox": RDPCR2 RDPCR2;
+					case "AUDIO_INPUT": RDPEAI RDPEAI;
+					case "TSMF": RDPEV RDPEV;
+					default:
+						BLOB(FrameLength - FrameOffset) DVCDataFirst;
+				}
+			}
+		// DYNVC_DATA, server & client
+		case 0x03:
+			[property.RDPEDYCSummary = DVCData.ToString]
+			struct DVCData = FormatString("%s%s", property.RDPEDYCChannelID? "Device IO Data": "Device Info Data",
+													property.RDPEDYCIsSingle? "": " (Fragment)")
+			{
+				[local.HeaderStart = FrameOffset]
+				RDPEDYCHeader("Sp") DycHeader;
+				RDPEDYCChannelID(property.RDPEDYCChIDLength) ChannelID;
+				[local.HeaderLength = FrameOffset - local.HeaderStart]
+				
+				[BuildConversationWithParent(property.RDPEDYCChannelID)]
+				
+				[
+					conversation.RDPEDYCRemainLength = payloadheader ? conversation.RDPEDYCRemainLength : 
+																		conversation.RDPEDYCRemainLength - (property.RDPBCGRPDUHeaderLength - local.HeaderLength),
+					conversation.RDPEDYCLengthStatus$[FrameNumber] = conversation.RDPEDYCRemainLength,
+					
+//					property.TestRdpDyc = conversation.RDPEDYCLengthStatus$[FrameNumber],
+					property.RDPEDYCIsSingle = conversation.RDPEDYCLengthStatus$[FrameNumber] < 0 ? true : false,
+						
+//					property.TestIsSingle = property.RDPEDYCIsSingle
+				]
+				
+				[
+					PayloadStart(
+								NetworkDirection, /* direction */
+								property.RDPEDYCChannelID,	//identifier
+								0, //sequence token
+								0, //next sequence
+								0, //total payload length
+								property.RDPEDYCIsSingle ? 1 : 0, //is first
+								property.RDPEDYCIsSingle ? 1 : 0, //is last
+			                    RssmblyIndStartBit+RssmblyIndLengthBit 		//has start and end indication
+	                            )
+                ]
+                
+                switch
+                {
+                	case property.RDPEDYCIsSingle:
+						//#? The data is NULL terminated.
+						//AsciiString Data;
+						switch(conversation.RDPEDYCChannel$[property.RDPEDYCChannelID])
+						{
+							// PNPRDP
+							case "PNPDR": RDPEPNPDeviceInfo RDPEPNPDeviceInfo;
+							case "FileRedirectorChannel": RDPEPNPDeviceIO RDPEPNPDeviceIO;
+							case "XPSRD": RDPEXPSPrintDriver RDPEXPSPrintDriver;
+							case "TSVCTKT": RDPEXPSPrintTicket RDPEXPSPrintTicket;
+							case "uceprox": RDPCr RDPCr;
+							case "dwmprox": RDPCR2 RDPCR2;
+							case "AUDIO_INPUT": RDPEAI RDPEAI;
+							case "TSMF": RDPEV RDPEV;
+						}
+					default:
+						BLOB(FrameLength - FrameOffset) DVCFragmentData;
+				}
+			}
+		// DYNVC_CLOSE, server & client
+		case 0x04:
+			[property.RDPEDYCSummary = "DVCClose"]
+			struct DVCClose
+			{
+				RDPEDYCHeader("Sp") DycHeader;
+				RDPEDYCChannelID(property.RDPEDYCChIDLength) ChannelID;
+				[BuildConversationWithParent(property.RDPEDYCChannelID)]
+				[conversation.state = Disconnected]
+				_struct blabla{}
+			}
+	}
+}
+
+struct RDPEDYCHeader(SpPriLen)
+{
+	switch(SpPriLen)
+	{
+		case "Sp":
+			UINT8 RDPEDYCHeaderSp
+			{	[property.RDPEDYCChIDLength]
+				UINT8 ChIDLength:2;
+				[property.RDPEDYCSpPriLen]
+				UINT8 Sp:2;
+				UINT8 Command:4;
+			}
+		case "Pri":
+			UINT8 RDPEDYCHeaderPri
+			{	[property.RDPEDYCChIDLength]
+				UINT8 ChIDLength:2;
+				[property.RDPEDYCSpPriLen]
+				UINT8 Pri:2;
+				UINT8 Command:4;
+			}
+		case "Len":
+			UINT8 RDPEDYCHeaderLen
+			{	[property.RDPEDYCChIDLength]
+				UINT8 ChIDLength:2;
+				[property.RDPEDYCSpPriLen]
+				UINT8 Len:2;
+				UINT8 Command:4;
+			}
+	}
+}
+
+struct RDPEDYCChannelID(LengthID) = property.RDPEDYCChannelID
+{
+	switch(LengthID)
+	{
+		case 0x00: [property.RDPEDYCChannelID] UINT8 ChannelID8;
+		case 0x01: [property.RDPEDYCChannelID] UINT16 ChannelID16;
+		case 0x02:
+		case 0x03: [property.RDPEDYCChannelID] UINT32 ChannelID32;
+	}
+}
+
+struct RdpExtDycDataLength(LengthID) = FormatString("%u", Property.RDPEDYCTotalDataLength)
+{
+	switch(LengthID)
+	{
+		case 0x00: [Property.RDPEDYCTotalDataLength] UINT8 DataLength8;
+		case 0x01: [Property.RDPEDYCTotalDataLength] UINT16 DataLength16;
+		case 0x02:
+		case 0x03: [Property.RDPEDYCTotalDataLength] UINT32 DataLength32;
+	}
+}

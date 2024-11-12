@@ -1,0 +1,119 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Datagram Delivery Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://developer.apple.com/documentation/mac/Networking/Networking-188.html#HEADING188-8
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[DefaultTimeOut = DDPConversationTimeout]
+Protocol DDPShort = FormatString( "%s, %d -> %d, Length=%d bytes",
+								DDPProtocolTypeTable(DDPProtocolType),
+								SrcSocket,
+								DestSocket,
+								TotalLength.Length
+								)
+{
+	UINT16 TotalLength= FormatString("%d", this.Length)
+	{
+		UINT16  length:10;
+		UINT16  Reserved:6;
+	};
+	UINT8  DestSocket;
+	[BuildConversation(SrcSocket < DestSocket ? MakeByteArray(SrcSocket, DestSocket)
+											  : MakeByteArray(DestSocket, SrcSocket)),
+		Post.Conversation.ConversationDescription = FormatString("(%d - %d) ConvID = %d", SrcSocket, DestSocket,ConvID)
+	]
+	UINT8  SrcSocket;
+	UINT8  DDPProtocolType = FormatString("%s, %d(%#x)",DDPProtocolTypeTable( this ), this, this);
+	switch(DDPProtocolType)
+	{
+		//case  1:  RTMP RtmpResponse;
+		//case  2:  NBP Nbp;
+		//case  3:  ATP Atp;
+		//case  4:  AEP Aep;
+		//case  5:  RTMP RtmpRequest;
+		//case  6:  ZIP Zip;
+		//case  7:  ADSP Adsp;
+		case  8:  SNMP Snmp;
+		//default:  AsciiString(TotalLength.Length - 5 >= 0 ? TotalLength.Length - 5 : frameLength - offset ) DDPData;
+	}
+}
+
+[DefaultTimeOut = DDPConversationTimeout]
+Protocol DDP = FormatString("%s, %d.%d.%d -> %d.%d.%d, HopCount=%d, Length=%d bytes",
+							 DDPProtocolTypeTable(DDPProtocolType),
+							 SourceNetwork,
+							 SourceNode,
+							 SourceSocket,
+							 DestinationNetwork,
+							 DestinationNode,
+							 DestinationSocket,
+							 TotalLength.HopCount,
+							 TotalLength.Length
+							)
+{
+	UINT16 TotalLength = FormatString("%d", this.Length)
+	{
+		UINT16  Reserved:2 = FormatString("(%s) %d",this.ToBitString,this);
+		UINT16  HopCount:4 = FormatString("(%s) %d",this.ToBitString,this);
+		UINT16  Length:10 = FormatString("  (%s) %d",this.ToBitString,this);
+		
+	};
+	UINT16  CheckSum = FormatString("%d(0x%X)%s",this,this,this ? "" : " (No checksum)");
+	UINT16  DestinationNetwork;
+	UINT16  SourceNetwork;
+	UINT8  DestinationNode;
+	UINT8  SourceNode;
+	UINT8  DestinationSocket;
+	UINT8  SourceSocket;
+	[ BuildConversation(
+		(SourceNetwork <  DestinationNetwork) ||
+		(SourceNetwork == DestinationNetwork && SourceNode <  DestinationNode) ||
+		(SourceNetwork == DestinationNetwork && SourceNode == DestinationNode &&
+		 SourceSocket < DestinationSocket) ? MakeByteArray(SourceNetwork, SourceNode,
+		 												   SourceSocket, DestinationNetwork,
+		 												   DestinationNode, DestinationSocket)
+		 								   : MakeByteArray(DestinationNetwork, DestinationNode,
+		 								   				   DestinationSocket ,SourceNetwork,
+		 								   				   SourceNode, SourceSocket)
+		),
+		Post.Conversation.ConversationDescription = FormatString("(%d.%d:%d - %d.%d:%d) ConvID = %d", SourceNetwork, SourceNode, SourceSocket, DestinationNetwork, DestinationNode, DestinationSocket,ConvID)
+	]	
+	UINT8  DDPProtocolType = FormatString("%s, %d(%#x)",DDPProtocolTypeTable( this ), this, this);
+	switch(DDPProtocolType)
+	{
+		//case  1:  RTMP RtmpResponse;
+		//case  2:  NBP Nbp;
+		//case  3:  ATP Atp;
+		//case  4:  AEP Aep;
+		//case  5:  RTMP RtmpRequest;
+		//case  6:  ZIP Zip;
+		//case  7:  ADSP Adsp;
+		case  8:  SNMP Snmp;
+		//default:  AsciiString(TotalLength.Length - 13 >= 0 ? TotalLength.Length - 13 : frameLength - offset ) DDPData;
+	}
+}
+Table  DDPProtocolTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:    "RTMP Response";
+		case  2:    "NBP";
+		case  3:    "ATP";
+		case  4:    "AEP";
+		case  5:    "RTMP Request";
+		case  6:    "ZIP";
+		case  7:    "ADSP";
+		case  8:    "SNMP";
+		default:    FormatString("DDP Type%#x",value);
+	}
+}
+
+

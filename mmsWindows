@@ -1,0 +1,1065 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Microsoft Media Server Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MMSP]: Microsoft Media Server (MMS) Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/18/2009
+//#
+//####
+
+//--------- Protocol -------------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian, BuildConversationWithParent]
+Protocol MMS = Property.MMSSummary
+{
+	[ Post.Conversation.ConversationDescription = 
+		( Conversation.MMSClientLogInfoURL ? 
+			( FormatString("(URL: %s) ",Conversation.MMSClientLogInfoURL) ): 
+			( Property.MMSClientID ? FormatString("(CID: %u) ", Property.MMSClientID) : "" ) ) +
+		( FormatString("ConvID = %d", ConvID) )
+	]
+	switch
+	{
+		case Property.MMSOnTCP == TRUE: //Sent via TCP
+			switch
+			{
+				case UINT24(FrameData, Offset) == 0x000001 // Rep, Version, VersionMinor and Pad
+					&& UINT32(FrameData, Offset + 4) == 0xB00BFACE //SessionId
+					&& AsciiStringTerm(FrameData, Offset + 12, " ", false) == "MMS" //Seal
+					&& UINT16(FrameData, Offset + 22) == 0x0000 ://MBZ
+					//All messages MUST be transmitted over TCP.
+					[
+						//Initial Value
+						Property.MMSTcpHeaderCount = 0,
+						Property.MMSMessageCount = 0
+					]
+					[
+						// The MMS summary shows Message summary when one message only, else show the count of message
+						Post.Property.MMSMessageCount > 1 ? 
+						MMSSummary = "MMS Message, Message count: " + Property.MMSMessageCount + ", MMSTcpHeader Count: " + Property.MMSTcpHeaderCount	:
+						MMSSummary = MMSMessageSummary
+					]
+					_struct MMSMessage
+					{
+						while [UINT24(FrameData, Offset) == 0x000001 && UINT32(FrameData, Offset + 4) == 0xB00BFACE && UINT32(FrameData, Offset + 12) == 0x20534D4D && UINT16(FrameData, Offset + 22) == 0x0000]
+						{
+							[Property.MMSTcpHeaderCount = Property.MMSTcpHeaderCount + 1 ]
+							MMSTcpMessageHeader TCPHeader;							
+						}
+					}
+				default:
+					switch
+					{
+						//DataPacket(Both of packet-pair packet and ASF Payload data packet	) base on TCP
+						//packet-pair packet
+						case Property.SourcePort  == 1755 //server send streaming media data to the client
+							&& (UINT32(FrameData, Offset) == 0xF0F0F000 || UINT32(FrameData, Offset) == 0xF0F0F001 ) //LocationId: 0xF0F0F000 - the first packet-pair packet; 0xF0F0F001 - the second packet-pair packet
+							&& UINT8(FrameData, Offset + 4) == 0xFF //playIncarnation: The value 0xFF MUST be used if the Data packet contains a packet-pair packet
+							&& UINT8(FrameData, Offset + 5) == 0x10//AFFlags: If the Payload field contains a packet-pair packet, AFFlags MUST be set to 0x10
+							&& UINT16(FrameData, Offset + 6) > 8: // PacketSize
+						//ASF Payload data packet	
+						case Property.SourcePort  == 1755
+							&& UINT32(FrameData, Offset) < 0x0000FFFF //LocationId: Assume that LocationId con only use 2 bytes
+							&& UINT8(FrameData, Offset + 4) > 0 // playIncarnation: 0x00 is reserved and MUST NOT be used
+							&& UINT16(FrameData, Offset + 6) > 8: // PacketSize
+							[Property.MMSSummary = "Data Packet base on TCP"]
+							while [FrameOffset < FrameLength]
+							{
+								MMSDataPacket DataPacket;
+							}
+						default: 
+							[Property.MMSSummary = "Continued Data"]
+							BLOB( Framelength - Offset )		MMSContinued;
+					}
+			}
+		default: //Sent via UDP.
+			switch(UINT32(FrameData, Offset))
+			{
+				case 0xBEEFF00D: //RequestPacketListResend 
+					[Post.MMSSummary = FormatString( "RequestPacketListResend, Message Signature: 0x%08X, Client ID: %u, Number of Packets: %u", Signature , ClientId, PacketsCount )]
+					_struct MMSRequestPacketListResend 
+					{
+						UINT32		Signature;
+						[Property.MMSClientID]
+						UINT32		ClientId;
+						UINT16		SourceId;
+						UINT16		PacketsCount;
+						UINT32		BeginPacketList[ PacketsCount ];
+					}
+				default: //DataPacket base on UDP
+					[Property.MMSSummary = "Data Packet base on UDP, " + this.ToString]
+					MMSDataPacket DataPacket; 
+			} 
+	}
+} 
+
+//--------- tables -------------------------------------------------------------------------------------
+Table MMSMessageTypeTable ( Value )
+{
+	switch ( Value )
+	{
+		case 0x00030001:
+			"LinkViewerToMacConnect";
+		case 0x00030002:
+			"LinkViewerToMacConnectFunnel";
+		case 0x00030005:
+			"LinkViewerToMacOpenFile";
+		case 0x00030007:
+			"LinkViewerToMacStartPlaying";
+		case 0x00030009:
+			"LinkViewerToMacStopPlaying";
+		case 0x0003000D:
+			"LinkViewerToMacCloseFile";
+		case 0x00030015:
+			"LinkViewerToMacReadBlock";
+		case 0x00030018:
+			"LinkViewerToMacFunnelInfo";
+		case 0x0003001A:
+			"LinkViewerToMacSecurityResponse";
+		case 0x0003001B:
+		   "LinkViewerToMacPong";
+		case 0x00030025:
+			"LinkViewerToMacCancelReadBlock";
+		case 0x00030028:
+			"LinkViewerToMacStartStriding"; 
+		case 0x00030032:
+			"LinkViewerToMacLogging"; 
+		case 0x00030033:
+			"LinkViewerToMacStreamswitch";
+		case 0x00040001:
+			"LinkMacToViewerReportConnectedEX";
+		case 0x00040002:
+			"LinkMacToViewerReportConnectedFunnel";
+		case 0x00040003:
+			"LinkMacToViewerReportDisconnectedFunnel";
+		case 0x00040005:
+			"LinkMacToViewerReportStartedPlaying";
+		case 0x00040006:
+			"LinkMacToViewerReportOpenFile";
+		case 0x0004000A:
+			"LinkMacToViewerReportStartStriding";
+		case 0x00040011:
+			"LinkMacToViewerReportReadBlock";
+		case 0x00040015:
+			"LinkMacToViewerReportFunnelInfo";
+		case 0x0004001A:
+			"LinkMacToViewerSecurityChallenge";
+		case 0x0004001B:
+			"LinkMacToViewerPing";
+		case 0x0004001E:
+			"LinkMacToViewerReportEndOfStream";
+		case 0x00040020:
+			"LinkMacToViewerReportStreamChange";
+		case 0x00040021:
+			"LinkMacToViewerReportStreamswitch";
+		case 0x00040022:
+			"LinkMacToViewerReportRedirect";
+	} 
+}
+table MMSPlayIncarnationPacketPairHighEntropyTable( value )
+{
+	switch( value )
+	{
+	case 0XF0F0F0EF : FormatString( "0x%08X - MmsDisablePacketPair", value );
+	case 0XF0F0F0F0 : FormatString( "0x%08X - MmsUsePacketPair", value );
+	case 0XF0F0F0F1 : FormatString( "0x%08X - MmsPacketPairTcpHighEntropy", value );
+	case 0XF0F0F901 : FormatString( "0x%08X - MmsPacketPairUdpHighEntropy", value );
+	default         : FormatString( "0x%08X - Unknown value", value );
+	}
+}
+
+table MMSPlayIncarnationPacketPairTable( value )
+{
+	switch( value )
+	{
+		case 0XF0F0F0EF : FormatString( "0x%08X - MmsDisablePacketPair", value );
+		case 0XF0F0F0F0 : FormatString( "0x%08X - MmsUsePacketPair", value );
+		default         : FormatString( "0x%08X - Unknown value", value );
+	}
+}
+
+table MMSThinningLevelTable( value )
+{
+	switch( value )
+	{
+		case 0x00 : "Transmit all ASF media objects";
+		case 0x01 : "Only transmit ASF media objects containing key frame data";
+		case 0x02 : "No ASF media objects transmitted";
+	}
+}
+
+table MMSRedirectTypeTable( value )
+{
+	switch( value )
+	{
+	case 0x0001: FormatString( "%u - URL - Server redirecting client to different URL", value );
+	case 0x0002: FormatString( "%u - PROXY - Server requesting client use a different proxy server", value );
+	}
+}
+
+table MMSClientLogInfoRateTable( value )
+{
+	switch( value )
+	{
+	case 0x0001: "Normal rate in the forward direction";
+	default: MMSClientLogInfoRateDefaultTable( value );
+	}
+}
+
+table MMSClientLogInfoRateDefaultTable( value )
+{
+	switch
+	{
+		case value > 0: "Forward direction";
+		case value < 0: "Reverse direction";
+		case value == 0: "Stopped";
+	}
+}
+ 
+
+
+//--------- Structs -------------------------------------------------------------------------------------
+struct MMSTcpMessageHeader = Formatstring("The Chunk Count: %u ,Packet Sequence: %u", TotalChunkCount, PacketSequenceNumber)
+{
+	UINT8 Rep; // Always 1.
+	UINT8 Version; // Always 0.
+	UINT8 VersionMinor; // Always 0.
+	UINT8 Pad; //Garbage Byte
+	UINT32 SessionId; // Static value.
+	UINT32 MessageLength = FormatString ("%u bytes", this ); // Message size in bytes + 16.
+	AsciiStringTerm(" ", false)		Seal; // Static value.
+	UINT32 TotalChunkCount = FormatString( "%u 8-byte chunks", this ); // Header size rounded to 8 bytes.
+	UINT16 PacketSequenceNumber;
+	UINT16 MBZ; // Always 0;
+	UINT64 TimeOffset; // From first packet in milliseconds.	
+	//A single TcpMessageHeader packet can contain multiple MMS messages.
+	[DataFieldFrameLength = FrameOffset + MessageLength - 16]
+	while [(FrameLength - offset > 0) && ! (UINT24(FrameData, Offset) == 0x000001 && UINT32(FrameData, Offset + 4) == 0xB00BFACE && UINT32(FrameData, Offset + 12) == 0x20534D4D && UINT16(FrameData, Offset + 22) == 0x0000)]
+	{
+		[
+			Property.MMSMessageCount = Property.MMSMessageCount + 1
+		]
+		switch ( UINT32 (FrameData, Offset + 4 ) )
+		{
+			case 0x00030001:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacConnect LinkViewerToMacConnect;
+			case 0x00030002:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacConnectFunnel	LinkViewerToMacConnectFunnel;
+			case 0x00030005:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacOpenFile	LinkViewerToMacOpenFile;
+			case 0x00030007:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacStartPlaying	 LinkViewerToMacStartPlaying;
+			case 0x00030009:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacStopPlaying LinkViewerToMacStopPlaying;
+			case 0x0003000D:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacCloseFile	LinkViewerToMacCloseFile;
+			case 0x00030015:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacReadBlock LinkViewerToMacReadBlock;
+			case 0x00030018:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacFunnelInfo LinkViewerToMacFunnelInfo;
+			case 0x0003001A:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacSecurityResponse	LinkViewerToMacSecurityResponse;
+			case 0x0003001B:
+				[Property.MMSMessageSummary = this.ToString] 
+			   MMSLinkViewerToMacPong LinkViewerToMacPong;
+			case 0x00030025:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacCancelReadBlock LinkViewerToMacCancelReadBlock;
+			case 0x00030028:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacStartStriding LinkViewerToMacStartStriding; 
+			case 0x00030032:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacLogging LinkViewerToMacLogging; 
+			case 0x00030033:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkViewerToMacStreamswitch	LinkViewerToMacStreamswitch;
+			case 0x00040001:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportConnectedEX	LinkMacToViewerReportConnectedEX;
+			case 0x00040002:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportConnectedFunnel	LinkMacToViewerReportConnectedFunnel;
+			case 0x00040003:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportDisconnectedFunnel	LinkMacToViewerReportDisconnectedFunnel;
+			case 0x00040005:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportStartedPlaying	LinkMacToViewerReportStartedPlaying;
+			case 0x00040006:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportOpenFile	LinkMacToViewerReportOpenFile;
+			case 0x0004000A:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportStartStriding	LinkMacToViewerReportStartStriding;
+			case 0x00040011:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportReadBlock	LinkMacToViewerReportReadBlock;
+			case 0x00040015:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportFunnelInfo	LinkMacToViewerReportFunnelInfo;
+			case 0x0004001A:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerSecurityChallenge	LinkMacToViewerSecurityChallenge;
+			case 0x0004001B:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerPing	LinkMacToViewerPing;
+			case 0x0004001E:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportEndOfStream	LinkMacToViewerReportEndOfStream;
+			case 0x00040020:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportStreamChange	LinkMacToViewerReportStreamChange;
+			case 0x00040021:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportStreamswitch	LinkMacToViewerReportStreamswitch;
+			case 0x00040022:
+				[Property.MMSMessageSummary = this.ToString] 
+				MMSLinkMacToViewerReportRedirect	LinkMacToViewerReportRedirect;
+			default:
+				ReportParserError(ParserErrorProtocolClassWindows, "MMS", FormatString("MMS: Unknown Message Type")) MMSMessageTypeError;
+		} 
+	}	
+}
+
+struct MMSStreamSwitchEntry = FormatString( "Source Stream: %d, Destination Stream: %d", SourceStreamNumber, DestinationStreamNumber )
+{
+	UINT16		SourceStreamNumber;
+	UINT16		DestinationStreamNumber;
+	UINT16		ThinningLevel = MMSThinningLevelTable( this );
+}
+
+struct MMSClientLog 
+{
+	UINT32				PacketSize;
+	MMSClientLogInfo	Info;
+	UINT32				SourceId;
+	IPv4Address			IPAddress;
+	AsciiString( 260 )	ComputerDNS;
+	AsciiString( 16 )	OS;
+	MMSOSVersion		OSVersion;
+	AsciiString( 16 )	CPU;
+	AsciiString( 8 )	Proto;
+	AsciiString( 8 )	Transport;
+	UINT32   PacketsLost;
+	UINT32   PacketsLostConsecutive;
+	UINT32   ResendRequests;
+	UINT32   PacketsRecoveredResent;
+	UINT32   PacketsResent;
+}
+
+struct MMSClientLogInfo
+{
+	UINT32   	        PacketSize;
+	[Conversation.MMSClientLogInfoURL]
+	AsciiString( 260 )  URL;
+	AsciiString( 260 )  ChannelURL;
+	AsciiString( 64 )   UserAgent;
+	AsciiString( 260 )  HostingWebPage;
+	UINT64              ClientVersion;
+	AsciiString( 16 )   ClientSystemLanguage;
+	AsciiString( 40 )   UniquePlayerID;
+	AsciiString( 32 )   HostExe;
+	UINT64              HostExeVersion;
+	UINT32   	        FileDuration;
+	UINT64              FileSize;
+	UINT32   	        AvgBandwidthBps;
+	AsciiString( 64 )   AudioCodec;
+	AsciiString( 64 )   VideoCodec;
+	UINT32   	        StartTime;
+	UINT32  	        Played;
+	INT16  	            PlaybackRate = FormatString( "%d (0x%X) - %s", this, this, MMSClientLogInfoRateTable( this ) );
+	UINT32  	        BufferingCount;
+	UINT32  	        BufferingTime;
+	UINT64              BytesReceived;
+	UINT32   	        PacketsReceived;
+	UINT32   	        PacketsLostClient;
+	UINT32   	        PacketsRecoveredECC;
+	UINT32   	        MininumReceptionQuality;
+	HRESULT             StatusCode;
+}
+
+struct MMSOSVersion = FormatString( "Version %d.%d.%d.%d", MajorVersion, MinorVersion, Revision, Build )
+{
+	UINT64 Build:			16;
+	UINT64 Revision:		16;
+	UINT64 MinorVersion:	16;
+	UINT64 MajorVersion:	16;
+}
+
+Table MMSDataPacketTypeTable ( Value, Flags )
+{
+	switch
+	{
+		case Value == 0xF0F0F000:
+		case Value == 0xF0F0F001:
+			"Packet-pair Bandwidth Data";
+		default:
+			"ASF Packet";
+	}
+}
+
+struct MMSPToken
+{
+	switch
+	{
+		case AsciiString( FrameData, Offset + 24, 7 ) == "Ntlmssp": 
+			_Struct
+			{
+				UINT32 Zero;
+				UINT32 One;
+				UINT32 Reserved1;
+				UINT32 NTLMTokenSize;
+				UINT32 Two;
+				UINT32 Reserved2; 
+				NLMP   NLMP;
+			}
+		case AsciiStringTerm(FrameData,FrameOffset," ") == "Basic":
+		case AsciiStringTerm(FrameData,FrameOffset,"=") == "realm=": 
+			_struct
+			{
+				AsciiStringTerm(" ") Scheme;
+				BasicAuthRealm Realm;
+			}
+			
+		default:
+			BLOB( TokenSize ) AuthToken;
+	}
+}
+
+struct MMSDataPacket = Formatstring("LocationID = %u, PacketType = %s, PacketSize = %u ", LocationID, MMSDataPacketTypeTable(LocationID,AFFlags), PacketSize)
+{
+	[local.MMSDataPacketstartOffset = FrameOffset]
+	INT32	LocationID;
+	UINT8	PlayIncarnation;
+	UINT8	AFFlags;
+	UINT16 PacketSize;
+	// ASF fragmentations here may located in one same frame
+	// Netmon doesn't surpport inner frame reassembly so far.
+	// Notice: Don't change the order of the arms for this switch
+	[Local.MMSDataPacketSize = PacketSize - 8 > FrameLength - FrameOffset ? FrameLength - FrameOffset : PacketSize - 8]
+	switch
+	{
+		// Packetpair
+		case LocationID == 0xF0F0F000 && AFFlags == 0x10 && PlayIncarnation == 0xFF:
+		case LocationID == 0xF0F0F001 && AFFlags == 0x10 && PlayIncarnation == 0xFF:
+			Blob(Local.MMSDataPacketSize) PacketpairBandwidthData;
+		
+		// ASFDataPacket Continue
+		case !IsValueNone(Conversation.MMSAsfDataFrameIndicator)
+			&& (Property.MMSOnTCP
+				&& Property.TCPSeqNumber + CurrentProtocolOffset > Conversation.MMSAsfDataFrameIndicator
+				|| !Property.MMSOnTCP
+				&& FrameNumber > Conversation.MMSAsfDataFrameIndicator):
+				Blob(Local.MMSDataPacketSize) ASFDataPacketContinueData;
+		
+		// ASFDataPacket
+		case AFFlags == 0x00:
+			[Conversation.MMSAsfDataFrameIndicator = Property.MMSOnTCP ? Property.TCPSeqNumber + CurrentProtocolOffset : FrameNumber]
+			[DatafieldFramelength = FrameOffset + Local.MMSDataPacketSize]
+			ASFDataPackets ASFDataPacket;
+		
+		// ASFHeader
+		case LocationID == 0x00000000 && AFFlags == 0x04:
+		case LocationID == 0x00000000 && AFFlags == 0x0C:
+			//Defined by the ASF protocol.
+			struct
+			{
+				ASFHeaderObject ASFHeader;
+				switch
+				{
+					case FrameOffset - local.MMSDataPacketstartOffset < PacketSize:
+						Blob(PacketSize - (FrameOffset - local.MMSDataPacketstartOffset)) UnparsedASFData;
+				}
+			}
+		
+		// ASFHeader Continue
+		case (AFFlags == 0x04 || AFFlags == 0x0C) && LocationID != 0x00000000:
+			Blob(Local.MMSDataPacketSize) ASFHeaderContinueData;
+		
+		default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "MMS", "Unparsed MMS payload" ) MSRPCParserError;
+				Blob(Local.MMSDataPacketSize) DataPacketPayload;
+			} 
+	}
+}
+
+//---------------------- MMS message types Struct --------------------------
+struct MMSLinkViewerToMacConnect = FormatString("Message Type = %s, Message Length = %u,  Subscriber Name: %s", 
+																		MMSMessageTypeTable (MessageID), 
+																		MessageChunkLength*8, 
+																		SubscriberName)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation = MMSPlayIncarnationPacketPairTable( this );
+	UINT32 MacToViewerProtocolRevision;
+	UINT32 ViewerToMacProtocolRevision;
+	UnicodeString SubscriberName;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+		BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+struct MMSLinkViewerToMacConnectFunnel = FormatString("Message Type = %s, Message Length = %u,  Funnel Name: %s", 
+																						MMSMessageTypeTable (MessageID), 
+																						MessageChunkLength*8, 
+																						FunnelName)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation; // Should be zero and ignored.
+	UINT32 MaxBlockBytes;
+	UINT32 MaxFunnelBytes;
+	UINT32 MaxBitRate;
+	UINT32 FunnelMode;
+	UnicodeString FunnelName;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+		BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+struct MMSLinkViewerToMacOpenFile = FormatString("Message Type = %s, Message Length = %u, Play Incarnation: %s,  File Name: %s", 
+																								MMSMessageTypeTable (MessageID), 
+																								MessageChunkLength*8, 
+																								PlayIncarnation,  
+																								FileName)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32 Spare;
+	UINT32 TokenOffset;
+	UINT32 TokenLength;
+	UnicodeString FileName;
+	switch
+	{
+	case TokenLength > 0:
+		switch
+		{
+		case AsciiString( FrameData, Offset + 2, 7 ) == "Ntlmssp": 
+			_struct
+			{
+			UINT16 Token;
+			NLMP NLMP;
+			}
+					default:
+						AsciiString AuthenticationToken;
+			}
+	}
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+		BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+struct MMSLinkViewerToMacStartPlaying = FormatString("Message Type = %s, Message Length = %u, File ID = %u, Play Incarnation = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId, 
+																										PlayIncarnation)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 OpenFileId;
+	UINT32 Pad1;
+	DOUBLE Position;
+	UINT32 ASFOffset;
+	UINT32 LocationID;
+	UINT32 MessageFrameOffset
+	{
+		UINT32 OffsetTime:31 = "(" + this.ToBitString + ")";
+		UINT32 OffsetMode: 1 = "(" + this.ToBitString + ")";
+	}
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	switch
+	{
+	case( (FrameLength - Offset) > 7) && (UINT32(FrameData, Offset) > 0 ):
+		_struct
+		{
+		UINT32 AccelBandwidth;
+		UINT32 AccelDuration;
+		}
+	}
+	switch
+	{
+	case( (FrameLength - Offset) > 3) && (UINT32(FrameData, Offset) > 0 ):
+		_struct
+		{
+		UINT32 LinkBandwidth;
+		}
+	}
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad2;
+	}
+}
+
+struct MMSLinkViewerToMacStopPlaying = FormatString("Message Type = %s, Message Length = %u, File ID = %u, Play Incarnation = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId, 
+																										PlayIncarnation
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 OpenFileId;
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+}
+
+struct MMSLinkViewerToMacCloseFile = FormatString("Message Type = %s, Message Length = %u, File ID = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation; // Should be zero and ignored.
+	UINT32 OpenFileId;
+}
+
+struct MMSLinkViewerToMacReadBlock = FormatString("Message Type = %s, Message Length = %u, File ID = %u, Play Incarnation = %s, Play Sequence = ", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId, 
+																										PlayIncarnation,
+																										PlaySequence
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 OpenFileId;
+	UINT32 FileBlockId;
+	UINT32 Offset;
+	UINT32 Length;
+	UINT32 Flags;
+	UINT32 Pad;
+	DOUBLE Earliest;
+	DOUBLE Deadline;
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32 PlaySequence;
+}
+
+struct MMSLinkViewerToMacFunnelInfo = FormatString("Message Type = %s, Message Length = %u, Play Incarnation = %s ", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation = MMSPlayIncarnationPacketPairHighEntropyTable( this );
+	BLOB( 4 ) Pad;
+}
+
+struct MMSLinkViewerToMacSecurityResponse = FormatString("Message Type = %s, Message Length = %u, Play Incarnation = %s ,Token Size = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation,
+																										TokenSize
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32 Cookie;
+	UINT32 TokenSize;
+	MMSPToken	PToken;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+
+struct MMSLinkViewerToMacPong = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 Param1;
+	UINT32 Param2;
+}
+
+struct MMSLinkViewerToMacCancelReadBlock = FormatString("Message Type = %s, Message Length = %u, Play Incarnation = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32 MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32 MessageID;
+	UINT32 PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	BLOB( 4 )	Pad;
+}
+
+struct MMSLinkViewerToMacStartStriding = FormatString("Message Type = %s, Message Length = %u, Open FileId = %s, Location ID = %s, Play Incarnation = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId,
+																										LocationID,
+																										PlayIncarnation
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	UINT32		OpenFileId;
+	UINT32		Pad;
+	DOUBLE		Position;
+	UINT32		ASFOffset;
+	UINT32		LocationID;
+	UINT32		FrameOffset;
+	UINT32		PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	DOUBLE		StridingRate;
+}
+
+struct MMSLinkViewerToMacLogging = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32	MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32	MessageID;
+	MMSClientLog	Log;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+
+struct MMSLinkViewerToMacStreamswitch = FormatString("Message Type = %s, Message Length = %u, Stream Entries Count = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										StreamEntriesCount
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32	MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32	MessageID;
+	UINT32	StreamEntriesCount;
+	MMSStreamSwitchEntry		treamEntries[ StreamEntriesCount ];
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+
+struct MMSLinkMacToViewerReportConnectedEX = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	HRESULT		StatusCode;
+	UINT32		PlayIncarnation = MMSPlayIncarnationPacketPairTable( this );
+	UINT32		MacToViewerProtocolRevision;
+	UINT32		ViewerToMacProtocolRevision;
+	DOUBLE		BlockGroupPlayTime;
+	UINT32		BlockGroupBlocks;
+	UINT32		MaxOpenFiles;
+	UINT32		BlockMaxBytes;
+	UINT32		MaxBitRate;
+	UINT32		ServerVersionInfoSize;
+	UINT32		ClientVersionInfoSize;
+	UINT32		VersionUrlSize;
+	UINT32		AuthenPackageSize;
+	[MMSServerVersion = "NULL"]
+	switch 
+	{
+	case ServerVersionInfoSize > 0: 
+		[MMSServerVersion = ServerVersion.ToString]
+		UnicodeString( ServerVersionInfoSize )		ServerVersion;
+	}
+	[MMSClientVersion = "NULL"]
+	switch 
+	{
+	case ClientVersionInfoSize > 0:
+		[MMSClientVersion = ClientVersion.ToString] 
+		UnicodeString( ClientVersionInfoSize )		ClientVersion;
+	}
+	[MMSVersionURL = "NULL"]
+	switch 
+	{
+	case VersionUrlSize > 0: 
+		[MMSVersionURL = VersionURL.ToString]
+		UnicodeString( VersionUrlSize )				VersionURL;
+	}
+	[MMSAuthenticationPackage = "NULL"]
+	switch
+	{
+	case AuthenPackageSize > 0:
+		[MMSAuthenticationPackage = AuthenticationPackage.ToString]
+		UnicodeString( AuthenPackageSize )			AuthenticationPackage;
+	}
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+
+struct MMSLinkMacToViewerReportConnectedFunnel = FormatString("Message Type = %s, Message Length = %u, Funnel Name: %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										FunnelName
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32							MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32							MessageID;
+	HRESULT                         StatusCode;
+	UINT32                          PlayIncarnation; // Should be zero and ignored.
+	UINT32                          PacketPayloadSize;
+	UnicodeString                   FunnelName;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}
+
+struct MMSLinkMacToViewerReportDisconnectedFunnel = FormatString("Message Type = %s, Message Length = %u, Play Incarnation = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32							MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32							MessageID;
+	HRESULT							StatusCode;
+	UINT32							PlayIncarnation; // Should be zero and ignored.
+}
+
+struct MMSLinkMacToViewerReportStartedPlaying = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32							MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32							MessageID;
+	HRESULT                         StatusCode;
+	UINT32                          PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32                          TigerFileId;
+	UINT32                          Unused1;
+	UINT8							Unused2[ 12 ];
+	BLOB( 4 )  Pad;
+}
+
+struct MMSLinkMacToViewerReportOpenFile = FormatString("Message Type = %s, Message Length = %u, FileId ID = %s, File Name = %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										OpenFileId,
+																										FileName
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32							MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32							MessageID;
+	HRESULT							StatusCode;
+	UINT32							PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32							OpenFileId;
+	UINT32							Pad1;
+	UINT32							FileName;
+	UINT32							FileAttributes
+	{
+		UINT32 Unused1:23 = "  (" + this.ToBitString + ")";
+		UINT32 CanStride: 1 = "(" + this.ToBitString + ")";
+		UINT32 CanSeek: 1 = "  (" + this.ToBitString + ")";
+		UINT32 Broadcast: 1 = "(" + this.ToBitString + ")";
+		UINT32 Live: 1 = "     (" + this.ToBitString + ")";
+		UINT32 Unused2: 3 = "  (" + this.ToBitString + ")";
+		UINT32 Playlist: 1 = " (" + this.ToBitString + ")";
+		UINT32 Unused3: 1 = "  (" + this.ToBitString + ")";
+	}
+	DOUBLE							CurrentPlaylistEntryFileDuration;
+	UINT32							CurrentPlaylistEntryFileBlocks;
+	UINT8							Unused1[ 16 ]; 
+	UINT32							ASFMaximumFilePacketSize;
+	UINT32							ASFFilePacketCount;
+	UINT32							MaximumFileBitRateSum;
+	UINT32							ASFFileHeaderSize;
+	UINT8							Unused2[ 36 ];
+	switch
+	{
+	case FrameOffset < Local.MessageEndOffset:
+		BLOB( Local.MessageEndOffset - FrameOffset ) Pad2;
+	}
+}
+	
+struct MMSLinkMacToViewerReportStartStriding = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32			MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32			MessageID;
+	HRESULT			StatusCode;
+	UINT32			PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32			Spare;
+	BLOB( 4 )  Pad;
+}
+
+struct MMSLinkMacToViewerReportReadBlock = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	INT32							MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	INT32							MessageID;
+	HRESULT							StatusCode;
+	UINT32							PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32							PlaySequence;
+	BLOB( 4 )	Pad;
+}
+
+struct MMSLinkMacToViewerReportFunnelInfo = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	HRESULT		StatusCode;
+	UINT32		PlayIncarnation = MMSPlayIncarnationPacketPairHighEntropyTable( this );
+	UINT32		TransportMask;
+	UINT32		BlockFragmentsCount;
+	UINT32		FragmentBytes;
+	UINT32		CubsID;
+	UINT32		FailedCubs;
+	UINT32		Disks;
+	UINT32		Decluster;
+	UINT32		CubDatagramSize;
+	switch
+	{
+	case PlayIncarnation == 0xF0F0F0F0:
+	case PlayIncarnation == 0xF0F0F0F1:
+		BLOB( FrameLength - Offset )		PacketPair;
+	}
+}
+
+struct MMSLinkMacToViewerSecurityChallenge = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s, Token Length = %S", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation,
+																										TokenLength
+																										)
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	UINT32		PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+	UINT32		Cookie;
+	UINT32		TokenLength;
+	UINT16		Pad2;
+	MMSPToken	PToken;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad2;
+	}
+}
+
+struct MMSLinkMacToViewerPing = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	UINT32		Param1;
+	UINT32		Param2;
+}
+
+struct MMSLinkMacToViewerReportEndOfStream = FormatString("Message Type = %s, Message Length = %u, Play Incarnation= %s", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8, 
+																										PlayIncarnation
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	HRESULT		StatusCode;
+	UINT32		PlayIncarnation = FormatString( "0x%08X - %s", this, ((this > 0) && (this < 0x000000FF)) ? "Within range" : "NOT within range!" );
+}
+
+struct MMSLinkMacToViewerReportStreamChange = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	HRESULT		StatusCode;
+	UINT32		TcpHeaderIncarnation;
+	UINT32		ASFPacketSize;
+	UINT32		ASFHeaderSize;
+	UINT32		PlaylistEntryMaximumBitRateSum;
+	UINT32		StreamId; 
+}
+
+struct MMSLinkMacToViewerReportStreamswitch = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+{
+	UINT32		MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32		MessageID;
+	HRESULT		StatusCode;
+	BLOB( 4 )  Pad;
+}
+	
+struct MMSLinkMacToViewerReportRedirect = FormatString("Message Type = %s, Message Length = %u", 
+																										MMSMessageTypeTable (MessageID), 
+																										MessageChunkLength*8
+																										)
+
+{
+	[Local.MessageEndOffset = FrameOffset + this*8]
+	UINT32								MessageChunkLength = FormatString( "%u 8-byte chunks", this );
+	UINT32								MessageID;
+	HRESULT								StatusCode;
+	UINT16								RedirectType = MMSRedirectTypetable( this );
+	UINT16								LocationLength;
+	UnicodeString( LocationLength )		Location;
+	switch
+	{
+		case FrameOffset < Local.MessageEndOffset:
+			BLOB( Local.MessageEndOffset - FrameOffset ) Pad;
+	}
+}

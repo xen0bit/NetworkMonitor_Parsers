@@ -1,0 +1,268 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Simple Network Management Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1089, 1155, 1156, 1157, 1441, 1592, 1906, 2578, 2579, 2580,
+//#                          RFC 3410, 3411, 3412, 3413, 3414, 3415, 3416, 3417, 3418, 2571,
+//#                          RFC 2572, 2573, 2574, 2575, 2578, 3584, 2737
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+//
+// NOTE:  PDU's Object not parsed, RequestType 5~7 not parsed, SNMPv2 & SNMPv3 not parsed
+//
+
+Protocol SNMP = FormatString("%s, Community = %s, %s%s",
+							SNMPVersionTable(Property.SNMPVersion),
+							Community.ToString,
+							SNMPRequestTypeTable(Property.PDUTypeTag),
+							Property.SNMPRequestID ? ", RequestID = " + Property.SNMPRequestID : ""
+							)
+{
+	//reference rfc1157 ,page 16
+	AsnBerInfo MessageHeader;
+	[post.SNMPVersion = Property.AsnIntValue]
+	AsnBerInteger Version;
+	AsnBerOctetString Community;
+	switch(Property.SNMPVersion)
+	{
+		//version 1
+		case 0: 
+			_struct SNMPVersion1
+			{
+				//reference rfc1157 page 17
+				[post.PDUTypeTag = Property.Tag]
+				AsnBerInfo PDUType = SNMPRequestTypeTable(Property.Tag);
+				switch( Property.Tag )
+				{
+					//reference rfc1157 page 19
+					case 0:
+					case 1:
+					case 2:
+					case 3:
+						SNMPv1PDUReqResp PDU;
+					//reference rfc1157 page 27
+					case 4:
+						SNMPv1PDUTrap PDUTrap;
+					default:
+						_struct UnknownPDU
+						{
+							ReportParserError(ParserErrorProtocolClassPublic,"SNMP","This PDU Type is not supported in SNMP version 1") SNMPPDUTypeError;
+							BLOB(Property.Lengthvalue) UnknownPDU;	
+						}
+				}
+			};
+		//version 2
+		case 1: 
+			_struct SNMPVersion2
+			{
+				[post.PDUTypeTag = Property.Tag]
+				AsnBerInfo PDUType = (Property.Tag == 4)  ? "this value is obsolete"
+														: SNMPRequestTypeTable(Property.Tag);
+				switch( Property.Tag )
+				{
+					case 0:
+					case 1:
+					case 2:
+					case 3:
+					case 6:
+					case 7:
+					case 8:
+						SNMPv2PDUReqResp PDU;
+					case 5:
+						SNMPv2BulkPDU BulkPDU;
+					default:
+						_struct UnknownPDU
+						{
+							ReportParserError(ParserErrorProtocolClassPublic,"SNMP","This PDU Type is not supported in SNMP version 2") SNMPPDUTypeError;
+							BLOB(Property.Lengthvalue) UnknownPDU;	
+						}
+				}
+			};
+		default:
+			switch
+			{
+				case FrameLength - FrameOffset > 0:
+					Blob(FrameLength - FrameOffset) UnknownSNMPPDU;
+			}
+	}
+
+}
+Table SNMPVersionTable(value)
+{
+	switch(value)
+	{
+		case  0:"Version1";
+		case  1:"Version2";
+		default:FormatString("Version(%d)",value);
+	}
+}
+
+Table SNMPRequestTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x00:"Get request";
+		case 0x01:"Get-next request";
+		case 0x02:"Response";
+		case 0x03:"Set request";
+		case 0x04:"SNMPv1 Trap";
+		case 0x05:"Get-bulk request";
+		case 0x06:"Inform request"; // SNMPv2 from here
+		case 0x07:"SNMPv2 Trap";
+		case 0x08:"SNMPv2 Report";
+		default  :"Unhandled SNM Pequest Type";
+	}
+}
+
+Table SNMPErrorStatusTable(type)
+{
+	switch(type)
+	{
+		case  0:FormatString("noError (%d)", type);
+		case  1:FormatString("tooBig (%d)", type);
+		case  2:FormatString("noSuchName (%d)", type);
+		case  3:FormatString("badValue (%d)", type);
+		case  4:FormatString("readOnly (%d)", type);
+		case  5:FormatString("genErr (%d)", type);
+		case  6:FormatString("noAccess (%d)", type); // SNMPv2 from here
+		case  7:FormatString("wrongType (%d)", type);
+		case  8:FormatString("wrongLength (%d)", type);
+		case  9:FormatString("wrongEncoding (%d)", type);
+		case 10:FormatString("wrongValue (%d)", type);
+		case 11:FormatString("noCreation (%d)", type);
+		case 12:FormatString("inconsistentValue (%d)", type);
+		case 13:FormatString("resourceUnavailable (%d)", type);
+		case 14:FormatString("commitFailed (%d)", type);
+		case 15:FormatString("undoFailed (%d)", type);
+		case 16:FormatString("authorizationError (%d)", type);
+		case 17:FormatString("notWritable (%d)", type);
+		case 18:FormatString("inconsistentName (%d)", type);
+		default:FormatString("Unknown SNMP Error Status (%d)", type);
+	}
+}
+
+Table SNMPGenericTrapTable(type)
+{
+	switch(type)
+	{
+		case  0:FormatString("coldStart (%d)", type);
+		case  1:FormatString("warmStart (%d)", type);
+		case  2:FormatString("linkDown (%d)", type);
+		case  3:FormatString("linkUp (%d)", type);
+		case  4:FormatString("authenticationFailure (%d)", type);
+		case  5:FormatString("egpNeighborLoss (%d)", type);
+		case  6:FormatString("enterpriseSpecific (%d)", type);
+		default:FormatString("Unknown SNMP Generic Trap (%d)", type);
+	}
+}
+
+struct SNMPv1PDUTrap
+{
+	AsnBerObjectIdentifier Enterprise;
+	AsnBerOctetString AgentAddress;
+	AsnBerInteger GenericTrap = SNMPGenericTrapTable(Property.AsnIntValue);
+	AsnBerInteger specificTrap;
+	AsnBerInteger TimeStamp;
+	SNMPv1VariableList VariableList;
+}
+
+struct SNMPv2BulkPDU
+{
+	AsnBerInteger RequestID;
+	AsnBerInteger NoRepeaters;
+	AsnBerInteger MaxRepetitions;
+	SNMPv2VariableList VariableList;
+}
+
+struct SNMPv1PDUReqResp
+{
+	[post.SNMPRequestID = Property.AsnIntValue]
+	AsnBerInteger RequestID;
+	AsnBerInteger ErrorStatus = SNMPErrorStatusTable(Property.AsnIntValue);
+	AsnBerInteger ErrorIndex;
+	//reference rfc1157 page 32
+	SNMPv1VariableList VariableList;
+}
+
+struct SNMPv2PDUReqResp
+{
+	[post.SNMPRequestID = Property.AsnIntValue]
+	AsnBerInteger RequestID;
+	AsnBerInteger ErrorStatus = SNMPErrorStatusTable(Property.AsnIntValue);
+	AsnBerInteger ErrorIndex;
+	SNMPv2VariableList VariableList;
+}
+
+
+
+struct SNMPv1VariableBind
+{
+	AsnBerInfo VariableBindHeader;
+	AsnBerObjectIdentifier ObjectName;
+	switch( UINT8( Framedata, Offset ) & 0xDF )
+	{
+		case    2:AsnBerInteger number;
+		case    4:AsnBerOctetString string;
+		case    5:AsnBerNull empty;
+		case    6:AsnBerObjectIdentifier object;
+		case 0x40:AsnBerOctetString address;
+		case 0x41:AsnBerInteger counter;
+		case 0x42:AsnBerInteger Gauge;
+		case 0x43:AsnBerInteger TimeTicks;
+		case 0x44:AsnBerOctetString Opaque;
+		default  :AsnBerOctetString UnknownTypeValue;
+	}
+}
+
+struct SNMPv1VariableList
+{
+	AsnBerInfo VariableBindListHeader;
+	[VariableEndOffset = offset + Property.LengthValue]
+	while option[offset < Property.VariableEndOffset]
+	{
+		SNMPv1VariableBind VariableBind;
+	}
+}
+
+struct SNMPv2VariableBind
+{
+	 //reference rfc1905, page 7
+	AsnBerInfo VariableBindHeader;
+	AsnBerObjectIdentifier ObjectName;
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0xDF) ==    2:AsnBerInteger IntegerValue;
+		case (UINT8( Framedata, Offset ) & 0xDF) ==    4:AsnBerOctetString StringValue;
+		case (UINT8( Framedata, Offset ) & 0xDF) ==    6:AsnBerObjectIdentifier ObjectIDValue;
+		case (UINT8( Framedata, Offset ) & 0xDF) == 0x40:AsnBerOctetString address;
+		case (UINT8( Framedata, Offset ) & 0xDF) == 0x41:AsnBerInteger counter;
+		case (UINT8( Framedata, Offset ) & 0xDF) == 0x43:AsnBerInteger TimeTicks;
+		case (UINT8( Framedata, Offset ) & 0xDF) == 0x44:AsnBerOctetString ArbitraryValue;
+		case (UINT8( Framedata, Offset ) & 0xDF) == 0x46:AsnBerInteger BigCounter;
+		case Property.PDUTypeTag == 3:AsnBerNull UnSpecified;
+		case Property.PDUTypeTag == 2 &&
+			(UINT8( Framedata, Offset ) & 0x1F) == 0:AsnBerNull noSuchObject;
+		case Property.PDUTypeTag == 2 &&
+			(UINT8( Framedata, Offset ) & 0x1F) == 1:AsnBerNull noSuchInstance;
+		case Property.PDUTypeTag == 2 &&
+			(UINT8( Framedata, Offset ) & 0x1F) == 2:AsnBerNull endOfMibView;
+		default:AsnBerOctetString UnknownTypeValue;
+	}
+}
+
+struct SNMPv2VariableList
+{
+	AsnBerInfo VariableBindListHeader;
+	[VariableEndOffset = offset + Property.LengthValue]
+	while option[offset < VariableEndOffset]
+	{
+		SNMPv2VariableBind VariableBind;
+	}
+}

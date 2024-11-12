@@ -1,0 +1,71 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Name Management Protocol over IPX
+//#
+//#  Details:                
+//#
+//#  Public References:      
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DefaultTimeOut = NMPIConversationTimeout]
+Protocol NMPI = FormatString("%s[%s] %s From: %s [MessageID = %d]",
+							 NMPIPacketTypeTable(PacketType),
+							 NMPINameTypeTable(NameType),
+							 RequestedName.ToString,
+							 SourceName.ToString,
+							 MessageID
+							)
+{
+	struct NMPIRoutInfor
+	{
+		UINT32 RoutingInformation[8];
+	};
+	UINT8 PacketType = FormatString("%s, %d(0x%02X)", NMPIPacketTypeTable(this), this, this);
+	UINT8 NameType = FormatString("%s, %d(0x%02X)", NMPINameTypeTable(this), this, this);
+	[
+		BuildConversationWithParent ( MessageID),
+		Post.Conversation.ConversationDescription = FormatString("(MsgID: %d) ConvID = %d", MessageID, ConvID)
+	]
+	UINT16 MessageID;
+	NetBiosName RequestedName;
+	NetBiosName SourceName;
+	switch
+		{
+			case (UINT8( Framedata, Offset )   == 0xFF) &&
+				 (UINT8( Framedata, Offset + 1 ) == 0x53) &&
+				 (UINT8( Framedata, Offset + 2 ) == 0x4D) &&
+				 (UINT8( Framedata, Offset + 3 ) == 0x42):SMB Smb;
+		}
+}
+
+Table NMPIPacketTypeTable(type)
+{
+	switch(type)
+	{
+		case 0xF1:"Server Name Announcement";
+		case 0xF2:"Relinquish Server Name";
+		case 0xF3:"Locate Server Name";
+		case 0xF4:"Server Name Found";
+		case 0xF5:"Messenger Hangup";
+		case 0xFC:"Mailslot Write";
+		case 0xFD:"Locate Mailslot Name";
+		case 0xFE:"Mailslot Name Found";
+		default  :"Unknown PacketType";
+	}
+}
+
+Table NMPINameTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x01:"Machine";
+		case 0x02:"Workgroup";
+		case 0x03:"Browser";
+		default  :"Unknown Type";
+	}
+}

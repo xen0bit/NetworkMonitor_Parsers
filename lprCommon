@@ -1,0 +1,419 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Line Printer Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1179, 2708
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol LPR = FormatString("%s%s", Property.LPRMessageSummary, Property.LPRDetail)
+{
+	switch
+	{
+		case Property.SourcePort == 515:
+			switch
+			{
+				case frameLength - frameOffset == 1:
+					[LPRMessageSummary = "Acknowledgement From Daeman", LPRDetail = ", " + LPRAckTable(this)]
+					UINT8 AckFromDaemon = FormatString("%s, %d(%#x)", LPRAckTable(this), this, this);
+
+				default:
+					[LPRMessageSummary = "Printer Queue Report", LPRDetail = ""]
+					while QueueReports[offset < frameLength]
+					{
+						AsciiStringTerm("\n",true) QueueReport;
+					}
+			}
+		default :
+			switch(UINT8( Framedata, Offset ))
+			{
+				case 0x01:
+					switch
+					{
+						case UINT8( Framedata, Offset + 1 ) == 0x0A:
+							[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + LPRSubCommandTable(UINT8( Framedata, Offset )) + "'"]
+							UINT16 SubCommand = FormatString("%s, %d(%#x)", LPRSubCommandTable(UINT8( Framedata, Offset )), UINT8( Framedata, Offset ), UINT8( Framedata, Offset ));
+						default  :
+							[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+							LPRCommQueue PrintAnyWaitingJobs;
+					}
+				case 0x02:
+					switch
+					{
+						case UINT8( Framedata, Offset + 1 ) >= 0x30 &&
+							 UINT8( Framedata, Offset + 1 ) <= 0x39:
+							 	[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+								LPRCountName RecContrlFile;
+						default  :
+							[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+							LPRCommQueue ReceiveAPrinterJob;
+					}
+				case 0x03:
+					switch
+					{
+						case UINT8( Framedata, Offset + 1 ) >= 0x30 &&
+							 UINT8( Framedata, Offset + 1 ) <= 0x39:
+							 	[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+								LPRCountName RecDataFile;
+						default  :
+							[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+							LPRCommQueueList SendQueueStateShort;
+					}
+				case 0x04:
+					[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+					LPRCommQueueList SendQueueStateLong;
+				case 0x05:
+					[LPRMessageSummary = "Client's Command to Daemon", LPRDetail = ", '" + this.ToString + "'"]
+					LPRCommQueueAgentList RemoveJobs;
+				default  :
+					_struct DataOrControlFile
+					{
+						[LPRLeftData = AsciiString(frameData, frameOffset, frameLength - frameOffset),
+						HaveCR = LPRLeftData.contains("\n") ? 1 : 0]
+					  	switch
+					  	{
+					   		case frameLength - frameOffset >= 0xA0 ||
+								 Property.HaveCR == 1:
+									//DataFile
+									[LPRMessageSummary = "Data File", LPRDetail = ""]
+									while FileDatas[offset < frameLength]
+									{
+										AsciiStringTerm("\n", true) FileData;
+									};
+					   		case Offset == FrameLength - 1:
+								[LPRMessageSummary = "Unknown LPRPacket", LPRDetail = ""]
+								UINT8 LPRPacket = FormatString("%s, %d(0x%02X)", "Unknown LPRPacket", UINT8( Framedata, Offset ), UINT8( Framedata, Offset ));
+					   		default:
+								//control file
+								[LPRMessageSummary = "Control File", LPRDetail = ""]
+								while ControlFileLines[offset < FrameLength]
+								{
+									switch(UINT8( Framedata, Offset ))
+									{
+										case 0x53: LPRControlFileLineS SymbolicLinkData;
+										case 0x43: LPRControlFileLineC ClassForBannerPage;
+										case 0x48: LPRControlFileLineH HostName;
+										case 0x49: LPRControlFileLineI IndentPrinting;
+										case 0x4A: LPRControlFileLineJ JobNameForBannerPage;
+										case 0x4C: LPRControlFileLineL PrintBannerPage;
+										case 0x4D: LPRControlFileLineM MailWhenPrinted;
+										case 0x4E: LPRControlFileLineN SourceFileName;
+										case 0x50: LPRControlFileLineP UserIdentification;
+										case 0x54: LPRControlFileLineT TitleForPr;
+										case 0x55: LPRControlFileLineU UnlinkDataFile;
+										case 0x57: LPRControlFileLineW WidthOfOutput;
+										case 0x31: LPRControlFileLine1 TroffRFont;
+										case 0x32: LPRControlFileLine2 TroffIFont;
+										case 0x33: LPRControlFileLine3 TroffBFont;
+										case 0x34: LPRControlFileLine4 TroffSFont;
+										case 0x63: LPRControlFileLineLowerc PlotCIFFile;
+										case 0x64: LPRControlFileLined PrintDVIFile;
+										case 0x66: LPRControlFileLinef PrintFormattedFile;
+										case 0x67: LPRControlFileLineg PlotFile;
+										case 0x6B: LPRControlFileLinek KerberizedLPR;
+										case 0x6C: LPRControlFileLineLowerl PrintFileLeavingControlCharacters;
+										case 0x6E: LPRControlFileLineLowern PrintDitroffOutputFile;
+										case 0x6F: LPRControlFileLineo PrintPostscriptOutputFile;
+										case 0x70: LPRControlFileLineLowerp PrintFileFormat;
+										case 0x72: LPRControlFileLiner FileToPrintWithFORTRANCarriageControl;
+										case 0x74: LPRControlFileLineLowert PrintTroffOutputFile;
+										case 0x76: LPRControlFileLinev PrintRasterFile;
+										default  : LPRControlFileLine ContrlFileLine;
+									}
+								}
+					  	}
+					}
+			}
+	}
+}
+
+Table LPRCommandTable(value)
+{
+	switch(value)
+	{
+		case  1: "Print any waiting jobs";
+		case  2: "Receive a printer job";
+		case  3: "Send queue state (short)";
+		case  4: "Send queue state (long)";
+		case  5: "Remove jobs";
+		default: "Unknown LPRCommand";
+	}
+}
+
+Table LPRAckTable(value)
+{
+	switch(value)
+	{
+		case  0: "Positive Ack";
+		default: "Negative Ack";
+	}
+}
+
+Table LPRSubCommandTable(value)
+{
+	switch(value)
+	{
+		case  1: "Abort job";
+		case  2: "Receive control file";
+		case  3: "Receive data file";
+		default: FormatString("LPR SubCommand %d", value);
+	}
+}
+
+Table LPRContrlCommandTable(value)
+{
+	switch(value)
+	{
+		//case  0x00:  "0 - Control File End";
+		case  0x43:  FormatString("%c - Class for banner page",value);
+		case  0x48:  FormatString("%c - Host name",value);
+		case  0x49:  FormatString("%c - Indent Printing",value);
+		case  0x4A:  FormatString("%c - Job name for banner page",value);
+		case  0x4C:  FormatString("%c - Print banner page",value);
+		case  0x4D:  FormatString("%c - Mail When Printed",value);
+		case  0x4E:  FormatString("%c - Name of source file",value);
+		case  0x50:  FormatString("%c - User identification",value);
+		case  0x53:  FormatString("%c - Symbolic link data",value);
+		case  0x54:  FormatString("%c - Title for pr",value);
+		case  0x55:  FormatString("%c - Unlink data file",value);
+		case  0x57:  FormatString("%c - Width of output",value);
+		case  0x31:  FormatString("%c - troff R font",value);
+		case  0x32:  FormatString("%c - troff I font",value);
+		case  0x33:  FormatString("%c - troff B font",value);
+		case  0x34:  FormatString("%c - troff S font",value);
+		case  0x63:  FormatString("%c - Plot CIF file",value);
+		case  0x64:  FormatString("%c - Print DVI file",value);
+		case  0x66:  FormatString("%c - Print formatted file",value);
+		case  0x67:  FormatString("%c - Plot file",value);
+		case  0x6B:  FormatString("%c - Reserved for use by Kerberized LPR clients and servers",value);
+		case  0x6C:  FormatString("%c - Print file leaving control characters",value);
+		case  0x6E:  FormatString("%c - Print ditroff output file",value);
+		case  0x6f:  FormatString("%c - Print Postscript output file",value);
+		case  0x70:  FormatString("%c - Print file with pr format",value);
+		case  0x72:  FormatString("%c - File to print with FORTRAN carriage control",value);
+		case  0x74:  FormatString("%c - Print troff output file",value);
+		case  0x76:  FormatString("%c - Print raster file",value);
+		case  0x7A:  FormatString("%c - Reserved for future use with the Palladium print system",value);
+		default:     FormatString("Unkown LPR ContrlCommand  (%#x)",value);
+	}
+}
+
+struct LPRCommQueue = LPRCommandTable(Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", LPRCommandTable(this), this, this);
+	AsciiStringTerm("\0x0A") Queue;
+}
+
+struct LPRCommQueueList = LPRCommandTable(Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", LPRCommandTable(this), this, this);
+	[LPRLeftData = AsciiString(frameData, frameOffset, frameLength - frameOffset),
+	 LprTerminal = LPRLeftData.contains("\0x20") ? "\0x20" :
+				   LPRLeftData.contains("\0x09") ? "\0x09" :
+				   LPRLeftData.contains("\0x0B") ? "\0x0B" :
+				   LPRLeftData.contains("\0x0C") ? "\0x0C" : "\0x00" ]
+	AsciiStringTerm(LprTerminal) Queue;
+	AsciiStringTerm("\0x0A") List;
+}
+
+struct LPRCommQueueAgentList = LPRCommandTable(Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", LPRCommandTable(this), this, this);
+	AsciiStringTerm("\0x20") Queue;
+	AsciiStringTerm("\0x20") Agent;
+	AsciiStringTerm("\0x0A") List;
+}
+
+struct LPRCountName =  LPRSubCommandTable(SubCommand)
+{
+	UINT8 SubCommand = FormatString("%s, %d(%#x)", LPRSubCommandTable(this), this, this);
+	[LPRLeftData = AsciiString(frameData, frameOffset, frameLength - frameOffset),
+	 LprTerminal = LPRLeftData.contains("\0x20") ? "\0x20" :
+				   LPRLeftData.contains("\0x09") ? "\0x09" :
+				   LPRLeftData.contains("\0x0B") ? "\0x0B" :
+				   LPRLeftData.contains("\0x0C") ? "\0x0C" : "\0x00" ]
+	AsciiStringTerm(LprTerminal) Count;
+	AsciiStringTerm("\0x0A") Name;
+}
+
+struct LPRControlFileLine = FormatString("%c  %s", Command, Operand)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") Operand;
+}
+
+struct LPRControlFileLineC = FormatString("%c  %s", Command, BannerPagesClass)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") BannerPagesClass;
+}
+
+struct LPRControlFileLineH = FormatString("%c  %s", Command, HostName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") HostName;
+}
+
+struct LPRControlFileLineI = FormatString("%c  %s", Command, IndentingCount)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") IndentingCount;
+}
+
+struct LPRControlFileLineJ = FormatString("%c  %s", Command, JobName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") JobName;
+}
+
+struct LPRControlFileLineL = FormatString("%c  %s", Command, BurstPagesUserName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") BurstPagesUserName;
+}
+
+struct LPRControlFileLineM = FormatString("%c  %s", Command, UserName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") UserName;
+}
+
+struct LPRControlFileLineN = FormatString("%c  %s", Command, FileName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileName;
+}
+
+struct LPRControlFileLineP = FormatString("%c  %s", Command, UserID)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") UserID;
+}
+
+struct LPRControlFileLineT = FormatString("%c  %s", Command, Title)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") Title;
+}
+
+struct LPRControlFileLineU = FormatString("%c  %s", Command, FileToUnlink)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToUnlink;
+}
+
+struct LPRControlFileLineW = FormatString("%c  %s", Command, WidthCount)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") WidthCount;
+}
+
+struct LPRControlFileLine1 = FormatString("%c  %s", Command, FileName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileName;
+}
+
+struct LPRControlFileLine2 = FormatString("%c  %s", Command, FileName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileName;
+}
+
+struct LPRControlFileLine3 = FormatString("%c  %s", Command, FileName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileName;
+}
+
+struct LPRControlFileLine4 = FormatString("%c  %s", Command, FileName)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileName;
+}
+
+struct LPRControlFileLineLowerc = FormatString("%c  %s", Command, FileToPlot)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPlot;
+}
+
+struct LPRControlFileLined = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLinef = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineg = FormatString("%c  %s", Command, FileToPlot)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPlot;
+}
+
+struct LPRControlFileLinek = FormatString("%c  %s", Command, Operand)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") Operand;
+}
+
+struct LPRControlFileLineLowerl = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineLowern = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineo = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineLowerp = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLiner = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineLowert = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLinev = FormatString("%c  %s", Command, FileToPrint)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x0A") FileToPrint;
+}
+
+struct LPRControlFileLineS = FormatString("%c  %s  %s", Command, Device, Inode)
+{
+	CHAR Command = LPRContrlCommandTable(this);
+	AsciiStringTerm("\0x20") Device;
+	AsciiStringTerm("\0x0A") Inode;
+}
+

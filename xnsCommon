@@ -1,0 +1,198 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Xerox Network Systems Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.cisco.com/univercd/cc/td/doc/cisintwk/ito_doc/xns.htm
+//#                          http://www.freesoft.org/CIE/RFC/1700/30.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/23/2009
+//#
+//####
+
+// http://www.cisco.com/univercd/cc/td/doc/cisintwk/ito_doc/xns.htm
+[DefaultTimeOut = XNSConversationTimeout]
+Protocol XNS = FormatString("%s%s%s%s%s%s",
+							XNSPacketTypeTable(PacketType),
+							PacketType == 5 ? ", DstConn = " + Property.XNSDstConn : "",
+							PacketType == 5 ? ", SrcConn = " + Property.XNSSrcConn : "",
+							PacketType == 5 ? ", SeqNum = " + Property.XNSSeqNum : "",
+							PacketType == 5 ? ", AckNum = " + Property.XNSAckNum : "",
+							PacketType == 8 ? ", Source = " + Property.SrcXNSAddress:""
+							)
+							//PacketType == 1 || PacketType == 2 ? ", " + XNSRIPOperationTable(UINT16(FrameData,offset + 30) ):"",
+							//PacketType == 4 ? ", Client = " + UINT16(FrameData,offset + 34):"",
+{
+	UINT16 Checksum;
+	UINT16 TotalLength;
+	UINT8 TransportControl;
+	UINT8 PacketType = FormatString("%s, %d(0x%02X)", XNSPacketTypeTable( this ), this, this);
+	[
+		DstXNSAddress = this.ToString,
+		Destination = this.ToString,
+		Property.DestinationNetworkAddress = this.ToString
+	]
+	XNSAddress  DestAddress = FormatString("%X.%I64X.%X", this.NetworkNumber, this.HostNumber, this.SocketNumber)
+	{
+		XNSNetworkNumber  NetworkNumber;
+		XNSHostNumber  HostNumber;
+		UINT16  SocketNumber;
+	};
+	[
+		SrcXNSAddress = this.ToString,
+		Source = this.ToString,
+		Property.SourceNetworkAddress = this.ToString
+	]
+	XNSAddress  SrcAddress = FormatString("%X.%I64X.%X", this.NetworkNumber, this.HostNumber, this.SocketNumber)
+	{
+		XNSNetworkNumber  NetworkNumber;
+		XNSHostNumber  HostNumber;
+		UINT16  SocketNumber;
+	};
+	[
+		XNSDirection = (SrcAddress > DestAddress) ? 1 : (SrcAddress == DestAddress) ? 0 : -1,	/* direction */
+		BuildConversation(SrcAddress < DestAddress ? MakeByteArray(SrcAddress,DestAddress) : MakeByteArray(DestAddress,SrcAddress)),
+		conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d", SrcAddress.ToString, DestAddress.ToString, ConvID)
+	]
+	switch
+	{
+		case DestAddress.SocketNumber == 0x8B00 &&
+			 SrcAddress.SocketNumber == 0x8B00:
+				 _struct NetBiosNames
+				 {
+					 AsciiString(6) UNHANDLEDFIELD;
+					 NetBiosName DestNetBiosName;
+					 NetBiosName SrcNetBiosName;
+				 }
+	}
+	
+	switch(PacketType)
+	{
+		case  5:
+			_struct SequencedPacket
+			{
+				//# xnsdata.c line 63
+				UINT8 ConnectionControlSummary = FormatString("%s%s%s%s", S?"S":".", R?"R":".", A?"A":".", E?"E":".")
+				{
+					[XNSSystemPacket = this ? TRUE : FALSE]
+					UINT8 S:1 = FormatString("       (%s) %s", this.ToBitString, this ? "System Packet" : "Not a system packet");
+					UINT8 R:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Acknowledgement requested" : "No acknowledgement requested");
+					UINT8 A:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Attention" : "No attention");
+          			[XNSEndOfMessage = this ? TRUE : FALSE]
+					UINT8 E:1 = FormatString("       (%s) %s", this.ToBitString, this ? "End of message" : "Not end of message");
+					UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 DataStreamType;
+				[XNSSrcConn]
+				UINT16 SourceConnection;
+				[XNSDstConn]
+				UINT16 DestinationConnection;
+				[XNSSeqNum]
+				UINT16 SequenceNumber;
+				[XNSAckNum]
+				UINT16 AcknowledgeNumber;
+				UINT16 AllocationNumber;
+			};
+	}
+	switch 
+	{
+		case TotalLength > CurrentProtocolOffset && !XNSSystemPacket:
+			[Conversation.XNSStartOfMessage$[FrameNumber] = Conversation.XNSNextIsStart]
+			[Conversation.XNSNextIsStart = XNSEndOfMessage]
+			[
+				DataFieldFrameLength = ProtocolOffset + TotalLength,
+				PayloadStart(
+					NetworkDirection, /* direction */
+					XNSAckNum, /* id */
+					XNSSeqNum, /* sequence token */
+					XNSSeqNum + 1, /* next sequence token */
+					0, /* total payload length */
+					Conversation.XNSStartOfMessage$[FrameNumber], /* is first */ 
+					XNSEndOfMessage, /* is last */
+					RssmblyIndStartBit+RssmblyIndEndBit+RssmblySequenceBit, /* has no start indication */
+					0x0404, /* Properties... */
+					SrcAddress.NetworkNumber,
+					0x0804,
+					SrcAddress.HostNumber,
+					0x0204,
+					SrcAddress.SocketNumber,
+					0x0404,
+					DestAddress.NetworkNumber,
+					0x0804,
+					DestAddress.HostNumber,
+					0x0204,
+					DestAddress.SocketNumber
+					)
+            ]
+			switch (UINT32(FrameData, FrameOffset))
+			{
+				case 0xFF534D42: // 0xFF + "SMB"
+					switch
+					{
+						case FrameLength - FrameOffset > 32:
+							SMB Smb;
+						default:
+							BLOB( TotalLength - CurrentProtocolOffset ) SMBData;
+					}
+				default:
+					BLOB( TotalLength - CurrentProtocolOffset ) ContinuedData;			
+			}
+	}
+	
+	switch
+	{
+		case TotalLength > CurrentProtocolOffset:
+			BLOB( TotalLength - CurrentProtocolOffset ) UnknownData;
+	}
+}
+
+UnsignedNumber XNSAddress
+{
+	size = 12,
+	DisplayFormat = FormatString("%02X%02X%02X%02X.%02X%02X%02X%02X%02X%02X.%02X%02X",
+								 this[11],this[10],this[9],this[8],this[7],this[6],this[5],
+								 this[4],this[3],this[2],this[1],this[0]),
+}
+
+UnsignedNumber XNSNetworkNumber
+{
+	size = 4,
+	DisplayFormat = FormatString("0x%08X",this),
+};
+
+UnsignedNumber XNSHostNumber
+{
+	size = 6,
+	DisplayFormat = FormatString("0x%I64X",this),
+};
+
+Table XNSRIPOperationTable( value )
+{
+	switch( value )
+	{
+		case  1: "Request";
+		case  2: "Response";
+		default: FormatString("Unknown operation %d",value);
+	}
+}
+
+// http://www.freesoft.org/CIE/RFC/1700/30.htm
+Table XNSPacketTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:"Routing Information Protocol";
+		case  2:"Echo Protocol";
+		case  3:"Error Protocol";
+		case  4:"Packet Exchange Protocol";
+		case  5:"Sequenced Packet Protocol";
+		case  8:"Wan Broadcast Packet";
+		case 12:"PUP Protocol";
+		case 13:"DoD IP Protocol";
+		case 20:"NetBIOS Packet";
+		default:"Undefined";
+	}
+}

@@ -1,0 +1,269 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Sequenced Packet Exchange
+//#
+//#  Details:                part of the IPX/SPX protocol suite
+//#
+//#  Public References:      RFC 1412
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+//SPX Packet type
+const Normal_Data_Packet = 0;
+const Connection_Request = 1;
+const Connection_ACK = 2;
+const Session_Negotiate = 3;
+const Session_Negotiate_ACK = 4;
+const Session_Setup = 5;
+const Session_Setup_ACK = 6;
+const Renegotiate_Request = 7;
+const Renegotiate_ACK = 8;
+const Orderly_Release_Request = 9;
+const Orderly_Release_ACK = 10;
+const Informed_Disconnect = 11;
+const Informed_Disconnect_ACK = 12;
+const Normal_SPX_II_ACK = 13;
+const Normal_SPX_II_NAK = 14;
+
+//SPX Connection State
+const SPXUnknownState = 0;
+const SPXHalfConnected = 1;
+const SPXConnected = 2;
+const SPXNegotiateWait1 = 3;
+const SPXNegotiateWait2 = 4;
+const SPXNegotiated = 5;
+const SPXHalfSessionSetup = 6;
+const SPXSessionSetup = 7;
+const SPXHalfRenegotiated = 8;
+const SPXRenegotiated = 9;
+const SPXHalfDisconnected = 10;
+const SPXDisconnected = 11;
+const SPXOrderlyReleaseWait1 = 12;
+const SPXOrderlyReleaseWait2 = 13;
+const SPXOrderlyReleased = 14;
+
+[DefaultTimeOut = SPXConversationTimeout]
+Protocol SPX =FormatString( "%s, ConCtrl= %s, 0x%X -> 0x%X, Seq = %d, Ack = %d, Alloc = %d",
+							SPXTypeTable( Property.SpxType ),
+							Property.SpxConCtrl,
+							SourceConnectionID,
+							DestinationConnectionID,
+							SequenceNumber,
+							AcknowledgementNumber,
+							AllocationNumber
+							)
+{
+	[Property.SpxConCtrl = SpxConCtrlTable(this)]
+	UINT8 ConnectionControl = SpxConCtrlTable(this)
+	{
+		UINT8 SYS:1 = FormatString(" (%s) %s", this.ToBitString, this ? "System packet" : "Not System packet");
+		UINT8 ACK:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Acknowledgement required" : "Acknowledgement not required");
+		UINT8 ATN:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Attention" : "Not attention");
+		UINT8 EOM:1 = FormatString(" (%s) %s", this.ToBitString, this ? "End of message" : "Not end of message");
+		UINT8 SPX2:1 = FormatString("(%s) %s", this.ToBitString, this ? "SPX II Packet" : "Not An SPX II Packet");	
+		UINT8 NEG:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Size negotiation" : "No Size negotiation");
+		UINT8 RES1:1 = FormatString("(%s) %s", this.ToBitString, "Undefined");
+		UINT8 XHD:1 = FormatString(" (%s) %s", this.ToBitString, "Reserved for extended header");
+	};
+	UINT8 DataStreamType = SPXDataStreamTypeTable(connectionControl.SPX2, this );
+	UINT16 SourceConnectionID;
+	UINT16 DestinationConnectionID;
+	UINT16 SequenceNumber;
+	UINT16 AcknowledgementNumber;
+	UINT16 AllocationNumber;
+	switch(DestinationConnectionID)
+	{
+		case 0xFFFF:
+			[Conversation.SPXCnnInitiator$[MakeByteArray(Property.SrcIPXAddress, SourceConnectionID)] = TRUE]
+			_struct NoNegotiationSize{};
+		default:
+			UINT16 NegotiationSize;
+	}
+	
+	[
+		BuildConversationWithParent(
+			Conversation.SPXCnnInitiator$[MakeByteArray(Property.SrcIPXAddress, SourceConnectionID)] ?
+			MakeByteArray(Property.SrcIPXAddress, SourceConnectionID):
+				Conversation.SPXCnnInitiator$[MakeByteArray(Property.DstIPXAddress, DestinationConnectionID)] ?
+				MakeByteArray(Property.DstIPXAddress, DestinationConnectionID):
+					(Property.SrcIPXAddress < Property.DstIPXAddress ||
+						(Property.SrcIPXAddress == Property.DstIPXAddress &&
+							SourceConnectionID < DestinationConnectionID
+						)) ?
+					MakeByteArray(SourceConnectionID, DestinationConnectionID) :
+					MakeByteArray(DestinationConnectionID, SourceConnectionID)
+					),
+		Post.Conversation.ConversationDescription = FormatString("(%d - %d) ConvID = %d", SourceConnectionID, DestinationConnectionID, ConvID),
+		Local.CurrentState = Conversation.SpxState,
+		Local.SpxPacketType = SPXPacketTypeTable( IPXPacketLength, ConnectionControl,DestinationConnectionID,SequenceNumber,DataStreamType,Local.CurrentState),
+		Local.CurrentState = GetSPXStateFromTable(Local.CurrentState, Local.SpxPacketType),
+		Conversation.SpxState = Local.CurrentState,
+		Conversation.SpxPropertyPerFrame$[FrameNumber] = (Local.CurrentState << 8) + Local.SpxPacketType,
+		Property.SpxType = (Conversation.SpxPropertyPerFrame$[FrameNumber] & 0x00FF),
+		Property.SpxState = SPXStateTable(Conversation.SpxPropertyPerFrame$[FrameNumber] >> 8),
+		conversation.state = (Property.SpxState == "OrderlyReleased") ? Disconnected : conversation.state
+	]
+	//the SPX Data maybe MSRPC
+	switch
+	{
+		case FrameOffset < frameLength:
+		
+			switch
+			{
+				case
+					UINT8( Framedata, Offset ) == 0x05 &&
+					( UINT8( Framedata, Offset + 1 ) == 0 || UINT8( Framedata, Offset + 1 ) == 1 ) &&
+					( FrameLength - frameOffset >= 16 ) &&
+					( UINT8( Framedata, Offset + 2 ) == 0 ||
+						UINT8( Framedata, Offset + 2 ) == 2 ||
+						UINT8( Framedata, Offset + 2 ) == 3 ||
+						( UINT8( Framedata, Offset + 2 ) >= 11 &&
+							UINT8( Framedata, Offset + 2 ) <= 19
+						)
+					) &&
+					( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&
+					UINT8( Framedata, Offset + 5 ) < 4 &&
+					UINT8( Framedata, Offset + 6 ) == 0 &&
+					UINT8( Framedata, Offset + 7 ) == 0 :
+						MSRPC MSRPC;
+				default:
+					Blob(frameLength - FrameOffset) SPXData;
+			}
+	}
+}
+
+
+Table SPXDataStreamTypeTable( SpxII, type )
+{
+	switch
+	{
+		case type == 0xFC && SpxII == 1:FormatString("Orderly release request %d (%#x)", type, type);
+		case type == 0xFD && SpxII == 1:FormatString("Orderly release acknowledgment %d (%#x)", type, type);
+		case type == 0xFE:FormatString("End of connection %d (%#x)", type, type);
+		case type == 0xFF:FormatString("End of connection acknowledgement %d (%#x)", type, type);
+		default:FormatString("%d (%#x)", type, type);
+	}
+}
+
+Table SPXPacketTypeTable( IPXPacketLength, ConnectionControl, DestinationConnectionID, SequenceNumber, DataStreamType, state)
+{
+	switch
+	{
+		case IPXPacketLength == 42 && (ConnectionControl == 200||ConnectionControl == 204) && DestinationConnectionID == 0xFFFF &&SequenceNumber==0:Connection_Request;
+		case ConnectionControl == 204 && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF && SequenceNumber==0:Session_Negotiate;
+		case ConnectionControl == 200 && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF && SequenceNumber==0:Session_Setup;
+		case ConnectionControl == 204 && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF :Renegotiate_Request;
+		case IPXPacketLength == 44 && ConnectionControl == 72 && DataStreamType == 0xFE && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF :Informed_Disconnect;
+		case IPXPacketLength == 44 && ConnectionControl == 88 && DataStreamType == 0xFD && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF :Orderly_Release_Request;
+		case IPXPacketLength == 44 && ConnectionControl == 8 && DataStreamType == 0xFF && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF :Informed_Disconnect_ACK;
+		case IPXPacketLength == 44 && ConnectionControl == 136 &&DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF &&SequenceNumber> 0:Normal_SPX_II_NAK;
+		case IPXPacketLength == 44 && (ConnectionControl == 136||ConnectionControl == 140) && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF && SequenceNumber==0 && (state == SPXHalfConnected):Connection_ACK;
+		case IPXPacketLength == 44 && (ConnectionControl == 136||ConnectionControl == 140) && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF && SequenceNumber==0 && (state == SPXHalfSessionSetup):Session_Setup_ACK;
+		case IPXPacketLength == 44 && ConnectionControl == 140 && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF &&SequenceNumber==0 && (state == SPXNegotiateWait1 || state == SPXNegotiateWait2):Session_Negotiate_ACK;
+		case IPXPacketLength == 44 && ConnectionControl == 140 && DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF && (state == SPXHalfRenegotiated):Renegotiate_ACK;
+		case IPXPacketLength == 44 && ConnectionControl == 136 &&DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF &&SequenceNumber==0 && (state == SPXOrderlyReleaseWait1 || state == SPXOrderlyReleaseWait2):Orderly_Release_ACK;
+		case IPXPacketLength == 44 && ConnectionControl == 136 &&DestinationConnectionID > 0 && DestinationConnectionID!= 0xFFFF &&SequenceNumber==0:Normal_SPX_II_ACK;
+		default: Normal_Data_Packet;
+	}
+}
+
+//
+// SPX state machine
+//
+Table GetSPXStateFromTable(CurrentState, PacketType)
+{
+	switch
+	{
+		case PacketType == Connection_Request     : SPXHalfConnected;
+		case PacketType == Connection_ACK         : SPXConnected;
+		case CurrentState == SPXNegotiateWait1 && 
+		     PacketType == Session_Negotiate      : SPXNegotiateWait2;
+		case PacketType == Session_Negotiate      : SPXNegotiateWait1;
+		case CurrentState == SPXNegotiateWait2 && 
+		     PacketType == Session_Negotiate_ACK  : SPXNegotiated;
+		case PacketType == Session_Negotiate_ACK  : SPXNegotiateWait1;
+		case PacketType == Session_Setup          : SPXHalfSessionSetup;
+		case PacketType == Session_Setup_ACK      : SPXSessionSetup;
+		case PacketType == Renegotiate_Request    : SPXHalfRenegotiated;
+		case PacketType == Renegotiate_ACK        : SPXRenegotiated;
+		case PacketType == Informed_Disconnect    : SPXHalfDisconnected;
+		case PacketType == Informed_Disconnect_ACK: SPXDisconnected;
+		case CurrentState == SPXOrderlyReleaseWait1 && 
+		     PacketType == Orderly_Release_Request: SPXOrderlyReleaseWait2;
+		case PacketType == Orderly_Release_Request: SPXOrderlyReleaseWait1;
+		case CurrentState == SPXOrderlyReleaseWait2 && 
+		     PacketType == Orderly_Release_ACK    : SPXOrderlyReleased;
+		case PacketType == Orderly_Release_ACK    : SPXOrderlyReleaseWait1;
+		case CurrentState > 0                     : CurrentState;
+		default                                   : SPXConnected;
+	}
+}
+
+Table SPXTypeTable( SpxType )
+{
+	switch(SpxType)
+	{
+		case Normal_Data_Packet     :"Normal Data Packet";
+		case Connection_Request     :"Connection Request";
+		case Connection_ACK         :"Connection ACK";
+		case Session_Negotiate      :"Session Negotiate";
+		case Session_Negotiate_ACK  :"Session Negotiate ACK";
+		case Session_Setup          :"Session Setup";
+		case Session_Setup_ACK      :"Session Setup ACK";
+		case Renegotiate_Request    :"Renegotiate Request";
+		case Renegotiate_ACK        :"Renegotiate ACK";
+		case Orderly_Release_Request:"Orderly Release Request";
+		case Orderly_Release_ACK    :"Orderly Release ACK";
+		case Informed_Disconnect    :"Informed Disconnect";
+		case Informed_Disconnect_ACK:"Informed Disconnect ACK";
+		case Normal_SPX_II_ACK      :"Normal SPX II ACK";
+		case Normal_SPX_II_NAK      :"Normal SPX II NAK";
+		default                     :"Unknown Packet Type";
+	}
+}
+
+Table SPXStateTable(state)
+{
+	switch(state)
+	{
+		case SPXUnknownState        : "UnknownState";
+		case SPXHalfConnected       : "HalfConnected";
+		case SPXConnected           : "Connected";
+		case SPXNegotiateWait1      : "NegotiateWait1";
+		case SPXNegotiateWait2      : "NegotiateWait2";
+		case SPXNegotiated          : "Negotiated";
+		case SPXHalfSessionSetup    : "HalfSessionSetup";
+		case SPXSessionSetup        : "SessionSetup";
+		case SPXHalfRenegotiated    : "HalfRenegotiated";
+		case SPXRenegotiated        : "Renegotiated";
+		case SPXHalfDisconnected    : "HalfDisconnected";
+		case SPXDisconnected        : "Disconnected";
+		case SPXOrderlyReleaseWait1 : "OrderlyReleaseWait1";
+		case SPXOrderlyReleaseWait2 : "OrderlyReleaseWait2";
+		case SPXOrderlyReleased     : "OrderlyReleased";
+		default                     : "UnknownState";
+	}
+}
+
+Table SpxConCtrlTable(ConCtrl)
+{
+	switch
+	{
+		default:
+			FormatString("%s%s%s%s%s%s%s",
+				(ConCtrl & 0x80) == 0x80 ? "SYS "  : "",
+				(ConCtrl & 0x40) == 0x40 ? "ACK "  : "",
+				(ConCtrl & 0x20) == 0x20 ? "ATN "  : "",
+				(ConCtrl & 0x10) == 0x10 ? "EOM "  : "",
+				(ConCtrl & 0x08) == 0x08 ? "SPX2 " : "",
+				(ConCtrl & 0x04) == 0x04 ? "NEG "  : "",
+				(ConCtrl & 0x01) == 0x01 ? "XHD "  : ""
+			);
+	}
+}
+
+

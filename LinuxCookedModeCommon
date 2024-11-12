@@ -1,0 +1,157 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Linux Cooked Mode Media Type
+//#
+//#  Details:                
+//#
+//#  Public References:      http://linux.die.net/man/3/pcap
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+Protocol LinuxCookedMode = FormatString("EType = %s, %s, SourceAddress:%s", ProtocolTable(Property.EType),
+														 LCMPacketTypeTable(UINT16(frameData, offset)),
+														 (AddressLength==6) ? Property.SourceRawHardwareAddress : SourceAddress)
+{
+	UINT16 PacketType = FormatString("%s, (%d)", LCMPacketTypeTable(this), this);
+	UINT16 AddressType = FormatString("%s, (%d)", LCMAddressTypeTable(this), this);
+	UINT16 AddressLength;
+	switch(AddressLength)
+	{
+		case 4:
+			_struct {
+				[
+					Property.SourceIPv4Alias = Global.AliasTable$[this],
+					Property.SourceName = Global.NameTable$[this],
+					Property.Source = Property.OverIP ? Property.Source
+							: Property.SourceIPv4Alias ? Property.SourceIPv4Alias
+							: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+							: Property.SourceName ? Property.SourceName
+							: this.ToDataTypeString,
+					Property.SourceNetworkAddress,
+					Property.SourceNetworkAddressString = this.ToDataTypeString
+				]
+				IPv4Address SourceAddress;
+				Blob(4) ImplementationSpecificData;
+			}
+		case 6:
+			_struct {
+				[
+					Property.SourceMACAlias = Global.AliasTable$[this],
+					Property.Source = SourceMACAlias ? SourceMACAlias : this.ToDataTypeString,
+					Property.SourceRawHardwareAddress = FormatString("[%02X-%02X-%02X-%02X-%02X-%02X]", this[5], this[4], this[3], this[2], this[1], this[0]),
+					Property.SourceHardwareAddress
+				]
+				MacAddress SourceHardwareAddress = FormatString("%s [%02X-%02X-%02X-%02X-%02X-%02X]", MacTable(this), this[5], this[4], this[3], this[2], this[1], this[0]);
+				Blob(2) ImplementationSpecificData;
+			}
+		default:
+			UINT64 UnknownAddressBytes;
+	}
+
+	[Property.EType]
+	UINT16 EthernetType = FormatString("%s, %d(%#x)",ProtocolTable(this),this,this);
+
+	//
+	// This switch statement determines and invokes the protocol that follows Linux Cooked Mode. The Etype field is used to determine
+	// which protocol follows
+	//
+	switch
+	{
+		case FrameOffset < FrameLength:
+			switch
+			{
+				case Property.Etype > 0:
+					switch(Property.EType)
+					{
+						case 0X0600:
+							XNS  Xns;
+						case 0x0800:
+							IPv4 Ipv4;
+						case 0x0806:
+							switch
+							{
+								case UINT16(FrameData,FrameOffset) == 0x0013:
+									ATMARP ArpAtmarp;
+								case UINT16(FrameData,FrameOffset) == 0x0018:
+									IEEE1394ARP Ieee1394Arp;
+								default:
+									ARP Arp;
+							}
+						case 0x1984:
+							TRAIL Trail;
+						case 0x8035:
+							RARP Rarp;
+						case 0x809B:
+							LAP Lap;
+						case 0x80D5:
+							SNA Sna;
+						case 0x86DD:
+							IPv6 Ipv6;
+                        case 0x80F3:
+							AARP Aarp;
+						case 0x8137:
+							IPX Ipx;
+						case 0x88C7:
+						case 0x888E:
+							EAPOL Eapol;
+						case 0x9000:
+							ATMARP Atmarp;
+						case 0x88D9:
+							LLTD Lltd;
+						case 0x886F:
+							NLBHB NLBHB;
+						default:
+							UndescribedFrameData remainder;
+					}
+				default:
+					switch
+					{
+						case UINT16(FrameData,offset) == 0xFFFF:
+							IPX Ipx;
+						default:
+							LLC Llc;
+					}
+			}
+	}
+	
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength- FrameOffset) UnknownData;
+	}	
+}
+Table LCMPacketTypeTable
+{
+	switch(value)
+	{
+		case 0x00 : "Incoming"; // packet was sent to us by somebody else
+		case 0x01 : "Broadcast"; // packet was broadcast by somebody else
+		case 0x02 : "Multicast"; // packet was multicast, but not broadcast, by somebody else
+		case 0x03 : "Other Traffic"; // packet was sent by somebody else to somebody else
+		case 0x04 : "Outgoing"; // packet was sent by us
+		default : "Unknown Code";
+	}
+}
+
+Table LCMAddressTypeTable
+{
+	switch(value)
+	{
+		case 0x001 : "Ethernet";
+		case 0x006 : "Token Ring";
+		case 0x007 : "ARCnet";
+		case 0x200 : "PPP";
+		case 0x304 : "loopback";
+		case 0x306 : "FDDI";
+		case 0x320 : "Token Ring";
+		case 0x321 : "IEEE 802.11";
+		case 0x322 : "IEEE 802.11";
+		case 0x323 : "IEEE 802.11";
+		default : "Unknown Code";
+	}
+}
+

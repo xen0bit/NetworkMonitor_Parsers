@@ -1,0 +1,154 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Audio Input Redirection Virtual Channel Extension
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEAI]: Remote Desktop Protocol: Audio Input Redirection Virtual Channel Extension (0.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 5/8/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEAI = RDPEAISNDINPDUTable(SNDINPDUHeader.MsgID)
+{
+	RDPEAISNDINPDUHeader SNDINPDUHeader;
+	Switch(SNDINPDUHeader.MsgID)
+	{
+		case 0x01:
+			RDPEAIVersionPDU VersionPDU;
+		case 0x02:
+			RDPEAISoundFormatsPDU SoundFormatsPDU;
+		case 0x03:
+			RDPEAIOpenPDU OpenPDU;
+			
+		//case 0x04: Open Reply PDU,client to server message always encrypted
+		
+		//case 0x05: Incoming Data PDU,client to server message always encrypted
+		
+		//case 0x06: Data PDU,client to server message always encrypted
+		
+		case 0x07:
+			RDPEAIFormatChangePDU FormatChangePDU;
+	}	
+}
+
+Table RDPEAISNDINPDUTable(code)
+{
+	Switch (code)
+	{
+		case 0x01: "MSG_SNDIN_VERSION: Version PDU";
+		case 0x02: "MSG_SNDIN_FORMATS: Sound Formats PDU";
+		case 0x03: "MSG_SNDIN_OPEN: Open PDU";
+		case 0x04: "MSG_SNDIN_OPEN_REPLY: Open Reply PDU";
+		case 0x05: "MSG_SNDIN_DATA_INCOMING: Incoming Data PDU";
+		case 0x06: "MSG_SNDIN_DATA: Data PDU";
+		case 0x07: "MSG_SNDIN_FORMATCHANGE: Format Change PDU";
+		default: FormatString("Undefined Value(%u)", code);
+	}
+} 
+
+Table RDPEAISndWaveChannelTable(code)
+{
+	switch (code)
+	{
+		case 1: "Monoaural data";
+		case 2: "Stereo data";
+		default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+
+//2.2.1 SNDIN_PDU Header
+struct RDPEAISNDINPDUHeader = RDPEAISNDINPDUTable(MsgID)
+{
+	UINT8 MsgID = RDPEAISNDINPDUTable(this);
+}
+
+//2.2.2.1 Version PDU
+struct RDPEAIVersionPDU = FormatString("Version = %u", Version)
+{
+	UINT32 Version = MustBeSetToTable(this, "0x00000001");
+}
+
+//2.2.2.2 Sound Formats PDU
+struct RDPEAISoundFormatsPDU = FormatString("NumFormats = %u", NumFormats)
+{
+	UINT32 NumFormats;
+	UINT32 SizeFormatsPacket;
+	RDPEAAudioFormat SoundFormats[NumFormats];
+	Switch
+	{
+		case FrameOffset < FrameLength : Blob(FrameLength-FrameOffset) ExtraData;
+	}
+}
+
+//2.2.2.3 Open PDU
+struct RDPEAIOpenPDU = FormatString("FormatTag = %u", FormatTag)
+{
+	UINT32 FramesPerPacket;
+	UINT32 InitialFormat;
+	UINT16 FormatTag;
+	UINT16 Channels;
+	UINT32 SamplesPerSec;
+	UINT32 AvgBytesPerSec;
+	UINT16 BlockAlign;
+	UINT16 BitsPerSample;
+	UINT16 Size;
+	Switch 
+	{
+		case (Size != 0):
+			Switch (FormatTag)
+			{
+				case 0xFFFE: RDPEAIExtendedWaveFormatStructure RDPEAIExtendedWaveFormatStructure;
+				default : BLOB(Size) ExtraFormatData;
+			}
+	}
+}
+
+//2.2.2.4 Extended Wave Format Structure
+struct RDPEAIExtendedWaveFormatStructure = SubFormat.ToString
+{
+	UINT16 ValidBitsPerSample;
+	RDPEAIExtendedWaveFormatChannelMask ChannelMask; 
+	GUID(TRUE) SubFormat = FormatString("MUST be set to {00000001-0000-0010-8000-00aa00389b71}");
+} 
+
+Struct RDPEAIExtendedWaveFormatChannelMask
+{
+	UINT32 ChannelMaskFlags
+	{
+		UINT32  FrontLeft:1 = FormatString( "          (%s) %s", this.ToBitString, "SPEAKER_FRONT_LEFT" );
+		UINT32  FrontRight:1 = FormatString( "         (%s) %s", this.ToBitString, "SPEAKER_FRONT_RIGHT" );
+		UINT32  FrontCenter:1 = FormatString( "        (%s) %s", this.ToBitString, "SPEAKER_FRONT_CENTER" );
+		UINT32  LowFrequency:1 = FormatString( "       (%s) %s", this.ToBitString, "SPEAKER_LOW_FREQUENCY" );
+				
+		UINT32  BackLeft:1 = FormatString( "           (%s) %s", this.ToBitString, "SPEAKER_BACK_LEFT" );
+		UINT32  BackRight:1 = FormatString( "          (%s) %s", this.ToBitString, "SPEAKER_BACK_RIGHT" );
+		UINT32  FrontLeftOfCenter:1 = FormatString( "  (%s) %s", this.ToBitString, "SPEAKER_FRONT_LEFT_OF_CENTER" );
+		UINT32  FrontRightOfCenter:1 = FormatString( " (%s) %s", this.ToBitString, "SPEAKER_FRONT_RIGHT_OF_CENTER" );
+				
+		UINT32  BackCenter:1 = FormatString( "         (%s) %s", this.ToBitString, "SPEAKER_BACK_CENTER" );
+		UINT32  SideLeft:1 = FormatString( "           (%s) %s", this.ToBitString, "SPEAKER_SIDE_LEFT" );
+		UINT32  SideRight:1 = FormatString( "          (%s) %s", this.ToBitString, "SPEAKER_SIDE_RIGHT" );
+		UINT32  TopCenter:1 = FormatString( "          (%s) %s", this.ToBitString, "SPEAKER_TOP_CENTER" );
+				
+		UINT32  TopFrontLeft:1 = FormatString( "       (%s) %s", this.ToBitString, "SPEAKER_TOP_FRONT_LEFT" );
+		UINT32  TopFrontCenter:1 = FormatString( "     (%s) %s", this.ToBitString, "SPEAKER_TOP_FRONT_CENTER" );
+		UINT32  TopFrontRight:1 = FormatString( "      (%s) %s", this.ToBitString, "SPEAKER_TOP_FRONT_RIGHT" );
+		UINT32  TopBackLeft:1 = FormatString( "        (%s) %s", this.ToBitString, "SPEAKER_TOP_BACK_LEFT" );
+		
+		UINT32  TopBackCenter:1 = FormatString( "      (%s) %s", this.ToBitString, "SPEAKER_TOP_BACK_CENTER" );
+		UINT32  TopBackRight:1 = FormatString( "       (%s) %s", this.ToBitString, "SPEAKER_TOP_BACK_RIGHT" );
+		UINT32  Reserved:14 = FormatString( "           (%s)", this.ToBitString ); 
+	}
+}
+	
+//2.2.4.1 Format Change PDU
+struct RDPEAIFormatChangePDU = FormatString("NewFormat = %u", NewFormat)
+{
+	UINT32 NewFormat;
+}

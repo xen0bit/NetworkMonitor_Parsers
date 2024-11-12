@@ -1,0 +1,1920 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Task Scheduler Service Remoting Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-TSCH]: Task Scheduler Service Remoting Protocol Specification (9.0.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0; Microsoft implementation is encrypted
+//#
+//#  Revision Class and Date:Major, 7/7/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol TSCH = FormatString( "%s %s%s%s%s%s", 
+	Property.TSCHMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.TSCHSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.TSCHSummary : "" )
+{
+	[Property.TSCHSummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{1FF70682-0A51-30E8-076D-740BE8CEE98B}":
+			[Property.TSCHMethodName = "ATSvc:" + TSCHATSvcMethodNameTable( Property.MSRPCOpnum )]
+			_Struct ATSvc
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 0:
+						_Struct NetrJobAdd
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ServerName=%s", ServerName.ToString )]
+												Struct
+												{
+													NdrWideStringPtr ServerName;
+													NdrAlign Pad;
+													TSCHAtInfo AtInfo;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "JobId=%u ReturnValue=%u", JobId, ReturnValue )]
+												Struct
+												{
+													UINT32 JobId;
+													UINT32 ReturnValue = FormatString("%#X %s", this, NtStatusTable (this));
+												}
+										}
+									}
+							}
+						}
+					
+					Case 1:
+						_Struct NetrJobDel
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ServerName=%s MinJobId=%u MaxJobId=%u", ServerName.ToString, MinJobId, MaxJobId )]
+												Struct
+												{
+													NdrWideStringPtr ServerName;
+													ALIGN4 Pad;
+													UINT32 MinJobId;
+													UINT32 MaxJobId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													UINT32 ReturnValue = FormatString("%#X %s", this, NtStatusTable (this));
+												}
+										}
+									}
+							}
+						}
+					
+					Case 2:
+						_Struct NetrJobEnum
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ServerName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+												Struct
+												{
+													NdrWideStringPtr ServerName;
+													NdrAlign Pad1;
+													TSCHAtEnumContainer EnumContainer;
+													Align4 Pad2;
+													UINT32 PreferedMaximumLength;
+													UINT32Ptr ResumeHandle;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "TotalEntries=%u ResumeHandle=%s ReturnValue=%u", TotalEntries, ResumeHandle.ToString, ReturnValue )]
+												Struct
+												{
+													TSCHAtEnumContainer EnumContainer;
+													Align4 Pad;
+													UINT32 TotalEntries;
+													UINT32Ptr ResumeHandle;
+													UINT32 ReturnValue = FormatString("%#X %s", this, NtStatusTable (this));
+												}
+										}
+									}
+							}
+						}
+					
+					Case 3:
+						_Struct NetrJobGetInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ServerName=%s JobId=%u", ServerName.ToString, JobId )]
+												Struct
+												{
+													NdrWideStringPtr ServerName;
+													ALIGN4 Pad;
+													UINT32 JobId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													TSCHAtInfoPtr AtInfo;
+													Align4 Pad;
+													UINT32 ReturnValue = FormatString("%#X %s", this, NtStatusTable (this));
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("TSCH", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "TSCH", "Unknown ATSvc method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{378E52B0-C0A9-11CF-822D-00AA0051E40F}":
+			[Property.TSCHMethodName = "sasec::" + TSCHsasecMethodNameTable( Property.MSRPCOpnum )]
+			_Struct sasec
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 0:
+						_Struct SASetAccountInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Handle=%s JobName=%s Account=%s Password=%s JobFlags=%s", Handle.ToString, JobName.ToString, Account.ToString, Password.ToString, JobFlags.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Handle;
+													NdrWideString JobName;
+													NdrWideString Account;
+													NdrWideStringPtr Password;
+													ALIGN4 Pad;
+													UINT32 JobFlags
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																struct
+																{
+																	UINT32 Unused1:13 = FormatString("(%s)", this.ToBitString); 
+																	UINT32 RL:1 = FormatString("       (%s) %s", this.ToBitString, this ? "TASK_FLAG_RUN_ONLY_IF_LOGGED_ON,the task MUST run only if the user specified is logged on interactively" : ""); 
+																	UINT32 Unused2:18 = FormatString("(%s) Unused", this.ToBitString);
+																}
+															case 	BigEndian:
+																struct
+																{
+																	UINT32 Unused2:18 = FormatString("(%s)", this.ToBitString); 
+																	UINT32 RL:1 = FormatString("       (%s) %s", this.ToBitString, this ? "TASK_FLAG_RUN_ONLY_IF_LOGGED_ON,the task MUST run only if the user specified is logged on interactively" : ""); 
+																	UINT32 Unused1:13 = FormatString("(%s) Unused", this.ToBitString);
+																}
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 1:
+						_Struct SASetNSAccountInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Handle=%s Account=%s Password=%s", Handle.ToString, Account.ToString, Password.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Handle;
+													NdrWideStringPtr Account;
+													NdrWideStringPtr Password;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 2:
+						_Struct SAGetNSAccountInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Handle=%s BufferSize=%u", Handle.ToString, BufferSize )]
+												Struct
+												{
+													NdrWideStringPtr Handle;
+													ALign4 Pad;
+													UINT32 BufferSize;
+													NdrConformant Size;
+													switch
+													{
+														case Size.MaxCount > 0:
+															UnicodeString Buffer[Size.MaxCount];
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													NdrConformant Size;
+													switch
+													{
+														case Size.MaxCount > 0:
+															UnicodeString Buffer[Size.MaxCount];
+													}
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 3:
+						_Struct SAGetAccountInformation
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Handle=%s JobName=%s BufferSize=%u", Handle.ToString, JobName.ToString, BufferSize )]
+												Struct
+												{
+													NdrWideStringPtr Handle;
+													NdrWideString JobName;
+													Align4 Pad;
+													UINT32 BufferSize;
+													NdrConformant Size;
+													switch
+													{
+														case Size.MaxCount > 0:
+															UnicodeString Buffer[Size.MaxCount];
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													NdrConformant Size;
+													switch
+													{
+														case Size.MaxCount > 0:
+															UnicodeString Buffer[Size.MaxCount];
+													}
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("TSCH", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "TSCH", "Unknown sasec method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{86D35949-83C9-4044-B424-DB363231FD0C}":
+			[Property.TSCHMethodName = "ITaskSchedulerService::" + TSCHITaskSchedulerServiceMethodNameTable( Property.MSRPCOpnum )]
+			_Struct ITaskSchedulerService
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 0:
+						_Struct SchRpcHighestVersion
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Version=%u ReturnValue=%u", Version, ReturnValue )]
+												Struct
+												{
+													UINT32 Version = TSCHSchRpcHighestVersionVersionTable(this);
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 1:
+						_Struct SchRpcRegisterTask
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Xml=%u Flags=%s Sddl=%s LogonType=%u Creds=%u", Path.ToString, Xml, Flags.ToString, Sddl.ToString, LogonType, Creds )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													NdrWideString Xml;
+													Align4 pad1;
+													UINT32 Flags
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																Struct
+																{
+																UINT32 VO:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_VALIDATE_ONLY)0 If set to 1, the server MUST only validate the task definition and not actually register the task." );
+																UINT32 CR:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_CREATE) If set to 1, indicates that the server MUST register the task if the task does not already exist." );
+																UINT32 UP:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_UPDATE) If set to 1, indicates that the server MUST update the task if the task already exists." );
+																UINT32 DI:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_DISABLE) If set to 1, the server MUST disable the task." );
+																UINT32 DA:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_DONT_ADD_PRINCIPAL_ACE) If set to 1, the server MUST NOT add an 'Allow' ACE for the task principal to the task's security descriptor." );
+																UINT32 IR:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_IGNORE_REGISTRATION_TRIGGERS) If set to 1, the server MUST NOT start the task after registering it, even if it has registration triggers." );
+																UINT32 unused0:26 = FormatString( "(%s)",    this.ToBitString );
+																}
+															Case BigEndian:
+																Struct {
+																UINT32 unused0:26 = FormatString( "(%s)",    this.ToBitString );
+																UINT32 IR:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_IGNORE_REGISTRATION_TRIGGERS) If set to 1, the server MUST NOT start the task after registering it, even if it has registration triggers." );
+																UINT32 DA:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_DONT_ADD_PRINCIPAL_ACE) If set to 1, the server MUST NOT add an 'Allow' ACE for the task principal to the task's security descriptor." );
+																UINT32 DI:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_DISABLE) If set to 1, the server MUST disable the task." );
+																UINT32 UP:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_UPDATE) If set to 1, indicates that the server MUST update the task if the task already exists." );
+																UINT32 CR:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_CREATE) If set to 1, indicates that the server MUST register the task if the task does not already exist." );
+																UINT32 VO:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_VALIDATE_ONLY)0 If set to 1, the server MUST only validate the task definition and not actually register the task." );
+																}
+														}
+													}
+													NdrWideStringPtr Sddl;
+													Align4 Pad2;
+													UINT32 LogonType;
+													UINT32 Creds;
+													TSCHTaskUserCredPtr Creds1;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ActualPath=%s ReturnValue=%u", ActualPath.ToString, ReturnValue )]
+												Struct
+												{
+													NdrWideStringPtr ActualPath;
+													TSCHTaskXmlErrorInfoPtr ErrorInfo;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 2:
+						_Struct SchRpcRetrieveTask
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s LanguagesBuffer=%u NumLanguages=%u", Path.ToString, LanguagesBuffer, NumLanguages )]
+												Struct
+												{
+													NdrWideString Path;
+													NdrWideString LanguagesBuffer;
+													Align4 pad;
+													UINT32 NumLanguages;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Xml=%s ReturnValue=%u", Xml.ToString, ReturnValue )]
+												Struct
+												{
+													NdrWideStringPtr Xml;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 3:
+						_Struct SchRpcCreateFolder
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Sddl=%s Flags=%u", Path.ToString, Sddl.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													NdrWideStringPtr Sddl;
+													Align4 Pad;
+													UINT32 Flags = MustBeSetToTable("0",this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct SchRpcSetSecurity
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Sddl=%u Flags=%s", Path.ToString, Sddl, Flags.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													UINT16 Sddl;
+													Align4 pad;
+													UINT32 Flags
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																Struct
+																{
+																	UINT32 unused0:4 = FormatString( " (%s)",    this.ToBitString );
+																	UINT32 DA:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_DONT_ADD_PRINCIPAL_ACE) If set to 1, the server MUST NOT add the 'Allow' ACE for the task principal to the security descriptor." );
+																	UINT32 unused1:24 = FormatString( " (%s)",    this.ToBitString );
+																	UINT32 FF:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_FOLDER) If set to 1, the server MUST apply the security descriptor to folders." );
+																	UINT32 FT:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_TASK) If set to 1, the server MUST apply the security descriptor to tasks." );
+																	UINT32 unused2:1 = FormatString( " (%s)",    this.ToBitString );
+																}
+																Case BigEndian:
+																	Struct {
+																	UINT32 unused2:1 = FormatString( " (%s)",    this.ToBitString );
+																	UINT32 FT:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_TASK) If set to 1, the server MUST apply the security descriptor to tasks." );
+																	UINT32 FF:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_FOLDER) If set to 1, the server MUST apply the security descriptor to folders." );
+																	UINT32 unused1:24 = FormatString( " (%s)",    this.ToBitString );
+																	UINT32 DA:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_DONT_ADD_PRINCIPAL_ACE) If set to 1, the server MUST NOT add the 'Allow' ACE for the task principal to the security descriptor." );
+																	UINT32 unused0:4 = FormatString( " (%s)",    this.ToBitString );
+																	}
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct SchRpcGetSecurity
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%u SecurityInformation=%u", Path, SecurityInformation )]
+												Struct
+												{
+													NdrWideString Path;
+													Align4 pad;
+													UINT32 SecurityInformation;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Sddl=%s ReturnValue=%u", Sddl.ToString, ReturnValue )]
+												Struct
+												{
+													NdrWideStringPtr Sddl;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct SchRpcEnumFolders
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%s StartIndex=%u Requested=%u", Path.ToString, Flags.ToString, StartIndex, Requested )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad;
+													UINT32 Flags
+													{
+														UINT32 H:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_ENUM_HIDDEN - If set to 1, the server MUST include hidden tasks in the enumeration, otherwise the server must exclude hidden tasks from the enumeration.");
+														UINT32 unused0:31 = FormatString( "(%s)", this.ToBitString );
+													}
+													UINT32 StartIndex;
+													UINT32 Requested;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "StartIndex=%u Names=%u ReturnValue=%u", StartIndex, pcNames, ReturnValue )]
+												Struct
+												{
+													UINT32 StartIndex;
+													UINT32 pcNames;
+													NdrPtr Pointer;
+													Switch {
+														Case Pointer.ReferentID != 0:
+															struct
+															{
+																NdrConformant Size;
+																NdrPtr TaskNamePtr[Size.MaxCount];
+																[local.count = 0]
+																while[local.count < Size.MaxCount]
+																{
+																	[local.count = local.count + 1]
+																	switch
+																	{
+																		case TaskNamePtr[local.count - 1] > 0:
+																			NdrWideString TaskName;
+																	}
+																}
+															}
+													}
+													ALIGN4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct SchRpcEnumTasks
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%s StartIndex=%u Requested=%u", Path.ToString, Flags.ToString, StartIndex, Requested )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													ALIGN4 Pad;
+													UINT32 Flags
+													{
+														UINT32 H:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_ENUM_HIDDEN - If set to 1, the server MUST include hidden tasks in the enumeration, otherwise the server must exclude hidden tasks from the enumeration.");
+														UINT32 unused0:31 = FormatString( "(%s)", this.ToBitString );
+													}
+													UINT32 StartIndex;
+													UINT32 Requested;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "StartIndex=%u Names=%u ReturnValue=%u", StartIndex, Names, ReturnValue )]
+												Struct
+												{
+													UINT32 StartIndex;
+													UINT32 Names;
+													NdrPtr Pointer;
+													Switch {
+														Case Pointer.ReferentID != 0:
+															struct
+															{
+																NdrConformant Size;
+																NdrPtr TaskNamePtr[Size.MaxCount];
+																[local.count = 0]
+																while[local.count < Size.MaxCount]
+																{
+																	[local.count = local.count + 1]
+																	switch
+																	{
+																		case TaskNamePtr[local.count - 1].ReferentID > 0:
+																			NdrWideString TaskName;
+																	}
+																}
+															}
+													}
+													ALIGN4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct SchRpcEnumInstances
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%s", Path.ToString, Flags.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													ALIGN4 Pad;
+													UINT32 Flags
+													{
+														UINT32 H:1 = FormatString( "      (%s) %s", this.ToBitString, "TASK_ENUM_HIDDEN - If set to 1, the server MUST include hidden tasks in the enumeration, otherwise the server must exclude hidden tasks from the enumeration.");
+														UINT32 unused0:31 = FormatString( "(%s)", this.ToBitString );
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Guids=%u ReturnValue=%u", Guids, ReturnValue )]
+												Struct
+												{
+													UINT32 pcGuids;
+													TSCHMSRPCGuidPtr Guids;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct SchRpcGetInstanceInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													MSRPCGuid Guid;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s State=%u CurrentAction=%s Info=%s GroupInstances=%u EnginePID=%u ReturnValue=%u", Path.ToString, State, CurrentAction.ToString, Info.ToString, GroupInstances, EnginePID, ReturnValue )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad1;
+													UINT32 State;
+													NdrWIDESTRINGPtr CurrentAction;
+													NdrWIDESTRINGPtr Info;
+													Align4 Pad2;
+													UINT32 GroupInstances;
+													TSCHMSRPCGuidPtr GroupInstances1;
+													UINT32 EnginePID;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 10:
+						_Struct SchRpcStopInstance
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Flags=%u", Flags )]
+												Struct
+												{
+													MSRPCGuid Guid;
+													UINT32 Flags;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 11:
+						_Struct SchRpcStop
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%u", Path.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													ALIGN4 Pad;
+													UINT32 Flags;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 12:
+						_Struct SchRpcRun
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Args=%u Flags=%s SessionId=%u User=%s", Path.ToString, Args, Flags.ToString, SessionId, User.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad1;
+													UINT32 Args;
+													NdrPtr ArgsPtr;
+													Switch {
+														Case ArgsPtr.ReferentID != 0:
+															struct
+															{
+																NdrConformant Size;
+																UniCodeString Element[ Size.MaxCount ];
+															}
+													}
+													Align4 Pad2;
+													UINT32 Flags
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																Struct
+																{
+																	UINT32 AS:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_AS_SELF) If set to 1, the server MUST run the task in the context of the caller." );
+																	UINT32 IC:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_IGNORE_CONSTRAINTS) If set to 1, the server MUST ignore the conditions in the task definition." );
+																	UINT32 SI:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_USE_SESSION_ID) If set to 1, the server MUST run the task in the login session specified by the sessionId parameter." );
+																	UINT32 US:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_USER_SID) If set to 1, the userId parameter MUST contain a SID string." );
+																	UINT32 unused0:28 = FormatString( " (%s)",    this.ToBitString );
+																}
+															Case BigEndian:
+																Struct {
+																UINT32 unused0:28 = FormatString( " (%s)",    this.ToBitString );
+																UINT32 US:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_USER_SID) If set to 1, the userId parameter MUST contain a SID string." );
+																UINT32 SI:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_USE_SESSION_ID) If set to 1, the server MUST run the task in the login session specified by the sessionId parameter." );
+																UINT32 IC:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_IGNORE_CONSTRAINTS) If set to 1, the server MUST ignore the conditions in the task definition." );
+																UINT32 AS:1 = FormatString( "      (%s) %s", this.ToBitString, "(TASK_RUN_AS_SELF) If set to 1, the server MUST run the task in the context of the caller." );
+																}
+															}
+														}
+													UINT32 SessionId;
+													NdrWideStringPtr User;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													MSRPCGuid Guid;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 13:
+						_Struct SchRpcDelete
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%u", Path.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad;
+													UINT32 Flags;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 14:
+						_Struct SchRpcRename
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s NewName=%u Flags=%u", Path.ToString, NewName, Flags )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													NdrWideString NewName;
+													Align4 pad;
+													UINT32 Flags = "The client MUST set this parameter to zero";
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 15:
+						_Struct SchRpcScheduledRuntimes
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%u Requested=%u", Path.ToString, Flags, Requested )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													TSCHSystemtimePtr Start;
+													TSCHSystemtimePtr End;
+													UINT32 Flags;
+													UINT32 Requested;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Runtimes=%u ReturnValue=%u", Runtimes, ReturnValue )]
+												Struct
+												{
+													UINT32 Runtimes;
+													NdrPtr RuntimesPointer;
+													Switch {
+														Case RuntimesPointer.ReferentID != 0:
+															struct
+															{
+																NdrConformant Size;
+																TSCHSystemtime Element[ Size.MaxCount ];
+															}
+													}
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 16:
+						_Struct SchRpcGetLastRunInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s", Path.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "LastReturnCode=%u ReturnValue=%u", LastReturnCode, ReturnValue )]
+												Struct
+												{
+													TSCHSystemtime LastRuntime;
+													UINT32 LastReturnCode;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 17:
+						_Struct SchRpcGetTaskInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Flags=%s", Path.ToString, Flags.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad;
+													UINT32 Flags
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																Struct
+																{
+																	UINT32 unused0:28 = FormatString( "(%s)",    this.ToBitString );
+																	UINT32 FS:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_STATE) If set to 1, the server MUST retrieve the TASK_STATE." );
+																	UINT32 unused1:3 = FormatString( " (%s)",    this.ToBitString );
+																}
+															Case BigEndian:
+																Struct {
+																	UINT32 unused1:3 = FormatString( " (%s)",    this.ToBitString );
+																	UINT32 FS:1 = FormatString( "      (%s) %s", this.ToBitString, "(SCH_FLAG_STATE) If set to 1, the server MUST retrieve the TASK_STATE." );
+																	UINT32 unused0:28 = FormatString( "(%s)",    this.ToBitString );
+															}
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Enabled=%u State=%u ReturnValue=%u", Enabled, State, ReturnValue )]
+												Struct
+												{
+													UINT32 Enabled;
+													UINT32 State;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 18:
+						_Struct SchRpcGetNumberOfMissedRuns
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s", Path.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "NumberOfMissedRuns=%u ReturnValue=%u", NumberOfMissedRuns, ReturnValue )]
+												Struct
+												{
+													UINT32 NumberOfMissedRuns;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 19:
+						_Struct SchRpcEnableTask
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "Path=%s Enabled=%u", Path.ToString, Enabled )]
+												Struct
+												{
+													NdrWideStringPtr Path;
+													Align4 Pad;
+													UINT32 Enabled;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[TSCHSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("TSCH", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "TSCH", "Unknown ITaskSchedulerService method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+	}
+}
+
+//
+//	_AT_ENUM
+//	Alignment:None
+//
+Struct TSCHAtEnum
+{
+	NdrAlign Pad;
+	UINT32 JobId;
+	UINT32	JobTime = FormatString("%d:%02d", UINT32(FrameData, FrameOffset) / 3600000, UINT32(FrameData, FrameOffset) % 3600000 / 60000);
+	TSCHAtInfoDaysOfMonth DaysOfMonth;
+	TSCHAtInfoDaysOfWeek DaysOfWeek;
+	TSCHAtInfoflags Flags;
+	[Property.TSCHCommandPProtr$[Property.TSCHAtEnumCount] = this.ReferentId]
+	NdrPtr CommandPtr;
+}
+
+Struct TSCHAtEnumRef = FormatString( "Command = %s", Command.ToString )
+{
+	switch
+	{
+		case Property.TSCHCommandPProtr$[Property.TSCHAtEnumRefCount] > 0:
+			NdrWideString	Command;
+	}	
+}
+
+//
+//	_AT_ENUM_CONTAINER
+//	NdrAlign
+//
+Struct TSCHAtEnumContainer
+{
+	UINT32 EntriesRead;
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID > 0: 
+			struct
+			{
+				NdrConformant Size;
+				[MaxLoopCount = Size.MaxCount,Property.TSCHAtEnumCount = 0]
+				While[true]
+				{
+					[Property.TSCHAtEnumCount = Property.TSCHAtEnumCount + 1]
+					TSCHAtEnum Element;
+				}
+
+				[MaxLoopCount = Size.MaxCount,Property.TSCHAtEnumRefCount = 0]
+				While[true]
+				{
+					[Property.TSCHAtEnumRefCount = Property.TSCHAtEnumRefCount + 1]
+					TSCHAtEnumRef ElementRef;
+				}
+			}
+	}
+}
+
+struct TSCHAtInfoDaysOfMonth = FormatString( "0x%04X (%s)", UINT32(FrameData, FrameOffset), UINT32(FrameData, FrameOffset) == 0 ? "Not Specified" :
+													FormatString("%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+														Day1? "1, " : "", Day2? "2, " : "", Day3? "3, " : "", Day4? "4, " : "", Day5? "5, " : "",
+														Day6? "6, " : "", Day7? "7, " : "", Day8? "8, " : "", Day9? "9, " : "", Day10? "10, " : "",
+														Day11? "11, " : "", Day12? "12, " : "", Day13? "13, " : "", Day14? "14, " : "", Day15? "15, " : "", 
+														Day16? "16, " : "", Day17? "17, " : "", Day18? "18, " : "", Day19? "19, " : "", Day20? "20, " : "", 
+														Day21? "21, " : "", Day22? "22, " : "", Day23? "23, " : "", Day24? "24, " : "", Day25? "25, " : "",
+														Day26? "26, " : "", Day27? "27, " : "", Day28? "28, " : "", Day29? "29, " : "", Day30? "30, " : "",
+														Day31? "31" : ""))
+{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 Day1:1 = FormatString("  (%s) %s", this.ToBitString, this ? "1" : ""); 
+					UINT32 Day2:1 = FormatString("  (%s) %s", this.ToBitString, this ? "2" : ""); 
+					UINT32 Day3:1 = FormatString("  (%s) %s", this.ToBitString, this ? "3" : ""); 
+					UINT32 Day4:1 = FormatString("  (%s) %s", this.ToBitString, this ? "4" : ""); 
+					UINT32 Day5:1 = FormatString("  (%s) %s", this.ToBitString, this ? "5" : ""); 
+					UINT32 Day6:1 = FormatString("  (%s) %s", this.ToBitString, this ? "6" : ""); 
+					UINT32 Day7:1 = FormatString("  (%s) %s", this.ToBitString, this ? "7" : ""); 
+					UINT32 Day8:1 = FormatString("  (%s) %s", this.ToBitString, this ? "8" : ""); 
+					UINT32 Day9:1 = FormatString("  (%s) %s", this.ToBitString, this ? "9" : ""); 
+					UINT32 Day10:1 = FormatString(" (%s) %s", this.ToBitString, this ? "10" : "");
+					UINT32 Day11:1 = FormatString(" (%s) %s", this.ToBitString, this ? "11" : "");
+					UINT32 Day12:1 = FormatString(" (%s) %s", this.ToBitString, this ? "12" : "");
+					UINT32 Day13:1 = FormatString(" (%s) %s", this.ToBitString, this ? "13" : "");
+					UINT32 Day14:1 = FormatString(" (%s) %s", this.ToBitString, this ? "14" : "");
+					UINT32 Day15:1 = FormatString(" (%s) %s", this.ToBitString, this ? "15" : "");
+					UINT32 Day16:1 = FormatString(" (%s) %s", this.ToBitString, this ? "16" : "");
+					UINT32 Day17:1 = FormatString(" (%s) %s", this.ToBitString, this ? "17" : "");
+					UINT32 Day18:1 = FormatString(" (%s) %s", this.ToBitString, this ? "18" : "");
+					UINT32 Day19:1 = FormatString(" (%s) %s", this.ToBitString, this ? "19" : "");
+					UINT32 Day20:1 = FormatString(" (%s) %s", this.ToBitString, this ? "20" : "");
+					UINT32 Day21:1 = FormatString(" (%s) %s", this.ToBitString, this ? "21" : "");
+					UINT32 Day22:1 = FormatString(" (%s) %s", this.ToBitString, this ? "22" : "");
+					UINT32 Day23:1 = FormatString(" (%s) %s", this.ToBitString, this ? "23" : "");
+					UINT32 Day24:1 = FormatString(" (%s) %s", this.ToBitString, this ? "24" : "");
+					UINT32 Day25:1 = FormatString(" (%s) %s", this.ToBitString, this ? "25" : "");
+					UINT32 Day26:1 = FormatString(" (%s) %s", this.ToBitString, this ? "26" : "");
+					UINT32 Day27:1 = FormatString(" (%s) %s", this.ToBitString, this ? "27" : "");
+					UINT32 Day28:1 = FormatString(" (%s) %s", this.ToBitString, this ? "28" : "");
+					UINT32 Day29:1 = FormatString(" (%s) %s", this.ToBitString, this ? "29" : "");
+					UINT32 Day30:1 = FormatString(" (%s) %s", this.ToBitString, this ? "30" : "");
+					UINT32 Day31:1 = FormatString(" (%s) %s", this.ToBitString, this ? "31" : "");  
+					UINT32 Unused:1 = FormatString("(%s) Unused", this.ToBitString);   
+				}
+			case 	BigEndian:
+				Struct
+				{
+					UINT32 Unused:1 = FormatString("(%s) Unused", this.ToBitString);   
+					UINT32 Day31:1 = FormatString(" (%s) %s", this.ToBitString, this ? "31" : "");  
+					UINT32 Day30:1 = FormatString(" (%s) %s", this.ToBitString, this ? "30" : "");
+					UINT32 Day29:1 = FormatString(" (%s) %s", this.ToBitString, this ? "29" : "");
+					UINT32 Day28:1 = FormatString(" (%s) %s", this.ToBitString, this ? "28" : "");
+					UINT32 Day27:1 = FormatString(" (%s) %s", this.ToBitString, this ? "27" : "");
+					UINT32 Day26:1 = FormatString(" (%s) %s", this.ToBitString, this ? "26" : "");
+					UINT32 Day25:1 = FormatString(" (%s) %s", this.ToBitString, this ? "25" : "");
+					UINT32 Day24:1 = FormatString(" (%s) %s", this.ToBitString, this ? "24" : "");
+					UINT32 Day23:1 = FormatString(" (%s) %s", this.ToBitString, this ? "23" : "");
+					UINT32 Day22:1 = FormatString(" (%s) %s", this.ToBitString, this ? "22" : "");
+					UINT32 Day21:1 = FormatString(" (%s) %s", this.ToBitString, this ? "21" : "");
+					UINT32 Day20:1 = FormatString(" (%s) %s", this.ToBitString, this ? "20" : "");
+					UINT32 Day19:1 = FormatString(" (%s) %s", this.ToBitString, this ? "19" : "");
+					UINT32 Day18:1 = FormatString(" (%s) %s", this.ToBitString, this ? "18" : "");
+					UINT32 Day17:1 = FormatString(" (%s) %s", this.ToBitString, this ? "17" : "");
+					UINT32 Day16:1 = FormatString(" (%s) %s", this.ToBitString, this ? "16" : "");
+					UINT32 Day15:1 = FormatString(" (%s) %s", this.ToBitString, this ? "15" : "");
+					UINT32 Day14:1 = FormatString(" (%s) %s", this.ToBitString, this ? "14" : "");
+					UINT32 Day13:1 = FormatString(" (%s) %s", this.ToBitString, this ? "13" : "");
+					UINT32 Day12:1 = FormatString(" (%s) %s", this.ToBitString, this ? "12" : "");
+					UINT32 Day11:1 = FormatString(" (%s) %s", this.ToBitString, this ? "11" : "");
+					UINT32 Day10:1 = FormatString(" (%s) %s", this.ToBitString, this ? "10" : "");
+					UINT32 Day9:1 = FormatString("  (%s) %s", this.ToBitString, this ? "9" : ""); 
+					UINT32 Day8:1 = FormatString("  (%s) %s", this.ToBitString, this ? "8" : ""); 
+					UINT32 Day7:1 = FormatString("  (%s) %s", this.ToBitString, this ? "7" : ""); 
+					UINT32 Day6:1 = FormatString("  (%s) %s", this.ToBitString, this ? "6" : ""); 
+					UINT32 Day5:1 = FormatString("  (%s) %s", this.ToBitString, this ? "5" : ""); 
+					UINT32 Day4:1 = FormatString("  (%s) %s", this.ToBitString, this ? "4" : ""); 
+					UINT32 Day3:1 = FormatString("  (%s) %s", this.ToBitString, this ? "3" : ""); 
+					UINT32 Day2:1 = FormatString("  (%s) %s", this.ToBitString, this ? "2" : ""); 
+					UINT32 Day1:1 = FormatString("  (%s) %s", this.ToBitString, this ? "1" : ""); 
+				}
+		}
+}
+
+struct TSCHAtInfoDaysOfWeek = FormatString( "0x%02X (%s)", UINT8(FrameData, FrameOffset), UINT8(FrameData, FrameOffset) == 0 ? "Not Specified" :
+	FormatString("%s%s%s%s%s%s%s", MO ? "Monday, " : "", TU ? "Tuesday, " : "", WE ? "Wednesday, " : "", 
+																			 TH ? "Thursday, " : "",	FR ? "Friday, " : "", SA ? "Saturday, " : "", 
+																			 SU ? "Sunday" : ""))
+{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				struct
+				{
+					UINT8 MO:1 = FormatString("(%s) %s", this.ToBitString, this ? "Monday" : ""); 
+					UINT8 TU:1 = FormatString("(%s) %s", this.ToBitString, this ? "Tuesday" : ""); 
+					UINT8 WE:1 = FormatString("(%s) %s", this.ToBitString, this ? "Wednesday" : ""); 
+					UINT8 TH:1 = FormatString("(%s) %s", this.ToBitString, this ? "Thursday" : ""); 
+					UINT8 FR:1 = FormatString("(%s) %s", this.ToBitString, this ? "Friday" : ""); 
+					UINT8 SA:1 = FormatString("(%s) %s", this.ToBitString, this ? "Saturday" : ""); 
+					UINT8 SU:1 = FormatString("(%s) %s", this.ToBitString, this ? "Sunday" : ""); 
+					UINT8 Unused:1 = FormatString("(%s) Unused", this.ToBitString);   
+				}
+			case 	BigEndian:
+				struct
+				{
+					UINT8 Unused:1 = FormatString("(%s) Unused", this.ToBitString);   
+					UINT8 SU:1 = FormatString("(%s) %s", this.ToBitString, this ? "Sunday" : ""); 
+					UINT8 SA:1 = FormatString("(%s) %s", this.ToBitString, this ? "Saturday" : ""); 
+					UINT8 FR:1 = FormatString("(%s) %s", this.ToBitString, this ? "Friday" : ""); 
+					UINT8 TH:1 = FormatString("(%s) %s", this.ToBitString, this ? "Thursday" : ""); 
+					UINT8 WE:1 = FormatString("(%s) %s", this.ToBitString, this ? "Wednesday" : ""); 
+					UINT8 TU:1 = FormatString("(%s) %s", this.ToBitString, this ? "Tuesday" : ""); 
+					UINT8	MO:1 = FormatString("(%s) %s", this.ToBitString, this ? "Monday" : ""); 
+				}
+		}
+}
+
+struct TSCHAtInfoflags = FormatString( "0x%02X", UINT8(FrameData, FrameOffset) )
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct
+			{
+				UINT8 JobRunPeriodically:1 = FormatString("(%s) %s", this.ToBitString, this ? "The job runs on each day for which a corresponding bit is set in the DaysOfMonth or DaysOfWeek member. The job is not deleted after it executes." : "The job runs only once for each bit set in these members. The job is deleted after it executes once.");
+				UINT8 JobExecError:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Indicates that the schedule service failed to successfully execute the job the last time it was scheduled to run." : "Indicates that the schedule service successfully executed the job the last time it was scheduled to run.");
+				UINT8 JobRunsToday:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Indicates that the job is scheduled to execute on the current day" : "Indicates that the job is not scheduled to execute on the current day");
+				UINT8 JobAddCurrentDate:1 = FormatString(" (%s) %s", this.ToBitString, this ? "The job executes at the first occurrence of JobTime at the computer where the job is queued." : "The job does not execute at the first occurrence of JobTime at the computer where the job is queued.");
+				UINT8 JobNoninteractive:1 = FormatString(" (%s) %s", this.ToBitString, this ? "The job does not run interactively. " : "The job runs interactively.");
+				UINT8 Unused:3 = FormatString("            (%s) %s", this.ToBitString, this);
+			}
+ 	
+		Case BigEndian:
+			Struct
+			{
+				UINT8 Unused:3 = FormatString("            (%s) %s", this.ToBitString, this);
+				UINT8 JobNoninteractive:1 = FormatString(" (%s) %s", this.ToBitString, this ? "The job does not run interactively. " : "The job runs interactively.");
+				UINT8 JobAddCurrentDate:1 = FormatString(" (%s) %s", this.ToBitString, this ? "The job executes at the first occurrence of JobTime at the computer where the job is queued." : "The job does not execute at the first occurrence of JobTime at the computer where the job is queued.");
+				UINT8 JobRunsToday:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Indicates that the job is scheduled to execute on the current day" : "Indicates that the job is not scheduled to execute on the current day");
+				UINT8 JobExecError:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Indicates that the schedule service failed to successfully execute the job the last time it was scheduled to run." : "Indicates that the schedule service successfully executed the job the last time it was scheduled to run.");
+				UINT8 JobRunPeriodically:1 = FormatString("(%s) %s", this.ToBitString, this ? "The job runs on each day for which a corresponding bit is set in the DaysOfMonth or DaysOfWeek member. The job is not deleted after it executes." : "The job runs only once for each bit set in these members. The job is deleted after it executes once.");
+			}			
+	}
+}
+
+
+//
+//	_AT_INFO Pointer Part
+//	NdrAlign
+//
+Struct TSCHAtInfo
+{
+	UINT32	JobTime = FormatString("%d:%02d", UINT32(FrameData, FrameOffset) / 3600000, UINT32(FrameData, FrameOffset) % 3600000 / 60000);
+	TSCHAtInfoDaysOfMonth DaysOfMonth;
+	TSCHAtInfoDaysOfWeek DaysOfWeek;
+	TSCHAtInfoflags Flags;
+	NdrPtr CommandPtr;
+	Switch {
+		Case CommandPtr.ReferentID != 0:
+			NdrWideString Command;
+	}
+	Switch(Property. MSRPCNdr64)
+	{
+		Case true: Align8 pad2;
+	}
+}
+
+Struct TSCHAtInfoPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			TSCHAtInfo AtInfo;
+	}
+}
+
+Struct TSCHMSRPCGuidPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			struct
+			{
+				NdrConformant Size;
+				MSRPCGuid Element[ Size.MaxCount ];
+				Switch(Property. MSRPCNdr64)
+				{
+					Case true: Align8 pad2;
+				}
+			}
+	}
+}
+
+Table TSCHSchRpcHighestVersionVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00010002: "V1 - Version 1.2 of the protocol is in use.";
+		Case 0x00010003: "V2 - Version 1.3 of the protocol is in use.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SYSTEMTIME
+//
+Struct TSCHSystemtime
+{
+	UINT16 WYear;
+	UINT16 WMonth;
+	UINT16 WDayOfWeek;
+	UINT16 WDay;
+	UINT16 WHour;
+	UINT16 WMinute;
+	UINT16 WSecond;
+	UINT16 WMilliseconds;
+}
+
+Struct TSCHSystemtimePtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			TSCHSystemtime Systemtime;
+	}
+}
+
+//
+//	_TASK_USER_CRED
+//
+Struct TSCHTaskUserCred
+{
+	[Property.TSCHUserIdPtr.AddToProperty(UserIdPtr.ReferentID,0)]
+	NdrPtr UserIdPtr;
+	[Property.TSCHPasswordPtr.AddToProperty(PasswordPtr.ReferentID,0)]
+	NdrPtr PasswordPtr;
+	UINT32 Flags
+	{
+		UINT32 D:1 = FormatString( "(%s)", this.ToBitString ? "credFlagDefault,the server can use these credentials":" " );
+		UINT32 unused0:31 = FormatString( "(%s)", this.ToBitString );
+	}
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+Struct TSCHTaskUserCredPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			struct
+			{
+				NdrConformant Size;
+				TSCHTaskUserCred TaskUserCred[Size.MaxCount];
+				[Local.Count = 0]
+				while[Local.Count < Size.MaxCount]
+				{
+					Switch {
+						Case TSCHUserIdPtr[Local.Count] == 0:
+							NdrWideString UserId;
+					}
+					Switch {
+						Case TSCHPasswordPtr[Local.Count] == 0:
+							NdrWideString Password;
+					}
+					[Local.Count = local.Count + 1]
+					struct {}
+				}
+				Switch(Property. MSRPCNdr64)
+				{
+					Case true: Align8 pad2;
+				}
+			}
+	}
+}
+
+//
+//	_TASK_XML_ERROR_INFO
+//	Alignment:NdrAlign
+//
+Struct TSCHTaskXmlErrorInfo
+{
+	UINT32 Line;
+	UINT32 Column;
+	NdrPtr NodePtr;
+	NdrPtr ValuePtr;
+}
+
+Struct TSCHTaskXmlErrorInfoPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			struct
+			{
+				TSCHTaskXmlErrorInfo TaskXmlErrorInfo;
+				Switch {
+					Case TaskXmlErrorInfo.NodePtr.ReferentID != 0:
+						NdrWideString Node;
+				}
+				Switch {
+					Case TaskXmlErrorInfo.ValuePtr.ReferentID != 0:
+						NdrWideString Value;
+				}
+				Switch(Property. MSRPCNdr64)
+				{
+					Case true: NdrAlign pad2;
+				}
+			}
+	}
+}
+
+Table TSCHATSvcMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "NetrJobAdd";
+		Case 1: "NetrJobDel";
+		Case 2: "NetrJobEnum";
+		Case 3: "NetrJobGetInfo";
+		Default: "unknown";
+	}
+}
+
+Table TSCHsasecMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "SASetAccountInformation";
+		Case 1: "SASetNSAccountInformation";
+		Case 2: "SAGetNSAccountInformation";
+		Case 3: "SAGetAccountInformation";
+		Default: "unknown";
+	}
+}
+
+Table TSCHITaskSchedulerServiceMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "SchRpcHighestVersion";
+		Case 1: "SchRpcRegisterTask";
+		Case 2: "SchRpcRetrieveTask";
+		Case 3: "SchRpcCreateFolder";
+		Case 4: "SchRpcSetSecurity";
+		Case 5: "SchRpcGetSecurity";
+		Case 6: "SchRpcEnumFolders";
+		Case 7: "SchRpcEnumTasks";
+		Case 8: "SchRpcEnumInstances";
+		Case 9: "SchRpcGetInstanceInfo";
+		Case 10: "SchRpcStopInstance";
+		Case 11: "SchRpcStop";
+		Case 12: "SchRpcRun";
+		Case 13: "SchRpcDelete";
+		Case 14: "SchRpcRename";
+		Case 15: "SchRpcScheduledRuntimes";
+		Case 16: "SchRpcGetLastRunInfo";
+		Case 17: "SchRpcGetTaskInfo";
+		Case 18: "SchRpcGetNumberOfMissedRuns";
+		Case 19: "SchRpcEnableTask";
+		Default: "unknown";
+	}
+}
+

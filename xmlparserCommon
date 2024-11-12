@@ -1,0 +1,489 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  XML - Extensible Markup Language
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.w3.org/TR/xml/
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 04/06/2009
+//#
+//####
+
+[RegisterAfter(HTTPPayloadData.CabinetFile, XMLParser, HttpContentType.Contains("xml"))]
+Protocol XMLParser = XMLDecl ? XMLDecl.Directive.Tag.Attributes.ToString : ""
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false : XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x0000FEFF: 
+			[Property.XMLEncoding = UTF32_BEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		case 0xFFFE0000: 
+			[Property.XMLEncoding = UTF32_LEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		default:
+			switch(UINT24(FrameData, FrameOffset))
+			{
+				case 0xEFBBBF: 
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					struct{UINT24 BOM = XMLBOMTable(Property.XMLEncoding);}
+				default:
+					switch(UINT16(FrameData, FrameOffset))
+					{
+						case 0xFEFF: 
+							[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						case 0xFFFE: 
+							[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+					}
+			}
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct
+	{
+		//
+		// XML document type declaration 
+		//
+		switch
+		{
+			case String(FrameData, FrameOffset, Property.XMLEncoding, 5) == "<?xml" 
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 16) != "<?xml-stylesheet":
+				XmlElement(true) XMLDecl;
+		}
+		
+		//
+		// XMLEncoding and XMLCharLen will be set when this XML is start with space(s)
+		//
+		switch
+		{
+			case UnicodeString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+				[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+				struct{};
+			case AsciiString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+				[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+				struct{};
+		}
+		
+		// Consume white spaces, and hide in UI
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+		{
+			DynamicSwitch String(Property.XMLEncoding, 1)
+			{
+				default: struct{}
+			};
+		}
+		
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlTag("") CommentTag;
+		}
+											
+		//
+		// links the XML file to the XSLT file
+		//
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 16) == "<?xml-stylesheet" ]
+		{
+			XmlElement(true) XMLStyleSheet;
+		}
+
+		switch
+		{
+			case framelength - frameoffset > 0 
+				&& AsciiString(FrameData, FrameOffset, 1) != "<" 
+				&& UnicodeString(FrameData, FrameOffset, 1) != "<" :
+					Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+		} 
+		
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlTag("") CommentTag;
+		}
+		
+		//
+		// XML Body
+		//
+		[ Property.XMLRootElementName = StringTerm(FrameData, FrameOffset , Property.XMLEncoding, Property.XMLElementNameTerm, true, false)]
+		switch
+		{
+			case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<":
+				switch
+				{
+					case Property.XMLRootElementName.contains(":Envelope"):
+					case Property.XMLRootElementName.contains("<Envelope"):
+						SOAP Soap;
+					default:
+						XmlElement(true) Element;
+				}
+		}
+	}
+}
+
+//////////////////////////////////////////
+//
+// Encoded xml
+//
+//////////////////////////////////////////
+Protocol EncXMLParser = XMLDecl ? XMLDecl.Directive.Tag.Attributes.ToString : ""
+{
+	switch
+	{
+		case IsValueNone(Property.IsEncXmlPropertiesInitiated) || Property.IsEncXmlPropertiesInitiated == false : EncXmlPropertiesInitiator EncXmlPropertiesInitiator;
+	}
+	
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x0000FEFF: 
+			[Property.XMLEncoding = UTF32_BEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		case 0xFFFE0000: 
+			[Property.XMLEncoding = UTF32_LEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		default:
+			switch(UINT24(FrameData, FrameOffset))
+			{
+				case 0xEFBBBF: 
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					struct{UINT24 BOM = XMLBOMTable(Property.XMLEncoding);}
+				default:
+					switch(UINT16(FrameData, FrameOffset))
+					{
+						case 0xFEFF: 
+							[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						case 0xFFFE: 
+							[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						default:
+							switch
+							{
+								//
+								// XMLEncoding and XMLCharLen will be set when this encoded XML is start with "&lt;" or "&amp;lt;"
+								//
+								case UnicodeString(FrameData, FrameOffset, 4) == "&lt;" || UnicodeString(FrameData, FrameOffset, 8) == "&amp;lt;":
+									[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+									struct{};
+								case AsciiString(FrameData, FrameOffset, 4) == "&lt;" || AsciiString(FrameData, FrameOffset, 8) == "&amp;lt;":
+									[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+									struct{};
+							}
+					}
+			}
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct
+	{
+		//
+		// Encoded XML document type declaration 
+		//
+		switch
+		{
+			case (String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&lt;?xml" 
+					|| String(FrameData, FrameOffset, Property.XMLEncoding, 12) == "&amp;lt;?xml")
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 19) != "&lt;?xml-stylesheet" 
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 23) != "&amp;lt;?xml-stylesheet":
+				EncXmlElement XMLDecl;
+		}
+		
+		//
+		// XMLEncoding and XMLCharLen will be set when this encoded XML is start with space(s)
+		//
+		switch
+		{
+			case UnicodeString(FrameData, FrameOffset, 4) == "&lt;" || UnicodeString(FrameData, FrameOffset, 8) == "&amp;lt;":
+				[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+				struct{};
+			case AsciiString(FrameData, FrameOffset, 4) == "&lt;" || AsciiString(FrameData, FrameOffset, 8) == "&amp;lt;":
+				[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+				struct{};
+		}
+		
+		// Consume white spaces, and hide in UI
+		while [ StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+		{
+			DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+			{
+				default: struct{}
+			};
+		}
+		
+		//
+		// links the XML file to the XSLT file
+		//
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 19) == "&lt;?xml-stylesheet" 
+				|| String(FrameData, FrameOffset, Property.XMLEncoding, 23) == "&amp;lt;?xml-stylesheet" ]
+		{
+			EncXmlElement XMLStyleSheet;
+		}
+
+		switch
+		{
+			case framelength - frameoffset > 0 
+				&& AsciiString(FrameData, FrameOffset, 4) != "&lt;" 
+				&& UnicodeString(FrameData, FrameOffset, 4) != "&lt;" 
+				&& AsciiString(FrameData, FrameOffset, 8) != "&amp;lt;" 
+				&& UnicodeString(FrameData, FrameOffset, 8) != "&amp;lt;":
+					Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+		}
+					
+		//
+		// Encoded XML Body
+		//
+		EncXmlElement Element;
+	}
+}
+Table XMLBOMTable(utf_en)
+{
+	switch(utf_en)
+	{
+		case UTF8       : "UTF8";
+		case UTF16_BEN  : "UTF16 (big-endian)";
+		case UTF16_LEN  : "UTF16 (little-endian)";
+		case UTF32_BEN  : "UTF32 (big-endian)";
+		case UTF32_LEN  : "UTF32 (little-endian)";
+	}
+}
+
+//
+//Use the struct to instead of embedded protocol temporary
+//
+[RegisterAfter(HTTPPayloadData.CabinetFile, XMLParser_struct, HttpContentType.Contains("xml"))]
+struct XMLParser_struct = XMLDecl ? XMLDecl.Directive.Tag.Attributes.ToString : ""
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false : XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x0000FEFF: 
+			[Property.XMLEncoding = UTF32_BEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		case 0xFFFE0000: 
+			[Property.XMLEncoding = UTF32_LEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		default:
+			switch(UINT24(FrameData, FrameOffset))
+			{
+				case 0xEFBBBF: 
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					struct{UINT24 BOM = XMLBOMTable(Property.XMLEncoding);}
+				default:
+					switch(UINT16(FrameData, FrameOffset))
+					{
+						case 0xFEFF: 
+							[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						case 0xFFFE: 
+							[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+					}
+			}
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct
+	{
+		//
+		// XML document type declaration 
+		//
+		switch
+		{
+			case String(FrameData, FrameOffset, Property.XMLEncoding, 5) == "<?xml" 
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 16) != "<?xml-stylesheet":
+				XmlElement(true) XMLDecl;
+		}
+		
+		//
+		// XMLEncoding and XMLCharLen will be set when this XML is start with space(s)
+		//
+		switch
+		{
+			case UnicodeString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+				[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+				struct{};
+			case AsciiString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+				[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+				struct{};
+		}
+		
+		// Consume white spaces, and hide in UI
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+		{
+			DynamicSwitch String(Property.XMLEncoding, 1)
+			{
+				default: struct{}
+			};
+		}
+		
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlTag("") CommentTag;
+		}
+										
+		//
+		// links the XML file to the XSLT file
+		//
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 16) == "<?xml-stylesheet" ]
+		{
+			XmlElement(true) XMLStyleSheet;
+		}
+
+		switch
+		{
+			case framelength - frameoffset > 0 
+				&& AsciiString(FrameData, FrameOffset, 1) != "<" 
+				&& UnicodeString(FrameData, FrameOffset, 1) != "<" :
+					Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+		} 
+		
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlTag("") CommentTag;
+		}
+		
+		//
+		// XML Body
+		//
+		[ Property.XMLRootElementName = StringTerm(FrameData, FrameOffset , Property.XMLEncoding, Property.XMLElementNameTerm, true, false)]
+		switch
+		{
+			case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<":
+				switch
+				{
+					case Property.XMLRootElementName.contains(":Envelope"):
+					case Property.XMLRootElementName.contains("<Envelope"):
+						SOAP Soap;
+					default:
+						XmlElement(true) Element;
+				}
+		}
+	}
+}
+
+//
+//Use the struct to instead of encoded embedded protocol temporary
+//
+struct EncXMLParser_struct = XMLDecl ? XMLDecl.Directive.Tag.Attributes.ToString : ""
+{
+	switch
+	{
+		case IsValueNone(Property.IsEncXmlPropertiesInitiated) || Property.IsEncXmlPropertiesInitiated == false : EncXmlPropertiesInitiator EncXmlPropertiesInitiator;
+	}
+	
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x0000FEFF: 
+			[Property.XMLEncoding = UTF32_BEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		case 0xFFFE0000: 
+			[Property.XMLEncoding = UTF32_LEN, Property.XMLCharLen = 4]
+			struct{UINT32 BOM = XMLBOMTable(Property.XMLEncoding);}
+		default:
+			switch(UINT24(FrameData, FrameOffset))
+			{
+				case 0xEFBBBF: 
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					struct{UINT24 BOM = XMLBOMTable(Property.XMLEncoding);}
+				default:
+					switch(UINT16(FrameData, FrameOffset))
+					{
+						case 0xFEFF: 
+							[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						case 0xFFFE: 
+							[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+							struct{UINT16 BOM = XMLBOMTable(Property.XMLEncoding);}
+						default:
+							switch
+							{
+								//
+								// XMLEncoding and XMLCharLen will be set when this encoded XML is start with "&lt;" or "&amp;lt;"
+								//
+								case UnicodeString(FrameData, FrameOffset, 4) == "&lt;" || UnicodeString(FrameData, FrameOffset, 8) == "&amp;lt;":
+									[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+									struct{};
+								case AsciiString(FrameData, FrameOffset, 4) == "&lt;" || AsciiString(FrameData, FrameOffset, 8) == "&amp;lt;":
+									[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+									struct{};
+							}
+					}
+			}
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct
+	{
+		//
+		// Encoded XML document type declaration 
+		//
+		switch
+		{
+			case (String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&lt;?xml" 
+					|| String(FrameData, FrameOffset, Property.XMLEncoding, 12) == "&amp;lt;?xml")
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 19) != "&lt;?xml-stylesheet" 
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 23) != "&amp;lt;?xml-stylesheet":
+				EncXmlElement XMLDecl;
+		}
+		
+		//
+		// XMLEncoding and XMLCharLen will be set when this encoded XML is start with space(s)
+		//
+		switch
+		{
+			case UnicodeString(FrameData, FrameOffset, 4) == "&lt;" || UnicodeString(FrameData, FrameOffset, 8) == "&amp;lt;":
+				[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+				struct{};
+			case AsciiString(FrameData, FrameOffset, 4) == "&lt;" || AsciiString(FrameData, FrameOffset, 8) == "&amp;lt;":
+				[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+				struct{};
+		}
+		
+		// Consume white spaces, and hide in UI
+		while [ StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+		{
+			DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+			{
+				default: struct{}
+			};
+		}
+		
+		//
+		// links the XML file to the XSLT file
+		//
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 19) == "&lt;?xml-stylesheet" 
+				|| String(FrameData, FrameOffset, Property.XMLEncoding, 23) == "&amp;lt;?xml-stylesheet" ]
+		{
+			EncXmlElement XMLStyleSheet;
+		}
+
+		switch
+		{
+			case framelength - frameoffset > 0 
+				&& AsciiString(FrameData, FrameOffset, 4) != "&lt;" 
+				&& UnicodeString(FrameData, FrameOffset, 4) != "&lt;" 
+				&& AsciiString(FrameData, FrameOffset, 8) != "&amp;lt;" 
+				&& UnicodeString(FrameData, FrameOffset, 8) != "&amp;lt;":
+					Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+		}
+					
+		//
+		// Encoded XML Body
+		//
+		switch
+		{
+			Default:
+				EncXmlElement Element;
+		}
+	}
+}

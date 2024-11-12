@@ -1,0 +1,495 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IMAP - INTERNET MESSAGE ACCESS PROTOCOL
+//#
+//#  Details:                VERSION 4rev1
+//#
+//#  Public References:      RFC 3501
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/3/2010
+//#
+//####
+
+// IMAP State and Flow Diagram
+//
+//         +----------------------+
+//         |connection established|
+//         +----------------------+
+//                    ||
+//                    \/
+//  +--------------------------------------+
+//  |          server greeting             |
+//  +--------------------------------------+
+//            || (1)       || (2)        || (3)
+//            \/           ||            ||
+//  +-----------------+    ||            ||
+//  |Not Authenticated|    ||            ||
+//  +-----------------+    ||            ||
+//   || (7)   || (4)       ||            ||
+//   ||       \/           \/            ||
+//   ||     +----------------+           ||
+//   ||     | Authenticated  |<=++       ||
+//   ||     +----------------+  ||       ||
+//   ||       || (7)   || (5)   || (6)   ||
+//   ||       ||       \/       ||       ||
+//   ||       ||    +--------+  ||       ||
+//   ||       ||    |Selected|==++       ||
+//   ||       ||    +--------+           ||
+//   ||       ||       || (7)            ||
+//   \/       \/       \/                \/
+//  +--------------------------------------+
+//  |               Logout                 |
+//  +--------------------------------------+
+//                    ||
+//                    \/
+//      +-------------------------------+
+//      |both sides close the connection|
+//      +-------------------------------+
+//
+//		1) connection without pre-authentication (OK greeting)
+//		2) pre-authenticated connection (PREAUTH greeting)
+//		3) rejected connection (BYE greeting)
+//		4) successful LOGIN or AUTHENTICATE command
+//		5) successful SELECT or EXAMINE command
+//		6) CLOSE command, or failed SELECT or EXAMINE command
+//		7) LOGOUT command, server shutdown, or connection closed
+//
+
+//IMAP States
+const IMAPUnknownState = 0;
+const IMAPServerGreeting = 1;
+const IMAPNotAuthenticated = 2;
+const IMAPAuthenticated = 3;
+const IMAPSelected = 4;
+const IMAPLogout = 5;
+
+//IMAPPropertyPerFrame Masks
+const IMAPPropertyMaskNone      = 0x0000;
+const IMAPPropertyMaskAuthCommd = 0x0100;
+const IMAPPropertyMaskCurrState = 0x00F0;
+const IMAPPropertyMaskNextState = 0x000F;
+
+
+Protocol IMAP = FormatString("%s: %s%s", Property.IMAPDirection, 
+										 property.IMAPUnknownMsg == true && !property.IMAPSummary ? "(Mail Info)" : property.IMAPSummary, 
+										 (((Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskCurrState) >> 4) == IMAPServerGreeting) ? (" - Server " +  Property.IMAPResponseStatus + " Greeting") : ""
+							)
+{
+	[BuildConversationWithParent]
+	[	
+		Post.Conversation.ConversationDescription = 
+			( Conversation.IMAPUserName ? ( FormatString("(%s %s) ",Conversation.IMAPUserName ,Conversation.IMAPPassword) ): "" ) +
+			( FormatString("ConvID = %d", ConvID) )
+	]
+	[Property.IMAPDirection = (Property.DestinationPort == 143) ? "Client": "Server"]
+	[Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] = (Conversation.IMAPCommand == "AUTHENTICATE" ? IMAPPropertyMaskAuthCommd : IMAPPropertyMaskNone )]
+	[Property.IsAuthenticate = (Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskAuthCommd) ? true : false]
+	[Property.IMAPCurrentState = Conversation.IMAPState ? Conversation.IMAPState : IMAPUnknownState]
+	[Property.IMAPNextState = Property.IMAPCurrentState]
+	[Post.Conversation.IMAPState = Property.IMAPNextState]
+	[Post.Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] = (Conversation.IMAPCommand == "AUTHENTICATE" ? IMAPPropertyMaskAuthCommd : IMAPPropertyMaskNone ) | ( Property.IMAPCurrentState << 4 ) | Property.IMAPNextState]
+	[
+		Post.Property.IMAPStateString = (((Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskCurrState) >> 4) == (Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskNextState))
+			? IMAPStateTable(Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskNextState)
+			: FormatString("%s -> %s", IMAPStateTable((Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskCurrState) >> 4), IMAPStateTable(Conversation.IMAPPropertyPerFrame$[FrameNumber + 1] & IMAPPropertyMaskNextState))
+	]
+	[
+    	Conversation.IMAPTLSNegotiationPerFrame$[FrameNumber] = Conversation.IMAPTLSNegotiationC,
+		Property.IMAPTLSNegotiation = Conversation.IMAPTLSNegotiationPerFrame$[FrameNumber],
+		Conversation.IMAPTLSNegotiationContinuePerFrame$[FrameNumber] = conversation.IMAPTLSNegotiationContinueC,
+		Property.IMAPTLSNegotiationContinue = Conversation.IMAPTLSNegotiationContinuePerFrame$[FrameNumber]
+	]
+	while [FrameOffset < FrameLength]
+	{
+		switch(Property.IMAPDirection)
+		{
+			case "Client":
+				_struct IMAPClient
+				{
+					switch
+					{
+						case AsciiStringTerm(FrameData, FrameOffset, "\r\n") == "DONE":
+							[property.IMAPSummary]
+							AsciiStringTerm(" ") RequestMessage;
+
+						//the embedded SSL session within the IMAP conversation
+						case property.IMAPTLSNegotiation:
+							[ property.IMAPSummary = "TLS negotiation" ]
+							SSLVersionSelector TLSSSLData;
+
+						default:
+							[Conversation.IsIMAPTag$[Tag] = true]
+							AsciiStringTerm(" ") Tag;
+					}				
+					[property.IMAPUnknownMsg == false]
+					[Property.IMAPTmpLine = AsciiStringTerm(FrameData, FrameOffset, "\r\n", true)]
+					[
+					Property.IMAPCmmTerm = (
+						Property.IMAPTmpLine.contains("CAPABILITY")
+						|| Property.IMAPTmpLine.contains("IDLE")
+						|| Property.IMAPTmpLine.contains("LOGOUT")
+						|| Property.IMAPTmpLine.contains("NOOP")
+							) ? "\r\n" : " "
+					]
+					switch(AsciiStringTerm(FrameData, FrameOffset, Property.IMAPCmmTerm))
+					{
+						case "CAPABILITY":
+						case "NOOP":
+						case "STARTTLS":
+						case "AUTHENTICATE":
+						case "SELECT":
+						case "EXAMINE":
+						case "CREATE":
+						case "DELETE":
+						case "RENAME":
+						case "SUBSCRIBE":
+						case "UNSUBSCRIBE":
+						case "LIST":
+						case "LSUB":
+						case "STATUS":
+						case "APPEND":
+						case "CHECK":
+						case "EXPUNGE":
+						case "SEARCH":
+						case "FETCH":
+						case "STORE":
+						case "COPY":
+						case "IDLE":
+						case "LOGIN":
+						case "LOGOUT":
+						case "UID":
+							// [Property.IMAPSummary]
+							// IMAPSummary will not contain the Tag
+							AsciiStringTerm("\r\n", true) Command
+							{
+								// [Conversation.IsIMAPTag$[Tag] = true]
+								// AsciiStringTerm(" ") Tag;
+								[Property.IMAPSummary = AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+								[Conversation.IMAPCommand$[Tag]]
+								[Property.IMAPNextState = IMAPStateMachine(Property.IMAPCurrentState, Command, "")]
+								[Property.IMAPCommand]
+								[Conversation.IMAPCommand]
+								AsciiStringTerm(Property.IMAPCmmTerm) Command = IMAPCmdDescTable(this);
+								switch
+								{
+									// literial
+									case FrameOffset < FrameLength && Property.IMAPTmpLine.contains("}\r\n"):
+										AsciiStringTerm("\r\n") LiterialParams;
+									
+									// quotation string
+									case FrameOffset < FrameLength:
+										[conversation.IMAPRequestParams = this]
+										AsciiStringTerm("\r\n", true) Params
+										{
+											switch(Command)
+											{
+												case "LOGIN":
+													struct
+													{
+														[Conversation.IMAPUserName]
+														AsciiStringTerm(" ") UserName;
+														[Conversation.IMAPPassword]
+														AsciiStringTerm("\r\n") Password;
+													}
+												case "AUTHENTICATE":
+													[Conversation.AuthMethod]
+													AsciiStringTerm("\r\n") AuthMethod;
+												case "SELECT":
+												case "EXAMINE":
+												case "CREATE":
+												case "DELETE":
+												case "SUBSCRIBE":
+												case "UNSUBSCRIBE":		
+													AsciiStringTerm("\r\n") MailBox;
+												case "RENAME":
+													struct
+													{
+														AsciiStringTerm(" ") OldName;
+														AsciiStringTerm("\r\n") NewName;
+													}
+												case "LIST":
+												case "LSUB":
+													struct
+													{
+														AsciiStringTerm(" ") RefName;
+														AsciiStringTerm("\r\n") Pattern;
+													}
+												case "STATUS":
+													struct
+													{
+														AsciiStringTerm(" ") MailBox;
+														AsciiStringTerm("\r\n") ItemNames;
+													}
+												case "FETCH":
+													struct
+													{
+														AsciiStringTerm(" ") SeqSet;
+														AsciiStringTerm("\r\n") ItemNames;
+													}	
+												case "STORE":
+													struct
+													{
+														AsciiStringTerm(" ") SeqSet;
+														AsciiStringTerm(" ") ItemName;
+														AsciiStringTerm("\r\n") Value;
+													}
+												case "COPY":
+													struct 
+													{
+														AsciiStringTerm(" ") SeqSet;
+														AsciiStringTerm("\r\n") MailBox;
+													}
+												case "UID":
+													struct
+													{
+														AsciiStringTerm(" ") Argument;
+														switch(Argument)
+														{
+															case "COPY":
+																struct 
+																{
+																	AsciiStringTerm(" ") UniqueID;
+																	AsciiStringTerm("\r\n") MailBox;
+																}
+															case "FETCH":
+																struct
+																{
+																	AsciiStringTerm(" ") UniqueID;
+																	AsciiStringTerm("\r\n") ItemNames;
+																}
+															case "STORE":
+																struct
+																{
+																	AsciiStringTerm(" ") UniqueID;
+																	AsciiStringTerm(" ") ItemName;
+																	AsciiStringTerm("\r\n") Value;
+																}
+															default:
+																AsciiStringTerm("\r\n") Params;
+														}
+													}
+												default:
+													AsciiStringTerm("\r\n") ArgParams;
+											}
+										};
+								}
+							}
+						default:
+							switch
+							{
+								case Property.IsAuthenticate:
+									[Property.IMAPSummary = AuthMessage.ToString]
+									AsciiStringTerm("\r\n") AuthMessage = "GSSAPI Auth"
+									{
+											switch
+											{
+												case Conversation.AuthMethod.Contains("GSSAPI"):
+													[GssApiBase64 = TRUE]
+													GssAPI GssAPI;
+											}
+									};
+								default:
+									//[post.Property.IMAPSummary = RequestMessage.ToString]
+									[property.IMAPUnknownMsg = IMAPUnknownMsgTable(RequestMessage.ToString) == "true"? true: false]
+									[IMAPUnknownMsgTable(RequestMessage.ToString) == "false"? property.IMAPSummary = RequestMessage.ToString : 0]
+									AsciiStringTerm("\r\n") RequestMessage = FormatString("%s", this == "" ? "CRLF": this);
+							}
+					}
+				}
+			case "Server":
+				[property.IMAPUnknownMsg == false]
+				[Property.IMAPTmpLine = AsciiStringTerm(FrameData, FrameOffset, " ")]
+				[Property.IMAPTagged = Conversation.IsIMAPTag$[Property.IMAPTmpLine]]
+				[Property.IMAPUntagged = (Property.IMAPTmpLine == "+" || Property.IMAPTmpLine == "*")]
+				switch
+				{
+					case Property.IMAPTagged://Tagged
+					case Property.IMAPUntagged://Untagged response
+						// [Property.IMAPSummary]
+						// IMAPSummary will not contain the Tag or Token
+						AsciiStringTerm("\r\n", true) Response
+						{
+							// Tag or Token
+							switch
+							{
+								case Property.IMAPTagged:
+									AsciiStringTerm(" ") Tag;
+								case Property.IMAPUntagged:
+									//"+" or "*"
+									AsciiStringTerm(" ") Token;
+							}
+							// Response Status
+							[Property.IMAPSummary = AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+							switch(AsciiStringTerm(FrameData, FrameOffset, " "))
+							{
+								case "OK":
+								case "NO":
+								case "BAD":
+								case "PREAUTH"://always untagged
+								case "BYE"://always untagged
+									[Property.IMAPCurrentState = (Property.IMAPCurrentState == IMAPUnknownState) ? IMAPStateMachine(Property.IMAPCurrentState, Conversation.IMAPCommand$[Tag], this) : Property.IMAPCurrentState]
+									[Property.IMAPNextState = IMAPStateMachine(Property.IMAPCurrentState, Conversation.IMAPCommand$[Tag], this)]
+									[Property.IMAPResponseStatus]
+									AsciiStringTerm(" ") Status;
+								default:
+									switch
+									{
+										case Property.IsAuthenticate:
+											[Property.IMAPSummary = AuthMessage.ToString]
+											AsciiStringTerm("\r\n") AuthMessage = "GSSAPI Auth"
+											{
+												switch
+												{
+													case Conversation.AuthMethod.Contains("GSSAPI"):
+														[GssApiBase64 = TRUE]
+														GssAPI GssAPI;
+												}
+											}
+									}
+							}
+							// Response Code
+							switch(AsciiString(FrameData, FrameOffset, 1))
+							{
+								case "[":
+									AsciiStringTerm("]", true) Code;
+							}
+
+							// Other Response Message
+							switch
+							{
+								case FrameOffset < FrameLength:
+									struct
+									{
+										[ Property.IMAPResponseMessage ]
+										AsciiStringTerm("\r\n") Message;
+
+										//to detect if a [TLS] negotiation follows later, further commands are under [TLS] layer until a server response is seen and the [TLS] negotiation is complete.
+										switch
+										{
+											case property.IMAPResponseMessage.Contains("Begin TLS negotiation now"):
+											case property.IMAPResponseMessage.Contains("STARTLS completed"):
+												[ conversation.IMAPTLSNegotiationC = true ]
+												struct {};
+										}
+									}
+												
+							}
+						};
+						
+					//the embedded SSL session within the IMAP conversation
+					case property.IMAPTLSNegotiation && !property.IMAPTLSNegotiationContinue:
+					case property.IMAPTLSNegotiationContinue:
+						struct
+						{
+							[
+								property.IMAPSummary = "TLS negotiation",			
+								conversation.IMAPTLSNegotiationC = false,
+								//to detect if the [TLS] negotiation is completed
+								Post.conversation.IMAPTLSNegotiationContinueC = property.SSLNeedReassemble? true: false
+							]
+							SSLVersionSelector TLSSSLData;							
+						}
+															
+					default:
+						//[Property.IMAPSummary = ResponseMessage.ToString]
+						[property.IMAPUnknownMsg = IMAPUnknownMsgTable(ResponseMessage.ToString) == "true"? true : false]
+						[IMAPUnknownMsgTable(ResponseMessage.ToString) == "false"? property.IMAPSummary = ResponseMessage.ToString : 0]
+						AsciiStringTerm("\r\n") ResponseMessage = FormatString("%s", this == "" ? "CRLF": this);
+				}
+		}
+	}
+}
+
+Table IMAPStateTable(state)
+{
+	switch(state)
+	{
+		case IMAPUnknownState     : "UnknownState";
+		case IMAPServerGreeting   : "ServerGreeting";
+		case IMAPNotAuthenticated : "NotAuthenticated";
+		case IMAPAuthenticated    : "Authenticated";
+		case IMAPSelected         : "Selected";
+		case IMAPLogout           : "Logout";
+		default                   : "UnknownState";
+	}
+}
+
+//
+// IMAP state machine
+//
+Table IMAPStateMachine(CurrentState, Command, ResponseStatus)
+{
+	switch
+	{
+		// 0) State initiation
+		case (CurrentState == IMAPUnknownState) && ( ResponseStatus == "OK"): IMAPServerGreeting;
+		case (CurrentState == IMAPUnknownState) && ( ResponseStatus == "PREAUTH"): IMAPServerGreeting;
+		case (CurrentState == IMAPUnknownState) && ( ResponseStatus == "BYE"): IMAPServerGreeting;
+		// 1) connection without pre-authentication (OK greeting)
+		case (CurrentState == IMAPServerGreeting) && ( ResponseStatus == "OK"): IMAPNotAuthenticated;
+		// 2) pre-authenticated connection (PREAUTH greeting)
+		case (CurrentState == IMAPServerGreeting) && ( ResponseStatus == "PREAUTH"): IMAPAuthenticated;
+		// 3) rejected connection (BYE greeting)
+		case (CurrentState == IMAPServerGreeting) && ( ResponseStatus == "BYE"): IMAPLogout;
+		// 4) successful LOGIN or AUTHENTICATE command
+		case (CurrentState == IMAPNotAuthenticated) && (Command == "LOGIN" || Command == "AUTHENTICATE") && ( ResponseStatus == "OK"): IMAPAuthenticated;
+		// 5) successful SELECT or EXAMINE command
+		case (CurrentState == IMAPAuthenticated) && (Command == "SELECT" || Command == "EXAMINE") && ( ResponseStatus == "OK"): IMAPSelected;
+		// 6) CLOSE command, or failed SELECT or EXAMINE command
+		case (CurrentState == IMAPSelected) && (Command == "CLOSE"): IMAPAuthenticated;
+		case (CurrentState == IMAPSelected) && (Command == "SELECT" || Command == "EXAMINE") && ( ResponseStatus == "NO"): IMAPAuthenticated;
+		// 7) LOGOUT command, server shutdown, or connection closed
+		case (CurrentState == IMAPNotAuthenticated) && (Command == "LOGOUT"): IMAPLogout;
+		case (CurrentState == IMAPAuthenticated) && (Command == "LOGOUT"): IMAPLogout;
+		case (CurrentState == IMAPSelected) && (Command == "LOGOUT"): IMAPLogout;
+		// Others
+		default : CurrentState;
+	}
+}
+
+Table IMAPCmdDescTable(value)
+{
+	switch(value)
+	{
+		case "LOGIN"		    : "LOGIN - User login";
+		case "LOGOUT"		    : "LOGOUT - User logout";
+		case "CAPABILITY"	  	: "CAPABILITY - Requests capabilities server supports";
+		case "NOOP"			    : "NOOP - Do nothing";
+		case "STARTTLS"		  	: "STARTTLS - TLS negotiation begins immediately";
+		case "AUTHENTICATE"		: "AUTHENTICATE - Indicates SASL authentication mechanism to the server";
+		case "SELECT"		    : "SELECT - Selects a mailbox";
+		case "EXAMINE"		  	: "EXAMINE - Selects a mailbox";
+		case "CREATE"		    : "CREATE - Create a mailbox";
+		case "DELETE"		    : "DELETE - Remove a mailbox";
+		case "RENAME"		    : "RENAME - Rename a mailbox";
+		case "SUBSCRIBE"	  	: "SUBSCRIBE - Adds the specified mailbox name";
+		case "UNSUBSCRIBE"		: "UNSUBSCRIBE - Removes the specified mailbox name";
+		case "LIST"			    : "LIST - Returns a subset of names from complete set";
+		case "LSUB"			    : "LSUB - Returns a subset of names from active or subscribed";
+		case "STATUS"		    : "STATUS - Requests the status of mailbox";
+		case "APPEND"		    : "APPEND - Append a new message";
+		case "CHECK"		    : "CHECK - Requests a checkpoint of mailbox";
+		case "EXPUNGE"		  	: "EXPUNGE - Removes all messages marked as deleted";
+		case "SEARCH"		    : "SEARCH - Searches the mailbox for messages";
+		case "FETCH"		    : "FETCH - Retrieves data associated with a message";
+		case "STORE"		    : "STORE - Alters data associated with a message";
+		case "COPY"			    : "COPY - Copy the specified message";
+		case "UID"			    : "UID - Unique identifier operation";
+		default	                : value;
+	}
+}
+
+table IMAPUnknownMsgTable(value)
+{
+	switch(value)
+	{
+		case "DONE":
+		case "CRLF":
+		case "ZZZZ OK Completed":
+			"false";
+		default:
+			"true";
+	}
+}

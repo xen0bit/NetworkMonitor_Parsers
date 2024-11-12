@@ -1,0 +1,41 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Remote Desktop Protocol
+//#
+//#  Details:                Remote Desktop Protocol parser family - root parser
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 1/27/2010
+//#
+//####
+[DataTypeByteOrder = LittleEndian]
+struct RDP = Local.Summary
+{
+	[conversation.IsTPKTUnCompletedMultiTable$[framenumber] = conversation.TCP.IsTPKTUnCompleted$[Property.NetworkDirection]]
+	[property.IsTPKTUncompletedPro = conversation.IsTPKTUnCompletedMultiTable$[framenumber]]
+	switch 
+	{
+		case TCP && UINT32(FrameData, FrameOffset) == 16 && UINT32(FrameData, FrameOffset + 4) == 0 && UINT32(FrameData, FrameOffset + 8) == 1:
+		case TCP && UINT32(FrameData, FrameOffset) == FrameLength - FrameOffset && UINT32(FrameData, FrameOffset + 4) == 0 && UINT32(FrameData, FrameOffset + 8) == 2:
+			[Local.Summary = "RDPEPS"]
+			RDPEPS RDPEPS;
+		case UDP:
+			[Local.Summary = "RDPEA"]
+			RDPEA RDPEA;
+		case FrameNumber > Conversation.TCP.RDPBCGRSelectedSecurityLayerNegFrameNum && Conversation.TCP.RDPBCGRSelectedSecurityLayer == 1:
+		case FrameNumber > Conversation.TCP.RDPBCGRSelectedSecurityLayerNegFrameNum && Conversation.TCP.RDPBCGRSelectedSecurityLayer == 2:
+		case (UINT8( Framedata, Offset ) < 0x18 && UINT8( Framedata, Offset ) > 0x13) && UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x01:
+			[ Local.Summary = "SSL" ]
+			[DataFieldByteOrder = BigEndian]
+			SSLVersionSelector TLSSSLData;
+		case UINT8( Framedata, Offset ) == 0x03 && UINT8( Framedata, Offset + 1 ) == 0x00 && (FrameLength - FrameOffset) > 4:
+		case !ISOTS && property.IsTPKTUncompletedPro:
+			[Local.Summary = "ISOTS"]
+			[DataFieldByteOrder = BigEndian]
+			ISOTS ISOTS;
+		default:
+			[Local.Summary = "RDPBCGR"]
+			RDPBCGR RDPBCGR;
+	}
+}

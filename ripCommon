@@ -1,0 +1,163 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Routing Information Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1058, 2453
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+Protocol RIP = FormatString("%s%s, %d Entries (Version %d)",
+							RIPCommandTable(Command),
+							RIPSeqExist == 1 ? ", SeqNum = " + RIPSequenceNumber : "",
+							RIPEntryCount,
+							Version
+							)
+{
+	UINT8 Command = FormatString("%s, %d(0x%02X)", RIPCommandTable(this), this, this);
+	[RIPSeqExist = 0]
+	UINT8 Version;
+	switch(Version)
+	{
+		case  2:
+			UINT16 RoutingDomain;
+		default:
+			UINT16 Unused;
+	}
+
+	switch(Command)
+	{
+		case 7:
+		case 8:
+			_struct TriggeredResponseOrACK
+			{
+				[RIPSeqExist = 1, RIPSequenceNumber]
+				UINT16 SequenceNumber;
+				UINT8 FragmentNumber;
+				UINT8 NumberOfFragments;
+			};
+	}
+
+	switch(Command)
+	{
+		case  9:
+		case 10:
+		case 11:
+			struct UpdateHeader = FormatString("Version = %d %s", UpdateHeader.Version,RIPSeqExist ? ", SequenceNumber =" + RIPSequenceNumber : "")
+			{
+				UINT8 Version;
+				switch(Command)
+				{
+					case 9:
+						UINT24 Unused;
+					default:
+						_struct UpdatedResponseOrACK
+						{
+							UINT8 Flush;
+							[RIPSeqExist = 1, RIPSequenceNumber]
+							UINT16 SequenceNumber;
+						}
+				}
+			}
+	}
+
+	//RFC 2453 page 32
+	//the authentication scheme for RIP version 2 will use the space of an
+	//entire RIP entry.  If the Address Family Identifier of the first (and
+	//only the first) entry in the message is 0xFFFF, then the remainder of
+	//the entry contains the authentication.
+	switch
+	{
+		case Version == 2 && UINT16(frameData, offset) == 0xFFFF:
+			RIPAuthenticationEntry AuthenticationEntry;
+	}
+
+	while Option[ frameLength - Offset >= 20 ]
+	{
+		switch(Version)
+		{
+			case  1:
+				[RIPEntryCount = RIPEntryCount + 1]
+				RIPv1Entry RIPv1Entry;
+			case  2:
+				[RIPEntryCount = RIPEntryCount + 1]
+				RIPv2Entry RIPv2Entry;
+			default:
+				switch
+				{
+					case FrameLength - FrameOffset > 0:
+						_Struct UnknownRipVersion
+						{
+							ReportParserError(ParserErrorProtocolClassPublic , "Rip" , "Unknown Rip Version") RipVersionError;                                                              
+							Blob(FrameLength - FrameOffset) UnknownRipVersion;
+						}
+				}
+		}
+	}
+}
+
+Table RIPCommandTable(value)
+{
+	switch(value)
+	{
+		case  1:"Request";
+		case  2:"Response";
+		case  3:"Trace on";
+		case  4:"Trace off";
+		case  5:"SUN reserved";
+		case  6:"Triggered request";
+		case  7:"Triggered response";
+		case  8:"Triggered acknowledgement";
+		case  9:"Update Request";
+		case 10:"Update response";
+		case 11:"Update acknowledgement";
+		default:"Unknown Command";
+	}
+}
+
+Table RIPVersionTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("RIP1, Routing Information Protocol Version1 (%#x)",value);
+		case  2:FormatString("RIP2, Routing Information Protocol Version2 (%#x)",value);
+		default:FormatString("Unknown RIP Version (%#x)",value);
+	}
+}
+
+//20 bytes
+struct RIPv1Entry = FormatString("IP Address = %s, Metric = %d", IPAddress.ToString, Metric)
+{
+	UINT16 AddressFamily;
+	UINT16 Unused1;
+	IPv4Address IPAddress;
+	UINT32 Unused2;
+	UINT32 Unused3;
+	UINT32 Metric;
+}
+
+//20 bytes
+struct RIPv2Entry = FormatString("IP Address = %s, SubnetMask = %s, Metric = %d",
+								 IPAddress.ToString, SubnetMask.ToString, Metric
+								)
+{
+	UINT16 AddressFamily;
+	UINT16 RouteTag;
+	IPv4Address IPAddress;
+	IPv4Address SubnetMask;
+	IPv4Address NextHop;
+	UINT32 Metric;
+}
+
+struct RIPAuthenticationEntry
+{
+	UINT16 AuthIndicator;
+	UINT16 AuthenticationType;
+	AsciiString(16) Authentication;
+}
+

@@ -1,0 +1,130 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Media HTTP Push Distribution Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WMHTTP]: Windows Media HTTP Push Distribution Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/3/2010
+//#
+//####
+
+Protocol WMHTTP = WMSPPacketName
+{
+	while [FrameOffset < FrameLength]
+	{
+		switch(UINT16(FrameData, FrameOffset) & 0x7FFF)
+		{
+			case 0x2448:
+				WMHttpAsfHeadPacket HeadPacket;
+			case 0x2444:
+				WMHttpAsfDataPacket DataPacket;
+			case 0x2443:
+				WMHttpAsfChangeNotification ChangeNotification;
+			case 0x2445:
+				WMHttpEndofStream EndOfStream;
+			case 0x2446:
+				WMHttpPaddingNotification PaddingNotification;
+			default:
+				AsciiStringTerm("\r\n") SetupRequest;
+		}
+	}
+}
+
+Table WMHttpFrameHeaderBBit( Value )
+{
+	switch ( Value )
+	{
+		case 1: "1 - The next packet will be sent immediately after this packet is sent";
+		default: "0 - The next packet will not be sent immediately after this packet is sent";
+	}
+}
+
+[ RegisterBefore(HTTPPayloadData.ASF, InvalidPushSetupResponse, Containsbin(framedata, 0, "Ref1=") && Containsbin(framedata, 0, "[Reference]") ) ]
+Struct WMHttpInvalidPushSetupResponse = Formatstring("URL count: %d", Property.ReferenceURLCount)
+{
+	AsciiStringTerm("\r\n",false) References;
+	Struct ReferenceURLS = Formatstring("URL count: %d", Property.ReferenceURLCount)
+	{
+		[ Property.ReferenceURLCount = 0 ]
+		while[ FrameOffset < FrameLength ]
+		{	
+			[ Property.ReferenceURLCount = Property.ReferenceURLCount + 1 ]
+			DynamicSwitch AsciiStringTerm("=")
+			{
+				default: AsciiStringTerm("\r\n",false) ReferenceURL;
+			};
+		}
+	}
+}
+
+// -------- From WMSP.npl ------------------
+struct WMHttpAsfHeadPacket
+{
+	UINT8 B:1 =  WMHttpFrameHeaderBBit( this );
+	UINT8 Frame:7 = MustBeSetToTable( this, 0x24 );
+	[POST.WMSPPacketName = WMSPPacketName? WMSPPacketName + " & " + WMSPPacketNameTable(this): WMSPPacketNameTable(this)]
+	UINT8 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PacketLength;
+	//WMSAFHeaderType0 AFHeaderType0;
+	[DatafieldFramelength = FrameOffset + PacketLength]
+	ASFHeaderObject ASFHeader;
+}
+
+
+struct WMHttpAsfDataPacket = FormatString("Payload Number = %d",ASFDataNumberOfPayloads)
+{
+	UINT8 B:1 =  WMHttpFrameHeaderBBit( this );
+	UINT8 Frame:7 = MustBeSetToTable( this, 0x24 );
+	[POST.WMSPPacketName = WMSPPacketName? WMSPPacketName + " & " + WMSPPacketNameTable(this): WMSPPacketNameTable(this)]
+	UINT8 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PacketLength;
+	//WMSAFHeaderType0 AFHeaderType0;
+	ASFDataPackets ASFData;
+}
+
+struct WMHttpAsfChangeNotification
+{
+	UINT8 B:1 =  WMHttpFrameHeaderBBit( this );
+	UINT8 Frame:7 = MustBeSetToTable( this, 0x24 );
+	[POST.WMSPPacketName = WMSPPacketName? WMSPPacketName + " & " + WMSPPacketNameTable(this): WMSPPacketNameTable(this)]
+	UINT8 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PacketLength;
+	[DataFieldByteOrder = LittleEndian]
+	INT32  Reason = FormatString("%i - %s",this,this < 0?"changed due to an error":"changed through a normal event");
+}
+
+struct WMHttpEndofStream = FormatString("Reason is %s",WMSPEndOfStreamReason(Reason))
+{
+	UINT8 B:1 =  WMHttpFrameHeaderBBit( this );
+	UINT8 Frame:7 = MustBeSetToTable( this, 0x24 );
+	[POST.WMSPPacketName = WMSPPacketName? WMSPPacketName + " & " + WMSPPacketNameTable(this): WMSPPacketNameTable(this)]
+	UINT8 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PacketLength = FormatString("%s : This value must be 4",this);
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 Reason = WMSPEndOfStreamReason(this);
+}
+
+struct WMHttpPaddingNotification
+{
+	UINT8 B:1 =  WMHttpFrameHeaderBBit( this );
+	UINT8 Frame:7 = MustBeSetToTable( this, 0x24 );
+	[POST.WMSPPacketName = WMSPPacketName? WMSPPacketName + " & " + WMSPPacketNameTable(this): WMSPPacketNameTable(this)]
+	UINT8 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PacketLength;
+	switch
+	{
+		case PacketLength > 0:
+			BLOB(PacketLength) PaddingMessage;
+	}
+}
+
+//-------------- End From WMSP.npl ---------------------

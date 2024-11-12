@@ -1,0 +1,219 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  BRWSA
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-BRWSA]: Common Internet File System (CIFS) Browser Auxiliary Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+Protocol BRWSA = FormatString( "%s %s%s%s%s%s", 
+	Property.BRWSAMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.BRWSASummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.BRWSASummary : "" )
+{
+	[Property.BRWSASummary = ""]
+	[Property.BRWSAMethodName = BRWSAMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 2:
+			_Struct IBrowserrQueryOtherDomains
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[BRWSASummary = FormatString( "ServerName=%s", ServerName )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrAlign Padding;
+										BRWSAServerEnumStruct InfoStruct;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[BRWSASummary = FormatString( "TotalEntries=0x%X ReturnValue=0x%X", TotalEntries, ReturnValue )]
+									Struct
+									{
+										BRWSAServerEnumStruct InfoStruct;
+										Align4 padding;
+										UINT32 TotalEntries;
+										UINT32 ReturnValue;
+									}
+							}
+						}
+				}
+			};
+		Case 0:
+		Case 1:
+		Case 3:
+		Case 4:
+		Case 5:
+		Case 6:
+		Case 7:
+		Case 8:
+		Case 9:
+		Case 10:
+		Case 11:
+			Struct NotUsedOnWire
+			{
+				Switch (property.MSRPCPType)
+				{
+					case 0x00:// REQUEST
+					[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+					struct Request 
+					{
+						ReportParserWarning("BRWSA", "Invalid brwsa method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+						Blob(FrameLength - Offset) PayloadData;
+					}
+					
+					case 0x02:// RESPONSE
+					[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+					struct Response
+					{
+						ReportParserWarning("BRWSA", "Invalid brwsa method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+						Blob(FrameLength - Offset) PayloadData;
+					}
+				}
+			};
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "BRWSA", "Unknown Browser method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+Table BRWSAMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Opnum0NotUsedOnWire";
+		Case 1: "Opnum1NotUsedOnWire";
+		Case 2: "I_BrowserrQueryOtherDomains";
+		Case 3: "Opnum3NotUsedOnWire";
+		Case 4: "Opnum4NotUsedOnWire";
+		Case 5: "Opnum5NotUsedOnWire";
+		Case 6: "Opnum6NotUsedOnWire";
+		Case 7: "Opnum7NotUsedOnWire";
+		Case 8: "Opnum8NotUsedOnWire";
+		Case 9: "Opnum9NotUsedOnWire";
+		Case 10: "Opnum10NotUsedOnWire";
+		Case 11: "Opnum11NotUsedOnWire";
+		Default: "unknown";
+	}
+}
+Table BRWSAPlatformIDTable( Value )
+{
+	Switch( Value )
+	{
+		Case 300: FormatString( "DOS (0x%08X)", Value );
+		Case 400: FormatString( "OS2 (0x%08X)", Value );
+		Case 500: FormatString( "NT (0x%08X)", Value );
+		Case 600: FormatString( "OSF (0x%08X)", Value );
+		Case 700: FormatString( "VMS (0x%08X)", Value );
+	}
+}
+
+
+//
+//	__nested_ServerInfo__SERVER_ENUM_STRUCT
+//
+Struct BRWSANestedServerInfoServerEnumStruct
+{
+	UINT32 SwitchValue = MustBeSetToTable(this, "100");
+	NdrAlign Pad;
+	Switch( SwitchValue )
+	{
+		Case 100:
+			BRWSAPServerInfo100Container Level100Ptr;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "BRWSA", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SERVER_ENUM_STRUCT
+//  Alignment:4 or 8 NdrAlign
+//
+Struct BRWSAServerEnumStruct
+{
+	UINT32 Level = MustBeSetToTable(this, "100");
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	BRWSANestedServerInfoServerEnumStruct ServerInfo;
+}
+
+Table BRWSAServerEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 100: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_INFO_100
+//  Alignment: NdrAlign
+//
+Struct BRWSAServerInfo100            
+{
+	NdrAlign Pad;
+	UINT32 Sv100PlatformId = BRWSAPlatformIDTable(this);
+	NdrPtr Sv100NamePtr;
+}
+
+Struct BRWSAServerInfo100Conformant  
+{
+	NdrPtrToConformant Size;
+	Switch
+	{
+		Case Size.ReferentID > 0:
+		Struct
+		{
+			BRWSAServerInfo100 Sv100PlatformId[Size.MaxCount];
+			NdrWideString Sv100Name[Size.MaxCount];
+		}
+	}
+}
+
+//
+//	_SERVER_INFO_100_CONTAINER
+//  Alignment:	NdrAlign
+//
+Struct BRWSAServerInfo100Container
+{
+	UINT32 EntriesRead;
+	BRWSAServerInfo100Conformant BufferPtr;
+}
+
+Struct BRWSAPServerInfo100Container = Pointer.ReferentID ? ServerInfo100Container.ToString : "NULL"   
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID > 0: BRWSAServerInfo100Container ServerInfo100Container;
+	}
+}

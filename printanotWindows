@@ -1,0 +1,436 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Print Async Notify Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PAN]: Print System Asynchronous Notification Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+[PrintANotSummary = "", PrintANotTempString = "", ReturnValue = 0]
+Protocol PrintANot = FormatString( "%s%s%s%s%s", PrintANotMethodTable( Property.MsrpcIfUuid, Property.MsrpcOpnum ), Property.MsrpcPType ? " Response" : " Request", PrintANotSummary != "" ? ", " + PrintANotSummary : "", Property.MsrpcPType ? ", " + "Status = " + WinErrorCodeNameTable( ReturnValue ) : "", Property.ParserError ? ", " + Property.ParserErrorMessage : Property.ParserErrorMessage )
+{
+	Switch( Property.MsrpcIfUuid )
+	{
+		Case "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" : //IRPCAsyncNotify
+		_Struct IRPCAsyncNotify
+		{
+			Switch( Property.MsrpcOpnum )
+			{
+				Case 0:
+				_Struct RegisterClient
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch { 										
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											Struct
+											{							
+												ContextHandle		RegistrationObject;
+												NdrWIDESTRINGPtr	PrinterOrServerName;
+												Align4				Pad;
+												GUID(0)						NotificationType;
+												NdrV1Enum(4)				NotifyFilter  = FORMATSTRING("%u = %s",this,UserFilterTable(this));
+												NdrV1Enum(4)				ConversationStyle = FORMATSTRING("%u = %s",this,conversationStyleTable(this));
+											}
+									}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch { 
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											Struct
+											{
+												NdrWIDESTRINGPtr	RemoteServerReferral;
+												Align4						Pad;
+												[ReturnValue = UINT32( FrameData, Offset )]
+												UINT32						ReturnValue = WinErrorCodeTable( this );
+											}
+									}
+						}
+					}
+				}
+				Case 1:
+				_Struct UnregisterClient
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									ContextHandle			RegistrationObject;
+							}									
+								
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:							
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32					ReturnValue = WinErrorCodeTable( this );
+							}
+						}
+					}
+				}
+				
+				Case 3:
+				_Struct GetNewChannel 
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch { 
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											ContextHandle				RemoteObject;
+									}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch { 
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											Struct
+											{										
+												UINT32									ChannelCount;
+												PANPtrChannelContext		ChannelContext;
+												[ReturnValue = UINT32( FrameData, Offset )]
+												UINT32									ReturnValue = WinErrorCodeTable( this );
+											}
+									}
+						}
+					}
+				}
+				Case 4:
+				_Struct GetNotificationSendResponse 
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct 
+									{							
+										ContextHandle							Channel;
+										PANPtrPrintAsyncNotificationType		NotificationType;
+										UINT32									NotificationArraySize;
+										PANNotificationArray					NotificationData;
+									}
+							}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{							
+										ContextHandle							Channel;
+										PANPtrPrintAsyncNotificationType		NotificationType; 
+										UINT32									NotificationArraySize;
+										PANNotificationArray					NotificationData;
+										Align4	Pad;
+										[ReturnValue = UINT32( FrameData, Offset )]
+										UINT32									ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+					}
+				}
+				Case 5:
+				_Struct GetNotification
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch { 
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											ContextHandle		RemoteObject;
+									}							
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{							
+										PANPtrPrintAsyncNotificationType		NotificationType;
+										UINT32									NotificationArraySize;
+										PANNotificationArray					NotificationData;
+										Align4	Pad;
+										[ReturnValue = UINT32( FrameData, Offset )]
+										UINT32				ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+					}
+				}
+				Case 6:
+				_Struct CloseChannel
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle			Channel;
+										GUID(0)						NotificationType; 
+										UINT32						NotificationArraySize;
+										PANNotificationArray		Reason;
+									}
+							}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{		
+										ContextHandle		Channel;
+										[ReturnValue = UINT32( FrameData, Offset )]
+										UINT32				ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+					}
+				}
+				Case 2:
+				struct NotUsedOnWire
+				{
+					Switch (property.MSRPCPType)
+					{
+					// REQUEST
+						case 0x00:
+						[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						struct Request 
+						{
+							ReportParserWarning("PrintANot{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}", "Invalid PrintANot method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+
+					// RESPONSE
+						case 0x02:
+						[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						struct Response
+						{
+							ReportParserWarning("PrintANot{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}", "Invalid PrintANot method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;					
+						}
+					}
+				}
+				Default: ReportParserError(ParserErrorProtocolClassWindows, "PrintANot{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}", "Unknown PrintANot Request" ) ParserError;
+			}
+		}
+		Case "{AE33069B-A2A8-46EE-A235-DDFD339BE281}" : //IRPCRemoteObject
+		_Struct IRPCRemoteObject
+		{
+			Switch( Property.MsrpcOpnum )
+			{
+				Case 0:
+				_Struct Create
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+							}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{	
+										ContextHandle		RemoteObject;
+										[ReturnValue = UINT32( FrameData, Offset )]
+										UINT32				ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+					}
+				}
+				Case 1:
+				_Struct Delete
+				{
+					Switch( property.MsrpcPType )
+					{
+						Case 0x00: //RPC_REQUEST
+						[PrintANotSummary = ""]
+						_Struct Request
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:ContextHandle		RemoteObject;
+							}
+						}
+						Case 0x02: //RPC_RESPONSE
+						[PrintANotSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{ 
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:ContextHandle		RemoteObject;
+							}
+						}
+					}
+				}
+				Default: ReportParserError(ParserErrorProtocolClassWindows, "PrintANot{AE33069B-A2A8-46EE-A235-DDFD339BE281}", "Unknown PrintANot Request" ) ParserError;
+			}
+		}
+	}
+}
+
+Table UserFilterTable
+{
+	Switch( value )
+	{
+		case 0x00: FormatString("kPerUser, Notifications will only be sent to or received by clients impersonating the same user");
+		case 0x01: FormatString("kAllUsers, Notifications will be sent to or received by all clients");
+	}
+}
+
+Table ConversationStyleTable
+{
+	Switch( value )
+	{
+		case 0x00: FormatString("kBiDirectional, Bidirectional Communication Mode");
+		case 0x01: FormatString("kUniDirectional, Unidirectional Communication Mode");
+	}
+}
+
+Table PrintANotMethodTable( ValueUuid, ValueOpnum )
+{
+	Switch
+	{
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 0) : "IRPCAsyncNotify:RegisterClient";
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 1) : "IRPCAsyncNotify:UnregisterClient";
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 2) : "IRPCAsyncNotify:Reserved"; 
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 3) : "IRPCAsyncNotify:GetNewChannel";
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 4) : "IRPCAsyncNotify:GetNotificationSendResponse";
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 5) : "IRPCAsyncNotify:GetNotification";
+		Case (ValueUuid == "{0B6EDBFA-4A24-4FC6-8A23-942B1ECA65D1}" && ValueOpnum == 6) : "IRPCAsyncNotify:CloseChannel";  
+		Case (ValueUuid == "{AE33069B-A2A8-46EE-A235-DDFD339BE281}" && ValueOpnum == 0) : "IRPCRemoteObject:Create";
+		Case (ValueUuid == "{AE33069B-A2A8-46EE-A235-DDFD339BE281}" && ValueOpnum == 1) : "IRPCRemoteObject:Delete";
+		Default    : "Unknown PrintANot Method";
+	}
+}
+
+
+Struct PANPtrPrintAsyncNotificationType
+{
+	NdrPtr			Ptr;
+	Switch
+	{
+		Case Ptr.ReferentId > 0:
+			GUID(0)		NotificationType;
+	}
+}
+
+Struct PANNotificationArray
+{
+	NdrPtr			Ptr;
+	Switch
+	{
+		Case Ptr.ReferentId > 0:
+			Struct
+			{
+				NdrConformant		ArraySize;
+				UINT8		NotificationData[ ArraySize.MaxCount ];
+			}
+	}
+}
+
+Struct PANPtrChannelContext
+{
+	NdrPtr			Ptr;
+	Switch
+	{
+		Case Ptr.ReferentId > 0:
+			Struct
+			{
+				NdrConformant				ArraySize;
+				ContextHandle		ChannelContext[ ArraySize.MaxCount ];
+			}
+	}
+}

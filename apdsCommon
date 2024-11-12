@@ -1,0 +1,183 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Digest validation protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-APDS]: Digest validation protocol (15.0)
+//#
+//#  Comments:               Microsoft implementation is encrypted
+//#
+//#  Revision Class and Date:Major, 7/29/2009
+//#                          Minor, 11/17/2009
+//#
+//####
+
+//[DataTypeByteOrder = LittleEndian]
+//[RegisterBefore(NRPCNetlogonValidationGenericInfo2.ValidationData, APDSinfo, 
+	//UINT32(FrameData, FrameOffset) == 0x03 || UINT32(FrameData, FrameOffset) == 0x1A || UINT32(FrameData, FrameOffset) == 0x0A)]
+//[RegisterBefore(NRPCNetlogonGenericInfo.LogonData ,APDSinfo2, 
+	//UINT32(FrameData, FrameOffset) == 0x03 || UINT32(FrameData, FrameOffset) == 0x1A || UINT32(FrameData, FrameOffset) == 0x0A)]	
+	
+	// the encrypted data may be parsed as normal data, which will surely lead to parser errors.
+	// So at the minimum we need to remove the entry point 
+	
+Protocol APDS=formatstring("%s",this.tostring)
+{
+	switch (UINT32(FrameData, FrameOffset))
+	{
+			case 0x03: APDSKerbVerifyPacRequest KerbVerifyPacRequest ;
+			case 0x1A: APDSDigestValidationReq DigestValidationReq;
+			case 0x0A: APDSDigestValidationResp DigestValidationResp;
+	}
+}
+
+//
+//KERB_VERIFY_PAC_REQUEST
+//
+struct APDSKerbVerifyPacRequest=formatstring("messagetype is %u",MessageType)
+{
+	UINT32 MessageType = MustBeSetToTable(this,"3");
+	UINT32 CheckSumLength;
+	[Property.SignatureType]
+	UINT32 SignatureType;
+	UINT32 SignatureLength;
+	PACKerbVerifyPacRequest(Property.SignatureType) ChecksumAndSignature;
+}
+
+//
+//DIGEST_VALIDATION_REQ
+//
+struct APDSDigestValidationReq=formatstring("messagetype is %u",MessageType)
+{
+	UINT32 MessageType = MustBeSetToTable(this, "0x1A");
+	UINT16 Version = MustBeSetToTable(this, "0x01");
+	UINT16 MsgSize;
+	UINT16 DigestType = APDSDigestTypeTable(this); 
+	uint16 QopType = APDSQopTypeTable(this);
+	UINT16 AlgType = APDSAlgTypeTable(this);
+	UINT16 CharsetType = APDSCharsetTypeTable(this);
+	UINT16 CharValuesLength ;
+	UINT16 NameFormat = APDSNameFormatTable(this);
+	UINT16 Flags
+	{
+		UINT16 Unused:11 = FormatString("(%s)",this.ToBitString);
+		UINT16 E:1 = FormatString("     (%s) %s",this.ToBitString, this ? "Indicates the DC will attempt to validate the request with an un-escaped backslash" : "Not set");
+		UINT16 D:1 = FormatString("     (%s) %s",this.ToBitString, this ? "Indicates if a single backslash is found in the username value" : "Not set");
+		UINT16 C:1 = FormatString("     (%s) %s",this.ToBitString, this ? "Indicates that this request is from a server" : "Not set");
+		UINT16 B:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The optional Authzid field is set and carried in the Payload buffer in the DIGEST_VALIDATION_REQ message." : "Not set");
+		UINT16 A:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The format of Username and Realm (carried in the Payload field of DIGEST_VALIDATION_REQ) MUST be determined by the DC." : "Not set");
+	}; 
+	UINT16 AccountNameLength;
+	UINT16 DomainLength ;
+	UINT16 ServerNameLength ;
+	UINT16 Reserved3 ;
+	UINT16 Reserved4 ;
+	UINT64 Pad1 = MustBeSetToTable(this, "0");
+	APDSPayloadStruct Payload ;
+}
+
+//
+//DIGEST_VALIDATION_RESP
+//
+struct APDSDigestValidationResp=formatstring("messagetype is %u",MessageType)
+{
+	UINT32 MessageType = MustBeSetToTable(this,"0x0A");
+	UINT16 Version = MustBeSetToTable(this,"0x01") ;
+	UINT16 Pad2 = MustBeSetToTable(this,"0") ;
+	UINT32 Status = NtStatusTable(this); 
+	UINT16 SessionKeyLength = MustBeSetToTable(this, "33");
+	UINT16 Pad3 = MustBeSetToTable(this,"0") ;
+	switch
+	{
+		case Status == 0xC000006D: UINT32 AuthDataSizea = MustBeSetToTable(this ,"0");
+		default: UINT32 AuthDataSize;
+	}
+	UINT16 AcctNameSize;
+	UINT16 Reserved1 = MustBeSetToTable(this, "0");
+	UINT32 MessageSize;
+	UINT32 Reserved3 = MustBeSetToTable(this, "0");
+	ArrayAsHex(SessionKeyLength) SessionKey;
+	UINT8 SessionKeyNULLterminator = MustBeSetToTable(this,"0");
+	UINT56  Pad4=MustBeSetToTable(this,"0");
+	ALign8 Pad5;
+	UINT64 Pad1 = MustBeSetToTable(this, "0");
+	switch
+	{
+		case AuthDataSize > 0: PACTYPE AuthData;
+	}
+	UnicodeString(AcctNameSize)  AccountName;
+	
+}
+
+Table APDSDigestTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x03: "Using the Digest authentication for the HTTP/1.1 Protocol";
+		case 0x04: "Using Digest authentication as a Simple Authentication and Security Layer";
+		default :"Invalid value";
+	}
+}
+
+Table APDSQopTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "The Digest client did not specify a QoP. For backward compatibility with Digest Access";
+		case 0x02: "Authentication only";
+		case 0x03: "Authentication and integrity protection";
+		case 0x04: "Authentication with integrity protection and encryption";
+		default :"Invalid value";
+	}
+}
+
+Table APDSAlgTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "MD5 assumed";
+		case 0x02: "MD5 value to produce the digest ";
+		case 0x03: "MD5-sess value to produce the digest";
+		default :"Invalid value";
+	}
+}
+Table APDSCharsetTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "ISO8859-1 encoding is used for username and password fields.";
+		case 0x02: "UTF-8 encoding is used for username and password fields";
+		default :"Invalid value";
+	}
+}
+Table APDSNameFormatTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "Digest server cannot determine the format of the user's AccountName";
+		case 0x01: "A format determined to be the SAM account name";
+		case 0x02: "A format determined to be the user principal name  for the account";
+		case 0x03: "A format determined to be NetBIOS";
+		default :"Invalid value";
+	}
+}
+
+struct APDSPayloadStruct
+{
+	AsciiStringTerm(",") Username ;
+	AsciiStringTerm(",") Realm ;
+	AsciiStringTerm(",") Nonce ;
+	AsciiStringTerm(",") CNonce ;
+	AsciiStringTerm(",") NonceCount ;
+	AsciiStringTerm(",") Algorithm ;
+	AsciiStringTerm(",") QOP ;
+	AsciiStringTerm(",") Method ;
+	AsciiStringTerm(",") URI ;
+	AsciiStringTerm(",") Response ;
+	AsciiStringTerm(",") Hentity ;
+	AsciiStringTerm(",") Authzid ;
+	UnicodeString AccountName ;
+	UnicodeString Domain ;
+	UnicodeString ServerName ;
+}

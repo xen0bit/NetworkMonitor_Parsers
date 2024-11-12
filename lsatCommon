@@ -1,0 +1,1171 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Local Security Authority (Translation Methods) Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-LSAT]: Local Security Authority (Translation Methods) Remote Protocol Specification (15.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/2/2010
+//#
+//####
+
+Protocol LSAT = FormatString( "%s %s%s%s%s%s", 
+	Property.LSATMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.LSATSummary && Property.MSRPCEncrypted == ConstEncTypeClearData? ", " + Property.LSATSummary : "" )
+{
+	[Property.LSATSummary = ""]
+	[Property.LSATMethodName = LSATMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		case 0:
+			_Struct LsarClose
+			{
+				Switch(Property.MSRPCPType)
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "ObjectHandle=%s", ObjectHandle.toString)]
+									Struct
+									{
+										CONTEXT_HANDLE ObjectHandle;
+									};
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "ObjectHandle=%s, ReturnValue=%s", ObjectHandle.toString, ReturnValue.toString )]
+									Struct
+									{
+										CONTEXT_HANDLE ObjectHandle;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+			
+		Case 6:
+		_Struct LsarOpenPolicy
+		{
+			Switch( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_Struct Request
+				{
+					Switch {
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							[LSATSummary = FormatString("Target Computer=%s, DesiredAccess=%s, ObjectAttributes=%s",SystemName.toString,DesiredAccess.toString,ObjectAttributes.toString)]
+							struct
+							{
+								NDRPTR PSystemName;
+								switch 
+								{
+									case PSystemName:
+										UnicodeString(1) SystemName;
+								}
+								LSADLsaprObjectAttributes  ObjectAttributes;
+								Align4 Pad;
+								LSADPolicyObjectAccessMask DesiredAccess;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_Struct Response
+				{
+					Switch {
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							[LSATSummary = FormatString( "PolicyHandle=%s, ReturnValue=%s", PolicyHandle.toString, ReturnValue.toString )]
+							struct
+							{
+								CONTEXT_HANDLE PolicyHandle;
+								UINT32 ReturnValue = NtStatusTable( this );
+							}
+					}
+
+				}
+			}
+
+		}
+		
+		Case 14:
+			_Struct LsarLookupNames
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "Count=0x%X MappedCount=0x%X", Count, MappedCount )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 Count;
+										LSATRpcUnicodeStringIdlStructConformant Names;
+										Align4 Pad1;
+										LSATLsaprTranslatedSidsIdlStruct TranslatedSids;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										LSATLsaprTranslatedSidsIdlStruct TranslatedSids;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct LsarLookupSids
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X", MappedCount )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSATLsaprSidEnumBufferIdlStruct SidEnumBuffer;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesIdlStruct TranslatedNames;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesIdlStruct TranslatedNames;
+										Align4 Pad2;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		Case 44:
+		_Struct LsarOpenPolicy2
+		{
+			Switch( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_Struct Request
+				{
+					Switch {
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							[LSATSummary = FormatString("Target Computer=%s, DesiredAccess=%s, ObjectAttributes=%s",SystemName.toString,DesiredAccess.toString,ObjectAttributes.toString)]
+							struct
+							{
+								NdrWIDESTRINGPtr SystemName;
+								LSADLsaprObjectAttributes  ObjectAttributes;
+								Align4 Pad;
+								LSADPolicyObjectAccessMask DesiredAccess;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_Struct Response
+				{
+					Switch {
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							[LSATSummary = FormatString("PolicyHandle=%s, ReturnValue=%s",PolicyHandle.toString, ReturnValue.toString)]
+							struct
+							{
+								CONTEXT_HANDLE PolicyHandle;
+								UINT32 ReturnValue = NtStatusTable( this );
+							}
+					}
+
+				}
+			}
+
+		}
+		
+		Case 45:
+			_Struct LsarGetUserName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "SystemName=%s", SystemName )]
+									Struct
+									{
+										NdrWideStringPtr SystemName;
+										LSATRpcUnicodeStringIdlStructPtr UserName;
+										LSATRpcUnicodeStringIdlStructPtrPtr DomainName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "ReturnValue=0x%X", ReturnValue )]
+									Struct
+									{
+										LSATRpcUnicodeStringIdlStructPtr UserName;
+										LSATRpcUnicodeStringIdlStructPtrPtr DomainName;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 57:
+			_Struct LsarLookupSids2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X LookupOptions=0x%X ClientRevision=0x%X", MappedCount, LookupOptions, ClientRevision )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSATLsaprSidEnumBufferIdlStruct SidEnumBuffer;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesExIdlStruct TranslatedNames;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+										UINT32 LookupOptions;
+										UINT32 ClientRevision;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesExIdlStruct TranslatedNames;
+										Align4	padding;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 58:
+			_Struct LsarLookupNames2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "Count=0x%X MappedCount=0x%X LookupOptions=0x%X ClientRevision=0x%X", Count, MappedCount, LookupOptions, ClientRevision )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 Count;
+										LSATRpcUnicodeStringIdlStructConformant Names;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsExIdlStruct TranslatedSids;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+										UINT32 LookupOptions;
+										UINT32 ClientRevision;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsExIdlStruct TranslatedSids;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 68:
+			_Struct LsarLookupNames3
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "Count=0x%X MappedCount=0x%X LookupOptions=0x%X ClientRevision=0x%X", Count, MappedCount, LookupOptions, ClientRevision )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 Count;
+										LSATRpcUnicodeStringIdlStructConformant Names;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsEx2IdlStruct TranslatedSids;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+										UINT32 LookupOptions;
+										UINT32 ClientRevision;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsEx2IdlStruct TranslatedSids;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 76:
+			_Struct LsarLookupSids3
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X LookupOptions=0x%X ClientRevision=0x%X", MappedCount, LookupOptions, ClientRevision )]
+									Struct
+									{
+										LSATLsaprSidEnumBufferIdlStruct SidEnumBuffer;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesExIdlStruct TranslatedNames;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+										UINT32 LookupOptions;
+										UINT32 ClientRevision;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedNamesExIdlStruct TranslatedNames;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		
+		Case 77:
+			_Struct LsarLookupNames4
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "Count=0x%X MappedCount=0x%X LookupOptions=0x%X ClientRevision=0x%X", Count, MappedCount, LookupOptions, ClientRevision )]
+									Struct
+									{
+										UINT32 Count;
+										LSATRpcUnicodeStringIdlStructConformant Names;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsEx2IdlStruct TranslatedSids;
+										LSATLsapLookupLevel LookupLevel;
+										Align4 Pad;
+										UINT32 MappedCount;
+										UINT32 LookupOptions = LSATLsarLookupNames4LookupOptionsTable(this);
+										UINT32 ClientRevision = LSATLsarLookupNames4ClientRevisionTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[LSATSummary = FormatString( "MappedCount=0x%X ReturnValue=0x%X", MappedCount, ReturnValue )]
+									Struct
+									{
+										LSATLsaprReferencedDomainListIdlStructPtr ReferencedDomains;
+										NdrAlign Pad1;
+										LSATLsaprTranslatedSidsEx2IdlStruct TranslatedSids;
+										UINT32 MappedCount;
+										INT32 ReturnValue = NtStatusTable(this);
+									}
+							}
+						}
+				}
+			}
+		Case 1:
+		Case 5:
+		Case 9:
+		Case 21:
+		Case 22:
+		Case 52:
+		Case 56:
+		Case 60:
+		Case 61:
+		Case 62:
+		Case 63:
+		Case 64:
+		Case 65:
+		Case 66:
+		Case 67:
+		Case 69:
+		Case 70:
+		Case 71:
+		Case 72:
+		Case 75:
+			struct NotUsedOnWire
+			{
+				Switch (property.MSRPCPType)
+				{
+			// REQUEST
+					case 0x00:
+					[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+					struct Request 
+					{
+						ReportParserWarning("LAST", "Invalid lsat method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+						Blob(FrameLength - Offset) PayloadData;
+					}
+
+			// RESPONSE
+					case 0x02:
+					[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+					struct Response
+					{
+						ReportParserWarning("LAST", "Invalid lsat method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+						Blob(FrameLength - Offset) PayloadData;					
+					}
+				}
+			}
+		
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "LSAT", "Unknown lsarpc method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+Table LSATMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "LsarClose";
+		Case 1: "Opnum1NotUsedOnWire";
+		Case 2: "lsarpc_Opnum2DummyMethod";
+		Case 3: "lsarpc_Opnum3DummyMethod";
+		Case 4: "lsarpc_Opnum4DummyMethod";
+		Case 5: "Opnum5NotUsedOnWire";
+		Case 6: "LsarOpenPolicy";
+		Case 7: "lsarpc_Opnum7DummyMethod";
+		Case 8: "lsarpc_Opnum8DummyMethod";
+		Case 9: "Opnum9NotUsedOnWire";
+		Case 10: "lsarpc_Opnum10DummyMethod";
+		Case 11: "lsarpc_Opnum11DummyMethod";
+		Case 12: "lsarpc_Opnum12DummyMethod";
+		Case 13: "lsarpc_Opnum13DummyMethod";
+		Case 14: "LsarLookupNames";
+		Case 15: "LsarLookupSids";
+		Case 16: "lsarpc_Opnum16DummyMethod";
+		Case 17: "lsarpc_Opnum17DummyMethod";
+		Case 18: "lsarpc_Opnum18DummyMethod";
+		Case 19: "lsarpc_Opnum19DummyMethod";
+		Case 20: "lsarpc_Opnum20DummyMethod";
+		Case 21: "Opnum21NotUsedOnWire";
+		Case 22: "Opnum22NotUsedOnWire";
+		Case 23: "lsarpc_Opnum23DummyMethod";
+		Case 24: "lsarpc_Opnum24DummyMethod";
+		Case 25: "lsarpc_Opnum25DummyMethod";
+		Case 26: "lsarpc_Opnum26DummyMethod";
+		Case 27: "lsarpc_Opnum27DummyMethod";
+		Case 28: "lsarpc_Opnum28DummyMethod";
+		Case 29: "lsarpc_Opnum29DummyMethod";
+		Case 30: "lsarpc_Opnum30DummyMethod";
+		Case 31: "lsarpc_Opnum31DummyMethod";
+		Case 32: "lsarpc_Opnum32DummyMethod";
+		Case 33: "lsarpc_Opnum33DummyMethod";
+		Case 34: "lsarpc_Opnum34DummyMethod";
+		Case 35: "lsarpc_Opnum35DummyMethod";
+		Case 36: "lsarpc_Opnum36DummyMethod";
+		Case 37: "lsarpc_Opnum37DummyMethod";
+		Case 38: "lsarpc_Opnum38DummyMethod";
+		Case 39: "lsarpc_Opnum39DummyMethod";
+		Case 40: "lsarpc_Opnum40DummyMethod";
+		Case 41: "lsarpc_Opnum41DummyMethod";
+		Case 42: "lsarpc_Opnum42DummyMethod";
+		Case 43: "lsarpc_Opnum43DummyMethod";
+		Case 44: "LsarOpenPolicy2";
+		Case 45: "LsarGetUserName";
+		Case 46: "lsarpc_Opnum46DummyMethod";
+		Case 47: "lsarpc_Opnum47DummyMethod";
+		Case 48: "lsarpc_Opnum48DummyMethod";
+		Case 49: "lsarpc_Opnum49DummyMethod";
+		Case 50: "lsarpc_Opnum50DummyMethod";
+		Case 51: "lsarpc_Opnum51DummyMethod";
+		Case 52: "Opnum52NotUsedOnWire";
+		Case 53: "lsarpc_Opnum53DummyMethod";
+		Case 54: "lsarpc_Opnum54DummyMethod";
+		Case 55: "lsarpc_Opnum55DummyMethod";
+		Case 56: "Opnum56NotUsedOnWire";
+		Case 57: "LsarLookupSids2";
+		Case 58: "LsarLookupNames2";
+		Case 59: "lsarpc_Opnum59DummyMethod";
+		Case 60: "Opnum60NotUsedOnWire";
+		Case 61: "Opnum61NotUsedOnWire";
+		Case 62: "Opnum62NotUsedOnWire";
+		Case 63: "Opnum63NotUsedOnWire";
+		Case 64: "Opnum64NotUsedOnWire";
+		Case 65: "Opnum65NotUsedOnWire";
+		Case 66: "Opnum66NotUsedOnWire";
+		Case 67: "Opnum67NotUsedOnWire";
+		Case 68: "LsarLookupNames3";
+		Case 69: "Opnum69NotUsedOnWire";
+		Case 70: "Opnum70NotUsedOnWire";
+		Case 71: "Opnum71NotUsedOnWire";
+		Case 72: "Opnum72NotUsedOnWire";
+		Case 73: "lsarpc_Opnum73DummyMethod";
+		Case 74: "lsarpc_Opnum74DummyMethod";
+		Case 75: "Opnum75NotUsedOnWire";
+		Case 76: "LsarLookupSids3";
+		Case 77: "LsarLookupNames4";
+		Default: "unknown";
+	}
+}
+
+//
+//	_LSAP_LOOKUP_LEVEL
+//
+Struct LSATLsapLookupLevel
+{
+	NdrEnum LookupLevel = LSATLsapLookupLevelTable(Property.NdrEnumValue);
+}
+
+Table LSATLsapLookupLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "LsapLookupWksta - LsapLookupWksta constant.";
+		Case 2: "LsapLookupPDC - LsapLookupPDC constant.";
+		Case 3: "LsapLookupTDL - LsapLookupTDL constant.";
+		Case 4: "LsapLookupGC - LsapLookupGC constant.";
+		Case 5: "LsapLookupXForestReferral - LsapLookupXForestReferral constant.";
+		Case 6: "LsapLookupXForestResolve - LsapLookupXForestResolve constant.";
+		Case 7: "LsapLookupRODCReferralToFullDC - LsapLookupRODCReferralToFullDC constant.";
+	}
+}
+
+//
+//	_LSAPR_REFERENCED_DOMAIN_LIST
+//	Alignment:NdrAlign
+//
+Struct LSATLsaprReferencedDomainList
+{
+	UINT32 Entries;
+	NdrPtr DomainsPtr;
+	UINT32 MaxEntries;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+Struct LSATLsaprReferencedDomainListIdlStruct
+{
+	LSATLsaprReferencedDomainList LsaprReferencedDomainList;
+	Switch {
+		Case LsaprReferencedDomainList.DomainsPtr.ReferentID != 0:
+			LSATLsaprTrustInformationConformant Domains;
+	}
+}
+
+Struct LSATLsaprReferencedDomainListIdlStructPtr
+{
+	NdrPtr LsaprReferencedDomainListIdlStructPtr;
+	Switch {
+		Case LsaprReferencedDomainListIdlStructPtr.ReferentID != 0:
+			LSATLsaprReferencedDomainListIdlStruct LsaprReferencedDomainListIdlStruct;
+	}
+}
+
+//
+//	_LSAPR_SID_ENUM_BUFFER
+//	Alignment:NdrAlign
+//
+Struct LSATLsaprSidEnumBuffer
+{
+	UINT32 Entries;
+	NdrPtr SidInfoPtr;
+}
+
+Struct LSATLsaprSidEnumBufferIdlStruct
+{
+	LSATLsaprSidEnumBuffer LsaprSidEnumBuffer;
+	Switch {
+		Case LsaprSidEnumBuffer.SidInfoPtr.ReferentID != 0:
+			LSATLsaprSidInformationConformant SidInfo;
+	}
+}
+
+//
+//	_LSAPR_SID_INFORMATION
+//
+Struct LSATLsaprSidInformation
+{
+	NdrPtr SidPtr;
+}
+
+Struct LSATLsaprSidInformationConformant
+{
+	NdrConformant Size;
+	LSATLsaprSidInformation Element[Size.MaxCount];
+	[Local.Count = Size.MaxCount]
+	While[Local.Count > 0]
+	{
+		[Local.Count--]
+		LSATRpcSid Sid;
+	}
+}
+
+//
+//	_LSAPR_TRANSLATED_NAME
+//	Alignment:NdrAlign
+//
+Struct LSATLsaprTranslatedName
+{
+	NdrAlign Pad;
+	LSATSidNameUse Use;
+	NdrUnicodeStringHeader Name;
+	INT32 DomainIndex;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+Struct LSATLsaprTranslatedNameConformant
+{
+	NdrConformant Size;
+	[Property.NdrUnicodeStringHeaderPtrCount = 0]
+	LSATLsaprTranslatedName Element[Size.MaxCount];
+	NdrUnicodeStringRef Buffer[Property.NdrUnicodeStringHeaderPtrCount];
+}
+
+//
+//	_LSAPR_TRANSLATED_NAME_EX
+// alignment: NdrAlign
+//
+Struct LSATLsaprTranslatedNameEx
+{
+	LSATSidNameUse Use;
+	NdrUnicodeStringHeader Name;
+	INT32 DomainIndex;
+	UINT32 Flags = LSATLsaprTranslatedNameExFlagsTable(this);
+}
+
+Struct LSATLsaprTranslatedNameExConformant
+{
+	NdrConformant Size;
+	[Property.NdrUnicodeStringHeaderPtrCount = 0]
+	LSATLsaprTranslatedNameEx Element[Size.MaxCount];
+	NdrUnicodeStringRef BufferRef[Property.NdrUnicodeStringHeaderPtrCount];
+}
+
+Table LSATLsaprTranslatedNameExFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The SID was not found by matching against the security principal SID property.";
+		Case 0x00000002: "V2 - The SID might be found by traversing a forest trust.";
+		Case 0x00000004: "V3 - The SID was found by matching against the last database view, defined in section .";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_LSAPR_TRANSLATED_NAMES
+// alignment: NdrAlign
+//
+Struct LSATLsaprTranslatedNames
+{
+	UINT32 Entries;
+	NdrPtr NamesPtr;
+}
+
+//
+//	_LSAPR_TRANSLATED_NAMES_EX
+// alignment: NdrAlign
+//
+Struct LSATLsaprTranslatedNamesEx
+{
+	UINT32 Entries;
+	NdrPtr NamesPtr;
+}
+
+//
+//	_LSAPR_TRANSLATED_NAMES_EX
+// alignment: NdrAlign
+//
+Struct LSATLsaprTranslatedNamesExIdlStruct
+{
+	LSATLsaprTranslatedNamesEx LsaprTranslatedNamesEx;
+	Switch {
+		Case LsaprTranslatedNamesEx.NamesPtr.ReferentID != 0:
+			LSATLsaprTranslatedNameExConformant Names;
+	}
+}
+
+//
+//	_LSAPR_TRANSLATED_NAMES
+// alignment: NdrAlign
+//
+Struct LSATLsaprTranslatedNamesIdlStruct
+{
+	LSATLsaprTranslatedNames LsaprTranslatedNames;
+	Switch {
+		Case LsaprTranslatedNames.NamesPtr.ReferentID != 0:
+			LSATLsaprTranslatedNameConformant Names;
+	}
+}
+
+//
+//	_LSAPR_TRANSLATED_SID_EX
+// alignment: 4
+//
+Struct LSATLsaprTranslatedSidEx
+{
+	LSATSidNameUse Use;
+	switch
+	{
+			case !property.MSRPCNdr64 && CurrentProtocolOffset % 4 > 0: Align4 Pad1;
+	}
+	UINT32 RelativeId;
+	INT32 DomainIndex;
+	UINT32 Flags = LSATLsaprTranslatedSidExFlagsTable(this);
+}
+
+//
+//	_LSAPR_TRANSLATED_SID_EX2
+// alignment: 4
+//
+Struct LSATLsaprTranslatedSidEx2
+{
+	LSATSidNameUse Use;
+	NdrPtr SidPtr;
+	INT32 DomainIndex;
+	UINT32 Flags = LSATLsaprTranslatedSidEx2FlagsTable(this);
+}
+
+//
+//	_LSAPR_TRANSLATED_SID_EX2 referent part
+// alignment: none
+//
+Struct LSATLsaprTranslatedSidEx2Conformant
+{
+	NdrConformant Size;
+	LSATLsaprTranslatedSidEx2 Element[Size.MaxCount];
+	[Local.Count = Size.MaxCount]
+	While[Local.Count > 0]
+	{
+		[Local.Count--]
+		LSATRpcSid Sid;
+	}
+}
+
+Table LSATLsaprTranslatedSidEx2FlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The name was not found by matching against the Security Principal Name property.";
+		Case 0x00000002: "V2 - The name might be found by traversing a forest trust.";
+		Case 0x00000004: "V3 - The name was found by matching against the last database view (see section ).";
+		Default: "Unknown";
+	}
+}
+
+Struct LSATLsaprTranslatedSidExConformant
+{
+	NdrConformant Size;
+	LSATLsaprTranslatedSidEx Element[Size.MaxCount];
+}
+
+Table LSATLsaprTranslatedSidExFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The name was not found by matching against the Security Principal Name property.";
+		Case 0x00000002: "V2 - The name might be found by traversing a forest trust.";
+		Case 0x00000004: "V3 - The name was found by matching against the last database view, as defined in section .";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_LSAPR_TRANSLATED_SIDS
+//
+Struct LSATLsaprTranslatedSids
+{
+	UINT32 Entries;
+	NdrPtr SidsPtr;
+}
+
+//
+//	_LSAPR_TRANSLATED_SIDS_EX
+//
+Struct LSATLsaprTranslatedSidsEx
+{
+	UINT32 Entries;
+	NdrPtr SidsPtr;
+}
+
+//
+//	_LSAPR_TRANSLATED_SIDS_EX2
+//
+Struct LSATLsaprTranslatedSidsEx2
+{
+	UINT32 Entries;
+	NdrPtr SidsPtr;
+}
+
+Struct LSATLsaprTranslatedSidsEx2IdlStruct
+{
+	LSATLsaprTranslatedSidsEx2 LsaprTranslatedSidsEx2;
+	Switch {
+		Case LsaprTranslatedSidsEx2.SidsPtr.ReferentID != 0:
+			LSATLsaprTranslatedSidEx2Conformant Sids;
+	}
+}
+
+Struct LSATLsaprTranslatedSidsExIdlStruct
+{
+	LSATLsaprTranslatedSidsEx LsaprTranslatedSidsEx;
+	Switch {
+		Case LsaprTranslatedSidsEx.SidsPtr.ReferentID != 0:
+			LSATLsaprTranslatedSidExConformant Sids;
+	}
+}
+
+Struct LSATLsaprTranslatedSidsIdlStruct
+{
+	LSATLsaprTranslatedSids LsaprTranslatedSids;
+	Switch {
+		Case LsaprTranslatedSids.SidsPtr.ReferentID != 0:
+			LsaTranslatedSidConformant Sids;
+	}
+}
+
+//
+//	_LSAPR_TRUST_INFORMATION
+//	Alignment:NdrAlign
+//
+Struct LSATLsaprTrustInformation
+{
+	NdrUnicodeStringHeader Name;
+	[Property.LSATSidPtr$[Property.LSATSidLoopCount] = SidPtr.ReferentID]
+	[post.Property.LSATSidLoopCount = Property.LSATSidLoopCount + 1]
+	NdrPtr SidPtr;
+}
+
+Struct LSATLsaprTrustInformationConformant
+{
+	NdrConformant Size;
+	[RpcUnicodeLoop = 0, Property.LSATSidLoopCount = 0]
+	LSATLsaprTrustInformation Element[Size.MaxCount];
+	[local.LoopCount = 0]
+	[MaxLoopCount = Size.MaxCount]
+	while[ local.LoopCount < Size.MaxCount]
+	{
+		switch
+		{
+			case NdrUnicodeStringHeaderArray$[local.LoopCount] !=0:
+				NdrUnicodeStringRef BufferRef;
+		}
+		switch
+		{
+			case Property.LSATSidPtr$[local.LoopCount] !=0:
+				struct
+				{
+					LSATRpcSid Sid;
+					Align4 Padding;
+				}
+		}
+		[local.LoopCount = local.LoopCount + 1]
+		struct  {}
+	}
+}
+
+Table LSATLsarLookupNames4ClientRevisionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The client does not understand DNS domain names and is not aware that it may be part of a forest.";
+		Case 0x00000002: "V2 - The client understands DNS domain names and is aware that it may be part of a forest.Error codes returned can include STATUS_TRUSTED_DOMAIN_FAILURE and STATUS_TRUSTED_RELATIONSHIP_FAILURE, which are not returned for ClientRevision of 0x00000001. For more information on error codes, see [MS-ERREF].";
+		Default: "Unknown";
+	}
+}
+
+Table LSATLsarLookupNames4LookupOptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - Isolated names are searched for even when they are not on the local computer.";
+		Case 0x80000000: "V2 - Isolated names, including user principal names (UPNs), are not searched for unless they are on the local account database. Composite names, such as Domain\\Username, are sent remotely when necessary.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_LSA_TRANSLATED_SID
+// alignment: 4
+//
+Struct LsaTranslatedSid
+{
+	LSATSidNameUse Use;
+	Align4 Pad;
+	UINT32 RelativeId;
+	INT32 DomainIndex;
+}
+
+Struct LsaTranslatedSidConformant
+{
+	NdrConformant Size;
+	LsaTranslatedSid Element[Size.MaxCount];
+}
+
+//
+//	_RPC_SID
+// alignment:NdrAlign
+//
+Struct LSATRpcSid
+{
+	NdrConformant SubAuthorityCountConf;
+	UINT8 Revision;
+	UINT8 SubAuthorityCount;
+	LSATSidIdentifierAuthority IdentifierAuthority;
+	Align4 Padding;
+	Uint32 SubAuthority[SubAuthorityCountConf.MaxCount];
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+
+
+Struct LSATRpcUnicodeStringIdlStructConformant
+{
+	NdrConformant Size;
+	[Property.NdrUnicodeStringHeaderPtrCount = 0]
+	NdrUnicodeStringHeader NdrUnicodeStringHeaderPtr[Size.MaxCount];
+	NdrUnicodeStringRef BufferRef[NdrUnicodeStringHeaderPtrCount];
+}
+
+Struct LSATRpcUnicodeStringIdlStructPtr
+{
+	NdrPtr RpcUnicodeStringIdlStructPtr;
+	Switch {
+		Case RpcUnicodeStringIdlStructPtr.ReferentID != 0:
+			LSATRpcUnicodeStringIdlStructConformant RpcUnicodeString;
+	}
+}
+
+Struct LSATRpcUnicodeStringIdlStructPtrPtr
+{
+	NdrPtr RpcUnicodeStringIdlStructPtrPtr;
+	Switch {
+		Case RpcUnicodeStringIdlStructPtrPtr.ReferentID != 0:
+			LSATRpcUnicodeStringIdlStructPtr RpcUnicodeStringIdlStructPtr;
+	}
+}
+
+//
+//	_SID_IDENTIFIER_AUTHORITY
+//
+Struct LSATSidIdentifierAuthority
+{
+	UINT8	Value[6];
+}
+
+//
+//	_SID_NAME_USE
+//
+Struct LSATSidNameUse
+{
+	NdrEnum SidNameUse = LSATSidNameUseTable(Property.NdrEnumValue);
+}
+
+Table LSATSidNameUseTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "SidTypeUser - SidTypeUser constant.";
+		Case 2: "SidTypeGroup - SidTypeGroup constant.";
+		Case 3: "SidTypeDomain - SidTypeDomain constant.";
+		Case 4: "SidTypeAlias - SidTypeAlias constant.";
+		Case 5: "SidTypeWellKnownGroup - SidTypeWellKnownGroup constant.";
+		Case 6: "SidTypeDeletedAccount - SidTypeDeletedAccount constant.";
+		Case 7: "SidTypeInvalid - SidTypeInvalid constant.";
+		Case 8: "SidTypeUnknown - SidTypeUnknown constant.";
+		Case 9: "SidTypeComputer - SidTypeComputer constant.";
+		Case 10: "SidTypeLabel - SidTypeLabel constant.";
+	}
+}

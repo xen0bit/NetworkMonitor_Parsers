@@ -1,0 +1,2981 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Telnet
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 856,857,858,859,860,726,652,653,654,655,656,657,658,698,727,735,1043,736
+//#                          RFC 749,779,1091,885,927,933,946,1041,1053,1073,1079,1372,1184,1096,1372
+//#                          RFC 1184,1096,1408,1416,2941,2942,2943,2951,2946,1572,2355,2066,2217,2840
+//#                          http://www.networksorcery.com/enp/default0701.htm   -->Protocols-->Telnet
+//#                          Book: Internetworking With TCP/IP Vol I: Principles,Protocols, and Architectures (version 4)(by Douglas E. Comer,  Page 342.)
+//#                          Microsoft Network Monitor v2.1 source code
+//#  Microsoft References:   [MS-TNAP]: Telnet: NT LAN Manager (NTLM) Authentication Protocol Specification (3.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+
+Protocol TELNET =FormatString( "%s%s",
+                 Property.SourcePort == 23 ? "To Client, DstPort = " + Property.DestinationPort
+                                           : "To Server, SrcPort = " + Property.SourcePort,
+                 Conversation.TerminalType ? ", TerminalType: " + Conversation.TerminalType : ""
+							   )
+{
+	switch
+	{
+		case !Conversation.Telnet.Id:
+			[BuildConversationWithParent]
+			_struct _BuildTelnetConversation{}
+	}
+	[	
+		Post.Conversation.ConversationDescription = 
+			( Conversation.TELNETAuthType ? FormatString("(AuthType: %s", Conversation.TELNETAuthType + "" + ( Conversation.TELNETRemoteUser ? FormatString(" RemoteUser:%d) ", Conversation.TELNETRemoteUser) : ") " ) ): "" ) +
+			( FormatString("ConvID = %d", ConvID) )
+	]
+	while [ offset < FrameLength ]
+	{ 
+		switch( UINT8( Framedata, Offset ) )
+		{
+			case 255:
+				TelnetCommand Telcmd;
+			default:
+				struct TelnetData
+				{
+					switch(Conversation.TerminalType)
+					{
+						case "VTNT":
+							switch
+							{
+							//Server to Client
+							case Property.SourcePort == 23:
+								[	
+									DataFieldByteOrder = LittleEndian,
+									property.IsVTNTFirstFlag = (UINT32(FrameData, Frameoffset) == 0 && UINT32(FrameData, Frameoffset+4) == 0 && UINT64(FrameData, Frameoffset+10) == 0 && UINT32(FrameData, Frameoffset+18) == 0) ? true : false,
+									VTNTTotalPayloadLength =  IsVTNTFirstFlag ? (42 + UINT16(FrameData, Frameoffset+30)*UINT16(FrameData, Frameoffset+32) * 4) : 0,
+									PayloadStart(
+											0, /*direction */
+											0, /* id */
+											0,
+											0,
+											VTNTTotalPayloadLength,
+											property.IsVTNTFirstFlag,
+											0,
+											RssmblySelfBit+RssmblyIndStartBit+RssmblyIndLengthBit
+										)
+								]
+								switch(IsVTNTFirstFlag)
+								{
+									case 1:
+										TVTTVtntCharInfo charinfo;
+									default:
+										BLOB(frameLength-frameOffset) ContinueData;
+								}
+							//Client to Server
+							default:
+								TVTTInputRecord  inputrecord;
+							}
+						default:
+								while [ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+								{
+									UINT8 Data;
+								}
+					}
+				}
+		}
+	}
+}
+
+Table SBOUTMARKCNTLTable( value )
+{
+	switch(value)
+	{
+		case 68:"Default, the placement of the markings is up to User-Telnet";
+		case 84:"Top, this banner is to be used as the top of the screen";
+		case 66:"Bottom, this banner is to be used at the bottom of the screen";
+		case 76:"Left, markings on the left";
+		case 82:"Right, marking on right";
+		default:FormatString("Invalid CNTL Flag(%d)",value);
+	}
+}
+
+Table SBRCTECMDTable( value )
+{
+    switch( value )
+    {
+        case  0:"Continue what you have been doing";
+        case  1:"Print (echo) up to AND INCLUDING break character";
+        case  3:"Print up to break character and SKIP (don't echo) break character";
+        case  5:"Skip text (don't echo) up to break character,but PRINT break character";
+        case  7:"Skip up to and including break character";
+        case  8:"Set break classes";
+        case 16:"Set transmission classes";
+        case 24:"Set break classes and the transmission classes";
+        default:FormatString("Undefined value(%d)",value);
+    }
+}
+
+Table SBNAOHTSValueTable( value )
+{
+	switch
+	{
+		case value == 0: "Sender suggests that he alone will handle tabstops";
+		case value > 0 && value < 251: FormatString("Sender wants receiver to handle at value %d",value);
+		case value > 250 && value < 255: "Not allowed,in order to be compatible with related options";
+		case value == 255: "Sender wants receiver alone to handle tabstops";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBSubCMDTable( value )
+{
+	switch ( value )
+	{
+		case 250:"SB";
+		case 251:"WILL";
+		case 252:"WONT";
+		case 253:"DO";
+		case 254:"DONT ";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBSLCFunctionTable( value )
+{
+	switch( value )
+	{
+		case  1:"SYNCH";
+		case  2:"BRK";
+		case  3:"IP";
+		case  4:"AO";
+		case  5:"AYI";
+		case  6:"EOR";
+		case  7:"ABORT";
+		case  8:"EOF";
+		case  9:"SUSP";
+		case 10:"EC";
+		case 11:"EL";
+		case 12:"EW";
+		case 13:"RP";
+		case 14:"LNEXT";
+		case 15:"XON";
+		case 16:"XOFF";
+		case 17:"FORW1";
+		case 18:"FORW2";
+		case 19:"MCL";
+		case 20:"MCR";
+		case 21:"MCWL";
+		case 22:"MCWR";
+		case 23:"MCBOL";
+		case 24:"MCEOL";
+		case 25:"INSRT";
+		case 26:"OVER";
+		case 27:"ECR";
+		case 28:"EWR";
+		case 29:"EBOL";
+		case 30:"EEOL";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBSLCLevelBitTable( value )
+{
+	switch
+	{
+		case (value & 0x03) == 0:"NOSUPPORT";
+		case (value & 0x03) == 1:"CANTCHANGE";
+		case (value & 0x03) == 2:"VALUE";
+		case (value & 0x03) == 3:"DEFAULT";
+		default:"Undefined level";
+	}
+}
+
+Table SBX3PADTable( value )
+{
+	switch( value )
+	{
+		case 0:"SET";
+		case 1:"RESPONSE-SET";
+		case 2:"IS";
+		case 3:"RESPONSE-IS";
+		case 4:"SEND";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBLINEMODETable( value )
+{
+	switch( value )
+	{
+		case 1:"MODE";
+		case 2:"FORWARDMASK";
+		case 3:"SLC";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBLINEMODEMaskTable( value )
+{
+	switch( value )
+	{
+		case  1:"EDIT";
+		case  2:"TRAPSIG";
+		case  4:"MODE_ACK";
+		case  8:"SOFT_TAB";
+		case 16:"LIT_ECHO";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBKERMITTable( value )
+{
+	switch( value )
+	{
+		case 0:"START-SERVER";
+		case 1:"STOP-SERVER";
+		case 2:"REQ-START-SERVER";
+		case 3:"REQ-STOP-SERVER";
+		case 4:"SOP";
+		case 8:"RESP-START-SERVER";
+		case 9:"RESP-STOP-SERVER";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBCharsetTable(value)
+{
+	switch( value )
+	{
+		case 1:"REQUEST";
+		case 2:"ACCEPTED";
+		case 3:"REJECTED";
+		case 4:"TTABLE-IS";
+		case 5:"TTABLE-REJECTED";
+		case 6:"TTABLE-ACK";
+		case 7:"TTABLE-NAK";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBTN3270ETable( value )
+{
+	switch( value )
+	{
+		case 0:"ASSOCIATE";
+		case 1:"CONNECT";
+		case 2:"DEVICE-TYPE";
+		case 3:"FUNCTIONS";
+		case 4:"IS";
+		case 5:"REASON";
+		case 6:"REJECT";
+		case 7:"REQUEST";
+		case 8:"SEND";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBTN3270EReasonCodeTable( value )
+{
+	switch( value )
+	{
+		case  0:"CONN-PARTNER";
+		case  1:"DEVICE-IN-USE";
+		case  2:"INV-ASSOCIATE";
+		case  3:"INV-NAME";
+		case  4:"INV-DEVICE-TYPE";
+		case  5:"TYPE-NAME-ERROR";
+		case  6:"UNKNOWN-ERROR";
+		case  7:"UNSUPPORTED-REQ";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBTN3270EFunctionNameTable( value )
+{
+	switch( value )
+	{
+		case  0:"BIND-IMAGE";
+		case  1:"DATA-STREAM-CTL";
+		case  2:"RESPONSES";
+		case  3:"SCS-CTL-CODES";
+		case  4:"SYSREQ";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBEncryptCmdTable( value )
+{
+	switch( value )
+	{
+		case  0:"IS";
+		case  1:"SUPPORT";
+		case  2:"REPLY";
+		case  3:"START";
+		case  4:"END";
+		case  5:"REQUEST-START";
+		case  6:"REQUEST-END";
+		case  7:"ENC_KEYID";
+		case  8:"DEC_KEYID";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBEncryptTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"NULL";
+		case  1:"DES_CFB64";
+		case  2:"DES_OFB64";
+		case  3:"DES3_CFB64";
+		case  4:"DES3_OFB64";
+		case  8:"CAST5_40_CFB64";
+		case  9:"CAST5_40_OFB64";
+		case 10:"CAST128_CFB64";
+		case 11:"CAST128_OFB64";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAuthOptionSubCMDTable( value )
+{
+	switch( value )
+	{
+		case  0:"IS";
+		case  1:"SEND";
+		case  2:"REPLY";
+		case  3:"NAME";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAuthTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"NULL";
+		case  1:"KERBEROS_V4";
+		case  2:"KERBEROS_V5";
+		case  3:"SPX";
+		case  6:"RSA";
+		case  4:"MINK";
+		case  5:"SRP";
+		case  7:"SSL";
+		case  8:"unassigned";
+		case  9:"unassigned";
+		case 10:"LOKI";
+		case 11:"SSA";
+		case 12:"KEA_SJ";
+		case 13:"KEA_SJ_INTEG";
+		case 14:"DSS";
+		case 15:"NTLM";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBEnvironOptionSubCMDTable( value )
+{
+	switch( value )
+	{
+		case  0:"IS";
+		case  1:"SEND";
+		case  2:"INFO";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBEnvironOptionValueTypeTable( value )
+{
+	switch( value )
+	{
+		case  0:"VAR";
+		case  1:"VALUE";
+		case  2:"ESC";
+		case  3:"USERVAR";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBToggleFlowControlTable( value )
+{
+	switch( value )
+	{
+		case  0:"OFF";
+		case  1:"ON";
+		case  2:"RESTART-ANY";
+		case  3:"RESTART-XON";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBDETSubCMDTable( value )
+{
+	switch( value )
+	{
+		case  1:"Edit Facilities";
+		case  2:"Erase Facilities";
+		case  3:"Transmit Facilities";
+		case  4:"Format Facilities";
+		case  5:"Move Cursor";
+		case  6:"Skip to line";
+		case  7:"Skip to char";
+		case  8:"Up";
+		case  9:"Down";
+		case 10:"Left";
+		case 11:"Right";
+		case 12:"Home";
+		case 13:"Line insert";
+		case 14:"Line delete";
+		case 15:"Char insert";
+		case 16:"Char delete";
+		case 17:"Read cursor";
+		case 18:"Cursor position";
+		case 19:"Reverse Tab";
+		case 20:"Transmit screen";
+		case 21:"Transmit unprotected";
+		case 22:"Transmit line";
+		case 23:"Transmit field";
+		case 24:"Transmit rest of screen";
+		case 25:"Transmit rest of line";
+		case 26:"Transmit rest of field";
+		case 27:"Transmit modified";
+		case 28:"Data Transmit";
+		case 29:"Erase screen";
+		case 30:"Erase line";
+		case 31:"Erase field";
+		case 32:"Erase rest of screen";
+		case 33:"Erase rest of line";
+		case 34:"Erase rest of field";
+		case 35:"Erase unprotected";
+		case 36:"Format Data";
+		case 37:"Repeat";
+		case 38:"Suppress protection";
+		case 39:"Field separator";
+		case 40:"FN";
+		case 41:"Error";
+		case 42:"Start out of context data";
+		case 43:"End out of context data";
+		case 44:"Enable function keys";
+		case 45:"Selected field";
+		default:"Undefined value";
+	}
+}
+
+Table SBBMTable( value )
+{
+	switch( value )
+	{
+		case  1:"Define";
+		case  2:"Accept";
+		case  3:"Refuse";
+		case  4:"Literal";
+		case  5:"Please Cancel";
+		default:"Undefined value";
+	}
+}
+
+Table SBBMReasonTable( value )
+{
+	switch( value )
+	{
+		case  1:"Bad choice";
+		case  2:"Too INT32";
+		case  3:"Wrong Length";
+		case  4:"Other reason";
+		default:"Undefined value";
+	}
+}
+
+Table TelnetTypeTable( value )
+{
+	switch( value )
+	{
+		case 236:"IAC EOF (END OF FILE)";
+		case 237:"IAC SUSP (SUSPEND)";
+		case 238:"IAC ABORT (ABORT PROCESS)";
+		case 239:"IAC EOR (END OF RECORD)";
+		case 240:"IAC SE (END OF SUBNEGOTIATION PARAMETERS)";
+		case 241:"IAC NOP (NO OPERATION)";
+		case 242:"IAC DM (DATA MARK)";
+		case 243:"IAC BRK (NVT BREAK CHARACTER)";
+		case 244:"IAC IP (INTERRUPT PROCESS)";
+		case 245:"IAC AO (ABORT OUTPUT)";
+		case 246:"IAC AYT (ARE YOU THERE)";
+		case 247:"IAC EC (ERASE CHARACTER)";
+		case 248:"IAC EL (ERASE LINE)";
+		case 249:"IAC GA (GO AHEAD)";
+		case 250:"IAC SB (START OF SUBNEGOTIATION PARAMETERS)";
+		case 251:"IAC WILL";
+		case 252:"IAC WONT";
+		case 253:"IAC DO";
+		case 254:"IAC DONT ";
+		case 255:"IAC 255 (FF FF INDICATES DATA UINT8 255)";
+		// Accroding to <<Internetworking With TCP/IP Vol I: Principles,Protocols, and Architectures (Fourth Edition)>> ( Chinese Version)
+		// Page 342, I know, the first UINT8 is 255( 0XFF ), if the second UINT8 is still is 255( 0XFF)
+		// display this is a data packet.
+		// case 255:   FormatString("%d (%#x)",value,value);
+		
+		default :"IAC <COMMAND> (UNKNOWN TELNET COMMAND)";
+	}
+}
+
+
+Table TelnetOptionTable( value )
+{
+	switch( value )
+	{
+		case   0:"BINARY TRANSMISSION";
+		case   1:"ECHO";
+		case   2:"RECONNECTION";
+		case   3:"SUPPRESS GO AHEAD";
+		case   4:"APPROX MESSAGE SIZE NEGOTIATION";
+		case   5:"STATUS";
+		case   6:"TIMING MARK";
+		case   7:"REMOTE CONTROLLED TRANS AND ECHO";
+		case   8:"OUTPUT LINE WIDTH";
+		case   9:"OUTPUT PAGE SIZE";
+		case  10:"NEGOTIATE ABOUT OUTPUT CARRIAGE-RETURN DISPOSITION";
+		case  11:"NEGOTIATE ABOUT OUTPUT HORIZONTAL TABSTOPS";
+		case  12:"NEGOTIATE ABOUT OUTPUT HORIZONTAL TAB DISPOSITION";
+		case  13:"NEGOTIATE ABOUT OUTPUT FORMFEED DISPOSITION";
+		case  14:"NEGOTIATE ABOUT VERTICAL TABSTOPS";
+		case  15:"NEGOTIATE ABOUT OUTPUT VERTCIAL TAB DISPOSITION";
+		case  16:"NEGOTIATE ABOUT OUTPUT LINEFEED DISPOSITION";
+		case  17:"EXTENDED ASCII";
+		case  18:"LOGOUT";
+		case  19:"UINT8 MACRO";
+		case  20:"DATA ENTRY TERMINAL";
+		case  21:"SUPDUP";
+		case  22:"SUPDUP OUTPUT";
+		case  23:"SEND LOCATION";
+		case  24:"TERMINAL TYPE";
+		case  25:"END OF RECORD";
+		case  26:"TACACS USER IDENTIFICATION";
+		case  27:"OUTPUT MARKING";
+		case  28:"TERMINAL LOCATION NUMBER";
+		case  29:"TELNET 3270 REGIME";
+		case  30:"X.3 PAD";
+		case  31:"NEGOTIATE ABOUT WINDOW SIZE";
+		case  32:"TERMINAL SPEED";
+		case  33:"TOGGLE FLOW CONTROL";
+		case  34:"LINEMODE";
+		case  35:"X DISPLAY LOCATION";
+		case  36:"ENVIRONMENT OPTION";
+		case  37:"AUTHENTICATION OPTION";
+		case  38:"ENCRYPTION OPTION";
+		case  39:"NEW ENVIRONMENT OPTION";
+		case  40:"TN3270E";
+		case  41:"XAUTH";
+		case  42:"CHARSET";
+		case  43:"TELNET REMOTE SERIAL PORT";
+		case  44:"COM PORT CONTROL OPTION";
+		case  45:"TELNET SUPPRESS LOCAL ECHO";
+		case  46:"TELNET START TLS";
+		case  47:"KERMIT";
+		case  48:"SEND URL";
+		case  49:"FORWARD X";
+		case 138:"TELOPT PRAGMA LOGON";
+		case 139:"TELOPT SSPI LOGON";
+		case 140:"TELOPT PRAGMA HEARTBEAT";
+		case 255:"EXOPL (EXTENDED OPTIONS LIST)";
+		default :"<OPTION> (UNKNOWN TELNET OPTION)";
+	}
+
+}
+
+Table TelnetSBComPortTable(value)
+{
+	switch
+	{
+		case value ==  0 || value == 100: "SIGNATURE";
+		case value ==  1 || value == 101: "SET-BAUDRATE";
+		case value ==  2 || value == 102: "SET-DATASIZE";
+		case value ==  3 || value == 103: "SET-PARITY";
+		case value ==  4 || value == 104: "SET-STOPSIZE";
+		case value ==  5 || value == 105: "SET-CONTROL";
+		case value ==  6 || value == 106: "NOTIFY-LINESTATE";
+		case value ==  7 || value == 107: "NOTIFY-MODEMSTATE";
+		case value ==  8 || value == 108: "FLOWCONTROL-SUSPEND";
+		case value ==  9 || value == 109: "FLOWCONTROL-RESUME";
+		case value == 10 || value == 110: "SET-LINESTATE-MASK";
+		case value == 11 || value == 111: "SET-MODEMSTATE-MASK";
+		case value == 12 || value == 112: "PURGE-DATA";
+		default: "<OPTION> (UNKNOWN TELNET OPTION)";
+	}
+}
+
+Table TelnetDatasizeValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Request Current Data Bit Size";
+		case value == 1:"Available for Future Use";
+		case value == 2:"Available for Future Use";
+		case value == 3:"Available for Future Use";
+		case value == 4:"Available for Future Use";
+		case value == 5:"5";
+		case value == 6:"6";
+		case value == 7:"7";
+		case value == 8:"8";
+		case value >  8 && value < 128:"Available for Future Use";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table TelnetParityValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Request Current Data Size";
+		case value == 1:"NONE";
+		case value == 2:"ODD";
+		case value == 3:"EVEN";
+		case value == 4:"MARK";
+		case value == 5:"SPACE";
+		case value >  5 && value < 128:"Available for Future Use";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table TelnetStopsizeValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Request Current Data Size";
+		case value == 1:"1";
+		case value == 2:"2";
+		case value == 3:"1.5";
+		case value >  3 && value < 128:"Available for Future Use";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table TelnetControlValueTable(value)
+{
+	switch
+	{
+		case value ==  0:"Request Com Port Flow Control Setting(outbound/both)";
+		case value ==  1:"Use No Flow Control (outbound/both)";
+		case value ==  2:"Use XON/XOFF Flow Control (outbound/both)";
+		case value ==  3:"Use HARDWARE Flow Control (outbound/both)";
+		case value ==  4:"Request BREAK State)";
+		case value ==  5:"Set BREAK State ON";
+		case value ==  6:"Set BREAK State OFF";
+		case value ==  7:"Request DTR Signal State";
+		case value ==  8:"Set DTR Signal State ON";
+		case value ==  9:"Set DTR Signal State OFF";
+		case value == 10:"Request RTS Signal State";
+		case value == 11:"Set RTS Signal State ON";
+		case value == 12:"Set RTS Signal State OFF";
+		case value == 13:"Request Com Port Flow Control Setting (inbound)";
+		case value == 14:"Use No Flow Control (inbound)";
+		case value == 15:"Use XON/XOFF Flow Control (inbound)";
+		case value == 16:"Use HARDWARE Flow Control (inbound)";
+		case value == 17:"Use DCD Flow Control (outbound/both)";
+		case value == 18:"Use DTR Flow Control (inbound)";
+		case value == 19:"Use DSR Flow Control (outbound/both)";
+		case value >  19 && value < 128:"Available for Future Use";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table TelnetPurgeDataValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Available for Future Use";
+		case value == 1:"Purge access server receive data buffer";
+		case value == 2:"Purge access server transmit data buffer";
+		case value == 3:"Purge both the access server receive data buffer and the access server transmit data buffer";
+		case value >  3 && value < 128:"Available for Future Use";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table TelnetFlagTable( value )
+{
+	switch( value )
+	{
+		case 255:FormatString("ATC %d (%#x)",value,value);
+		default :FormatString("Telnet Data");
+	}
+}
+
+Table SBNAOCRD8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle carriage-returns,for the connection";
+		case value >=   1 && value <= 250:"Command sender suggests that the other party alone should handle carriage-returns,but suggests that a delay of the indicated value be used";
+		case value == 251:"Not allowed,in order to be compatible with related Telnet options";
+		case value == 252:"Command sender suggests that the other party alone handle carriage-returns,but suggests that they be discarded";
+		case value == 253:"Not allowed,in order to be compatible with related Telnet options";
+		case value == 254:"Command sender suggests that the other party alone should handle carriage-returns but suggests waiting for a character to be transmitted";
+		case value == 255:"Command sender suggests that the other party alone should handle carriage-returns and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBNAOHTD8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle horizontal tab characters,for the connection";
+		case value >=   1 && value <= 250:"Command sender suggests that the other party alone should handle horizontal tab characters, but suggests that a delay of the indicated value be used";
+		case value == 251:"Command sender suggests that the other party alone handle horizontal tabs, but suggests that each occurrence of the character be replaced by a space";
+		case value == 252:"Command sender suggests that the other party alone handle horizontal tabs, but suggests that they be discarded";
+		case value == 253:"Command sender suggests that the other party alone should handle horizontal tab characters, but suggests that tabbing be simulated";
+		case value == 254:"Command sender suggests that the other party alone should handle horizontal tab characters, but suggests that waiting for a character to be transmitted";
+		case value == 255:"Command sender suggests that the other party alone should handle output horizontal tabs and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBNAOFFD8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle formfeeds, for the connection";
+		case value >=   1 && value <= 250:"Command sender suggests that the other party alone should handle formfeeds, but suggests that the indicated value be used";
+		case value == 251:"Command sender suggests that the other party alone handle formfeeds, but suggests that each occurrence of the character be replaced by carriage-return/line-feed";
+		case value == 252:"Command sender suggests that the other party alone handle formfeeds, but suggests that they be discarded";
+		case value == 253:"Command sender suggests that the other party alone should handle formfeeds, but suggests that formfeeds be simulated";
+		case value == 254:"Command sender suggests that the other party alone should handle output formfeeds but suggests waiting for a character to be transmitted";
+		case value == 255:"Command sender suggests that the other party alone should handle output formfeeds and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+
+Table SBNAOVTS8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle the vertical tabstops,for the connection";
+		case value >=   1 && value <= 250:FormatString("Sender wants receiver to handle at value %d",value);
+		case value >= 251 && value <= 254:"Not allowed, in order to be compatible with related Telnet options";
+		case value == 255:"Command sender suggests that the other party alone should handle output vertical tabstops and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBNAOVTD8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle vertical tab characters, for the connection";
+		case value >=   1 && value <= 250:"Command sender suggests that the other party alone should handle tab characters, but suggests that a delay of the indicated value be used";
+		case value == 251:"Command sender suggests that the other party alone handle vertical tabs, but suggests that each occurrence of the character be replaced by carriage-return/linefeed";
+		case value == 252:"Command sender suggests that the other party alone handle vertical tabs, but suggests that they be discarded";
+		case value == 253:"Command sender suggests that the other party alone should handle tab characters, but suggests that tabbing be simulated";
+		case value == 254:"Command sender suggests that the other party alone should handle the output disposition but suggests waiting for a character to be transmitted";
+		case value == 255:"Command sender suggests that the other party alone should handle the output disposition and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBNAOLFD8bitValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Command sender suggests that he alone will handle linefeeds, for the connection";
+		case value >=   1 && value <= 250:"Command sender suggests that the other party alone should handle linefeeds, but suggests that a delay of the indicated value be used";
+		case value == 251:"Not allowed, in order to be compatible with related Telnet options";
+		case value == 252:"Command sender suggests that the other party alone handle linefeeds, but suggests that they be discarded";
+		case value == 253:"Command sender suggests that the other party alone should handle linefeeds, but suggests that linefeeds be simulated";
+		case value == 254:"Command sender suggests that the other party alone should handle output linefeeds but suggests waiting for a character to be transmitted";
+		case value == 255:"Command sender suggests that the other party alone should handle output linefeeds and suggests nothing about how it should be done";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBEXTASCOrderBitsValue(value)
+{
+	switch
+	{
+		case value ==   0:"Null (hidden vertically centered dot)";
+		case value ==   1:"Downward arrow";
+		case value ==   2:"Alpha (all Greek letters are lowercase)";
+		case value ==   3:"Beta";
+		case value ==   4:"Logical and (caret)";
+		case value ==   5:"Logical not (dash with downward extension)";
+		case value ==   6:"Epsilon";
+		case value ==   7:"Pi";
+		case value ==  10:"Lambda";
+		case value ==  11:"Tab (hidden gamma)";
+		case value ==  12:"Linefeed (hidden delta)";
+		case value ==  13:"Vertical tab (hidden integral)";
+		case value ==  14:"Formfeed (hidden plus-minus)";
+		case value ==  15:"Carriage return (hidden circled-plus)";
+		case value ==  16:"Infinity";
+		case value ==  17:"Del (partial differential)";
+		case value ==  20:"Proper subset (right-opening horseshoe)";
+		case value ==  21:"Proper superset (left-opening horseshoe)";
+		case value ==  22:"Intersection (down-opening horseshoe)";
+		case value ==  23:"Union (up-opening horseshoe)";
+		case value ==  24:"Universal quantifier (upside-down A)";
+		case value ==  25:"Existential quantifier (backwards E)";
+		case value ==  26:"Circled-times";
+		case value ==  27:"Left-right double headed arrow";
+		case value ==  30:"Underbar";
+		case value ==  31:"Right pointing arrow";
+		case value ==  32:"Tilde";
+		case value ==  33:"Not-equal";
+		case value ==  34:"Less-than-or-equal";
+		case value ==  35:"Greater-than-or-equal";
+		case value ==  36:"Equivalence (column of 3 horizontal bars)";
+		case value ==  37:"Logical or (V shape)";
+		case value >=  40 && value <= 135:"As in standard ASCII";
+		case value == 136:"Upward pointing arrow";
+		case value == 137:"Left pointing arrow";
+		case value >= 140 && value <= 174:"As in standard ASCII";
+		case value == 175:"Altmode (prints as lozenge)";
+		case value == 176:"Right brace";
+		case value == 177:"Rubout (hidden circumflex)";
+		default: FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBBMFormatMapProtectionTable(value)
+{
+	switch(value)
+	{
+		case 0:"Protection: No protection";
+		case 1:"Protection: Protected";
+		case 2:"Protection: Alphabetic only";
+		case 3:"Protection: Numeric only";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBDETNegotiationTable(value)
+{
+	switch(value)
+	{
+		case 251:"WILL";
+		case 252:"WONT";
+		case 253:"DO";
+		case 254:"DONT ";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBDETErrorCodeTable(value)
+{
+	switch(value)
+	{
+		case  1:"Facility not previously negotiated";
+		case  2:"Illegal subcommand code";
+		case  3:"Cursor Address Out of Bounds";
+		case  4:"Undefined FN value";
+		case  5:"Can't negotiate acceptable line width";
+		case  6:"Can't negotiate acceptable page length";
+		case  7:"Illegal parameter in subcommand";
+		case  8:"Syntax error in parsing subcommand";
+		case  9:"Too many parameters in subcommand";
+		case 10:"Too few parameters in subcommand";
+		case 11:"Undefined parameter value";
+		case 12:"Unsupported combination of Format Attributes";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBX3PADParameterTable(value)
+{
+	switch(value)
+	{
+		case   0:"Notify host of user-initiated parameter changes";
+		case   1:"Character to escape to local telnet command mode";
+		case   2:"Local echo of characters typed by the user";
+		case   3:"Set of forwarding characters";
+		case   4:"Forward after idle time";
+		case   5:"Flow control of user-to-host data";
+		case   7:"Function of Break, Interrupt, Attention, etc";
+		case   8:"Discarding output from host";
+		case   9:"Padding after carriage return";
+		case  10:"Line folding";
+		case  11:"Bit rate";
+		case  12:"Flow control of host-to-user data";
+		case  13:"Line feed insertion; Telnet CR LF vs CR NUL";
+		case  14:"Output padding after line feed";
+		case  15:"Local editing";
+		case  16:"Character-delete character";
+		case  17:"Line-delete character";
+		case  18:"Line-display character";
+		case  19:"Editing service signals";
+		case  20:"Echo mask";
+		case  21:"Parity";
+		case  22:"Page wait";
+		case 128:"Extension set number";
+		case 129:"UINT16-delete character";
+		case 130:"Flow control OFF character";
+		case 131:"Flow control ON character";
+		case 132:"Host-to-user flow control convention";
+		case 133:"Alternate Attention, etc., character";
+		case 134:"Local echo style";
+		case 135:"Accept following character as data";
+		case 136:"Character to toggle discarding output";
+		case 137:"User-to-host bits per character";
+		case 138:"Host-to-user bits per character";
+		default :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter0ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Host is not notified";
+		case value == 1:"User telnet notifies host by sending IS message";
+		default        :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter1ValueTable(value)
+{
+	switch
+	{
+		case value ==  0:"No ASCII character performs this function";
+		case value ==  1:"DLE (ASCII code 16)";
+		case value >= 32 && value <= 126: "ASCII code of the character";
+		default         :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter2ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Host is not notified";
+		case value == 1:"User telnet notifies host by sending IS message";
+		default        :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter3ValueTable(value)
+{
+	switch
+	{
+		case value ==  0:"No forwarding characters";
+		case value ==  1:"Alphanumeric characters (a-z, A-Z, 0-9)";
+		case value ==  2:"CR";
+		case value ==  4:"ESC, BEL, ENQ, ACK";
+		case value ==  8:"DEL, CAN, DC2";
+		case value == 16:"ETX, EOT";
+		case value == 32:"HT, LF, VT, FF";
+		case value == 64:"ASCII character codes 0 through 31 not listed above";
+		default         :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter4ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Infinite time limit";
+		case value >= 1 && value <= 255:"Time limit in 1/20 second units";
+	}
+}
+
+Table SBX3PADParameter5ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"X-OFF and X-ON considered normal output data";
+		case value == 1:"X-OFF and X-ON used to control user input";
+		default        :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter7ValueTable(value)
+{
+	switch
+	{
+		case value ==  0:"No action";
+		case value ==  1:"Send interrupt packet (Telnet IAC IP)";
+		case value ==  2:"Reset (break Telnet connection)";
+		case value ==  4:"Discard input from user not yet consumed by host";
+		case value ==  8:"Escape to local Telnet command mode";
+		case value == 16:"Discard output from host (see parameter 8)";
+		default         :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter8ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Host output is sent to user";
+		case value == 1:"Host output is discarded";
+		default        :FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter9ValueTable(value)
+{
+	switch
+	{
+		case value >= 0 && value <= 7:"Insert that many padding characters";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter10ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No output line folding";
+		case value >= 1 && value <= 255:"Fold lines after that many characters";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBX3PADParameter11ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"110 bps";
+		case value == 1:"134.5 bps";
+		case value == 2:"300 bps";
+		case value == 3:"1200 bps";
+		case value == 4:"600 bps";
+		case value == 5:"75 bps";
+		case value == 6:"150 bps";
+		case value == 7:"1800 bps";
+		case value == 8:"200 bps";
+		case value == 9:"100 bps";
+		case value ==10:"50 bps";
+		case value ==11:"75 bps in, 1200 out";
+		case value ==12:"2400 bps";
+		case value ==13:"4800 bps";
+		case value ==14:"9600 bps";
+		case value ==15:"19200 bps";
+		case value ==16:"48000 bps";
+		case value ==17:"56000 bps";
+		case value ==18:"64000 bps";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter12ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"X-OFF and X-ON are sent as data to host";
+		case value == 1:"X-OFF and X-ON control output";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter13ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No line feed insertion(typed CR sent as CR NUL; host CR LF printed as CR)";
+		case value == 1:"Add line feed on output (host CR LF printed as CR LF)";
+		case value == 2:"Add line feed on input (typed CR sent as CR LF to host)";
+		case value == 4:"When echoing a typed CR locally, echo as CR LF";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter14ValueTable(value)
+{
+	switch
+	{
+		case value >= 0 && value <= 7:"Send that many padding characters";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter15ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No input editing.  Any editing characters are considered data";
+		case value == 1:"Input editing.  Editing characters edit the input buffer";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter16ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"ASCII code of character-delete character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter17ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"ASCII code of line-delete character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter18ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"ASCII code of line-display character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter19ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Nothing is echoed";
+		case value == 1:"Editing style is suitable for printing terminals";
+		case value == 2:"Editing style is suitable for display terminals";
+		case value == 8 || (value >= 32 && value <= 126):"Echo that ASCII character for character-delete";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter20ValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"all ASCII characters are echoed";
+		case value ==   1:"CR is not echoed";
+		case value ==   2:"LF is not echoed";
+		case value ==   4:"VT, HT, and FF are not echoed";
+		case value ==   8:"BEL and BS are not echoed";
+		case value ==  16:"ESC and ENQ are not echoed";
+		case value ==  32:"ACK, NAK, STX, SOH, EOT, ETB and ETX are not echoed";
+		case value ==  64:"Editing characters are not echoed";
+		case value == 128:"Other non-printing ASCII characters, and DEL, not echoed";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter21ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Parity neither generated nor checked";
+		case value == 1:"Even parity checked on input";
+		case value == 2:"Even parity generated on output";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter22ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No pause";
+		case value >= 1 && value <= 255:"Pause after output of that many line feeds";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter128ValueTable(value)
+{
+	switch
+	{
+		case value ==   0:"Null extension set";
+		case value ==   1:"(A subset of) the extension set 1";
+		case value == 255:"Reserved for purely local";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter129ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"ASCII code of UINT16-delete character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter130ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"Function performed by that ASCII code";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter132ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"Resume output only when correct character is received";
+		case value == 1:"Resume output when any character is received";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter133ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No ASCII character has this function(there may still be a special key or other mechanism)";
+		case value >= 1 && value <= 127:"ASCII code of the character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter134ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"All characters echo as themselves";
+		case value == 1:"Non-editing control characters echo as ^X for some printable character X";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter135ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character has this function";
+		case value >= 1 && value <= 127:"Typing that character toggles parameter 8";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter136ValueTable(value)
+{
+	switch
+	{
+		case value == 0:"No character performs this function (though another mechanism still may do so)";
+		case value >= 1 && value <= 127:"ASCII code of the character";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBX3PADParameter137ValueTable(value)
+{
+	switch
+	{
+		case value == 7:"Input data path";
+		case value == 8:"output data path";
+		default:FormatString("%d(0x%02X)",value,value);
+	}
+}
+
+Table SBAUTHOptionSubCommandKERBEROSV4Table(value)
+{
+	switch(value)
+	{
+		case 0:"AUTH";
+		case 1:"REJECT";
+		case 2:"ACCEPT";
+		case 3:"CHALLENGE";
+		case 4:"RESPONSE";
+		case 5:"FORWARD";
+		case 6:"FORWARD-ACCEPT";
+		case 7:"FORWARD-REJECT";
+		case 8:"EXP";
+		case 9:"PARAMS";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAUTHOptionSubCommandKERBEROSV5Table(value)
+{
+	switch(value)
+	{
+		case 0:"AUTH";
+		case 1:"REJECT";
+		case 2:"ACCEPT";
+		case 3:"RESPONSE";
+		case 4:"FORWARD";
+		case 5:"FORWARD-ACCEPT";
+		case 6:"FORWARD-REJECT";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAUTHOptionSubCommandDSSTable(value)
+{
+	switch(value)
+	{
+		case 1:"DSS_INITIALIZE";
+		case 2:"DSS_TOKENBA";
+		case 3:"DSS_CERTA_TOKENAB";
+		case 4:"DSS_CERTB_TOKENBA2";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAUTHOptionSubCommandSRPTable(value)
+{
+	switch(value)
+	{
+		case value == 0:"AUTH";
+		case value ==1:"REJECT";
+		case value ==2:"ACCEPT";
+		case value ==3:"CHALLENGE";
+		case value ==4:"RESPONSE";
+		case value > 4 && value < 8:"Unassigned";
+		case 8:"EXP";
+		case 9:"PARAMS";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBAUTHOptionSubCommandKEATable(value)
+{
+	switch(value)
+	{
+		case 1:"KEA_CERTA_RA";
+		case 2:"KEA_CERTB_RB_IVB_NONCEB";
+		case 3:"KEA_IVA_RESPONSEB_NONCEA";
+		case 4:"KEA_RESPONSEA";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBENCRYPTOptionEncryCFBSubOptionTable(value)
+{
+	switch(value)
+	{
+		case 1:"CFB64_IV";
+		case 2:"CFB64_IV_OK";
+		case 3:"CFB64_IV_OK";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+Table SBENCRYPTOptionEncryOFBSubOptionTable(value)
+{
+	switch(value)
+	{
+		case 1:"OFB64_IV";
+		case 2:"OFB64_IV_OK";
+		case 3:"OFB64_IV_OK";
+		default:FormatString("Undefined value(%d)",value);
+	}
+}
+
+//rfc 859
+//IAC SB STATUS SEND IAC SE
+//IAC SB STATUS IS ... IAC SE
+struct SBStatusOption = FormatString("%s %s",OptionCode.ToString,CurrentStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //5
+	UINT8 CurrentStatus = this?"SEND":"IS";
+	switch(CurrentStatus)
+	{
+		case 0: //IAC SB STATUS IS ....IAC SE
+			while condition[ (offset < FrameLength) && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0) ]
+			{
+				UINT8 SubCommand = SBSubCMDTable(this);
+				switch
+				{
+					case UINT8( Framedata, Offset - 1 ) >= 251 && UINT8( Framedata, Offset - 1 ) <= 254:  UINT8 SubOptCode = TelnetOptionTable(this);
+					case UINT8( Framedata, Offset - 1 ) == 250:
+						switch(UINT8( Framedata, Offset ))
+						{
+							case   5:SBStatusOption Status;
+							case  10:SBNAOCRDOption NAOCRD;
+							case  11:SBNAOHTSOption NAOHTS;
+							case  12:SBNAOHTDOption NAOHTD;
+							case  13:SBNAOFFDOption NAOFFD;
+							case  14:SBNAOVTSOption NAOVTS;
+							case  15:SBNAOVTDOption NAOVTD;
+							case  16:SBNAOLFDOption NAOLFD;
+							case  17:SBEXTASCOption EXTASC;
+							case  19:SBBMOption BM;
+							case  20:SBDETOption DET;
+							case  22:SBSUPDUPOUTPUTOption SUPDUP_OUTPUT;
+							case  23:SBSENDLOCATIONOption SEND_LOCATION;
+							case  24:SBTERMINALTYPEOption TERMINAL_TYPE;
+							case  26:SBTUIDOption TUID;
+							case  27:SBOUTMRKOption OUTMARK;
+							case  28:SBTTYLOCOption TTYLOC;
+							case  29:SBREGIMEOption REGIME;
+							case  30:SBX3PADOption X3PAD;
+							case  31:SBNAWSOption NAWS;
+							case  32:SBTERMINALSPEEDOption TERMINAL_SPEED;
+							case  33:SBTOGGLEFLOWCONTROLOption TOGGLE_FLOW_CONTROL;
+							case  34:SBLINEMODEOption LINEMODE;
+							case  35:SBXDISPLAYLOCATIONOption X_DISPLAY_LOCATION;
+							case  36:SBENVIRONOption ENVIRON;
+							case  37:SBAUTHOption AUTH;
+							case  38:SBENCRYPTOption ENCRYPT;
+							case  39:SBNEWENVIRONOption NEW_ENVIRON;
+							case  40:SBTN3270EOption TN3270E;
+							case  42:SBCHARSETOption CHARSET;
+							case  44:SBCOMPORTOption COM_PORT;
+							case  47:SBKERMITOption KERMIT;
+							case 255:SBEXOPLOption EXOPL;
+							default:
+								ReportParserError("ParserErrorProtocolClassMsOffice", "Telnet", "There is no such command") CommandError;
+						}
+				}
+			}
+	}
+}
+
+//rfc 726
+//IAC SB RCTE <cmd> [BC1 BC2] [TC1 TC2] IAC SE
+struct SBRCTEOption = FormatString("%s %s",OptionCode.ToString,cmd.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this);
+	UINT8 Cmd = SBRCTECMDTable(this)
+	{
+		UINT8 Reserved:3 = FormatString("     (%s)", this.ToBitString);
+		UINT8 Resetclasses:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Reset transmit classes" 
+                                                                      : "Continue using same classed of transmit characters");
+		UINT8 Flagsforclass:1 = FormatString("(%s) %s", this.ToBitString, this ? "The two 8-bit bytes following this UINT8 contain flags for the new break classes" 
+                                                                     : "Continue using same classes of break characters");
+		UINT8 Skiptext:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Skip (don't echo) text up to break character" 
+                                                                      : "Print (echo) text up to break character");
+		UINT8 Skipchar:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Skip (don't echo) break character" 
+                                                                      : "Print (echo) break character");
+		UINT8 Performaction:1 = FormatString("(%s) %s", this.ToBitString, this ? "Perform actions as indicated by other bits in this UINT8" 
+                                                                      : "Ignore all other bits in this UINT8 and repeat the last <cmd> that was sent.");
+	};
+	/*struct Data
+	{
+		while  cond[ (offset < FrameLength) && !( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xf0 ) ]
+		{
+			UINT8 Data;
+		}
+	};*/
+	switch( Cmd )
+	{
+	    case 8:
+	    _struct BreakClass
+	    {
+	        UINT8 BC1;
+	        UINT8 BC2;
+	    };
+	    case 16:
+	    _struct TransmissionClass
+	    {
+	        UINT8 TC1;
+	        UINT8 TC2;
+	    };
+	    case 24:
+	    _struct BreakAndTransmissionClass
+	    {
+	        UINT8 BC1;
+	        UINT8 BC2;
+	        UINT8 TC1;
+	        UINT8 TC2;
+	    };
+	}
+}
+
+//rfc 652
+//IAC SB NAOCRD DS <8-bit value> IAC SE
+struct SBNAOCRDOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //10
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value  along
+with the NAOCRD SB commands as follows
+*/
+	UINT8 Value = SBNAOCRD8bitValueTable(this);
+}
+
+//rfc 653
+//IAC SB NAOHTS DS <8-bit value> ... <8-bit value> IAC SE
+//IAC SB NAOHTS DR <8-bit value> ... <8-bit value> IAC SE
+struct SBNAOHTSOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //11
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value(s) along with the
+DS and DR SB subcommands as follows (multiple 8-bit values are allowed only
+if each is greater than zero and less than 251):
+*/
+	while Condition[ (offset < FrameLength) && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0) ]
+	{
+		UINT8 Value = SBNAOHTSValueTable(this);
+	}
+}
+
+//rfc 654
+//IAC SB NAOHTD DS <8-bit value> IAC SE
+//IAC SB NAOHTD DR <8-bit value> IAC SE
+struct SBNAOHTDOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //12
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value along with the
+DS and DR SB commands
+*/
+	UINT8 Value = SBNAOHTD8bitValueTable(this);
+}
+
+//rfc 655
+//IAC SB NAOFFD DS <8-bit value> IAC SE
+//IAC SB NAOFFD DR <8-bit value> IAC SE
+struct SBNAOFFDOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //13
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value along with the
+DS and DR SB commands
+*/
+	UINT8 Value = SBNAOFFD8bitValueTable(this);
+}
+
+//rfc 656
+//IAC SB NAOVTS DS <8-bit value> ... <8-bit value> IAC SE
+//IAC SB NAOVTS DR <8-bit value> ... <8-bit value> IAC SE
+struct SBNAOVTSOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //14
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value(s) along with the
+DS and DR SB subcommands as follows (multiple 8-bit values are allowed only
+if each is greater than zero and less than 251):
+*/
+	while Condition[ (offset < FrameLength) && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0) ]
+	{
+		UINT8 Value = SBNAOVTS8bitValueTable(this);
+	}
+}
+
+//rfc 657
+//IAC SB NAOVTD DS <8-bit value> IAC SE
+//IAC SB NAOVTD DR <8-bit value> IAC SE
+struct SBNAOVTDOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //15
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value along with the
+DS and DR SB commands
+*/
+	UINT8 Value = SBNAOVTD8bitValueTable(this);
+}
+
+//rfc 658
+//IAC SB NAOLFD DS <8-bit value> IAC SE
+//IAC SB NAOLFD DR <8-bit value> IAC SE
+struct SBNAOLFDOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //16
+	UINT8 DataStatus = this?"DS":"DR";
+/*
+The data sender and the data receiver use the 8-bit value along with the
+DS and DR SB commands
+*/
+	UINT8 Value = SBNAOLFD8bitValueTable(This);
+}
+
+
+//rfc 698
+/*IAC SB EXTASC
+<high order bits (bits 15-8)><low order bits (bits 7-0)> IAC SE
+*/
+struct SBEXTASCOption = FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //17
+	UINT8 HighBitsValue = SBEXTASCOrderBitsValue(this);
+	UINT8 LowBitsValue = SBEXTASCOrderBitsValue(this);
+}
+
+//rfc 735
+/*
+IAC SB BM <DEFINE> <macro UINT8> <count>
+	<replacement string> IAC SE
+IAC SB BM <ACCEPT> <macro UINT8> IAC SE
+IAC SB BM <REFUSE> <macro UINT8> <REASON> IAC SE
+IAC SB BM <LITERAL> <macro UINT8> IAC SE
+IAC SB BM <PLEASE CANCEL> <macro UINT8> <REASON> IAC SE
+*/
+struct SBBMOption = FormatString("%s %s",OptionCode.ToString,DataStatus.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //19
+	UINT8 DataStatus = SBBMTable(this);
+	switch(DataStatus)
+	{
+		case 1:
+			_struct DEFINE
+			{
+				UINT8 Macro;
+				UINT8 Count;
+				AsciiString(Count) ReplacementStr;
+			};
+		case 2:
+		case 4:
+			_struct Literal
+			{
+				UINT8 Macro;
+			};
+		case 3:
+		case 5:
+			_struct PleaseCancel
+			{
+				UINT8 Macro;
+				UINT8 reason = SBBMReasonTable(this);
+			};
+		default:
+			ReportParserError("ParserErrorProtocolClassMsOffice", "Telnet", "There is no such Status") StatusError;
+	}
+}
+
+//rfc 732
+struct SBDETOption = FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //20
+	UINT8 SubCode = SBDETSubCMDTable(this);
+	switch(SubCode)
+	{
+		case  1:
+			UINT8 EditFacilityMap
+			{
+				UINT8 Reserved:1 = FormatString("    (%s)", this.ToBitString);
+				UINT8 Skiplinechar:1 = FormatString("(%s) %s", this.ToBitString, this ? "SKIP TO LINE and SKIP TO CHAR subcommands supported" 
+                                                                              : "SKIP TO LINE and SKIP TO CHAR subcommands NOT supported");
+				UINT8 UDLR:1 = FormatString("        (%s) %s", this.ToBitString, this ? "UP, DOWN, LEFT, and RIGHT subcommands supported" 
+                                                                              : "UP, DOWN, LEFT, and RIGHT subcommands NOT supported");
+				UINT8 Readcursor:1 = FormatString("  (%s) %s", this.ToBitString, this ? "READ CURSOR subcommand supported" 
+                                                                              : "READ CURSOR subcommand NOT supported");
+				UINT8 Lineinsdel:1 = FormatString("  (%s) %s", this.ToBitString, this ? "LINE INSERT and LINE DELETE subcommands supported" 
+                                                                              : "LINE INSERT and LINE DELETE subcommands NOT supported");
+				UINT8 Charinsdel:1 = FormatString("  (%s) %s", this.ToBitString, this ? "CHAR INSERT and CHAR DELETE subcommands supported" 
+                                                                              : "CHAR INSERT and CHAR DELETE subcommands NOT supported");
+				UINT8 Backtab:1 = FormatString("     (%s) %s", this.ToBitString, this ? "BACK TAB subcommand supported" 
+                                                                              : "BACK TAB subcommand NOT supported");	
+				UINT8 Movecursor:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Move the cursor in the Positive direction only" 
+                                                                              : "Don't move the cursor in the Positive direction only");
+			};
+		case  2:
+			UINT8 EraseFacilityMap
+			{
+				UINT8 Reserved:3 = FormatString("       (%s)", this.ToBitString);
+				UINT8 Erasefield:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Erase Field" 
+                                                                              : "Don't Erase Field");
+				UINT8 Eraseline:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Erase Line" 
+                                                                              : "Don't Erase Line");
+				UINT8 Erasescreen:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Erase Rest of Screen" 
+                                                                              : "Don't Erase Rest of Screen");
+				UINT8 Eraseresetline:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Erase Rest of Line" 
+                                                                              : "Don't Erase Rest of Line");
+				UINT8 Eraseresetfield:1 = FormatString("(%s) %s", this.ToBitString, this ? "Erase Rest of Field" 
+                                                                              : "Don't Erase Rest of Field");
+			};
+		case  3:
+			UINT8 TransmitFacilityMap
+			{
+				UINT8 Reserved:2 = FormatString("        (%s)", this.ToBitString);
+				UINT8 Transdata:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Data Transmit" 
+                                                                              : "Data NOT Transmit");
+				UINT8 Transline:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Transmit Line" 
+                                                                              : "Don't Transmit Line");
+				UINT8 Transfield:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Transmit Field" 
+                                                                              : "Don't Transmit Field");
+				UINT8 Transresetscreen:1 = FormatString("(%s) %s", this.ToBitString, this ? "Transmit Rest of Screen" 
+                                                                              : "Don't Transmit Rest of Screen");
+				UINT8 Transresetline:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Transmit Rest of Line" 
+                                                                              : "Don't Transmit Rest of Line");
+				UINT8 Transresetfield:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Transmit Rest of Field" 
+                                                                              : "Don't Transmit Rest of Field");
+			};
+		case  4:
+			UINT16 FormatFacilityMap
+			{
+				UINT16 Reserved:1 = FormatString("      (%s)", this.ToBitString);
+				UINT16 Protecton:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Protection On" 
+                                                                                : "Protection Off");
+				UINT16 Protectyes:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Protection" 
+                                                                                : "NO Protection");
+				UINT16 Alphabeticonly:1 = FormatString("(%s) %s", this.ToBitString, this ? "Alphabetic-only Protection" 
+                                                                                : "NO Alphabetic-only Protection");
+				UINT16 Numericonly:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Numeric-only Protection" 
+                                                                                : "NO Numeric-only Protection");
+				UINT16 Intensity:3 = FormatString("     (%s) %d", this.ToBitString, this);
+				UINT16 FNset:1 = FormatString("         (%s) %s", this.ToBitString, this ? "FN SET" 
+                                                                                : "FN NOT SET");
+				UINT16 Modified:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Modified" 
+                                                                                : "Not Modified");
+				UINT16 Lightpen:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Light Pen" 
+                                                                                : "NO Light Pen");
+				UINT16 Repeat:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Repeat" 
+                                                                                : "NO Repeat");
+				UINT16 Blinking:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Blinking" 
+                                                                                : "NO Blinking");
+				UINT16 Reversevideo:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Reverse Video" 
+                                                                                : "Normal Video");
+				UINT16 Justification:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Right Justification" 
+                                                                                : "NOT Right Justification");
+				UINT16 Overstrike:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Overstrike" 
+                                                                                : "No Overstrike");
+			};
+		case  5:
+		case 18:
+		case 28:
+			struct Cursor
+			{
+				UINT8 XPos;
+				UINT8 YPos;
+			};
+		case  6:
+			UINT8 LineNumber;
+		case  7:
+			UINT8 XPos;
+		case 36:
+			struct FORMATDATA
+			{
+				UINT16 FormatMap
+				{
+					UINT16 Reserved:6 = FormatString("     (%s)", this.ToBitString);
+					UINT16 Modified:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Modified" 
+                                                                                       : "NOT Modified");
+					UINT16 Selectable:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Pen Selectable" 
+                                                                                         : "Pen Un-Selectable");
+					UINT16 Blinking:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Blinking" 
+                                                                                       : "NO Blinking");
+					UINT16 Reversevideo:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Reverse Video" 
+                                                                                           : "Normal Video");
+					UINT16 Justification:1 = FormatString("(%s) %s", this.ToBitString, this ? "Right Justification" 
+                                                                                            : "NOT Right Justification");
+					UINT16 Protection:2 = FormatString("   (%s) %s", this.ToBitString, SBBMFormatMapProtectionTable(this));
+					UINT16 Intensity:3 = FormatString("    (%s) %d", this.ToBitString, this);
+				};
+				//rfc 732, page 13
+				UINT16 Count;
+			};
+		case 37:
+			_struct REPEAT
+			{
+				UINT8 Count;
+				CHAR Character;
+			};
+		case 38:
+			UINT8 Negotiation = SBDETNegotiationTable(this);
+		case 40:
+			UINT8 Code;
+		case 41:
+			_struct ERROR
+			{
+				UINT8 Command;
+				UINT8 ErrorCode = SBDETErrorCodeTable(this);
+			};
+		//rfc 1044
+		case 44:
+			struct Data
+			{
+				while  cond[ (offset < FrameLength) && !( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xf0 ) ]
+				{
+					UINT8 Keymap
+					{
+						UINT8 KeyMap0:2 = FormatString("   (%s) %s", this.ToBitString, SBDETOptionKeymap(this));
+						UINT8 KeyMap1:2 = FormatString("   (%s) %s", this.ToBitString, SBDETOptionKeymap(this));
+						UINT8 KeyMap2:2 = FormatString("   (%s) %s", this.ToBitString, SBDETOptionKeymap(this));
+						UINT8 KeyMap3:2 = FormatString("    %s) %d", this.ToBitString, SBDETOptionKeymap(this));
+					}
+				}
+			};
+		case 45:
+			struct Cursor
+			{
+				UINT8 XPos;
+				UINT8 YPos;
+			};
+		default:
+			struct
+			{
+				while [ (offset < FrameLength) && !( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xf0 ) ]
+				{
+					UINT8 Data;
+				}
+			};
+	}
+}
+
+table SBDETOptionKeymap(value)
+{
+	switch(value)
+	{
+		case 0:"disabled";
+		case 1:"enabled.Only the FUNCTION-KEY subcommand is returned on function key selection";
+		case 2:"enabled.All requested screen data and/or cursor position, as well as, the FUNCTION-KEY subcommand are returned on function key selection";
+		case 3:"Undefined";
+		
+	}
+}
+
+//rfc 749
+/*
+IAC SB SUPDUP-OUTPUT 1 byte1 byte2 ... byten IAC SE
+IAC SB SUPDUP-OUTPUT 2 N TD1 TD2 TD3 ... TDn SCx SCy IAC SE
+*/
+struct SBSUPDUPOUTPUTOption = FormatString("%s %d",OptionCode.ToString,SubCode)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); // 22
+	UINT8 SubCode;
+	switch(SubCode)
+	{
+		case 1:
+			_struct SubCode1
+			{
+				struct Data
+				{
+					while  cond[ (offset < FrameLength) && !( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xf0 ) ]
+					{
+						UINT8 Data;
+					}
+				};
+			};
+		case 2:
+			_struct SubCode2
+			{
+				UINT8 Count;
+				AsciiString(Count) TD;
+				UINT8 ScreenX;
+				UINT8 ScreenY;
+			};
+		default:
+			struct
+			{
+				while [ (offset < FrameLength) && !( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xf0 ) ]
+				{
+					UINT8 Data;
+				}
+			};
+	}
+}
+
+//rfc 779
+/*
+IAC SB SEND-LOCATION <location> IAC SE
+*/
+struct SBSENDLOCATIONOption = FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //23
+	struct location
+	{
+		while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+		{
+			UINT8 location;
+		}
+	}
+}
+
+//rfc 1091
+/*
+IAC SB TERMINAL-TYPE SEND IAC SE
+IAC SB TERMINAL-TYPE IS ... IAC SE
+*/
+struct SBTERMINALTYPEOption = FormatString("%s %s %s",OptionCode.ToString,SubCode.ToString, Conversation.TerminalType)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //24
+	UINT8 SubCode = this?"SEND":"IS";
+	switch(SubCode)
+	{
+		case 0:
+		struct TerminalType = FormatString("%s",Conversation.TerminalType)
+		{
+			[
+				Local.TerminalTypeOffset = FrameOffset,
+				Local.TerminalTypeLength = 0,
+				Post.Property.TelnetTerminalType = AsciiString(FrameData, Local.TerminalTypeOffset, Local.TerminalTypeLength),
+				Post.Conversation.TerminalType = AsciiString(FrameData, Local.TerminalTypeOffset, Local.TerminalTypeLength)
+			]
+			while [(FrameOffset < FrameLength)&& !(UINT16(FrameData, FrameOffset) == 0xFFF0)]
+			{ 
+				[Local.TerminalTypeLength = Local.TerminalTypeLength + 1]
+				CHAR charfeild;
+			}
+		}
+	}
+}
+
+
+//rfc 927
+/*
+IAC SB TUID <uuid> IAC SE
+*/
+struct SBTUIDOption = FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //26
+	UINT32 UUID;
+}
+
+//rfc 933
+/*
+IAC SB OUTMRK CNTL data IAC SE
+IAC SB OUTMRK ACK IAC SE
+IAC SB OUTMRK NAK IAC SE
+*/
+struct SBOUTMRKOption = FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //27
+	switch( UINT8( Framedata, Offset ) )
+	{
+		case 6:
+			UINT8 ACK;
+		case 21:
+			UINT8 NAK;
+		default:
+			_struct CNTLData
+			{
+				while  cond1[ (offset < FrameLength) &&
+							 !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0 )
+							]
+				{
+					UINT8 CNTL = SBOUTMARKCNTLTable(this);
+					struct Banner
+					{
+						while  cond1[ (offset < FrameLength) &&
+									 !( UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0 ) &&
+									  !(UINT8( Framedata, Offset ) == 29)
+									]
+						{
+							UINT8 Banner;
+						}
+						switch
+						{
+							case offset < FrameLength && UINT8( Framedata, Offset ) == 29:
+							CHAR GS = "Group Separator";
+						}
+					}
+				}
+			};
+	}
+}
+
+//rfc 946
+/*
+IAC SB TTYLOC <format> <TTYLOC number with IAC doubling> IAC SE
+*/
+struct SBTTYLOCOption = FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //28
+	UINT8 format;
+	switch(format)
+	{
+		case 0:
+			_struct Format0
+			{
+				UINT32 HostNumber;
+				Ipv4Address HostAddress;
+			};
+	}
+}
+
+//rfc 1041
+/*
+IAC SB 3270-REGIME ARE REGIME-LIST IAC SE
+IAC SB 3270-REGIME IS REGIME IAC SE
+*/
+struct SBREGIMEOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8  OptionCode = TelnetOptionTable(this);//29
+	UINT8  SubCode = this?"ARE":"IS";
+	switch(SubCode)
+	{
+		case 0:
+			_struct SubCodeIS
+			{
+				struct Regime
+				{
+					while  cond[ (offset< FrameLength) &&
+								!(UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0)
+							   ]
+					{
+						UINT8 Regime;
+					}
+				};
+			};
+		case 1:
+			_struct SubCodeARE
+			{
+				while cond1[ offset < FrameLength &&
+							!(UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0)
+						   ]
+				{
+					struct Regime
+					{
+						while condtion[ offset < FrameLength &&
+									   !(UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0) &&
+									    (!(UINT8( Framedata, Offset ) == 0x20))
+									  ]
+						{
+							UINT8 Regime;
+						}
+						switch
+						{
+							case offset < FrameLength && UINT8( Framedata, Offset ) == 0x20: CHAR SP;
+						}
+					};
+				}
+			};
+	}
+}
+
+Table SBX3PADValueTable(Parameter, value)
+{
+	switch(Parameter)
+	{
+		case   0:SBX3PADParameter0ValueTable(value);
+		case   1:SBX3PADParameter1ValueTable(value);
+		case   2:SBX3PADParameter2ValueTable(value);
+		case   3:SBX3PADParameter3ValueTable(value);
+		case   4:SBX3PADParameter4ValueTable(value);
+		case   5:SBX3PADParameter5ValueTable(value);
+		case   7:SBX3PADParameter7ValueTable(value);
+		case   8:SBX3PADParameter8ValueTable(value);
+		case   9:SBX3PADParameter9ValueTable(value);
+		case  10:SBX3PADParameter10ValueTable(value);
+		case  11:SBX3PADParameter11ValueTable(value);
+		case  12:SBX3PADParameter12ValueTable(value);
+		case  13:SBX3PADParameter13ValueTable(value);
+		case  14:SBX3PADParameter14ValueTable(value);
+		case  15:SBX3PADParameter15ValueTable(value);
+		case  16:SBX3PADParameter16ValueTable(value);
+		case  17:SBX3PADParameter17ValueTable(value);
+		case  18:SBX3PADParameter18ValueTable(value);
+		case  19:SBX3PADParameter19ValueTable(value);
+		case  20:SBX3PADParameter20ValueTable(value);
+		case  21:SBX3PADParameter21ValueTable(value);
+		case  22:SBX3PADParameter22ValueTable(value);
+		case 128:SBX3PADParameter128ValueTable(value);
+		case 129:SBX3PADParameter129ValueTable(value);
+		case 130:SBX3PADParameter130ValueTable(value);
+		case 131:SBX3PADParameter130ValueTable(value);
+		case 132:SBX3PADParameter132ValueTable(value);
+		case 133:SBX3PADParameter133ValueTable(value);
+		case 134:SBX3PADParameter134ValueTable(value);
+		case 135:SBX3PADParameter135ValueTable(value);
+		case 136:SBX3PADParameter136ValueTable(value);
+		case 137:SBX3PADParameter137ValueTable(value);
+		case 138:SBX3PADParameter137ValueTable(value);
+		default :"Unknown value";
+	}
+}
+
+//rfc 1053
+/*
+Optioncode = 30
+	IAC SB  X.3-PAD  SET           <param1> <value1> ...  IAC SE
+	IAC SB  X.3-PAD  RESPONSE-SET  <param1> <value1> ...  IAC SE
+	IAC SB  X.3-PAD  SEND          IAC SE
+	IAC SB  X.3-PAD  IS            <param1> <value1> ...  IAC SE
+	IAC SB  X.3-PAD  RESPONSE-IS   <param1> <value1> ...  IAC SE
+*/
+struct SBX3PADOption = FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this);
+	UINT8 SubCode = SBX3PADTable(this);
+	while condition[offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0)]
+	{
+		UINT8 Parameter = SBX3PADParameterTable(this);
+		UINT8 value = SBX3PADValueTable(Parameter, this);
+	}
+}
+
+//rfc 1073
+/*
+IAC SB NAWS <16-bit value> <16-bit value> IAC SE
+*/
+struct SBNAWSOption= FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //31
+	UINT16 Width;
+	UINT16 Height;
+}
+
+//rfc 1079
+/*
+IAC SB TERMINAL-SPEED SEND IAC SE
+IAC SB TERMINAL-SPEED IS ... IAC SE
+*/
+struct SBTERMINALSPEEDOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this);// 32
+	UINT8 SubCode = this?"SEND":"IS";
+	switch(SubCode)
+	{
+		case 0:
+			struct SubCodeIS
+			{
+				while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+				{
+					UINT8 value;
+				}
+			};
+	}
+}
+
+//rfc 1372
+/*
+IAC SB TOGGLE-FLOW-CONTROL OFF IAC SE
+IAC SB TOGGLE-FLOW-CONTROL ON IAC SE
+IAC SB TOGGLE-FLOW-CONTROL RESTART-ANY IAC SE
+IAC SB TOGGLE-FLOW-CONTROL RESTART-XON IAC SE
+*/
+struct SBTOGGLEFLOWCONTROLOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //33
+	UINT8 SubCode = SBToggleFlowControlTable(this);
+}
+
+//rfc 1184
+/*
+IAC SB LINEMODE MODE mask IAC SE
+IAC SB LINEMODE DO FORWARDMASK mask0 mask1 ... mask31 IAC SE
+IAC SB LINEMODE DONT FORWARDMASK IAC SE
+IAC SB LINEMODE WILL FORWARDMASK IAC SE
+IAC SB LINEMODE WONT FORWARDMASK IAC SE
+IAC SB LINEMODE SLC <list of octet triplets> IAC SE
+Optioncode = 34
+*/
+struct SBLINEMODEOption = FormatString("%s %s",OptionCode.ToString,Property.SubCode)
+{
+	UINT8 OptionCode = TelnetOptionTable(this);//34
+	switch(UINT8( Framedata, Offset ))
+	{
+		case 1:
+			[SubCode = "MODE"]
+			_struct OptionMODE
+			{
+				UINT8 SubCode = SBLINEMODETable(this);
+				UINT8 mask = SBLINEMODEMaskTable(this);
+			};
+		case 3:
+			[SubCode = "SLC"]
+			_struct OptionSLC
+			{
+				UINT8 SubCode = SBLINEMODETable(this);
+				while conditon[offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0)]
+				{
+					UINT24 triplets = Func.ToString +Flag.ToString +" " + Value
+					{
+						UINT8 Func = SBSLCFunctionTable(this);
+						UINT8 Flag = " "+SBSLCLevelBitTable(this) + FlushOut.ToString + FlushIn.ToString + Ack.ToString
+						{
+							UINT8 Ack:1 = FormatString("     (%s) %s", this.ToBitString, this ? "ACK" : "");
+							UINT8 FlushIn:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FLUSHIN" : "");
+							UINT8 FlushOut:1 = FormatString("(%s) %s", this.ToBitString, this ? "FLUSHOUT" : "");
+							UINT8 BIT0:5 = FormatString("    (%s)", this.ToBitString);
+						};
+						UINT8 Value;
+					};
+				}
+			};
+		default:
+			[SubCode = "FORWARDMASK"]
+			_struct OptionFORWARDMASK
+			{
+				UINT8 Command = SBSubCMDTable(this);
+				UINT8 SubCode = SBLINEMODETable(this);
+				switch(Command)
+				{
+					case 253:
+						while condition[!(UINT8( Framedata, Offset ) == 0xff) && !(UINT8( Framedata, Offset + 1 ) == 0xf0)]
+						{
+							UINT8 Mask;
+						}
+				}
+			};
+	}
+}
+
+//rfc 1096
+/*
+IAC SB X-DISPLAY-LOCATION SEND IAC SE
+IAC SB X-DISPLAY-LOCATION IS ... IAC SE
+*/
+struct SBXDISPLAYLOCATIONOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OPtionCode = TelnetOptionTable(this);//35
+	UINT8 SubCode = this?"SEND":"IS";
+	switch(SubCode)
+	{
+		case 0:
+			struct SubCodeIs
+			{
+				while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+				{
+					UINT8 XDisplayLocation;
+				}
+			};
+	}
+}
+
+//rfc 1408
+/*
+IAC SB ENVIRON SEND [ type ... [ type ... [ ... ] ] ] IAC SE
+IAC SB ENVIRON IS type ... [ VALUE ... ] [ type ... [ VALUE ... ] [
+IAC SB ENVIRON INFO type ... [ VALUE ... ] [ type ... [ VALUE ... ] [
+//#? there maybe errors in this option. please take notice of it.
+*/
+struct SBENVIRONOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //36
+	UINT8 SubCode = SBEnvironOptionSubCMDTable(this);
+	while condition[offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0)]
+	{
+		UINT8 TypeOrValue = SBEnvironOptionValueTypeTable(this);
+		struct EnvironVariable
+		{
+			while  cond[ offset < FrameLength &&
+						(!(UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0 ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 0)) || ( (UINT8( Framedata, Offset ) == 0) && (UINT8( Framedata, Offset - 1 ) == 2) ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 1)) || ( (UINT8( Framedata, Offset ) == 1) && (UINT8( Framedata, Offset - 1 ) == 2) ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 3)) || ( (UINT8( Framedata, Offset ) == 3) && (UINT8( Framedata, Offset - 1 ) == 2) ) )
+						]
+			{
+				UINT8 EnvironVariable;
+			}
+		};
+	}
+}
+
+//rfc1416
+/*
+IAC SB AUTHENTICATION SEND authentication-type-pair-list IAC SE
+IAC SB AUTHENTICATION IS authentication-type-pair <auth data> IAC SE
+IAC SB AUTHENTICATION REPLY authentication-type-pair <auth data> IAC SE
+IAC SB AUTHENTICATION NAME remote-user IAC SE
+*/
+struct  SBAUTHOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); // 37
+	UINT8 SubCode = SBAuthOptionSubCMDTable(this);
+	switch(SubCode)
+	{
+		case 0:
+		case 2:
+			_struct AuthenTypePair
+			{
+				[Conversation.TELNETAuthType = SBAuthTypeTable(this)]
+				UINT8 AuthType = SBAuthTypeTable(this);
+				UINT8 Modifier = FormatString("0x%x,%s",this,this & 0x14?"ENCRYPT_RESERVED":this & 0x10?"ENCRYPT_AFTER_EXCHANGE":this & 0x04?"ENCRYPT_USING_TELOPT":this?"Unknown encrypt":"ENCRYPT_OFF")
+				{
+					UINT8 AuthWhoMask:1 = FormatString("   (%s)%s",this.ToBitString,this?"AUTH_SERVER_TO_CLIENT":"AUTH_CLIENT_TO_SERVER");
+					UINT8 AuthHowMask:1 = FormatString("   (%s)%s",this.ToBitString,this?"AUTH_HOW_MUTUAL":"AUTH_HOW_ONE_WAY");
+					UINT8 EncryptMask3:1 = FormatString("  (%s)",this.ToBitString);
+					UINT8 IniCredFwdMask:1 = FormatString("(%s)%s",this.ToBitString,this?"INI_CRED_FWD_ON":"INI_CRED_FWD_OFF");
+					UINT8 EncryptMask5:1 = FormatString("  (%s)",this.ToBitString);
+					UINT8 Unused:3 = FormatString("        (%s)",this.ToBitString);
+				}
+				struct AuthData
+				{
+					switch(AuthType)
+					{
+						case 15:
+							_struct NTLMData
+							{
+								UINT8 NTLMCommandCode = NTLMCommandCodeTable(this);
+								switch(NTLMCommandCode)
+								{
+									case 0:
+									case 1:
+									case 2:
+									[DataFieldByteOrder = LittleEndian]
+									_struct NTLMSizeAndType
+									{
+										UINT32 NTLMDataSize;
+										UINT32 NTLMBufferType = FormatString("%u (0x%X) %s",this,this,this==2?"":"NTLM authentication failed");
+										struct NTLMData
+										{
+											[EmbeddedProtocol]
+											NLMP NLMP;
+										}
+									}
+								}
+							}
+						//rfc 1411
+						case 1:
+							struct
+							{
+								UINT8 SubCommandKERBEROSV4 = SBAUTHOptionSubCommandKERBEROSV4Table(this);
+								switch(SubCommandKERBEROSV4)
+								{
+									case 1:AsciiString RejectReason;
+									case 3:
+									case 4:
+										Blob(8) EncryptedData;
+								}
+							}
+						//rfc 2942
+						case 2:
+							struct
+							{
+								UINT8 SubCommandKERBEROSV5 = SBAUTHOptionSubCommandKERBEROSV5Table(this);
+								switch(SubCommandKERBEROSV5)
+								{
+									case 0:KrbApReq ApReq;
+									case 1:AsciiString RejectReason;
+									case 3:KrbApRep ApRep;
+									case 4:KrbCred Cred;
+									case 6:AsciiString ForwardRejectReason;
+								}
+							}
+						//rfc 2944
+						case 5:
+							struct
+							{
+								UINT8 SubCommandSRP= SBAUTHOptionSubCommandSRPTable(this);
+								switch(SubCommandSRP)
+								{
+									case 1:AsciiString RejectReason;
+									case 4:Blob(20) ResponseData;
+									case 8:
+										_struct AuthData
+										{
+											while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+											{
+												UINT8 Residue;
+											}
+										}
+									case 9:
+										struct
+										{
+											UINT16 ModulusLength;
+											Blob(ModulusLength) Modulus;
+											UINT16 GeneratorLength;
+											Blob(GeneratorLength) Generator;
+											UINT16 SaltLength;
+											Blob(SaltLength) Salt;
+										}
+								}
+							}
+						//rfc 2951
+						case 12:
+							UINT8 SubCommandKEASJ = SBAUTHOptionSubCommandKEATable(this);
+						//rfc 2951
+						case 13:
+							UINT8 SubCommandKEASJINTEG = SBAUTHOptionSubCommandKEATable(this);
+						//rfc 2943
+						case 14:
+							UINT8 SubCommandDSS = SBAUTHOptionSubCommandDSSTable(this);
+						default:
+							_struct
+							{
+								while [ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+								{
+									UINT8 AuthData;
+								}
+							}
+					}
+					while [ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+					{
+						UINT8 AuthData;
+					}
+				}
+			};
+		case 1:
+			while condition[ offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF)]
+			{
+				[Conversation.TELNETAuthType = SBAuthTypeTable(this)]
+				UINT8 AuthType = SBAuthTypeTable(this);
+				UINT8 Modifier = FormatString("0x%x,%s",this,this & 0x14?"ENCRYPT_RESERVED":this & 0x10?"ENCRYPT_AFTER_EXCHANGE":this & 0x04?"ENCRYPT_USING_TELOPT":this?"Unknown encrypt":"ENCRYPT_OFF")
+				{
+					UINT8 AuthWhoMask:1 = FormatString("   (%s)%s",this.ToBitString,this?"AUTH_SERVER_TO_CLIENT":"AUTH_CLIENT_TO_SERVER");
+					UINT8 AuthHowMask:1 = FormatString("   (%s)%s",this.ToBitString,this?"AUTH_HOW_MUTUAL":"AUTH_HOW_ONE_WAY");
+					UINT8 EncryptMask3:1 = FormatString("  (%s)",this.ToBitString);
+					UINT8 IniCredFwdMask:1 = FormatString("(%s)%s",this.ToBitString,this?"INI_CRED_FWD_ON":"INI_CRED_FWD_OFF");
+					UINT8 EncryptMask5:1 = FormatString("  (%s)",this.ToBitString);
+					UINT8 Unused:3 = FormatString("        (%s)",this.ToBitString);
+				}
+			}
+		case 3:
+			struct NAME
+			{
+				[Conversation.TELNETRemoteUser = AsciiString(FrameData,FrameOffset)]
+				while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+				{
+					UINT8 remoteuser;
+				}
+			};
+		default:
+			ReportParserError("ParserErrorProtocolClassMsOffice", "Telnet", "There is no such SubCode") SubCodeError;
+	}
+}
+
+Table NTLMCommandCodeTable(value)
+{
+	switch(value)
+	{
+		case  0: "NTLM_NEGOTIATE";
+		case  1: "NTLM_CHALLENGE";
+		case  2: "NTLM_AUTHENTICATE";
+		case  3: "NTLM_ACCEPT";
+		case  4: "NTLM_REJECT";
+		default: "Unknown command code";
+	}
+}
+
+//rfc 2946
+/*
+IAC SB ENCRYPT SUPPORT encryption-type-list IAC SE
+IAC SB ENCRYPT IS encryption-type ... IAC SE
+IAC SB ENCRYPT REPLY encryption-type ... IAC SE
+IAC SB ENCRYPT START keyid IAC SE
+IAC SB ENCRYPT END IAC SE
+IAC SB ENCRYPT REQUEST-START keyid IAC SE
+IAC SB ENCRYPT REQUEST-END IAC SE
+IAC SB ENCRYPT ENC_KEYID keyid IAC SE
+IAC SB ENCRYPT DEC_KEYID keyid IAC SE
+*/
+struct SBENCRYPTOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //38
+	UINT8 SubCode = SBEncryptCmdTable(this);
+	switch(SubCode)
+	{
+		case 0:
+		case 2:
+			_struct EncryptionType
+			{
+				UINT8 EncryType = SBEncryptTypeTable(this);
+				struct Data
+				{
+					switch(EncryType)
+					{
+						case 1:		//rfc 2952
+						case 2:		//rfc 2953
+						case 3:		//rfc 2947
+						case 4:		//rfc 2948
+						case 8:		//rfc 2950
+						case 10:	//rfc 2950
+						case 9:		//rfc 2949
+						case 11:	//rfc 2949
+							struct
+							{
+								UINT8 SubOption = SBENCRYPTOptionEncryCFBSubOptionTable(this);
+								switch(SubOption)
+								{
+									case 1:Blob(8) InitialVector;
+									default:UINT8 SubOption = SBENCRYPTOptionEncryCFBSubOptionTable(this);
+								}
+							}
+						
+					}
+					while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+					{
+						UINT8 Data;
+					}
+				};
+			};
+		case 1:
+			while condition[offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF)]
+			{
+				UINT8  EncryType = SBEncryptTypeTable(this);
+			}
+		case 3:
+		case 5:
+		case 7:
+		case 8:
+			struct KeyID
+			{
+				while  cond[ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+				{
+					UINT8 keyid;
+				}
+			};
+		default:
+			struct
+			{
+				while [ (offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff))]
+				{
+					UINT8 Data;
+				}
+			}
+	}
+}
+
+
+//rfc 1572
+/*
+IAC SB NEW-ENVIRON SEND [ type ... [ type ... [ ... ] ] ] IAC SE
+IAC SB NEW-ENVIRON IS type ... [ VALUE ... ] [ type ... [ VALUE ... ]
+   [ ... ] ] IAC SE
+IAC SB NEW-ENVIRON INFO type ... [ VALUE ... ] [ type ... [ VALUE ...
+   ] [ ... ] ] IAC SE
+*/
+struct SBNEWENVIRONOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //39
+	UINT8 SubCode = SBEnvironOptionSubCMDTable(this);
+	while condition[offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0)]
+	{
+		UINT8 TypeOrValue = SBEnvironOptionValueTypeTable(this);
+		struct EnvironVariable
+		{
+			while  cond[ offset < FrameLength &&
+						(!(UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0 ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 0)) || ( (UINT8( Framedata, Offset ) == 0) && (UINT8( Framedata, Offset - 1 ) == 2) ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 1)) || ( (UINT8( Framedata, Offset ) == 1) && (UINT8( Framedata, Offset - 1 ) == 2) ) ) &&
+						( (!(UINT8( Framedata, Offset ) == 3)) || ( (UINT8( Framedata, Offset ) == 3) && (UINT8( Framedata, Offset - 1 ) == 2) ) )
+						]
+			{
+				UINT8 EnvironVariable;
+			}
+		};
+	}
+}
+
+
+//rfc 2355
+/*
+IAC SB TN3270E SEND DEVICE-TYPE IAC SE
+IAC SB TN3270E DEVICE-TYPE REQUEST <device-type> [ [CONNECT <resource-name>] | [ASSOCIATE <device-name>] ] IAC SE
+IAC SB TN3270E DEVICE-TYPE IS <device-type> CONNECT <device-name> IAC SE
+IAC SB TN3270E DEVICE-TYPE REJECT REASON <reason-code> IAC SE
+IAC SB TN3270E FUNCTIONS REQUEST <function-list> IAC SE
+IAC SB TN3270E FUNCTIONS IS <function-list> IAC SE
+this option is very complex , i wil enriched it in future.
+*/
+struct SBTN3270EOption= FormatString("%s %s %s",OptionCode.ToString,SubCode1.ToString,SubCode2.ToString)
+{
+	UINT8  OptionCode = TelnetOptionTable(this); //40
+	UINT8  SubCode1 = SBTN3270ETable(this);
+	UINT8  SubCode2 = SBTN3270ETable(this);
+	switch
+	{
+		case SubCode1 == 2 &&
+			 SubCode2 == 6 &&
+			 UINT8( Framedata, Offset ) == 5:
+			_struct ReasonCode
+			{
+				UINT8 SubCode3 = SBTN3270ETable(this);
+				UINT8 ReasonCode = SBTN3270EReasonCodeTable(this);
+			};
+		case SubCode1 == 2 &&
+			 SubCode2 == 4:
+			_struct DeviceTypeAndName
+			{
+				//UINT8 DeviceType;
+				struct DeviceType
+				{
+					while  cond1[(offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff)) &&
+								 (!(UINT8( Framedata, Offset + 1 ) == 0xf0)) && (!(UINT8( Framedata, Offset ) == 0x1)) &&
+								 (!(UINT8( Framedata, Offset ) == 0x0))
+								]
+					{
+						UINT8 DeviceType;
+					}
+				};
+				struct DeviceName
+				{
+					UINT8 SubCode3 = SBTN3270ETable(this);
+					//AsciiStringTerm("\r\n") DeviceName;
+					while  cond3[(offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff)) &&
+								 (!(UINT8( Framedata, Offset + 1 ) == 0xf0))
+								]
+					{
+						UINT8 DeviceName;
+					}
+				};
+			};
+		case SubCode1 == 2 &&
+			 SubCode2 == 7:
+			_struct Device
+			{
+				//UINT8 DeviceType;
+				struct DeviceType
+				{
+					while  cond1[(offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff)) &&
+								 (!(UINT8( Framedata, Offset + 1 ) == 0xf0)) && (!(UINT8( Framedata, Offset ) == 0x1)) &&
+								 (!(UINT8( Framedata, Offset ) == 0x0))
+								]
+					{
+						UINT8 DeviceType;
+					}
+				};
+				switch( UINT8( Framedata, Offset ) )
+				{
+					case 1:
+						struct ResourceName
+						{
+							UINT8 SubCode3 = SBTN3270ETable(this);
+							//AsciiStringTerm("\r\n") ResourceName;
+							while  cond2[(offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff)) &&
+										 (!(UINT8( Framedata, Offset + 1 ) == 0xf0))
+										]
+							{
+								UINT8 ResourceName;
+							}
+						};
+					case 0:
+						struct DeviceName
+						{
+							UINT8 SubCode3 = SBTN3270ETable(this);
+							//AsciiStringTerm("\r\n") DeviceName;
+							while  cond3[(offset < FrameLength) && (!(UINT8( Framedata, Offset ) == 0xff)) &&
+										 (!(UINT8( Framedata, Offset + 1 ) == 0xf0))
+										]
+							{
+								UINT8 DeviceName;
+							}
+						};
+				}
+			};
+		case SubCode1 == 3:
+			struct FunctionList
+			{
+				while condition[(offset < FrameLength) &&
+								!(UINT8( Framedata, Offset ) == 0xff) &&
+								!(UINT8( Framedata, Offset + 1 ) == 0xf0)
+								]
+				{
+					UINT8 Function = SBTN3270EFunctionNameTable(this);
+				}
+			};
+		default:
+			ReportParserError("ParserErrorProtocolClassMsOffice", "Telnet", "There is no such Subcode") SubcodeError;
+	}
+}
+
+
+//rfc 2066
+/*
+IAC SB CHARSET REQUEST { "[TTABLE ]" <Version> } <char set
+   list> IAC SE
+IAC SB CHARSET ACCEPTED <Charset> IAC SE
+IAC SB CHARSET REJECTED IAC SE
+IAC SB CHARSET TTABLE-IS <version> <syntax for version> IAC SE
+IAC SB CHARSET TTABLE-ACK IAC SE
+IAC SB CHARSET TTABLE-NAK IAC SE
+IAC SB CHARSET TTABLE-REJECTED IAC SE
+*/
+struct SBCHARSETOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //42
+	UINT8 SubCode = SBCharsetTable(this);
+	switch(SubCode)
+	{
+		case 2:
+			struct CharsetAccept
+			{
+				while  cond[(offset < FrameLength) &&
+							!( UINT8( Framedata, Offset ) == 0xff &&
+							UINT8( Framedata, Offset + 1 ) == 0xF0 )
+							]
+				{
+					UINT8 Data;
+				}
+			};
+		//#? dev note 2006-05-24
+		case 1:
+			_struct CharsetRequest
+			{
+				switch
+				{
+					case UINT8( Framedata, Offset ) == 84: AsciiString(6) TTable;
+				}
+				UINT8  Version;
+				while condition[ offset < FrameLength && !(UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0)]
+				{
+					[Seq]
+					CHAR Seq;
+					struct Charset
+					{
+						while cond[offset < FrameLength &&
+								   !(UINT8( Framedata, Offset ) == Property.Seq) &&
+								   !(UINT8( Framedata, Offset ) == 0xFF &&
+								   UINT8( Framedata, Offset + 1 ) == 0XF0)
+								  ]
+						{
+							UINT8 Charset;
+						}
+					};
+				}
+			};
+		case 4:
+			_struct CharserTTABLEIS
+			{
+				UINT8 version;
+				_struct Seq1
+				{
+					[Seq]
+					UINT8 Seq;
+				};
+				struct Name1
+				{
+					while cond1[ offset < FrameLength && !(UINT8( Framedata, Offset ) == Property.Seq)]
+					{
+					    UINT8 Name1;
+					}
+				};
+				_struct Seq2
+				{
+					UINT8 Seq;
+				};
+				UINT8 Size1;
+				UINT8 Count1;
+				struct Name2
+				{
+					while cond2[ offset < FrameLength && !(UINT8( Framedata, Offset ) == Property.Seq)]
+					{
+						UINT8 Name2;
+					}
+				};
+				_struct Seq3
+				{
+					UINT8 Seq;
+				};
+				UINT8 Size2;
+				UINT8 Count2;
+				AsciiString(Count1) Map1;
+				AsciiString(Count2) Map2;
+			};
+		default:
+			struct
+			{
+				while [ offset < FrameLength && !(UINT8( Framedata, Offset ) == Property.Seq)]
+				{
+					UINT8 Data;
+				}
+			};
+	}
+}
+
+//rfc 2217
+/*
+COM-PORT-OPTION
+*/
+struct SBCOMPORTOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //44
+	UINT8 SubCode = TelnetSBComPortTable(this);
+	switch(SubCode)
+	{
+		case   0:
+		case 100:
+			struct SIGNATURE
+			{
+				while  cond[ (offset < FrameLength) &&
+							!( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0 )
+							]
+				{
+					UINT8 text;
+				}
+			};
+		case   1:
+		case 101:
+			UINT32 value;
+		case   2:
+		case 102:
+			UINT8 DatasizeValue = TelnetDatasizeValueTable(this);
+		case   3:
+		case 103:
+			UINT8 ParityValue = TelnetParityValueTable(this);
+		case   4:
+		case 104:
+			UINT8 StopsizeValue = TelnetStopsizeValueTable(this);
+		case   5:
+		case 105:
+			UINT8 ControlValue = TelnetControlValueTable(this);
+		case   6:
+		case 106:
+			UINT8 LinestateValue
+			{
+				UINT8 Timeout:1      = FormatString("     (%s) %s", this.ToBitString, this ? "Time-out Error" 
+                                                                                      : "NO Time-out Error");
+				UINT8 Transshift:1   = FormatString("  (%s) %s", this.ToBitString, this ? "Transfer Shift Register Empty" 
+                                                                                    : "NOT Transfer Shift Register Empty");
+				UINT8 Transholding:1 = FormatString("(%s) %s", this.ToBitString, this ? "Transfer Holding Register Empty" 
+                                                                                      : "NOT Transfer Holding Register Empty");
+				UINT8 Breakdetect:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Break-detect Error" 
+                                                                                      : "NO Break-detect Error");
+				UINT8 Framing:1      = FormatString("     (%s) %s", this.ToBitString, this ? "Framing Error" 
+                                                                                      : "NO Framing Error");
+				UINT8 Parity:1       = FormatString("      (%s) %s", this.ToBitString, this ? "Parity Error" 
+                                                                                      : "NO Parity Error");
+				UINT8 Overrun:1      = FormatString("     (%s) %s", this.ToBitString, this ? "Overrun Error" 
+                                                                                      : "NO Overrun Error");
+				UINT8 Dataready:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Data Ready" 
+                                                                                      : "Data NOT Ready");
+			};
+		case   7:
+		case 107:
+			UINT8 ModestateValue
+			{
+				UINT8 Receiveline:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Receive Line Signal Detect(also known as Carrier Detect)" 
+                                                                                     : "NOT Receive Line Signal Detect(also known as Carrier Detect)");
+				UINT8 Ringindicator:1 = FormatString("(%s) %s", this.ToBitString, this ? "Ring Indicator" 
+                                                                                       : "No Ring Indicator");
+				UINT8 Datasetready:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Data-Set-Ready Signal State" 
+                                                                                      : "Data-Set-Ready Signal NOT State");
+				UINT8 Cleartosend:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Clear-To-Send Signal State" 
+                                                                                     : "Clear-To-Send Signal NOT State");
+				UINT8 Deltareceive:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Delta Receive Line Signal Detect" 
+                                                                                      : "Delta NOT Receive Line Signal Detect");
+				UINT8 Trailingedge:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Trailing-edge Ring Detector" 
+                                                                                      : "Trailing-edge NOT Ring Detector");
+				UINT8 Deltadata:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Delta Data-Set-Ready" 
+                                                                                   : "NO Delta Data-Set-Ready");
+				UINT8 Deltaclear:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Delta Clear-To-Send" 
+                                                                                    : "NO Delta Clear-To-Send");
+			};
+		case  10:
+		case 110:
+			UINT8 LinestateMaskValue
+            {			
+                UINT8 Timeout:1      = FormatString("(%s) %s", this.ToBitString, this ? "Time-out Error" 
+                                                                                      : "NO Time-out Error");
+				UINT8 Transshift:1   = FormatString("                  (%s) %s", this.ToBitString, this ? "Transfer Shift Register Empty" 
+                                                                                    : "NOT Transfer Shift Register Empty");
+				UINT8 Transholding:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Transfer Holding Register Empty" 
+                                                                                      : "NOT Transfer Holding Register Empty");
+				UINT8 Breakdetect:1  = FormatString("                 (%s) %s", this.ToBitString, this ? "Break-detect Error" 
+                                                                                      : "NO Break-detect Error");
+				UINT8 Framing:1      = FormatString("                     (%s) %s", this.ToBitString, this ? "Framing Error" 
+                                                                                      : "NO Framing Error");
+				UINT8 Parity:1       = FormatString("                      (%s) %s", this.ToBitString, this ? "Parity Error" 
+                                                                                      : "NO Parity Error");
+				UINT8 Overrun:1      = FormatString("                     (%s) %s", this.ToBitString, this ? "Overrun Error" 
+                                                                                      : "NO Overrun Error");
+				UINT8 Dataready:1    = FormatString("                   (%s) %s", this.ToBitString, this ? "Data Ready" 
+                                                                                      : "Data NOT Ready");
+			};	
+		case  11:
+		case 111:
+			UINT8 ModestateMaskValue
+            {
+				UINT8 Receiveline:1   = FormatString("  (%s) %s", this.ToBitString, this ? "Receive Line Signal Detect(also known as Carrier Detect)" 
+                                                                                       : "NOT Receive Line Signal Detect(also known as Carrier Detect)");
+				UINT8 Ringindicator:1 = FormatString("(%s) %s", this.ToBitString, this ? "Ring Indicator" 
+                                                                                       : "No Ring Indicator");
+				UINT8 Datasetready:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Data-Set-Ready Signal State" 
+                                                                                       : "Data-Set-Ready Signal NOT State");
+				UINT8 Cleartosend:1   = FormatString("  (%s) %s", this.ToBitString, this ? "Clear-To-Send Signal State" 
+                                                                                       : "Clear-To-Send Signal NOT State");
+				UINT8 Deltareceive:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Delta Receive Line Signal Detect" 
+                                                                                       : "Delta NOT Receive Line Signal Detect");
+				UINT8 Trailingedge:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Trailing-edge Ring Detector" 
+                                                                                       : "Trailing-edge NOT Ring Detector");
+				UINT8 Deltadata:1     = FormatString("    (%s) %s", this.ToBitString, this ? "Delta Data-Set-Ready" 
+                                                                                       : "NO Delta Data-Set-Ready");
+				UINT8 Deltaclear:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Delta Clear-To-Send" 
+                                                                                       : "NO Delta Clear-To-Send");
+			};
+		case  12:
+		case 112:
+			UINT8 PurgeDataValue = TelnetPurgeDataValueTable(this);
+		default:
+			struct UnknownSubCode
+			{
+				while  cond[( offset < FrameLength ) &&
+							!( UINT8( Framedata, Offset ) == 0xff && UINT8( Framedata, Offset + 1 ) == 0xF0 )
+							]
+				{
+					UINT8 Value;
+				}
+			};
+	}
+}
+
+//rfc 2840
+//KERMIT
+struct SBKERMITOption= FormatString("%s %s",OptionCode.ToString,SubCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //47
+	UINT8 SubCode = SBKERMITTable(this);
+	switch(SubCode)
+	{
+		case 4: UINT8 octet;
+	}
+}
+
+//rfc 861
+//EXOPL
+struct SBEXOPLOption= FormatString("%s",OptionCode.ToString)
+{
+	UINT8 OptionCode = TelnetOptionTable(this); //255
+	UINT8 SubCode = SBSubCMDTable(this);
+	UINT8 SubOptCode = TelnetOptionTable(this);
+	switch(SubCode)
+	{
+		case 250:
+			struct ExoplParameters
+			{
+				while  cond[ ( offset < FrameLength ) && (!( UINT8( Framedata, Offset ) == 0xf0 ))]
+				{
+					UINT8 Parameter;
+				}
+				UINT8 ParamEnd = "SE";
+			};
+	}
+}
+
+struct TelnetCommand = FormatString("%s %s",command.ToString,Property.TelnetOptCode)
+{
+	[TelnetOptCode = ""]
+	UINT16 Command = TelnetTypeTable(UINT8( Framedata, Offset + 1 ));
+	switch( UINT8( Framedata, Offset - 1 ) )
+	{
+		case 251:
+		case 252:
+		case 253:
+		case 254:
+			[ TelnetOptCode = OptionCode.ToString ]
+			UINT8 OptionCode = TelnetOptionTable(this);
+		case 250:
+			_struct SBOption
+			{
+				switch(UINT8( Framedata, Offset ))
+				{
+					case   5:SBStatusOption Status;
+					case   7:SBRCTEOption RCTE;
+					case  10:SBNAOCRDOption NAOCRD;
+					case  11:SBNAOHTSOption NAOHTS;
+					case  12:SBNAOHTDOption NAOHTD;
+					case  13:SBNAOFFDOption NAOFFD;
+					case  14:SBNAOVTSOption NAOVTS;
+					case  15:SBNAOVTDOption NAOVTD;
+					case  16:SBNAOLFDOption NAOLFD;
+					case  17:SBEXTASCOption EXTASC;
+					case  19:SBBMOption BM;
+					case  20:SBDETOption DET;
+					case  22:SBSUPDUPOUTPUTOption SUPDUP_OUTPUT;
+					case  23:SBSENDLOCATIONOption SEND_LOCATION;
+					case  24:SBTERMINALTYPEOption TERMINAL_TYPE;
+					case  26:SBTUIDOption TUID;
+					case  27:SBOUTMRKOption OUTMARK;
+					case  28:SBTTYLOCOption TTYLOC;
+					case  29:SBREGIMEOption REGIME;
+					case  30:SBX3PADOption X3PAD;
+					case  31:SBNAWSOption NAWS;
+					case  32:SBTERMINALSPEEDOption TERMINAL_SPEED;
+					case  33:SBTOGGLEFLOWCONTROLOption TOGGLE_FLOW_CONTROL;
+					case  34:SBLINEMODEOption LINEMODE;
+					case  35:SBXDISPLAYLOCATIONOption X_DISPLAY_LOCATION;
+					case  36:SBENVIRONOption ENVIRON;
+					case  37:SBAUTHOption AUTH;
+					case  38:SBENCRYPTOption ENCRYPT;
+					case  39:SBNEWENVIRONOption NEW_ENVIRON;
+					case  40:SBTN3270EOption TN3270E;
+					case  42:SBCHARSETOption CHARSET;
+					case  44:SBCOMPORTOption COM_PORT;
+					case  47:SBKERMITOption KERMIT;
+					case 255:SBEXOPLOption EXOPL;
+					default:
+						ReportParserError("ParserErrorProtocolClassMsOffice", "Telnet", "There is no such command") CommandError;
+				}
+				switch
+				{
+					case UINT8( Framedata, Offset ) == 0xFF && UINT8( Framedata, Offset + 1 ) == 0xF0:
+						UINT16 EndCommand = TelnetTypeTable(UINT8( Framedata, Offset + 1 ));
+				}
+			};
+	}
+}
+

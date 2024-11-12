@@ -1,0 +1,1242 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Win32 Time Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-W32T]: W32Time Remote Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+Protocol W32T = FormatString( "%s %s%s%s%s%s", 
+	Property.W32TMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.W32TSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ?  ", " + Property.W32TSummary : "" )
+{
+	[Property.W32TSummary = ""]
+	[Property.W32TMethodName = W32TMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct W32TimeSync
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary=FormatString("%s, Flags: %s",Wait?"Time Synchronization call is blocking":"Time Synchronization call is non-blocking",Flags.toString)]
+									Struct
+									{
+										UINT32 Wait = W32TimeSyncUWaitTable(this);
+										Switch( Property.MSRPCByteOrder )
+										{
+											Case LittleEndian:
+												Struct 
+												{
+													UINT32		Flags = (this & 0x00000000 ? "SoftReSync " : "")
+													+(this & 0x00000001 ? "HardReSync " : "")
+													+(this & 0x00000002 ? "ReturnResult " : "")
+													+(this & 0x00000004 ? "Rediscover " : "")
+													+(this & 0x00000008 ? "UpdateAndResync " : "")
+													+(this & 0x00000010 ? "ForceResync " : "")
+													{
+														UINT32	HardReSync: 1 = FormatString("     (%s) %s", this.ToBitString,"Acquires new time sample from network or hardware due to time slip");
+														[Conversation.W32TReturnResultFlags$[MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId )]]
+														UINT32	ReturnResult: 1 = FormatString("   (%s) %s", this.ToBitString,"Causes the method to return one of the W32Time return values");
+														UINT32	Rediscover: 1 = FormatString("     (%s) %s", this.ToBitString,"Attempts to discover new network time data sources");
+														UINT32	UpdateAndResync: 1 = FormatString("(%s) %s", this.ToBitString,"Updates configuration from registry, waits 16 seconds, then synchronizes with current time samples");
+														UINT32  ForceResync: 1 = FormatString("    (%s) %s", this.ToBitString,"causes the processing of the next time sample to ignore any phase correction boundaries imposed by the W32Time service.");
+														UINT32	Reserved:27 = FormatString("       (%s)", this.ToBitString);
+													}
+												};
+											Default:
+												Struct 
+												{
+													UINT32		Flags = (this & 0x00000000 ? "SoftReSync " : "")
+													+(this & 0x00000001 ? "HardReSync " : "")
+													+(this & 0x00000002 ? "ReturnResult " : "")
+													+(this & 0x00000004 ? "Rediscover " : "")
+													+(this & 0x00000008 ? "UpdateAndResync " : "")
+													+(this & 0x00000010 ? "ForceResync " : "")
+													{
+														UINT32	Reserved:27 = FormatString("       (%s)", this.ToBitString);
+														UINT32  ForceResync: 1 = FormatString("    (%s) %s", this.ToBitString,"causes the processing of the next time sample to ignore any phase correction boundaries imposed by the W32Time service.");
+														UINT32	UpdateAndResync: 1 = FormatString("(%s) %s", this.ToBitString,"Updates configuration from registry, waits 16 seconds, then synchronizes with current time samples");
+														UINT32	Rediscover: 1 = FormatString("     (%s) %s", this.ToBitString,"Attempts to discover new network time data sources");
+														[Conversation.W32TReturnResultFlags$[MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId )]]
+														UINT32	ReturnResult: 1 = FormatString("   (%s) %s", this.ToBitString,"Causes the method to return one of the W32Time return values");
+														UINT32	HardReSync: 1 = FormatString("     (%s) %s", this.ToBitString,"Acquires new time sample from network or hardware due to time slip");
+													}
+												};
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", Property.W32TReturnResult ? W32TTimeSyncReturnResultCodeNameTable(ReturnValue) : WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										[Conversation.W32TFrameReturnResultFlags$[FrameNumber] = Conversation.W32TReturnResultFlags$[MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId )],
+										 Property.W32TReturnResult = Conversation.W32TFrameReturnResultFlags$[FrameNumber]]
+										UINT32 ReturnValue = Property.W32TReturnResult ? W32TTimeSyncReturnResultCodeTable(this) : WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct W32TimeGetNetlogonServiceBits
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", W32TimeNetLogonServiceBitsTable( this,TRUE ))]
+									Struct
+									{
+										UINT32 ReturnValue = W32TimeNetLogonServiceBitsTable( this,TRUE );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct W32TimeQueryProviderStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString("ProviderName: %s",Provider.toString)]
+									Struct
+									{
+										UINT32 Flags = "Reserved";
+										NdrWideString Provider;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										W32timeProviderInfoPtr ProviderInfo;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct W32TimeQuerySource
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "Source=%s ReturnValue=0x%X", Source, WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										NdrWideStringPtr Source;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct W32TimeQueryProviderConfiguration
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "Flags=0x%X Provider=%s", Flags, Provider )]
+									Struct
+									{
+										UINT32 Flags;
+										NdrWideString Provider;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										W32timeConfigurationProviderPointer ConfigurationProviderInfoPtr;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct W32TimeQueryConfiguration
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										W32timeConfigurationInfoPtr ConfigurationInfo;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct W32TimeQueryStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										W32timeStatusInfoPtr StatusInfo;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct W32TimeLog
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[W32TSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "W32T", "Unknown W32Time method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+Table W32TTimeSyncReturnResultCodeTable(code)
+{
+	Switch( code )
+	{
+		case 0x00000000: FormatString( "0x%08X - ResyncResult_Success - Synchronization between the time provider and the caller was successful. For asynchronous calls, this result does not guarantee that the server has acquired a new time sample. It merely states that the synchronization attempt has been successfully initiated. ", code );
+		case 0x00000001: FormatString( "0x%08X - ResyncResult_NoData - The time service could not obtain a new time sample from the time provider. ", code );
+		case 0x00000002: FormatString( "0x%08X - ResyncResult_StaleData - The time service received data that was time stamped earlier than the last good sample. ", code );
+		case 0x00000003: FormatString( "0x%08X - ResyncResult_ChangeTooBig - The time service received data in which the time difference from the local clock was too large to trust. ", code );
+		case 0x00000004: FormatString( "0x%08X - ResyncResult_Shutdown - The time service was shutting down. ", code );
+		default:
+			FormatString( "0x%08X - Unknown Code", code );
+	}
+}
+
+Table W32TTimeSyncReturnResultCodeNameTable(code)
+{
+	Switch( code )
+	{
+		case 0x00000000: "ResyncResult_Success";
+		case 0x00000001: "ResyncResult_NoData";
+		case 0x00000002: "ResyncResult_StaleData";
+		case 0x00000003: "ResyncResult_ChangeTooBig";
+		case 0x00000004: "ResyncResult_Shutdown";
+		default:
+			FormatString( "0x%08X - Unknown Code", code );
+	}
+}
+
+Table W32TMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "W32TimeSync";
+		Case 1: "W32TimeGetNetlogonServiceBits";
+		Case 2: "W32TimeQueryProviderStatus";
+		Case 3: "W32TimeQuerySource";
+		Case 4: "W32TimeQueryProviderConfiguration";
+		Case 5: "W32TimeQueryConfiguration";
+		Case 6: "W32TimeQueryStatus";
+		Case 7: "W32TimeLog";
+		Default: "unknown";
+	}
+}
+
+Table W32TimeReachabilityTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00: FormatString( "0x%02X - Peer assumed to be unreachable",value);
+		Default: FormatString( "0x%02X -Attempting synchronization",value);
+	}
+}
+
+Table W32TimeMessageTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00000000: "The Service provider is functioning correctly";
+		Case 0x00000001: "MSG_TIMEPROV_ERROR";
+		Case 0x00000002: "MSG_TIMEPROV_WARNING";
+		Case 0x00000003: "MSG_TIMEPROV_INFORMATIONAL";
+		Case 0x00000004: "MSG_TIMEPROV_FAILED_START";
+		Case 0x00000005: "MSG_TIMEPROV_FAILED_STOP";
+		Case 0x00000006: "MSG_CONFIG_READ_FAILED_WARNING";
+		Case 0x00000007: "MSG_TIMEPROV_FAILED_UPDATE";
+		Case 0x00000008: "MSG_TIMEPROV_FAILED_POLLUPDATE";
+		Case 0x00000009: "MSG_TIMEPROV_FAILED_TIMEJUMP";
+		Case 0x0000000A: "MSG_TIMEPROV_FAILED_GETSAMPLES";
+		Case 0x0000000B: "MSG_NOT_DOMAIN_MEMBER";
+		Case 0x0000000C: "MSG_DOMAIN_HIERARCHY_ROOT";
+		Case 0x0000000D: "MSG_NT4_DOMAIN";
+		Case 0x0000000E: "MSG_NO_DC_LOCATED";
+		Case 0x0000000F: "MSG_NO_DC_LOCATED_UNEXPECTED_ERROR";
+		Case 0x00000010: "MSG_MANUAL_PEER_LOOKUP_FAILED_UNEXPECTED";
+		Case 0x00000011: "MSG_MANUAL_PEER_LOOKUP_FAILED_RETRYING";
+		Case 0x00000012: "MSG_RID_LOOKUP_FAILED";
+		Case 0x00000013: "MSG_FILELOG_FAILED";
+		Case 0x00000014: "MSG_FILELOG_WRITE_FAILED";
+		Case 0x00000015: "MSG_NO_INPUT_PROVIDERS_STARTED";
+		Case 0x00000016: "MSG_CLIENT_COMPUTE_SERVER_DIGEST_FAILED";
+		Case 0x00000017: "MSG_SYMMETRIC_COMPUTE_SERVER_DIGEST_FAILED";
+		Case 0x00000018: "MSG_DOMHIER_PEER_TIMEOUT";
+		Case 0x00000019: "MSG_COMPUTE_CLIENT_DIGEST_FAILED";
+		Case 0x0000001A: "MSG_BAD_SIGNATURE";
+		Case 0x0000001B: "MSG_MISSING_SIGNATURE";
+		Case 0x0000001C: "MSG_NO_NTP_PEERS";
+		Case 0x0000001D: "MSG_NO_NTP_PEERS_BUT_PENDING";
+		Case 0x0000001E: "MSG_CONFIG_READ_FAILED";
+		Case 0x0000001F: "MSG_TIME_ZONE_FIXED";
+		Case 0x00000020: "MSG_TIME_ZONE_FIX_FAILED";
+		Case 0x00000021: "MSG_TIME_JUMPED";
+		Case 0x00000022: "MSG_TIME_CHANGE_TOO_BIG";
+		Case 0x00000023: "MSG_TIME_SOURCE_CHOSEN";
+		Case 0x00000024: "MSG_TIME_SOURCE_NONE";
+		Case 0x00000025: "MSG_TIME_SOURCE_REACHABLE";
+		Case 0x00000026: "MSG_TIME_SOURCE_UNREACHABLE";
+		Case 0x00000027: "MSG_TCP_NOT_INSTALLED";
+		Case 0x00000028: "MSG_TIMEPROV_STOPPED";
+		Case 0x00000029: "MSG_NO_INPUT_PROVIDERS_RUNNING";
+		Case 0x0000002A: "MSG_NAMED_EVENT_ALREADY_OPEN";
+		Case 0x0000002B: "MSG_TIMEPROV_FAILED_NETTOPOCHANGE";
+		Case 0x0000002C: "MSG_NTPCLIENT_ERROR_SHUTDOWN";
+		Case 0x0000002D: "MSG_NTPSERVER_ERROR_SHUTDOWN";
+		Case 0x0000002E: "MSG_ERROR_SHUTDOWN";
+		Case 0x0000002F: "MSG_MANUAL_PEER_TIMEOUT";
+		Case 0x00000030: "MSG_MANUAL_PEER_LOOKUP_FAILED";
+		Case 0x00000031: "MSG_NO_DC_LOCATED_LAST_WARNING";
+		Case 0x00000032: "MSG_LOCALCLOCK_UNSET";
+		Case 0x00000033: "MSG_SAMPLE_HAS_LARGE_SKEW";
+		Case 0x0000005A: "W32TIMEMSG_AUTHTYPE_NOAUTH";
+		Case 0x0000005B: "W32TIMEMSG_AUTHTYPE_NTDIGEST";
+		Case 0x0000005C: "W32TIMEMSG_UNREACHABLE_PEER";
+		Case 0x0000005E: "W32TIMEMSG_ERROR_PACKETTEST1";
+		Case 0x0000005F: "W32TIMEMSG_ERROR_PACKETTEST2";
+		Case 0x00000060: "W32TIMEMSG_ERROR_PACKETTEST3";
+		Case 0x00000061: "W32TIMEMSG_ERROR_PACKETTEST4";
+		Case 0x00000062: "W32TIMEMSG_ERROR_PACKETTEST5";
+		Case 0x00000063: "W32TIMEMSG_ERROR_PACKETTEST6";
+		Case 0x00000064: "W32TIMEMSG_ERROR_PACKETTEST7";
+		Case 0x00000065: "W32TIMEMSG_ERROR_PACKETTEST8";
+		Case 0x00000066: "W32TIMEMSG_SERVICE_DESCRIPTION";
+		Default:FormatString( "Unknown value - ignore the value" );
+	}
+}
+
+Table W32TimeNTPModeTable( value,Description )
+{
+	Switch( value )
+	{
+		Case 0x00: FormatString( "Reserved (0x%02X) %s",value,Description?"This value is reserved and should not be used":"");
+		Case 0x01: FormatString( "SymmetricActive (0x%02X) %s",value,Description?"This peer is running in symmetric active mode":"");
+		Case 0x02: FormatString( "SymmetricPassive (0x%02X) %s",value,Description?"This peer is running in symmetric passive mode":"");
+		Case 0x03: FormatString( "Client (0x%02X) %s",value,Description?" This peer is running in client mode":"");
+		Case 0x04: FormatString( "Server (0x%02X) %s",value,Description?" This peer is running in server mode":"");
+		Case 0x05: FormatString( "Broadcast (0x%02X) %s",value,Description?" This peer is running in broadcast mode":"");
+		Case 0x06: FormatString( "Control (0x%02X) %s",value,Description?" This value is used to identify control messages and will not appear in this structure":"");
+		Case 0x07: FormatString( "PrivateUse (0x%02X) %s",value,Description?" This NTP mode value is used to identify private messages and will not appear in this structure":"");
+		Default:FormatString( "(0x%02X) %s",value,Description?"Unknown value":"");
+	}
+}
+
+Table W32timeServiceConfigurationSettingTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "UNDEFINED - The configuration setting is not defined."; 
+		case 0x00000001: "DEFAULT - The configuration setting is using the default value.";
+		case 0x00000002: "LOCAL - The configuration setting is defined locally.";
+		case 0x00000003: "POLICY - The configuration setting is defined remotely, such as through Group Policy.";
+		case 0x00000004: "RESERVED - Reserved.";
+		default: "Reserved for future use.";
+	}
+}
+
+Table W32timeProviderConfigProviderTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "W32TIME_NTPCLIENT_PROVIDER_CONFIG_DATA - NTPClient NTP time provider.";
+		Case 0x00000001: "W32TIME_NTPSERVER_PROVIDER_CONFIG_DATA - NTPServer NTP time provider.";
+		Default: "unknown";
+	}
+}
+
+
+//
+//	_W32TIME_CONFIGURATION_ADVANCED
+//	Alignment: 4
+//
+Struct W32timeConfigurationAdvanced
+{
+	UINT32 Size;
+	UINT32 FrequencyCorrectRate;
+	UINT32 PollAdjustFactor;
+	UINT32 LargePhaseOffset;
+	UINT32 SpikeWatchPeriod;
+	UINT32 LocalClockDispersion;
+	UINT32 HoldPeriod;
+	UINT32 PhaseCorrectRate;
+	UINT32 UpdateInterval;
+	UINT32 FrequencyCorrectRateFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 PollAdjustFactorFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 LargePhaseOffsetFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 SpikeWatchPeriodFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 LocalClockDispersionFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 HoldPeriodFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 PhaseCorrectRateFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 UpdateIntervalFlag = W32timeServiceConfigurationSettingTable(this);
+}
+
+//
+//	_W32TIME_CONFIGURATION_BASIC
+//	Alignment: 4
+//
+Struct W32timeConfigurationBasic
+{
+	UINT32 Size;
+	UINT32 EventLogFlags
+	{
+		UINT32 TimeJump:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Log an event when the time service sets the clock directly to adjust the local clock." : "NOT Log an event when the time service sets the clock directly to adjust the local clock.");
+		UINT32 SourceChange:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Log an event when the time service synchronizes from a different time source." : "NOT Log an event when the time service synchronizes from a different time source.");
+		UINT32 Reservedbits2:30 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+	UINT32 AnnounceFlags
+	{
+		UINT32 TimeservAnnounceYes:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Always advertised as a time server." : "Not a time server.");
+		UINT32 TimeservAnnounceAuto:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Advertising as a time server is decided automatically: only when the server is synchronized." : "Not advertising as a time server is decided automatically: only when the server is synchronized.");
+		UINT32 ReliableTimeservAnnounceYes:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Always advertised as a reliable time server." : "Not always advertised as a reliable time server.");
+		UINT32 ReliableTimeservAnnounceAuto:1 = FormatString("(%s) %s", this.ToBitString, this ? "Advertising as a time server is decided automatically: only when the server is synchronized and is a reliable time server." : "Not advertising as a time server is decided automatically: only when the server is synchronized and is a reliable time server.");
+		UINT32 Reservedbits5:28 = FormatString("              (%s) Reserved", this.ToBitString);
+	};
+	UINT32 TimeJumpAuditOffset;
+	UINT32 MinPollInterval;
+	UINT32 MaxPollInterval;
+	UINT32 MaxNegPhaseCorrection;
+	UINT32 MaxPosPhaseCorrection;
+	UINT32 MaxAllowedPhaseOffset;
+	UINT32 EventLogFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 AnnounceFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 TimeJumpAuditOffsetFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 MinPollIntervalFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 MaxPollIntervalFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 MaxNegPhaseCorrectionFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 MaxPosPhaseCorrectionFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 MaxAllowedPhaseOffsetFlag = W32timeServiceConfigurationSettingTable(this);
+}
+
+//
+//	_W32TIME_CONFIGURATION_DEFAULT
+//	Alignment: NdrAlign
+//
+Struct W32timeConfigurationDefault
+{
+	UINT32 Size;
+	NDRPTR FileLogNamePtr;
+	NDRPTR FileLogEntriesPtr;
+	UINT32 FileLogSize;
+	UINT32 FileLogFlags = W32timeConfigurationDefaultFileLogFlagsTable( this );
+	UINT32 FileLogNameFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 FileLogEntriesFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 FileLogSizeFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 FileLogFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	Switch 
+	{
+		Case FileLogNamePtr.ReferentID > 0:
+			NdrWideString FileLogName;
+	}
+	Switch 
+	{
+		Case FileLogEntriesPtr.ReferentID > 0:
+			NdrWideString FileLogEntries;
+	}
+}
+
+Table W32timeConfigurationDefaultFileLogFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "FL_HumanReadableTimestamps - Use human-readable time format.";
+		Case 0x00000001: "FL_NTTimeEpochTimestamps - Use  time format.";
+		Case 0x00000002: "FL_LocalSystemTimestamps - Use local system format.";
+		Default: "unknown";
+	}
+}
+
+//
+//	_W32TIME_CONFIGURATION_INFO
+//	Alignment: NdrAlign
+//
+Struct W32timeConfigurationInfo
+{
+	UINT32 Size;
+	W32timeConfigurationBasic BasicConfig;
+	W32timeConfigurationAdvanced AdvancedConfig;
+	NdrAlign Pad1;
+	W32timeConfigurationDefault DefaultConfig;
+	Align4 Pad2;
+	UINT32 CProviderConfig;
+	NDRPTR ProviderConfigPtr;
+	UINT32 CEntries;
+	NDRPTR EntriesPtr;
+	Switch 
+	{
+		Case ProviderConfigPtr.ReferentID > 0:
+			struct
+			{
+				NdrConformant Size;
+				[Property.W32timeConfigurationProviderPtrCount = 0 ]
+				W32timeConfigurationProviderPtr ProviderConfigPtr[Size.MaxCount];
+				[Property.W32timeConfigurationProviderDataCount = 0 ]
+				W32timeConfigurationProviderData ProviderConfigData[Size.MaxCount];
+			}
+	}
+	Switch 
+	{
+		Case EntriesPtr.ReferentID > 0:
+			W32TCommonEntryConformant W32timeEntryArray;
+	}
+}
+
+Struct W32timeConfigurationInfoPtr
+{
+	NDRPTR Pointer;
+	Switch 
+	{
+		Case Pointer.ReferentId != 0:
+			W32timeConfigurationInfo ConfigurationInfo;
+	}
+}
+
+//
+//	_W32TIME_CONFIGURATION_PROVIDER Pointer Part
+//	Alignment: None
+//
+Struct W32timeConfigurationProviderPtr
+{
+	NdrAlign Pad;
+	UINT32 Size;
+	UINT32 InputProvider;
+	UINT32 Enabled;
+	[Post.Property.W32TDllNamePtr$[Property.W32timeConfigurationProviderPtrCount] = DllNamePtr.referentid]
+	NDRPTR DllNamePtr;
+	[Post.Property.W32TProviderNamePtr$[Property.W32timeConfigurationProviderPtrCount] = DllNamePtr.referentid]
+	NDRPTR ProviderNamePtr;
+	UINT32 DllNameFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 ProviderNameFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 InputProviderFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 EnabledFlag = W32timeServiceConfigurationSettingTable(this);
+	[Post.Property.W32TProviderConfigPtr$[Property.W32timeConfigurationProviderPtrCount] = DllNamePtr.referentid]
+	NDRPTR ProviderConfigPtr;
+	[Property.W32timeConfigurationProviderPtrCount = Property.W32timeConfigurationProviderPtrCount + 1]
+	struct {};
+}
+
+//
+//	_W32TIME_CONFIGURATION_PROVIDER Referent Part
+//	Alignment: None
+//
+struct W32timeConfigurationProviderData
+{
+	Switch 
+	{
+		Case Property.W32TDllNamePtr$[Property.W32timeConfigurationProviderDataCount] > 0:
+			NdrWideString DllName;
+	}
+	Switch 
+	{
+		Case Property.W32TProviderNamePtr$[Property.W32timeConfigurationProviderDataCount] > 0:
+			NdrWideString ProviderName;
+	}
+	Switch 
+	{
+		Case Property.W32TProviderConfigPtr$[Property.W32timeConfigurationProviderDataCount] > 0:
+		struct
+		{
+				NdrAlign Pad;
+				W32timeProviderConfig ProviderConfig;
+		}
+	}
+	[Property.W32timeConfigurationProviderDataCount = Property.W32timeConfigurationProviderDataCount + 1]
+	struct {};
+}
+
+Struct W32timeConfigurationProviderPointer
+{
+	NDRPTR Pointer;
+	Switch 
+	{
+		Case Pointer.ReferentId != 0:
+			W32timeConfigurationProvider ConfigurationProviderInfo;
+	}
+}
+
+struct W32timeConfigurationProvider
+{
+	[Property.W32timeConfigurationProviderPtrCount = 0]
+	W32timeConfigurationProviderPtr ConfigurationProviderInfoPtr;
+	[property.W32timeConfigurationProviderDataCount = 0]
+	W32timeConfigurationProviderData ConfigurationProviderInfoData;
+}
+
+//
+//	_W32TIME_ENTRY Pointer Part
+//	Alignment: None
+//
+Struct W32timeEntryPtr
+{
+	NdrAlign Pad;
+	UINT32 Size;
+	[Post.property.W32tNamePtr$[Property.W32timeEntryPtrCount] = NamePtr.referentid]
+	NDRPTR NamePtr;
+	[Post.property.W32tValuePtr$[Property.W32timeEntryPtrCount] = ValuePtr.referentid]
+	NDRPTR ValuePtr;
+	[Post.property.W32tHelpPtrr$[Property.W32timeEntryPtrCount] = HelpPtr.referentid]
+	NDRPTR HelpPtr;
+	[Property.W32timeEntryPtrCount = Property.W32timeEntryPtrCount + 1]
+	struct {};
+}
+
+//
+//	_W32TIME_ENTRY Reference Part
+//	Alignment: None
+//
+struct W32timeEntryData
+{
+	Switch 
+	{
+		Case property.W32tNamePtr$[Property.W32timeEntryDataCount] != 0:
+			NdrWideString Name;
+	}
+	Switch 
+	{
+		Case property.W32tValuePtr$[Property.W32timeEntryDataCount] != 0:
+			NdrWideString Value;
+	}
+	Switch 
+	{
+		Case property.W32tHelpPtrr$[Property.W32timeEntryDataCount]!= 0:
+			NdrWideString Help;
+	}
+	[Property.W32timeEntryDataCount + Property.W32timeEntryDataCount + 1]
+	struct {};
+}
+
+Struct W32TCommonEntryConformant
+{
+	NdrConformant Size;
+	[Property.W32timeEntryPtrCount = 0]
+	W32timeEntryPtr ElementPtr[Size.MaxCount];
+	[Property.W32timeEntryDataCount = 0]
+	W32timeEntryData ElementData[Size.MaxCount];
+}
+
+//
+//	_W32TIME_HARDWARE_PROVIDER_DATA
+//	Alignment: NdrAlign
+//
+Struct W32timeHardwareProviderData
+{
+	UINT32 Size;
+	UINT32 Error = WinErrorCodeNameTable( this );
+	UINT32 ErrorMsgId = W32TimeMessageTable( this );
+	NDRPTR Pointer;
+	Switch 
+	{
+		Case Pointer.ReferentID > 0:
+			NdrWideString ReferenceIdentifier;
+	}
+}
+
+//
+//	_W32TIME_NTPCLIENT_PROVIDER_CONFIG_DATA
+//	Alignment: NdrAlign
+//
+Struct W32timeNtpclientProviderConfigData
+{
+	UINT32 Size;
+	UINT32 AllowNonstandardModeCombinations;
+	UINT32 CrossSiteSyncFlags = W32timeNtpclientProviderConfigDataCrossSiteSyncFlagsTable( this );
+	UINT32 ResolvePeerBackoffMinutes;
+	UINT32 ResolvePeerBackoffMaxTimes;
+	UINT32 CompatibilityFlags = W32timeNtpclientProviderConfigDataCompatibilityFlagsTable( this );
+	UINT32 EventLogFlags = W32timeNtpclientProviderConfigDataEventLogFlagsTable( this );
+	UINT32 LargeSampleSkew;
+	UINT32 SpecialPollInterval;
+	NDRPTR TypePtr;
+	NDRPTR NtpServerPtr;
+	UINT32 AllowNonstandardModeCombinationsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 CrossSiteSyncFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 ResolvePeerBackoffMinutesFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 ResolvePeerBackoffMaxTimesFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 CompatibilityFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 EventLogFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 LargeSampleSkewFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 SpecialPollIntervalFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 TypeFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 NtpServerFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 CEntries;
+	NDRPTR EntriesPtr;
+	Switch 
+	{
+		Case TypePtr.ReferentID > 0:
+			NdrWideString Type;
+	}
+	Switch 
+	{
+		Case NtpServerPtr.ReferentID > 0:
+			NdrWideString NtpServer;
+	}
+	Switch 
+	{
+		Case EntriesPtr.ReferentID > 0:
+			W32TCommonEntryConformant Entries;
+	}
+}
+
+Table W32timeNtpclientProviderConfigDataCrossSiteSyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "NCCSS_None - The time service SHOULD NOT select a time source outside the same site as the machine.";
+		Case 0x00000001: "NCCSS_PdcOnly - The time service SHOULD select only the primary domain controller (PDC) as its time source.";
+		Case 0x00000002: "NCCSS_All - The time service is allowed to select a time source inside or outside the same site as the machine.";
+		Default: "Reserved for future use";
+	}
+}
+
+Table W32timeNtpclientProviderConfigDataCompatibilityFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "DISPERSION_INVALID - Ignore invalid dispersion check.";
+		Case 0x00000002: "IGNORE_FUTURE_REFTIMESTAMP - Ignore reference time-stamp check.";
+		Case 0x80000000: "AUTODETECT_WIN2K - Ignore the root dispersion.";
+		Case 0x40000000: "AUTODETECT_WIN2K_STAGE2 - Ignore the root dispersion with resending a request with 0xAAAAAAAA.";
+		Default: "Reserved for future use";
+	}
+}
+
+Table W32timeNtpclientProviderConfigDataEventLogFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "NCELF_LogReachabilityChanges - Log an event when reachability to a time source has changed.";
+		Case 0x00000002: "NCELF_LogIfSampleHasLargeSkew - Log an event when a large time sample skew is detected.";
+		Case 0x00000004: "NCELF_LogClientRequestError - Log an event when the time provider fails to receive its response.";
+		Default: "Reserved for future use";
+	}
+}
+
+//
+//	_W32TIME_NTP_PEER_INFO
+//	Alignment: 8
+//
+Struct W32TimeNTPPeerInfoPtr = FormatString("ResolveAttempts: %u, LastSuccessfulSync: %s, Mode: %s, Stratum: %u",ResolveAttempts,LastSuccessfulSync.toString,W32TimeNTPModeTable( Mode,FALSE ),Stratum)
+{
+	Align8 Pad;
+	UINT32 Size;
+	UINT32 ResolveAttempts;
+	UINT64 TimeRemaining = FormatString("%u in 100-nanosecond intervals",TimeRemaining);
+	FILETIME LastSuccessfulSync;
+	UINT32 LastSyncError = WinErrorCodeNameTable( this );
+	UINT32 LastSyncErrorMsgId = W32TimeMessageTable( this );
+	UINT32 ValidDataCounter;
+	UINT32 AuthTypeMsgId = W32TimeMessageTable( this );
+	[W32timePointertoPeerDNSName$[W32TimePeerNameCount] = PointertoPeerDNSName.ReferentID, Post.W32TimePeerNameCount = W32TimePeerNameCount + 1]
+	NdrPtr PointertoPeerDNSName;
+	UINT8 Mode = W32TimeNTPModeTable( this,TRUE );
+	UINT8 Stratum;
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct 
+			{
+				UINT8 Reachability = W32TimeReachabilityTable( this )
+				{
+					UINT8 Bit0: 1 = FormatString("(%s) %s", this.ToBitString,"Newest synchronization attempt");
+					UINT8 Bit1: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit2: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit3: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit4: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit5: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit6: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit7: 1 = FormatString("(%s) %s", this.ToBitString,"Oldest synchronization attempt");
+				}
+			};
+		Default:
+			Struct 
+			{
+				UINT8	Reachability = W32TimeReachabilityTable( this )
+				{
+					UINT8 Bit7: 1 = FormatString("(%s) %s", this.ToBitString,"Oldest synchronization attempt");
+					UINT8 Bit6: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit5: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit4: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit3: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit2: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit1: 1 = FormatString("(%s) %s", this.ToBitString,"Previous synchronization attempt");
+					UINT8 Bit0: 1 = FormatString("(%s) %s", this.ToBitString,"Newest synchronization attempt");
+				}
+			};
+	}
+	UINT8	PeerPollInterval = FormatString( "%u (%u Peer interval seconds)", this, 1<<this );
+	UINT8	HostPollInterval = FormatString( "%u (%u Host interval seconds)", this, 1<<this );
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+//
+//	_W32TIME_NTP_PROVIDER_DATA
+//	Alignment: Ndr
+//
+Struct W32timeNtpProviderData  = FormatString("PeerInfoCount: %u, ErrorMsgId: %s",PeerInfoCount,W32TimeMessageTable( ErrorMsgId ))
+{
+	UINT32	Size;
+	UINT32	Error = WinErrorCodeNameTable( this );
+	UINT32	ErrorMsgId = W32TimeMessageTable( this );
+	UINT32	PeerInfoCount;	
+	NdrPtr  Pointer;
+	switch 
+	{
+		case Pointer.ReferentID > 0:
+			W32TCommonNTPPeerInfoArray PeerInfoArray;
+	}
+}
+
+//
+//	W32TIME_NTP_PEER_INFO
+//	Alignment:None
+//
+Struct W32TCommonNTPPeerInfoArray  = FormatString("Count: %u",PeerInfoC.MaxCount)
+{
+	[W32TimePeerNameCount = 0, W32TimePeerNameLoop = 0]
+	NdrConformant		PeerInfoC;
+	W32TimeNTPPeerInfoPtr	NTPPeerInfo[PeerInfoC.MaxCount];
+	[maxloopcount = PeerInfoC.MaxCount]
+	while W32TimePeerDNSNameWhileLoop[W32TimePeerNameLoop < PeerInfoC.MaxCount]
+	{
+		[W32TimePeerNameLoop = W32TimePeerNameLoop + 1]
+		switch 
+		{
+			case w32timePointertoPeerDNSName$[W32TimePeerNameLoop - 1] > 0:
+				NdrWideString	PeerDNSName;
+		}
+	}
+}
+
+//
+//	_W32TIME_NTPSERVER_PROVIDER_CONFIG_DATA
+//	Alingment: NdrAlign
+//
+Struct W32timeNtpserverProviderConfigData
+{
+	UINT32 Size;
+	UINT32 AllowNonstandardModeCombinations;
+	UINT32 AllowNonstandardModeCombinationsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 EventLogFlags = W32timeNtpserverProviderConfigDataEventLogFlagsTable( this );
+	UINT32 EventLogFlagsFlag = W32timeServiceConfigurationSettingTable(this);
+	UINT32 CEntries;
+	NDRPTR EntriesPtr;
+	Switch 
+	{
+		Case EntriesPtr.ReferentID > 0:
+			W32TCommonEntryConformant Entries;
+	}
+}
+
+Table W32timeNtpserverProviderConfigDataEventLogFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000008: "NCELF_LogServerResponseError - Log an event when the time provider fails to validate a request for authenticated time synchronization.";
+		Default: "unknown";
+	}
+}
+
+//
+//	_W32TIME_PROVIDER_CONFIG
+//	Alignment: NdrAlign
+//
+Struct W32timeProviderConfig
+{
+	UINT32 Size;
+	UINT32 ProviderType = W32timeProviderConfigProviderTypeTable( this );
+	NDRPTR ProviderConfigDataPtr;
+	Switch 
+	{
+		Case ProviderConfigDataPtr.ReferentID > 0:
+			W32timeProviderConfigData ProviderConfigData;
+	}
+}
+
+//
+//	_W32TIME_PROVIDER_CONFIG_DATA
+//
+Struct W32timeProviderConfigData
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	UINT32 SwitchValue;
+	NdrAlign PadUnion;
+	Switch( SwitchValue )
+	{
+		case 0:
+			W32timeNtpclientProviderConfigData pNtpClientProviderConfigData;
+		case 1:
+			W32timeNtpserverProviderConfigData pNtpServerProviderConfigData;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "W32T", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_W32TIME_PROVIDER_DATA
+//	Alignment: None
+//
+Struct W32timeProviderData(ServiceProviderType) = FormatString("ServiceProviderType: %s, %s",ServiceProviderType?"HardwareProviderData":"NTPProviderData",ServiceProviderType?W32TimeHardwareProviderData.toString:W32TimeNTPProviderData.toString)
+{
+	Switch( ServiceProviderType )
+	{
+		Case 0:W32TimeNTPProviderData NtpProviderData;
+		Case 1:W32TimeHardwareProviderData HardwareProviderData;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "W32T", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_W32TIME_PROVIDER_INFO
+//	Alignment: NDR
+//
+Struct W32timeProviderInfo
+{
+	UINT32 ProviderType = W32timeProviderInfoProviderTypeTable(this);
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 ServiceProviderType;
+	NdrPtr  Pointer;
+	switch 
+	{
+		case Pointer.ReferentID > 0:
+			W32timeProviderData(ServiceProviderType) ProviderData;
+	}
+}
+
+Table W32timeProviderInfoProviderTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "NTP time provider.";
+		Case 1: "Hardware time provider.";
+		Default: "unknown";
+	}
+}
+
+Struct W32timeProviderInfoPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			W32timeProviderInfo W32timeProviderInfo;
+	}
+}
+
+//
+//	_W32TIME_STATUS_INFO
+//
+Struct W32timeStatusInfo
+{
+	Align8 pad;
+	UINT32 Size;
+	UINT32 ELeapIndicator;
+	UINT32 NStratum;
+	INT32 NPollInterval;
+	UINT32 RefidSource;
+	Align8 SyncTicksAlign;
+	UINT64 QwLastSyncTicks;
+	INT64 ToRootDelay;
+	UINT64 TpRootDispersion;
+	INT32 NClockPrecision;
+	[SourceStrLength = SourcePtr.ReferentID]
+	NDRPTR SourcePtr;
+	INT64 ToSysPhaseOffset;
+	UINT32 LcState = W32timeStatusInfoLcStateTable(this);
+	UINT32 TSFlags
+	{
+		UINT32 Hardware: 1 = FormatString("         (%s) %s", this.ToBitString, this ? "The time source is from a hardware time provider." : "The time source is NOT from a hardware time provider.");
+		UINT32 Authenticated: 1 = FormatString("    (%s) %s", this.ToBitString, this ? "Authenticated time synchronization is used." : "Authenticated time synchronization is NOT used.");
+		UINT32 IPv6: 1 = FormatString("             (%s) %s", this.ToBitString, this ? "The time source is synchronized via an IP6 address." : "The time source is NOT synchronized via an IP6 address.");
+		UINT32 Reserved_bits3_31:29 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 ClockRate;
+	UINT32 NetlogonServiceBits;
+	UINT32 ELastSyncResult;
+	Align8 GoodSyncAlign;
+	UINT64 TpTimeLastGoodSync;
+	UINT32 CEntries;
+	NDRPTR EntriesPtr;
+	Switch 
+	{
+		Case SourceStrLength > 0:
+			NdrWideString Source;
+	}
+	switch 
+	{
+		Case EntriesPtr.ReferentID > 0:
+			W32TCommonEntryConformant Entries;
+	}
+}
+
+Table W32timeStatusInfoLcStateTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "UNSET - The clock is not synchronized.";
+		case 0x00000001: "HOLD - The clock is adjusting only the time difference but not the clock rate.";
+		case 0x00000002: "SYNC - The clock is synchronized. Both the time difference and the clock rate are adjusted.";
+		case 0x00000003: "SPIKE - A spike was detected, but the clock discipline algorithm cannot determine if the clock is no longer synchronized or if the spike was just a network jitter.";
+	}
+}
+
+Struct W32timeStatusInfoPtr
+{
+	NDRPTR Pointer;
+	Switch 
+	{
+		Case Pointer.ReferentId != 0:
+			W32timeStatusInfo StatusInfo;
+	}
+}
+
+Table W32TimeSyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "TimeSyncFlag_SoftResync - The time service MUST synchronize itself with the currently available time samples.  It MUST NOT poll the network or hardware time providers for new time data.";
+		Case 0x00000001: "TimeSyncFlag_HardResync - The time service MUST discard its old time samples and MUST acquire new samples from the network or hardware time providers.";
+		Case 0x00000004: "TimeSyncFlag_Rediscover - Identical to the TimeSyncFlag_HardResync flag, except that the time service MUST attempt to discover new network time sources prior to discarding and reacquiring new time samples.";
+		Case 0x00000008: "TimeSyncFlag_UpdateAndResync - Identical to the TimeSyncFlag_Rediscover flag, except that prior to attempting to discover new time sources, the time service MUST update its configuration.";
+		Case 0x00000010: "TimeSyncFlag_ForceResync - Identical to the TimeSyncFlag_HardResync flag, except that it causes the processing of the next time sample to ignore any phase correction boundaries imposed by W32Time.";
+		Case 0x00000002: "TimeSyncFlag_ReturnResult - Used only for synchronous calls.  If set, the method MUST return one of the following return values.";
+		Default: "Unknown";
+	}
+}
+
+Table W32TimeSyncUWaitTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "Method MUST return RPC_S_OK without waiting for the outcome of time synchronization.";
+		Default:"Method MUST NOT return until time synchronization is complete.";
+	}
+}
+
+Table W32TimeNetLogonServiceBitsTable( value,Description )
+{
+	Switch( value )
+	{
+		Case 0x00000010: FormatString( "0x%08X - DS_DS_FLAG %s", Value,Description?"Domain controller supports a directory service":"");
+		Case 0x00000020: FormatString( "0x%08X - DS_KDC_FLAG %s", Value,Description?"Domain controller is running a Kerberos key distribution center service":"");
+		Case 0x00000040: FormatString( "0x%08X - DS_TIMESERV_FLAG %s", Value,Description?"Domain controller is running a time service":"");
+		Case 0x00000200: FormatString( "0x%08X - DS_GOOD_TIMESERV_FLAG %s", Value,Description?"Domain controller is running a time service and has clock hardware":"");
+		Default        : FormatString( "0x%08X - %s", Value,Description?"No Description Available":"");
+	}
+}

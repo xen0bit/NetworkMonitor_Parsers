@@ -1,0 +1,101 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  ASP.NET State Server Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-ASP]: ASP.NET State Server Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol ASPNET = FormatString( "%s", ASPnetSummary)
+{
+    //
+    // The type of ASPNET packet (derived from HTTP headers) is determined by the first three to four charecters in the header
+    //
+    switch
+    {   
+		case UINT8( Framedata, Offset ) >= 0x41 &&   UINT8( Framedata, Offset ) <= 0x5A ||
+				 UINT8( Framedata, Offset ) >= 0x61 &&   UINT8( Framedata, Offset ) <= 0x7A :
+			switch( AsciiStringTerm( FrameData, Offset, " " ) )
+			{
+				case "GET":
+				case "PUT":
+				case "HEAD":
+				case "DELETE":
+
+					[ASPnetSummary = "Request, " + Request.Command + " URI, " + Request.URI]  
+					_struct Request
+					{
+						//
+						// Fixed ASPNET state server request fields. The fields are seperated by spaces. The last field is terminated by the '\r\n'.
+						// 
+                                
+						AsciiStringTerm(" ") Command;
+						AsciiStringTerm(" ") URI;
+						AsciiStringTerm("\r\n") DefaultString;
+
+						//
+						// The list of self describing fields (fields names and values) are terminated by "\r\n" i.e. (0xd 0xa)
+						//
+					
+						while Fields[!(UINT8( Framedata, Offset ) == 0xd) && !(UINT8( Framedata, Offset + 1 ) == 0xa)]
+						{   
+							//
+							// The field name is an ascii string terminated by a colin and a space ": ". The value is terminated by \r\n. 
+							//
+                    
+							DynamicSwitch AsciiStringTerm(":")
+							{
+								case "Host" : AsciiStringTerm("\r\n") Host;
+								case "Exclusive" : AsciiStringTerm("\r\n") Exclusive;
+								case "LockCookie" : AsciiStringTerm("\r\n") LockCookie;
+								case "Content-Length" : AsciiStringTerm("\r\n") ContentLength;
+								case "Timeout" : AsciiStringTerm("\r\n") Timeout;
+								default: AsciiStringTerm("\r\n") DefaultName;
+							}
+						}//while
+						
+						AsciiStringTerm("\r\n", TRUE) HeaderEnd = "CRLF";
+					};
+                    default: ReportParserError(ParserErrorProtocolClassWindows, "ASP.NET", "Unknown Request Method" ) ProtocolError;
+				}
+             
+			case UINT8( Framedata, Offset ) >= 0x31 &&  UINT8( Framedata, Offset ) <= 0x39 : 
+				_struct Response
+					{
+						[ASPnetSummary = "Response, " + StatusCode]
+						AsciiStringTerm("\r\n") StatusCode;
+                
+						while Fields[!(UINT8( Framedata, Offset ) == 0xd) && !(UINT8( Framedata, Offset + 1 ) == 0xa)]
+						{   
+							//
+							// The field name is an ascii string terminated by a colin and a space ":". The value is terminated by \r\n. 
+							//
+                    
+							DynamicSwitch AsciiStringTerm(":")
+							{
+								case "X-AspNet-Version" : AsciiStringTerm("\r\n") XAspNetVersion;
+								case "LockCookie" : AsciiStringTerm("\r\n") LockCookie;
+								case "Content-Length" : AsciiStringTerm("\r\n") ContentLength;
+								case "Timeout" : AsciiStringTerm("\r\n") Timeout;
+								case "LockDate" : AsciiStringTerm("\r\n") LockDate;
+						
+								default: AsciiStringTerm("\r\n") DefaultName;
+							}
+						
+						}//while              
+				
+						AsciiStringTerm("\r\n", TRUE) HeaderEnd = "CRLF";
+					};
+		}//top switch
+			
+			switch
+			{
+				case FrameLength > FrameOffset: Blob(FrameLength - FrameOffset) AspNetPayload;
+			}
+} //Protocol

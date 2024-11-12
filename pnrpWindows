@@ -1,0 +1,886 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Peer-to-Peer Name Resolution Protocol
+//#
+//#  Details:                rides on UDP port 3540
+//#
+//#  Microsoft References:   [MS-PNRP]: Peer Name Resolution Protocol (PNRP) Version 4.0 Specification(6.0.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major,1/20/2009
+//#                          Minor, 9/24/2009
+//#
+//####
+
+Protocol PNRP = FormatString("%s, MessageID = %u, v%u.%u", PNRPMessageTypeTable(Property.PNRPHeaderMessageType), Property.PNRPHeaderMessageId, Property.PNRPHeaderVersionMajor, Property.PNRPHeaderVersionMinor)
+{
+	switch
+	{
+		case !conversation.PNRP.Id :
+		[BuildConversationWithParent]struct{};
+	}
+	switch
+	{
+		case property.HighestReassembledProtocol == "PNRP":
+			[property.PNRPSummary = FormatString("AuthorityBuffer- %s", PNRPMessageSyntaxFieldIDTable( Property.PNRPAuthorityBufferFieldID1))]
+			PNRPAuthorityBuffer AuthorityBuffer;
+		default:
+			[property.PNRPSummary = FormatString("%s, MessageID = %u, v%u.%u", PNRPMessageTypeTable(Property.PNRPHeaderMessageType), Property.PNRPHeaderMessageId, Property.PNRPHeaderVersionMajor, Property.PNRPHeaderVersionMinor)]
+			struct
+			{
+				PNRPHeader Header;
+				Switch (Property.PNRPHeaderVersionMajor)
+				{
+					case 4:
+					switch (Header.MessageType)
+					{
+						case 1:
+							PNRPSolicit PNRPSolicitMessage;
+						case 2:
+							PNRPAdvertise PNRPAdvertisemessage;
+						case 3:
+							PNRPRequest PNRPRequestMessage;
+						case 4:
+							PNRPFlood PNRPFloodMessage;
+						case 7:
+							PNRPInquire PNRPInquireMessage;
+						case 8:
+							PNRPAuthority PNRPAuthorityMessage;
+						case 9:
+							PNRPAck PNRPAckMessage;
+						case 11:
+							PNRPLookUp PNRPLookUpMessage;
+					}
+					Default:
+						ReportParserWarning("0x04 is the only valid version for the protocol, please check TDQ 40709", Property.PNRPHeaderVersionMajor) ProtocolWarning;
+				}
+			}
+	}
+}
+
+Table PNRPMessageTypeTable(code)
+{
+	switch (code)
+	{
+		case 1:  "SolicitMessage";
+		case 2:  "AdvertiseMessage";
+		case 3:  "RequestMessage";
+		case 4:  "FloodMessage";
+		case 7:  "InquireMessage";
+		case 8:  "AuthorityMessage";
+		case 9:  "AckMessage";
+		case 11: "LookUpMessage";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+Struct PNRPCommonID
+{
+	BLOB(16) P2PID;
+	BLOB(16) ServiceLocation;
+}
+
+//
+//	ACK
+//
+Struct PNRPACK
+{
+	Struct PNRPACKHeaderAcked = FormatString("MessageID = %u", AckedMessageID)
+	{
+		UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length1 = MustBeSetToTable(this,0x0008);
+		UINT32 AckedMessageID;
+	}
+	switch 
+	{
+		case ( (FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x0040) ):
+			struct PNRPACKFlagsField = FormatString("Flags = %s", Flags.ToBitString)
+			{
+				UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length2 = MustbeSetToTable(this, 0x0006);
+				UINT16 Flags
+				{
+					UINT16 Reserved:15 = FormatString(" (%s)", this.ToBitString);
+					UINT16 N:1 = FormatString("        (%s):%s", this.ToBitString, this ? "Not Found. If present, indicates that there is no PNRP ID registered on the sender that corresponds to the Validate PNRP ID field in the FLOOD message to which this ACK is a response" : "");
+				};
+			}
+	}
+}
+
+//
+//	ADVERTISE
+//
+Struct PNRPADVERTISE
+{
+	Struct PNRPAdvertiseHeaderAcked = FormatString("MessageID = %u", Property.PNRPAdvertiseAckedMessageID)
+	{
+		UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length1 = MustBeSetToTable( this, 0x0008 );
+		[Property.PNRPAdvertiseAckedMessageID]
+		UINT32 AckedMessageID;
+	}
+	Struct PNRPAdvertiseIdArray = FormatString("NumEntries = %u", NumEntries)
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2;
+		UINT16 NumEntries;
+		UINT16 ArrayLength;
+		UINT16 ElementFieldType = MustBeSetToTable(this, "0x0030");
+		UINT16 EntryLength = MustBeSetToTable(this, "0x20");
+		PNRPCommonID PNRPID[NumEntries];
+	}
+	Struct PNRPAdvertiseHashedNonce = "HashedNonce"
+	{
+		UINT16 FieldID3 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length3 = MustBeSetToTable(this, "0x0018");
+		BLOB(20) HashedNonce;
+	}
+}
+
+//
+//	AUTHORITY
+//
+struct PNRPAuthority
+{
+	Struct PNRPCommonHeaderAcked = FormatString("MessageID = %u", AckedMessageID)
+		{
+			UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+			UINT16 Length1 = MustBeSetToTable(this,0x0008);
+			UINT32 AckedMessageID;
+		}
+
+	struct PNRPAuthoritySplitControls = FormatString("Size = %u, Offset = %u", Size, splitOffset)
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2 = MustBeSetToTable( this, 0x0008 );
+		[property.PNRPAuthoritySplitControlsSize]
+		UINT16 Size;
+		UINT16 splitOffset;
+	}
+
+	[Post.PayloadStart(
+						NetworkDirection, /* direction */
+						0, /* id */
+						0, /* sequence token */
+						0, /* next sequence token */
+						//Property.PNRPLength, /* total payload length*/
+						property.PNRPAuthoritySplitControlsSize,
+						property.PNRPAuthorityCertChainIsFirst, /* is first */
+						0, /* is last */
+						RssmblyIndStartBit + RssmblyIndLengthBit + RssmblySelfBit,
+						0x0000,
+						Property.PNRPHeaderFieldID,
+						0x0000,
+						Property.PNRPHeaderVersionMajor,
+						0x0000,
+						Property.PNRPHeaderVersionMinor,
+						0x0000,
+						Property.PNRPHeaderMessageType,
+						0x0000,
+						Property.PNRPHeaderMessageId
+				  )
+	]
+	switch
+	{
+		case UINT16(FrameData,FrameOffset + 2) == 0x0006:
+		[property.PNRPAuthorityCertChainIsFirst = true]
+		PNRPAuthorityBuffer AuthorityBuffer;
+		default:
+		Blob(FrameLength - FrameOffset) AuthorityBufferCountiueData;
+	}
+}
+
+//
+//	AUTHORITY_BUFFER
+//
+Struct PNRPAuthorityBuffer
+{
+	[Property.PNRPAuthorityBuffer = offset]
+	[Property.PNRPAuthorityBufferFieldID1]
+	UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+	UINT16 Length1 = MustBeSetToTable(this,"0x0006");
+	UINT16 Flags
+	{
+		UINT16 Reserved1:6 = FormatString(" (%s)", this.ToBitString);
+		UINT16 L:1 = FormatString("         (%s):%s", this.ToBitString, this ? "Leaf Set." : "");
+		UINT16 Reserved2:5 = FormatString(" (%s)", this.ToBitString);
+		UINT16 B:1 = FormatString("         (%s):%s", this.ToBitString, this ? "Busy." : "");
+		UINT16 Reserved3:2 = FormatString(" (%s)", this.ToBitString);
+		UINT16 N:1 = FormatString("         (%s):%s", this.ToBitString, this ? "Not Found." : "");
+	}
+	UINT16 Padding1 = MustBeSetToTable(this,"0");
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x0080)):
+			struct PNRPAuthorityBufferCertChain = "CertChain"
+			{
+				UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length2;
+				BLOB(Length2 - 4) CertificateChain;
+				[Property.PNRPAuthorityBufferCertificateChain = FrameOffset - Property.PNRPAuthorityBuffer ]
+				Switch
+				{ 
+					case Property.PNRPAuthorityBufferCertificateChain % 4 != 0:
+					BLOB( 4 - Property.PNRPAuthorityBufferCertificateChain % 4) Pading2;
+				}
+			}
+	}
+	
+	switch 
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x0085)):
+			struct PNRPAuthorityBufferClassifier = FormatString("NumEntries = %u", NumEntries)
+			{
+				UINT16 FieldID3 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length3;
+				UINT16 NumEntries;
+				UINT16 ArrayLength;
+				UINT16 ElementFieldType = MustBeSetToTable(this, "0x0084");
+				UINT16 EntryLength = MustBeSetToTable(this, "0x0002");
+				UnicodeString(NumEntries) Classifier;
+				[Property.PNRPAfterAuthorityBufferClassifier = FrameOffset - Property.PNRPAuthorityBuffer ]
+				Switch
+				{ 
+					case Property.PNRPAfterAuthorityBufferClassifier % 4 != 0:
+					BLOB( 4 - Property.PNRPAfterAuthorityBufferClassifier % 4) Pading3;
+				}
+			}
+	}
+
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x005A)):
+			struct PNRPAuthorityBufferExtendedPayload // EXTENDED PAYLOAD
+			{
+				UINT16 FieldID4 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length4;
+				PNRPExtendedPayload ExtendedPayload;
+				[Property.PNRPAfterAuthorityBufferExtendedPayload = FrameOffset - Property.PNRPAuthorityBuffer ]
+				Switch
+				{ 
+					case Property.PNRPAfterAuthorityBufferExtendedPayload % 4 != 0:
+					BLOB( 4 - Property.PNRPAfterAuthorityBufferExtendedPayload % 4) Pading4;
+				}
+			}
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009A)):
+			struct
+			{
+				UINT16 FieldID5 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length5;
+				PNRPRouteEntry RouteEntry;
+				[Property.PNRPAfterAuthorityBufferRoutingEntry = FrameOffset - Property.PNRPAuthorityBuffer ]
+				Switch
+				{ 
+					case Property.PNRPAfterAuthorityBufferRoutingEntry % 4 != 0:
+					BLOB( 4 - Property.PNRPAfterAuthorityBufferRoutingEntry % 4) Pading5;
+				}
+			}
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009B)):
+			struct
+			{
+				UINT16 FiledID6 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length6;
+				PNRPEncodedCPA  CPA;
+			}
+	}
+}
+
+//
+//	CPA_Public_Key
+//
+Struct PNRPCpaPublicKey
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 FieldLength;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 AlgorithmObjIdLength = MustBeSetToTable(this, 0x0014);
+	UINT16 Reserved;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 PublicKeyCbData = MustBeSetToTable(this, 0x008C);
+	UINT8 PublicKeyUnused;
+	AsciiString(AlgorithmObjIdLength) AlgorithmObjId;
+	BLOB(PublicKeyCbData) PublicKeyData;
+}
+
+//
+//	Encoded_CPA
+//
+[DataTypeByteOrder = BigEndian]
+struct PNRPEncodedCPA
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 CPALength;
+	UINT8 CpaMinorVersion = PNRPEncodedCpaCpaVersionTable( this );
+	UINT8 CpaMajorVersion = PNRPEncodedCpaCpaVersionTable( this );
+	UINT8 PnrpMinorVersion = PNRPEncodedCpaPnrpVersionTable( this );
+	UINT8 PnrpMajorVersion = PNRPEncodedCpaPnrpVersionTable( this );
+	UINT8 Flags
+	{
+		UINT8 MajorConstructCPA:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 X:1 = FormatString("                (%s)", this.ToBitString, this ? "the CPA has an associated Extended Payload":"");
+		UINT8 F:1 = FormatString("                (%s)", this.ToBitString, this ? "the CPA contains the FriendlyNameLen and FriendlyName fields":"");
+		UINT8 C:1 = FormatString("                (%s)", this.ToBitString, this ? "the CPA contains a ClassifierHash field":"");
+		UINT8 A:1 = FormatString("                (%s)", this.ToBitString, this ? "the CPA contains a BinaryAuthority field":"");
+		UINT8 U:1 = FormatString("                (%s)", this.ToBitString, this ? "the FriendlyName field is encoded as UTF-8":"");
+		UINT8 R:1 = FormatString("                (%s)", this.ToBitString, this ? "this is a Revoke CPA":"");
+	};
+	UINT8 Reserved = MustBeSetToTable(this, 0x00);
+	[DataFieldByteOrder = LittleEndian]
+	UINT64 NotAfter;
+	[DataFieldByteOrder = LittleEndian]
+	BLOB(16) ServiceLocation = FormatString("0x%I64X", this);
+	
+	switch 
+	{
+		case Flags.R:
+			BLOB(16) NonceUnused = MustBeSetToTable(this, "0");
+		default: 
+			BLOB(16) Nonce;
+	}
+	
+	switch
+	{
+		case Flags.A:
+			[DataFieldByteOrder = LittleEndian]
+			BLOB(20) BinaryAuthority = FormatString("0x%I64X", this);
+	}
+	
+	switch
+	{
+		case Flags.C:
+			BLOB(20) ClassifierHash;
+	}
+	
+	switch
+	{
+		case Flags.F:
+			_struct V1
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT16 FriendlyNameLen;
+				switch
+				{
+					case Flags.U : String(2, FriendlyNameLen) FriendlyName;
+					default: UnicodeString(FriendlyNameLen) FriendlyNameUnicode;
+				}
+			}
+	}
+	
+	PNRPServiceAddresslist ServiceAddresslist;
+	[DataFieldByteOrder = LittleEndian]
+	[Property.NumPayloads]
+	UINT16 NumPayloads;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 TotalBytes;
+	PNRPPayload Payload[Property.NumPayloads];
+	PNRPCPAPublicKey PublicKey;
+	PNRPSignature Signature;
+}
+
+
+Table PNRPEncodedCpaCpaVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Case 0x02: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table PNRPEncodedCpaPnrpVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "V1 - Possible value.";
+		Case 0x04: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	EXTENDED_PAYLOAD
+//
+[DataTypeByteOrder = BigEndian]
+Struct PNRPExtendedPayload
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 Length;
+	UINT8 MinorVersion = MustBeSetToTable(this, 0x00);
+	UINT8 MajorVersion = MustBeSetToTable(this, 0x02);
+	UINT16 Reserved = MustBeSetToTable(this, 0x0000);
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 SignatureOffset;
+	[DataFieldByteOrder = LittleEndian]
+	UINT64 NotAfter;
+	BLOB(32) PNRPID;
+	BLOB(16) Nonce;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 NumberOfPayloads = MustBeSetToTable(this, 0x0001);
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 TotalPayloadBytes;
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 PayloadType = PNRPPayloadTypeTable(this);
+	[DataFieldByteOrder = LittleEndian, Property.PayloadLength = this]
+	UINT16 PayloadLength;
+	switch(PayloadType)
+	{
+		case 0x80000002:
+			struct
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT16 StringType = PNRPExtendedPayloadStringTypeTable(this);
+				Switch(StringType)
+				{
+					case 0x0000:
+						String(0, PayloadLength - 2) PayLoad;
+					case 0x0001:
+						String(2, PayloadLength - 2) PayLoad1;
+				}
+			}
+		case 0x80000003:
+			struct
+			{
+				Blob( PayloadLength ) PayLoad;			
+			}
+	}
+
+	PNRPSignature Signature;
+}
+
+Table PNRPExtendedPayloadStringTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "V1 - Unicode";
+		Case 0x0001: "V2 - UTF-8";
+		Default: "Unknown";
+	}
+}
+
+//
+//	FLOOD
+//
+Struct PNRPFLOOD
+{
+	[Property.PNRPFLOODFrameOffset = FrameOffset]
+	struct PNRPCommonFloodControls
+	{
+		UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length1;
+		UINT16 Flags
+		{
+			UINT16 Reserved1:15 = FormatString("  (%s)", this.ToBitString);
+			UINT16 D:1 = FormatString("	         (%s)%s", this.ToBitString, this ? "the sender does not want the receiver to send an ACK" : "");
+		};
+		UINT8 Reserved2;
+		UINT8 Padding1;
+	}
+
+	struct PNRPCommonValidatePNRPId = "ValidatePNRPId"
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2 = MustBeSetToTable( this, 0x0024 );
+		BLOB(16) P2PID;
+		BLOB(16) ServiceLocation;
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009C)):
+			struct PNRPFloodRevokeCPA
+			{
+				UINT16 FieldID3 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length3;
+				PNRPEncodedCPA EncodedCPA;
+				[Property.PNRPAfterRevokeCPA = FrameOffset - Property.PNRPFLOODFrameOffset ]
+				Switch
+				{
+					case Property.PNRPAfterRevokeCPA % 4 != 0:
+					BLOB( 4 - Property.PNRPAfterRevokeCPA % 4) Pading3;
+				}
+			}
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009A)):
+			Struct PNRPFloodRoutingEntry
+			{
+				UINT16 FieldID4 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length4;
+				PNRPRouteEntry SourceRE;
+				[Property.PNRPAfterSourceRE = FrameOffset - Property.PNRPFLOODFrameOffset ]
+				Switch
+				{
+					case Property.PNRPAfterSourceRE % 4 != 0:
+					BLOB( 4 - Property.PNRPAfterSourceRE % 4) Padding4;
+				}
+			}
+	}
+	struct PNRPFloodFloodArray = FormatString("NumEntries = %u", NumEntries)
+	{
+		UINT16 FieldID5 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length5;
+		UINT16 NumEntries;
+		UINT16 ArrayLength;
+		UINT16 ElementFieldType = MustBeSetToTable(this, 0x009D );
+		UINT16 EntryLength = MustBeSetToTable(this, "0x0012");
+		PNRPIPv6EndPoint  AlreadyFloodedList[NumEntries];
+	}
+
+}
+
+//
+//	PNRP_Header
+//
+Struct PNRPHeader
+{
+	[Property.PNRPHeaderFieldID]
+	UINT16 FieldID = PNRPMessageSyntaxFieldIDTable( this );
+	UINT16 Length = MustBeSetToTable(this, 0x000C);
+	UINT8 Identifier = MustBeSetToTable(this, "0x0051");
+	[Property.PNRPHeaderVersionMajor]
+	UINT8 VersionMajor = MustBeSetToTable(this, 0x04);
+	[Property.PNRPHeaderVersionMinor]
+	UINT8 VersionMinor = MustBeSetToTable(this, 0x00);
+	[Property.PNRPHeaderMessageType]
+	UINT8 MessageType = PnrpHeaderMessageTypeTable(this);
+	[Property.PNRPHeaderMessageId]
+	UINT32 MessageId;
+}
+
+Table PNRPHeaderMessageTypeTable( Value )
+{
+	Switch( Value )
+	{
+		case 1:  "SolicitMessage";
+		case 2:  "AdvertiseMessage";
+		case 3:  "RequestMessage";
+		case 4:  "FloodMessage";
+		case 7:  "InquireMessage";
+		case 8:  "AuthorityMessage";
+		case 9:  "AckMessage";
+		case 11: "LookUpMessage";
+		default: FormatString("Undefined Value (%d)", Value);
+	}
+}
+
+//
+//	INQUIRE
+//
+Struct PNRPInquire
+{
+	struct PNRPInquireFlagsField = FormatString("Flags = %s", Flags.ToBitString)
+	{
+		UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length1 = MustbeSetToTable(this,0x0006);
+		UINT16 Flags
+		{
+			UINT16 Reserved1:11 = FormatString(" (%s)", this.ToBitString);
+			UINT16 A:1 = FormatString("         (%s):%s", this.ToBitString, this ? "If set, the sender is requesting that a CPA appear in the AUTHORITY response." : "");
+			UINT16 X:1 = FormatString("         (%s):%s", this.ToBitString, this ? "If set, the sender is requesting that an EXTENDED_PAYLOAD (if any exists) appear in the AUTHORITY response." : "");
+			UINT16 C:1 = FormatString("         (%s):%s", this.ToBitString, this ? "If set, the sender is requesting that a Certificate Chain (if any exists) appear in the AUTHORITY response." : "");
+			UINT16 Reserved2:2 = FormatString(" (%s)", this.ToBitString);
+		};
+		UINT16 Padding;
+	}
+	struct PNRPInquireValidatePNRPId = "ValidatePNRPId"
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2 = MustBeSetToTable(this, 0x0024);
+		BLOB(16) P2PID;
+		BLOB(16) ServiceLocation;
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x0093)):
+			struct PNRPInquireNonce
+				{
+					UINT16 FieldID3 = PNRPMessageSyntaxFieldIDTable( this );
+					UINT16 Length3 = MustBeSetToTable(this, 0x0014 );
+					BLOB(16) Nonce;
+				}
+	}
+}
+
+//
+//	IPV6_APP_ENDPOINT
+//
+Struct PNRPIpv6AppEndpoint
+{
+	IPv6Address IPAddress;
+	UINT16 Port;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 Protocol = ProtocolTypeTable(this);
+}
+
+//
+//	IPV6_ENDPOINT
+//
+struct PNRPIPv6EndPoint = FormatString("%s:%u", Adderss.ToString, Port)
+{
+	UINT16 Port;
+	IPV6Address Adderss;
+}
+
+//
+//	LOOKUP
+//
+Struct PNRPLOOKUP
+{
+	[Property.PNRPLOOKUPOffset = offset]
+	struct PNRPCommonLookupControls = FormatString("ReasonCode = %s", PNRPReasonCodeTable(ReasonCode))
+	{
+		UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length1 = MustBeSetToTable(this, 0x000C);
+		UINT16 Flags
+		{
+			UINT16 Reserved1:14 = FormatString("(%s)", this.ToBitString);
+			UINT16 A:1 = FormatString("        (%s)", this.ToBitString, this ? "the sender is willing to accept returned nodes that are not closer to the target ID than the Validate PNRP ID":"");
+			UINT16 Zero:1 = FormatString("     (%s)", this.ToBitString);
+		};
+		UINT16 Precision;
+		UINT8 ResolveCriteria = PNRPLOOKUPResolveCriteriaTable(this);
+		UINT8 ReasonCode = PNRPReasonCodeTable(this);
+		UINT16 Reserved2;
+	}
+	struct PNRPLOOKUPTargetPNRPId = "TargetPNRPId"
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2 = MustBeSetToTable(this,0x0024);
+		BLOB(32) TargetPnrpID;
+	}
+	struct PNRPLOOKUPValidatePNRPId = "ValidatePNRPId"
+	{
+		UINT16 FieldID3 =  PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length3 = MustBeSetToTable(this, 0x0024 );
+		BLOB(32) ValidatePnrpID;
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009A)):
+			Struct PNRPLOOKUPRoutingEntry
+			{
+				UINT16 FieldID4 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length4;
+				PNRPRouteEntry RouteEntry;
+				[Property.PNRPLOOKUPOffset = offset - Property.PNRPLOOKUPOffset]
+				Switch
+				{
+					case  Property.PNRPLOOKUPOffset % 4 != 0:
+						BLOB( 4 - Property.PNRPLOOKUPOffset % 4) Pading4;
+				}
+			}
+	}
+	struct PPNRPLOOKUPFloodArray = FormatString("NumEntries = %u", NumEntries)
+	{
+		UINT16 FieldID5 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length5;
+		UINT16 NumEntries;
+		UINT16 ArrayLength;
+		UINT16 ElementFieldType = MustBeSetToTable(this, "0x009D");
+		UINT16 EntryLength = MustBeSetToTable(this, "0x0012");
+		PNRPIPv6EndPoint FlaggedPath[NumEntries];
+	}
+}
+
+Table PNRPLOOKUPResolveCriteriaTable( value )
+{
+	switch ( value )
+	{
+		case 0x00: "SEARCH_OPCODE_NONE: Compare all 256 bits of the PNRP ID";
+		case 0x01: "SEARCH_OPCODE_ANY_PEERNAME: Compare only the first 128 bits of the PNRP ID";
+		case 0x02: "SEARCH_OPCODE_NEAREST_PEERNAME: Compare all 256 bits of the PNRP ID and return the closest possible match";
+		case 0x04: "SEARCH_OPCODE_NEAREST64_PEERNAME: Compare only the first 192 bits of the PNRP ID and return the closest possible match";
+		case 0x08: "SEARCH_OPCODE_UPPER_BITS: Compare a number of bits equal to the value in the Precision field";
+		default: FormatString("Undefined Value (%d)", value);
+	}
+}
+
+Table PNRPMessageSyntaxFieldIDTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0010: "PNRP_HEADER - Part of a PNRP Header.";
+		Case 0x0018: "PNRP_HEADER_ACKED - An Acked Message ID follows.";
+		Case 0x0030: "PNRP_ID - A PNRP ID follows.";
+		Case 0x0038: "TARGET_PNRP_ID - A target PNRP ID follows.";
+		Case 0x0039: "VALIDATE_PNRP_ID - A Validate PNRP ID follows.";
+		Case 0x0040: "FLAGS_FIELD - A flags field follows.   The meaning of the individual flags is message-specific.";
+		Case 0x0043: "FLOOD_CONTROLS - Flood criteria follows.";
+		Case 0x0044: "SOLICIT_CONTROLS - Solicit criteria follows.";
+		Case 0x0045: "LOOKUP_CONTROLS - Lookup criteria follows.";
+		Case 0x005A: "EXTENDED_PAYLOAD - Extended payload follows.";
+		Case 0x0060: "PNRP_ID_ARRAY - An array of PNRP IDs follows.";
+		Case 0x0080: "CERT_CHAIN - A Certificate Chain follows.";
+		Case 0x0084: "WCHAR - A Unicode character follows.";
+		Case 0x0085: "CLASSIFIER - A classifier string follows.";
+		Case 0x0092: "HASHED_NONCE - A hashed nonce follows.";
+		Case 0x0093: "NONCE - A nonce follows.";
+		Case 0x0098: "SPLIT_CONTROLS - Buffer fragmentation information follows.";
+		Case 0x009A: "ROUTING_ENTRY - A ROUTE_ENTRY follows.";
+		Case 0x009B: "VALIDATE_CPA - An Encoded CPA structure  follows, containing a CPA to validate.";
+		Case 0x009C: "REVOKE_CPA - An Encoded CPA structure follows, containing a CPA to revoke.";
+		Case 0x009D: "IPV6_ENDPOINT - An IPV6_ENDPOINT structure  follows.";
+		Case 0x009E: "IPV6_ENDPOINT_ARRAY - An array of IPV6_ENDPOINT structures follows.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	PAYLOAD
+//
+Struct PNRPPAYLOAD
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 Type;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 DataLength;
+	PNRPIPV6AppEndPoint Data[ DataLength/20 ];
+}
+
+Table PNRPPayloadTypeTable( code )
+{
+	switch ( code )
+	{
+		case 0x80000002: "Payload field contains a NULL-terminated string.";
+		case 0x80000003: "Payload field contains binary data.";
+		default: FormatString("Undefined Value(%d)", code );
+	}
+}
+
+//
+//	REQUEST
+//
+Struct PNRPREQUEST
+{
+	UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+	UINT16 Length1 = MustBeSetToTable(this, 0x00014 );
+	BLOB(16) Nonce;
+	Struct PNRPIdArray = FormatString("NumEntries = %u", NumEntries)
+	{
+		UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length2;
+		UINT16 NumEntries;
+		UINT16 ArrayLength;
+		UINT16 ElementFieldType = MustBeSetToTable(this, "0x0030");
+		UINT16 EntryLength = MustBeSetToTable(this, "0x0020");
+		PNRPCommonID PNRPID[NumEntries];
+	}
+}
+
+//
+//	ROUTE_ENTRY
+//
+struct PNRPRouteEntry
+{
+	BLOB(32) PnrpID;
+	UINT8 PnrpMajorVersion = MustBeSetToTable(this, "0x04");
+	UINT8 PnrpMinorVersion = MustBeSetToTable(this, "0x00");
+	UINT16 PortNumber;
+	UINT8 Flags;
+	UINT8 AddressCount;
+	IPv6Address Ipv6Addresses[AddressCount];
+}
+
+//
+//	Service_Address_List
+//
+Struct PNRPServiceAddressList
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 NumServiceAddresses;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 ServiceAddressLength;
+	PNRPIPv6EndPoint ServiceAddress[NumServiceAddresses];
+}
+
+//
+//	SIGNATURE
+//
+Struct PNRPSIGNATURE
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 FieldLength = MustBeSetToTable(this,"0x0088");
+	[DataFieldByteOrder = LittleEndian]
+	UINT16 SignatureLength = MustBeSetToTable(this,"0x0080");
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 AlgId = MustBeSetToTable(this, "0x00008004");
+	BLOB(SignatureLength) SignatureData;
+}
+
+//
+//	SOLICIT
+//
+Struct PNRPSOLICIT
+{
+	[Property.PNRPSOLICITOffset]
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x0044)):
+			struct PNRPSolicitControls = FormatString("SolicitTyp = %s", PNRPSolicitTypeTable(SolicitType))
+				{
+					UINT16 FieldID1 = PNRPMessageSyntaxFieldIDTable( this );
+					UINT16 Length1 = MustBeSetToTable(this, 0x0006);
+					UINT8 Reserved;
+					UINT8 SolicitType = PNRPSolicitTypeTable( this );
+					UINT16 Padding;
+				}
+	}
+	switch
+	{
+		case ((FrameLength > FrameOffset) && (UINT16(FrameData, FrameOffset) == 0x009A)):
+			Struct PNRPSolicitRoutingEntry
+			{
+				UINT16 FieldID2 = PNRPMessageSyntaxFieldIDTable( this );
+				UINT16 Length2;
+				PNRPRouteEntry SourceRE;
+				[Property.PNRPSolicitOffset = FrameOffset - Property.PNRPSolicitOffset ]
+				Switch
+				{
+					case Property.PNRPSOLICITOffset % 4 != 0:
+					BLOB( 4 - Property.PNRPSOLICITOffset % 4) Pading2;
+				}
+			}
+	}
+
+	Struct PNRPSolicitHashedNonce
+	{
+		UINT16 FieldID3 = PNRPMessageSyntaxFieldIDTable( this );
+		UINT16 Length3 = MustBeSetToTable(this, 0x0018);
+		BLOB(20) HashedNonce;
+	}
+}
+
+Table PNRPSolicitTypeTable(code)
+{
+	switch (code)
+	{
+		case 0:	"Remote ones";
+		case 1:	"The sender only wants route entries for locally registered IDs";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+Table PNRPReasonCodeTable(code)
+{
+	switch (code)
+	{
+		case 0:	"REASON_APP_REQUEST";
+		case 1:	"REASON_REGISTRATION";
+		case 2:	"REASON_CACHE_MAINTENANCE";
+		case 3:	"REASON_REPAIR_DETECTION";
+		case 4:	"REASON_SYNC_REQUEST";
+		case 5:	"REASON_CPA_VIA_RESOLVE";
+		case 6:	"REASON_CPA_VIA_FLOOD";
+		case 7:	"REASON_REPAIR";
+		case 8:	"REASON_CPA_VIA_BACK_FLOOD";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}

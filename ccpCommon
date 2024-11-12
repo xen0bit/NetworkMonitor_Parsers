@@ -1,0 +1,276 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Compression Control Protocol for PPP
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1962
+//#                          http://www.networksorcery.com/enp/protocol/ccp.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol CCP = FormatString("%s,Identifier=%d",CCPCodeTable(Code),Identifier )
+{
+	[CCPoffset=Offset]
+	UINT8 Code = CCPCodeTable(this) + FormatString(", %d(0x%X)",this,this);
+	UINT8 Identifier;
+	UINT16 Length;
+	switch(Code)
+	{
+		case 0:
+			_struct VendorSpecificFunction
+			{
+				UINT32 MagicNumber;
+				UINT24 OUI = OUITable(this);
+				UINT8 Kind;
+				switch
+				{
+					case Length-12 > 0: AsciiString(Length - 12) Values = FormatString("%d bytes",Length-12);
+				}
+			};
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+			while opt[Property.CCPoffset + length > Offset]
+			{
+				switch(UINT8( Framedata, Offset ))
+				{
+					case 0:  CCPOptionOUI OUIOption;
+					case 1:  CCPOtherOption PredictorType1;
+					case 2:  CCPOtherOption PredictorType2;
+					case 3:  CCPOtherOption PuddleJumper;
+					case 16: CCPOtherOption HewlettPackardPPC;
+					case 17: CCPOptionLZS LZSOption;
+					case 18: CCPOptionMPPC MPPCOption;
+					case 19: CCPOptionFZA FZAOption;
+					case 20: CCPOtherOption V42bisCompression;
+					case 21: CCPOptionBSD BSDOption;
+					case 23: CCPOptionLZSDCP LZSDCPOption;
+					case 24: CCPOptionMVRCA MVRCAOption;
+					case 25: CCPOptionDCE DCEOption;
+					case 26: CCPOptionDeflate DeflateOption;
+					case 27: CCPOtherOption V44LZJHCompression;
+					default: CCPOtherOption UnknownOption;
+				}
+		  	}
+		case 5:
+		case 6:
+		case 14:
+		case 15:
+		  	AsciiString(length-4) Data = FormatString("%d bytes",length-4);
+		case 7:
+			AsciiString(length-4) RejectedPacket = FormatString("%d bytes",length-4);
+	}
+	switch
+	{
+		case Framelength - Offset > 0 :
+			AsciiString(Framelength-Offset) Padding = FormatString("%d bytes",Framelength - Offset);
+	}
+}
+Table CCPCodeTable(value)
+{
+	switch(value)
+	{
+		case  0:"Vendor Specific";
+		case  1:"Configure-Request";
+		case  2:"Configure-Ack";
+		case  3:"Configure-Nak";
+		case  4:"Configure-Reject";
+		case  5:"Terminate-Request";
+		case  6:"Terminate-Ack";
+		case  7:"Code-Reject";
+		case 14:"Reset-Request";
+		case 15:"Reset-Reply";
+		default:"Unrecognized Code";
+	}
+}
+
+Table CCPOptionTypeTable(type)
+{
+	switch(type)
+	{
+		case   0:FormatString("OUI, %d(0x%X)", type, type);
+		case   1:FormatString("Predictor Type 1, %d(0x%X)", type, type);
+		case   2:FormatString("Predictor Type 2, %d(0x%X)", type, type);
+		case   3:FormatString("Puddle Jumper, %d(0x%X)", type, type);
+		case  16:FormatString("Hewlett-Packard PPC, %d(0x%X)", type, type);
+		case  17:FormatString("PPP Stac LZS Compression Protocol, %d(0x%X)", type, type);
+		case  18:FormatString("Microsoft Point-To-Point Compression/Encryption Protocol, %d(0x%X)", type, type);
+		case  19:FormatString("PPP Gandalf FZA Compression Protocol, %d(0x%X)", type, type);
+		case  20:FormatString("V.42bis compression, %d(0x%X)", type, type);
+		case  21:FormatString("PPP BSD Compression Protocol, %d(0x%X)", type, type);
+		case  23:FormatString("PPP LZS-DCP Compression Protocol, %d(0x%X)", type, type);
+		case  24:FormatString("PPP Magnalink Variable Resource Compression Algorithm, %d(0x%X)", type, type);
+		case  25:FormatString("PPP for Data Compression in Data Circuit-Terminating Equipment, %d(0x%X)", type, type);
+		case  26:FormatString("PPP Deflate Protocol, %d(0x%X)", type, type);
+		case  27:FormatString("V.44/LZJH Compression Protocol, %d(0x%X)", type, type);
+		case 255:FormatString("Reserved, %d(0x%X)", type, type);
+		default :FormatString("Unhandled CCP Option, %d(0x%X)", type, type);
+	}
+}
+
+Table CCPLZSCheckModeTable(value)
+{
+	switch(value)
+	{
+		case 0x00:FormatString("None, %d(0x%X)",value,value);
+		case 0x01:FormatString("LCB, %d(0x%X)",value,value);
+		case 0x02:FormatString("CRC, %d(0x%X)",value,value);
+		case 0x03:FormatString("Sequence Number, %d(0x%X)",value,value);
+		case 0x04:FormatString("Extended Mode, %d(0x%X)",value,value);
+		default  :FormatString("Unknown checkmode, %d(0x%X)",value,value);
+	}
+}
+
+Table CCPLZSDCPTable(value)
+{
+	switch(value)
+	{
+		case 0x00:"None";
+		case 0x01:"LCB";
+		case 0x02:"Sequence Number";
+		case 0x03:"Sequence Number + LCB";
+		default  :"Undefined value";
+	}
+}
+
+Table CCPDCEModeTable(value)
+{
+	switch(value)
+	{
+		case 0x01:"No Additional Negotiation";
+		case 0x02:"Full PPP Negotiation and State Machine";
+		default  :"Undefined Value";
+	}
+}
+
+Table CCPHistoryCountTable(value)
+{
+	switch(value)
+	{
+		case 0x00:FormatString("The implementation expects the peer to clear the Compression History, %d(0x%X)",value,value);
+		case 0x01:FormatString("Only one history is maintained, %d(0x%X)",value,value);
+		default  :FormatString("%d(0x%X)",value,value);
+	}
+}
+
+struct CCPOptionOUI
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT24 OUI = OUITable(this);
+	UINT8 SubType;
+	switch
+	{
+		case Length > 6 :  AsciiString(Length - 6) Values = FormatString("%d bytes",Length-6);
+	}
+}
+
+struct CCPOptionLZS
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT16 HistoryCount = CCPHistoryCountTable(this);
+	UINT8 CheckMode = FormatString("%s",CCPLZSCheckModeTable(CheckMode))
+	{
+		UINT8 Reserved:5 = FormatString(" (%s)",this.ToBitString);
+		UINT8 CheckMode:3 = FormatString("(%s) %s",this.ToBitString,CCPLZSCheckModeTable(this));
+	};
+}
+
+//# RFC 2118: MPPC - Microsoft Point-To-Point Compression Protocol
+//# RFC 3078: MPPE - Microsoft Point-To-Point Encryption Protocol
+struct CCPOptionMPPC
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT32 SupportedBits = FormatString("%s %s %s %s %s",C == 1 ? "C" : "",
+										L == 1 ? "L" : "",S == 1 ? "S" : "",
+										M == 1 ? "M" : "",H == 1 ? "H" : "")
+	{
+		UINT32 Reserved1:8= FormatString("(%s)",this.ToBitString);
+		UINT32 H:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Stateless mode ON" : "Stateless mode OFF");
+		UINT32 Reserved2:15 = FormatString("(%s)",this.ToBitString);
+		UINT32 M:1 = FormatString("        (%s) %s",this.ToBitString,this ? "56-bit encryption ON" : "56-bit encryption OFF");
+		UINT32 S:1 = FormatString("        (%s) %s",this.ToBitString,this ? "128-bit encryption ON" : "128-bit encryption OFF");
+		UINT32 L:1 = FormatString("        (%s) %s",this.ToBitString,this ? "40-bit encryption ON" : "40-bit encryption OFF");
+		UINT32 D:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Obsoleted(Should NOT be 1)" 
+							: "Obsoleted(Should always be zero)");
+		UINT32 Reserved3:3 = FormatString("(%s)",this.ToBitString);
+		UINT32 C:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Desire to negotiate MPPC" 
+							: "NO Desire to negotiate MPPC");
+	};
+}
+
+struct CCPOptionFZA
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 History;
+	switch
+	{
+		case Length > 3: Integer(Length-3) Version;
+	}
+}
+
+struct CCPOptionBSD
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 Vers:3 = FormatString("(%s) %d",this.ToBitString,this);
+	UINT8 Dict:5 = FormatString("(%s) %d",this.ToBitString,this);
+}
+
+struct CCPOptionLZSDCP
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT16 HistotyCount = CCPHistoryCountTable(this);
+	UINT8 CheckMode = CCPLZSDCPTable(this) + FormatString(", %d(0x%X)", this,this);
+	UINT8 ProcessMode = this==1 ? "Process-Uncompressed" + FormatString(", %d(0x%X)",this,this)
+							    : "None" + FormatString(", %d(0x%X)",this,this);
+}
+
+struct CCPOptionMVRCA
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 Features:2 = FormatString("(%s) %d",this.ToBitString,this);
+	UINT8 P:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Packet compression is supported" 
+					: "Packet compression is not supported");
+	UINT8 History:5 = FormatString(" (%s) %d",this.ToBitString,this);
+	UINT8 NumberOfContexts;
+}
+
+struct CCPOptionDCE
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 Mode = CCPDCEModeTable(this) + FormatString(", %d(0x%X)",this,this);
+}
+
+struct CCPOptionDeflate
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	UINT16 Window:4 = FormatString("(%s) %d",this.ToBitString,this);
+	UINT16 Method:4 = FormatString("(%s) %s",this.ToBitString,this==8 ? "Zlib compression" : "Other");
+	UINT16 MBZ:6 = FormatString("   (%s) %d",this.ToBitString,this);
+	UINT16 Chk:2 = FormatString("   (%s) %d",this.ToBitString,this);
+}
+struct CCPOtherOption
+{
+	UINT8 Type = CCPOptionTypeTable(this);
+	UINT8 Length;
+	switch
+	{
+		case length - 2 > 0: AsciiString(Length - 2) Values = FormatString("%d bytes",Length-2);
+	}
+}
+
+

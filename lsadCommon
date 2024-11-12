@@ -1,0 +1,4315 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Local Security Authority (Domain Policy) Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-LSAD]: Local Security Authority (Domain Policy) Remote Protocol Specification (20.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 6/30/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol LSAD = FormatString( "%s, %s%s%s%s%s", 
+	Property.LSADMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.LSADSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.LSADSummary : "" )
+{
+	[Property.LSADSummary = ""]
+	[Property.LSADMethodName = LSADMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct LsarClose
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle ObjectHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle ObjectHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct LsarEnumeratePrivileges
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, PreferedMaximumLength = %u", EnumerationContext, PreferedMaximumLength )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 EnumerationContext;
+										UINT32 PreferedMaximumLength;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, Status = %s", EnumerationContext, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 EnumerationContext;
+										NdrAlign Pad1;
+										LSADLsaprPrivilegeEnumBuffer EnumerationBuffer;
+										Align4 Pad2;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct LsarQuerySecurityObject
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SecurityInformation = %s", SecurityInformation.ToString )]
+									Struct
+									{
+										ContextHandle ObjectHandle;
+										SecurityInformation SecurityInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pSecurityDescriptor;
+										Switch
+										{
+											Case pSecurityDescriptor.ReferentID != 0:
+												LSADLsaprSrSecurityDescriptor SecurityDescriptor;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct LsarSetSecurityObject
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SecurityInformation = %s", SecurityInformation.ToString )]
+									Struct
+									{
+										ContextHandle ObjectHandle;
+										SecurityInformation SecurityInformation;
+										NdrAlign Pad;
+										LSADLsaprSrSecurityDescriptor SecurityDescriptor;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct LsarOpenPolicy
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s, DesiredAccess = %s",LSADLsaprObjectAttributes.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										NdrPtr pSystemName; // Tis field MUST be ignored on receipt.
+										Switch
+										{
+											Case pSystemName.ReferentID != 0:
+												WCHAR SystemName;
+										}
+										LSADLsaprObjectAttributes ObjectAttributes;
+										Align4 Pad1;
+										LSADPolicyObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct LsarQueryInformationPolicy
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString("%s", InformationClass.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pPolicyInformation;
+										Switch
+										{
+											Case pPolicyInformation.ReferentID != 0:
+												LSADLsaprPolicyInformation PolicyInformation;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct LsarSetInformationPolicy
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString("%s", InformationClass.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyInformationClass InformationClass;
+										LSADLsaprPolicyInformation PolicyInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct LsarCreateAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "DesiredAccess = %s", DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) AccountSid;
+										LSADAccountObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle AccountHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct LsarEnumerateAccounts
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, PreferedMaximumLength = %u", EnumerationContext, PreferedMaximumLength )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 EnumerationContext;
+										UINT32 PreferedMaximumLength;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, EnumerationBuffer = %s, Status = %s", EnumerationContext, EnumerationBuffer.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 EnumerationContext;
+										NdrAlign Pad1;
+										LSADLsaprAccountEnumBuffer EnumerationBuffer;
+										Align4 Pad2;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct LsarCreateTrustedDomain
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s, DesiredAccess = %s", TrustedDomainInformation.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADLsaprTrustInformation TrustedDomainInformation;
+										Align4 Pad;
+										LSADTrustedDomainObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct LsarEnumerateTrustedDomains
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, PreferedMaximumLength = %u", EnumerationContext, PreferedMaximumLength )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 EnumerationContext;
+										UINT32 PreferedMaximumLength;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, Status = %s", EnumerationContext, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 EnumerationContext;
+										NdrALign Pad1;
+										LSADLsaprTrustedEnumBuffer EnumerationBuffer;
+										Align4 Pad2;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct LsarCreateSecret
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SecretName = %s, DesiredAccess = %s", SecretName.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString SecretName;
+										Align4 Pad;
+										LSADSecretObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle SecretHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct LsarOpenAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "DesiredAccess = %s", DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) AccountSid;
+										LSADAccountObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle AccountHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct LsarEnumeratePrivilegesAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle AccountHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pPrivileges;
+										Switch
+										{
+											Case pPrivileges.ReferentID != 0:
+												LSADLsaprPrivilegeSet Privileges;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct LsarAddPrivilegesToAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", Privileges.ToString)]
+									Struct
+									{
+										ContextHandle AccountHandle;
+										LSADLsaprPrivilegeSet Privileges;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct LsarRemovePrivilegesFromAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "AllPrivileges = %s", AllPrivileges.ToString)]
+									Struct
+									{
+										ContextHandle AccountHandle;
+										BOOLEAN AllPrivileges = this? "All privileges will be stripped from the account object" : "All privileges will NOT be stripped from the account object";
+										NdrPtr pPrivileges;
+										Switch
+										{
+											Case pPrivileges.ReferentID != 0:
+												LSADLsaprPrivilegeSet Privileges;
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct LsarGetSystemAccessAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle AccountHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SystemAccess = %s, Status = %s", SystemAccess.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADAccountObjectAccessMask SystemAccess;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct LsarSetSystemAccessAccount
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SystemAccess = %s", SystemAccess.ToString )]
+									Struct
+									{
+										ContextHandle AccountHandle;
+										LSADAccountObjectAccessMask SystemAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct LsarOpenTrustedDomain
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "DesiredAccess = %s", DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) TrustedDomainSid;
+										LSADTrustedDomainObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct LsarQueryInfoTrustedDomain
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString) ]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										LSADTrustedInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pTrustedDomainInformation;
+										Switch
+										{
+											Case pTrustedDomainInformation.ReferentID != 0:
+												LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+										}
+										ALign4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct LsarSetInformationTrustedDomain
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString) ]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										LSADTrustedInformationClass InformationClass;
+										Switch( Property.MSRPCNdr64 )
+										{
+											Case TRUE: Align8 NDR64Pad;
+										}
+										LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct LsarOpenSecret
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SecretName = %s, DesiredAccess = %s", SecretName.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString SecretName;
+										Align4 Pad;
+										LSADSecretObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle SecretHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 29:
+			_Struct LsarSetSecret
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle SecretHandle;
+										LSADLsaprCrCipherValuePtr EncryptedCurrentValue;
+										LSADLsaprCrCipherValuePtr EncryptedOldValue;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct LsarQuerySecret
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle SecretHandle;
+										LSADLsaprCrCipherValuePtrPtr EncryptedCurrentValue;
+										NdrPtr pCurrentValueSetTime;
+										Switch
+										{
+											Case pCurrentValueSetTime.ReferentID != 0:
+												Struct
+												{
+													Align8 Pad;
+													INT64 CurrentValueSetTime;
+												}
+										}
+										LSADLsaprCrCipherValuePtrPtr EncryptedOldValue;
+										NdrPtr pOldValueSetTime;
+										Switch
+										{
+											Case pOldValueSetTime.ReferentID != 0:
+												Struct
+												{
+													Align8 Pad;
+													INT64 OldValueSetTime;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADLsaprCrCipherValuePtrPtr EncryptedCurrentValue;
+										NdrPtr pCurrentValueSetTime;
+										Switch
+										{
+											Case pCurrentValueSetTime.ReferentID != 0:
+												Struct
+												{
+													Align8 Pad;
+													INT64 CurrentValueSetTime;
+												}
+										}
+										LSADLsaprCrCipherValuePtrPtr EncryptedOldValue;
+										NdrPtr pOldValueSetTime;
+										Switch
+										{
+											Case pOldValueSetTime.ReferentID != 0:
+												Struct
+												{
+													Align8 Pad;
+													INT64 OldValueSetTime;
+												}
+										}
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 31:
+			_Struct LsarLookupPrivilegeValue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "PrivilegeName = %s", Name.ToString) ]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString Name;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "LUID = %s, Status = %s", Value.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADLuid Value;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 32:
+			_Struct LsarLookupPrivilegeName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", Value.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADLuid Value;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "PrivilegeName = %s,Status = %s", Name.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrUnicodeStringPtr Name;
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 33:
+			_Struct LsarLookupPrivilegeDisplayName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "PrivilegeName = %s, ClientLanguage = %d, ClientSystemDefaultLanguage = %d", Name.ToString, ClientLanguage, ClientSystemDefaultLanguage )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString Name;
+										INT16 ClientLanguage;
+										INT16 ClientSystemDefaultLanguage;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "PrivilegeName = %s, LanguageReturned = %u, Status = %s", DisplayName.ToString, LanguageReturned, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrUnicodeStringPtr DisplayName;
+										UINT16 LanguageReturned;
+										Align4 pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 34:
+			_Struct LsarDeleteObject
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle ObjectHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle ObjectHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 35:
+			_Struct LsarEnumerateAccountsWithUserRight
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "UserRight = %s", UserRight.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeStringPtr UserRight;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationBuffer = %s, Status = %s", EnumerationBuffer.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADLsaprAccountEnumBuffer EnumerationBuffer;
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 36:
+			_Struct LsarEnumerateAccountRights
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) AccountSid;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "UserRights = %s, Status = %s", UserRights.ToString, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADLsaprUserRightSet UserRights;
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 37:
+			_Struct LsarAddAccountRights
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "UserRights = %s", UserRights.ToString) ]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) AccountSid;
+										NdrAlign Pad;
+										LSADLsaprUserRightSet UserRights;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 38:
+			_Struct LsarRemoveAccountRights
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "AllRights = %s, UserRights = %s", AllRights.ToString, UserRights.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) AccountSid;
+										BOOLEAN AllRights = this? "All rights will be removed" : "All rights will not be removed";
+										NdrAlign Pad;
+										LSADLsaprUserRightSet UserRights;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 39:
+			_Struct LsarQueryTrustedDomainInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) TrustedDomainSid;
+										LSADTrustedInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pTrustedDomainInformation;
+										Switch
+										{
+											Case pTrustedDomainInformation.ReferentID != 0:
+												LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 40:
+			_Struct LsarSetTrustedDomainInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) TrustedDomainSid;
+										LSADTrustedInformationClass InformationClass;
+										Switch( Property.MSRPCNdr64 )
+										{
+											Case TRUE: Align8 NDR64Pad;
+										}
+										LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 41:
+			_Struct LsarDeleteTrustedDomain
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										SID(TRUE) TrustedDomainSid;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 42:
+			_Struct LsarStorePrivateData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "KeyName = %s", KeyName.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString KeyName;
+										LSADLsaprCrCipherValuePtr EncryptedData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 43:
+			_Struct LsarRetrievePrivateData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "KeyName = %s", KeyName.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString KeyName;
+										LSADLsaprCrCipherValuePtr EncryptedData;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										LSADLsaprCrCipherValuePtr EncryptedData;
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 44:
+			_Struct LsarOpenPolicy2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "SystemName = %s, DesiredAccess = %s", SystemName.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										NdrWideStringPtr SystemName;
+										LSADLsaprObjectAttributes ObjectAttributes;
+										Align4 Pad;
+										LSADPolicyObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 46:
+			_Struct LsarQueryInformationPolicy2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pPolicyInformation;
+										Switch
+										{
+											Case pPolicyInformation.ReferentID != 0:
+												LSADLsaprPolicyInformation PolicyInformation;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 47:
+			_Struct LsarSetInformationPolicy2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyInformationClass InformationClass;
+										LSADLsaprPolicyInformation PolicyInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 48:
+			_Struct LsarQueryTrustedDomainInfoByName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "TrustedDomainName = %s, %s", TrustedDomainName.ToString, InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString TrustedDomainName;
+										LSADTrustedInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pTrustedDomainInformation;
+										Switch
+										{
+											Case pTrustedDomainInformation.ReferentID != 0:
+												LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 49:
+			_Struct LsarSetTrustedDomainInfoByName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "TrustedDomainName = %s, %s", TrustedDomainName.ToString, InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString TrustedDomainName;
+										LSADTrustedInformationClass InformationClass;
+										Switch( Property.MSRPCNdr64 )
+										{
+											Case TRUE: Align8 NDR64Pad;
+										}
+										LSADLsaprTrustedDomainInfo TrustedDomainInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 50:
+			_Struct LsarEnumerateTrustedDomainsEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, PreferedMaximumLength = %u", EnumerationContext, PreferedMaximumLength )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										UINT32 EnumerationContext;
+										UINT32 PreferedMaximumLength;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "EnumerationContext = %u, Status = %s", EnumerationContext, NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 EnumerationContext;
+										NdrAlign Pad1;
+										LSADLsaprTrustedEnumBufferEx EnumerationBuffer;
+										Align4 Pad2;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 51:
+			_Struct LsarCreateTrustedDomainEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "DesiredAccess = %s", DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADLsaprTrustedDomainInformationEx TrustedDomainInformation;
+										LSADLsaprTrustedDomainAuthInformation AuthenticationInformation;
+										Align4 Pad;
+										LSADTrustedDomainObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 53:
+			_Struct LsarQueryDomainInformationPolicy
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyDomainInformationClass InformationClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pPolicyDomainInformation;
+										Switch
+										{
+											Case pPolicyDomainInformation.ReferentID != 0:
+												LSADLsaprPolicyDomainInformation PolicyDomainInformation;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 54:
+			_Struct LsarSetDomainInformationPolicy
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "%s", InformationClass.ToString)]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADPolicyDomainInformationClass InformationClass;
+										NdrPtr pPolicyDomainInformation;
+										Switch
+										{
+											Case pPolicyDomainInformation.ReferentID != 0:
+												LSADLsaprPolicyDomainInformation PolicyDomainInformation;
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 55:
+			_Struct LsarOpenTrustedDomainByName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "TrustedDomainName = %s, DesiredAccess = %s", TrustedDomainName.ToString, DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString TrustedDomainName;
+										Align4 Pad;
+										LSADTrustedDomainObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 59:
+			_Struct LsarCreateTrustedDomainEx2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "DesiredAccess = %s", DesiredAccess.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										LSADLsaprTrustedDomainInformationEx TrustedDomainInformation;
+										LSADLsaprTrustedDomainAuthInformationInternal AuthenticationInformation;
+										Align4 Pad;
+										LSADTrustedDomainObjectAccessMask DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										ContextHandle TrustedDomainHandle;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 73:
+			_Struct LsarQueryForestTrustInformation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "TrustedDomainName = %s, %s", TrustedDomainName.ToString, HighestRecordType.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString TrustedDomainName;
+										LSADLsaForestTrustRecordType HighestRecordType;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pForestTrustInfo;
+										Switch
+										{
+											Case pForestTrustInfo.ReferentID != 0:
+												LSADLsaForestTrustInformation ForestTrustInfo;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 74:
+			_Struct LsarSetForestTrustInformation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "TrustedDomainName = %s, %s, CheckOnly = %s", TrustedDomainName.ToString, HighestRecordType.ToString,CheckOnly.ToString )]
+									Struct
+									{
+										ContextHandle PolicyHandle;
+										NdrUnicodeString TrustedDomainName;
+										LSADLsaForestTrustRecordType HighestRecordType;
+										NdrAlign Pad;
+										LSADLsaForestTrustInformation ForestTrustInfo;
+										BOOLEAN CheckOnly = this? "The operation is read-only and does not alter the state of the server's database" : "FALSE";
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[LSADSummary = FormatString( "Status = %s", NtStatusTable( ReturnValue ) )]
+									Struct
+									{
+										NdrPtr pCollisionInfo;
+										Switch
+										{
+											Case pCollisionInfo.ReferentID != 0:
+												LSADLsaForestTrustCollisionInformation CollisionInfo;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = NtStatusTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+		Case 5:
+		Case 9:
+		Case 14:
+		Case 15:
+		Case 21:
+		Case 22:
+		Case 45:
+		Case 52:
+		Case 56:
+		Case 57:
+		Case 58:
+		Case 60:
+		Case 61:
+		Case 62:
+		Case 63:
+		Case 64:
+		Case 65:
+		Case 66:
+		Case 67:
+		Case 68:
+		Case 69:
+		Case 70:
+		Case 71:
+		Case 72:
+			struct NotUsedOnWire
+			{
+				// removed the following methods in previous parser file according to document, as it has been comfirmed that they are not used on wire:
+				// LsarClearAuditLog (opnum 9), LsarGetQuotasForAccount(opnum 21), LsarSetQuotasForAccount(opnum 22)
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[LSADSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("LSAD", "Invalid lsarpc method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[LSADSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("LSAD", "Invalid lsarpc method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("LSAD", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "LSAD", "Unknown lsarpc method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+Table LSADMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "LsarClose";
+		Case 1: "Opnum1NotUsedOnWire";
+		Case 2: "LsarEnumeratePrivileges";
+		Case 3: "LsarQuerySecurityObject";
+		Case 4: "LsarSetSecurityObject";
+		Case 5: "lsarpc_Opnum5DummyMethod";
+		Case 6: "LsarOpenPolicy";
+		Case 7: "LsarQueryInformationPolicy";
+		Case 8: "LsarSetInformationPolicy";
+		Case 9: "lsarpc_Opnum9DummyMethod";
+		Case 10: "LsarCreateAccount";
+		Case 11: "LsarEnumerateAccounts";
+		Case 12: "LsarCreateTrustedDomain";
+		Case 13: "LsarEnumerateTrustedDomains";
+		Case 14: "lsarpc_Opnum14DummyMethod";
+		Case 15: "lsarpc_Opnum15DummyMethod";
+		Case 16: "LsarCreateSecret";
+		Case 17: "LsarOpenAccount";
+		Case 18: "LsarEnumeratePrivilegesAccount";
+		Case 19: "LsarAddPrivilegesToAccount";
+		Case 20: "LsarRemovePrivilegesFromAccount";
+		Case 21: "lsarpc_Opnum21DummyMethod";
+		Case 22: "lsarpc_Opnum22DummyMethod";
+		Case 23: "LsarGetSystemAccessAccount";
+		Case 24: "LsarSetSystemAccessAccount";
+		Case 25: "LsarOpenTrustedDomain";
+		Case 26: "LsarQueryInfoTrustedDomain";
+		Case 27: "LsarSetInformationTrustedDomain";
+		Case 28: "LsarOpenSecret";
+		Case 29: "LsarSetSecret";
+		Case 30: "LsarQuerySecret";
+		Case 31: "LsarLookupPrivilegeValue";
+		Case 32: "LsarLookupPrivilegeName";
+		Case 33: "LsarLookupPrivilegeDisplayName";
+		Case 34: "LsarDeleteObject";
+		Case 35: "LsarEnumerateAccountsWithUserRight";
+		Case 36: "LsarEnumerateAccountRights";
+		Case 37: "LsarAddAccountRights";
+		Case 38: "LsarRemoveAccountRights";
+		Case 39: "LsarQueryTrustedDomainInfo";
+		Case 40: "LsarSetTrustedDomainInfo";
+		Case 41: "LsarDeleteTrustedDomain";
+		Case 42: "LsarStorePrivateData";
+		Case 43: "LsarRetrievePrivateData";
+		Case 44: "LsarOpenPolicy2";
+		Case 45: "lsarpc_Opnum45DummyMethod";
+		Case 46: "LsarQueryInformationPolicy2";
+		Case 47: "LsarSetInformationPolicy2";
+		Case 48: "LsarQueryTrustedDomainInfoByName";
+		Case 49: "LsarSetTrustedDomainInfoByName";
+		Case 50: "LsarEnumerateTrustedDomainsEx";
+		Case 51: "LsarCreateTrustedDomainEx";
+		Case 52: "lsarpc_Opnum52DummyMethod";
+		Case 53: "LsarQueryDomainInformationPolicy";
+		Case 54: "LsarSetDomainInformationPolicy";
+		Case 55: "LsarOpenTrustedDomainByName";
+		Case 56: "Opnum56NotUsedOnWire";
+		Case 57: "lsarpc_Opnum57DummyMethod";
+		Case 58: "lsarpc_Opnum58DummyMethod";
+		Case 59: "LsarCreateTrustedDomainEx2";
+		Case 60: "Opnum60NotUsedOnWire";
+		Case 61: "Opnum61NotUsedOnWire";
+		Case 62: "Opnum62NotUsedOnWire";
+		Case 63: "Opnum63NotUsedOnWire";
+		Case 64: "Opnum64NotUsedOnWire";
+		Case 65: "Opnum65NotUsedOnWire";
+		Case 66: "Opnum66NotUsedOnWire";
+		Case 67: "Opnum67NotUsedOnWire";
+		Case 68: "lsarpc_Opnum68DummyMethod";
+		Case 69: "Opnum69NotUsedOnWire";
+		Case 70: "Opnum70NotUsedOnWire";
+		Case 71: "Opnum71NotUsedOnWire";
+		Case 72: "Opnum72NotUsedOnWire";
+		Case 73: "LsarQueryForestTrustInformation";
+		Case 74: "LsarSetForestTrustInformation";
+		Default: FormatString("Unknow Opnum (%u)", Opnum);
+	}
+}
+
+//
+//	ACCESS_MASK - used with policy objects
+//	Alignment: Align4
+//
+Struct LSADPolicyObjectAccessMask = FormatString("0x%08X", UINT32(FrameData,FrameOffset))
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct
+			{
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 PolicyViewLocalInformation:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow viewing of local information such as the primary domain or account":"Do NOT allow viewing of local information");
+					UINT16 PolicyViewAuditInformation:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow viewing of audit configuration information":"Do NOT allow viewing of audit configuration information");
+					UINT16 PolicyGetPrivateInformation:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow viewing of private information on the local computer":"Do NOT allow viewing of private information on the local computer");
+					UINT16 PolicyTrustAdmin:1 = FormatString("            (%s) %s", this.ToBitString,this?"Allow administration of trusted domains":"Do NOT allow administration of trusted domains");
+					UINT16 PolicyCreateAccount:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow creation of Local Security Authority (LSAD) account objects":"Do NOT allow creation of Local Security Authority (LSAD) account objects");
+					UINT16 PolicyCreateSecret:1 = FormatString("          (%s) %s", this.ToBitString,this?"Allow creation of Local Security Authority (LSAD) secret objects":"Do NOT allow creation of Local Security Authority (LSAD) secret objects");
+					UINT16 PolicyCreatePrivilege:1 = FormatString("       (%s) %s", this.ToBitString,"This constant is not used");
+					UINT16 PolicySetDefaultQuotaLimits:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow setting of default quota limits":"Do NOT allow setting of default quota limits");
+					UINT16 PolicySetAuditRequirements:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow configuration of different audit categories":"Do NOT allow configuration of different audit categories");
+					UINT16 PolicyAuditLogAdmin:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow setting of audit configuration information":"Do NOT allow setting of audit configuration information");
+					UINT16 PolicyServerAdmin:1 = FormatString("           (%s) %s", this.ToBitString,this?"Allow administration of the local computer":"Do NOT allow administration of the local computer");
+					UINT16 PolicyLookupNames:1 = FormatString("           (%s) %s", this.ToBitString,this?"Allow the lookup of names":"Do NOT allow the lookup of names");
+					UINT16 PolicyNotification:1 = FormatString("          (%s) %s", this.ToBitString,this?"Allow requesting the notification of policy changes":"Do NOT allow requesting the notification of policy changes");
+					UINT16 Reserved:3 = FormatString("                    (%s)", this.ToBitString);
+				}
+				MSRPCAccessRights AccessRights;
+			}
+		Default:
+			Struct
+			{
+				MSRPCAccessRights AccessRights;
+				UINT16 SpecificRights  = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 Reserved:3 = FormatString("                    (%s)", this.ToBitString);
+					UINT16 PolicyNotification:1 = FormatString("          (%s) %s", this.ToBitString,this?"Allow requesting the notification of policy changes":"Do NOT allow requesting the notification of policy changes");
+					UINT16 PolicyLookupNames:1 = FormatString("           (%s) %s", this.ToBitString,this?"Allow the lookup of names":"Do NOT allow the lookup of names");
+					UINT16 PolicyServerAdmin:1 = FormatString("           (%s) %s", this.ToBitString,this?"Allow administration of the local computer":"Do NOT allow administration of the local computer");
+					UINT16 PolicyAuditLogAdmin:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow setting of audit configuration information":"Do NOT allow setting of audit configuration information");
+					UINT16 PolicySetAuditRequirements:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow configuration of different audit categories":"Do NOT allow configuration of different audit categories");
+					UINT16 PolicySetDefaultQuotaLimits:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow setting of default quota limits":"Do NOT allow setting of default quota limits");
+					UINT16 PolicyCreatePrivilege:1 = FormatString("       (%s) %s", this.ToBitString,"This constant is not used");
+					UINT16 PolicyCreateSecret:1 = FormatString("          (%s) %s", this.ToBitString,this?"Allow creation of Local Security Authority (LSAD) secret objects":"Do NOT allow creation of Local Security Authority (LSAD) secret objects");
+					UINT16 PolicyCreateAccount:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow creation of Local Security Authority (LSAD) account objects":"Do NOT allow creation of Local Security Authority (LSAD) account objects");
+					UINT16 PolicyTrustAdmin:1 = FormatString("            (%s) %s", this.ToBitString,this?"Allow administration of trusted domains":"Do NOT allow administration of trusted domains");
+					UINT16 PolicyGetPrivateInformation:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow viewing of private information on the local computer":"Do NOT allow viewing of private information on the local computer");
+					UINT16 PolicyViewAuditInformation:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow viewing of audit configuration information":"Do NOT allow viewing of audit configuration information");
+					UINT16 PolicyViewLocalInformation:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow viewing of local information such as the primary domain or account":"Do NOT allow viewing of local information");
+				}																						  
+			}
+	}
+}
+
+//
+//	ACCESS_MASK - used with account objects
+//	Alignment: Align4
+//
+Struct LSADAccountObjectAccessMask= FormatString("0x%08X", UINT32(FrameData,FrameOffset))
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct
+			{
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))  
+				{
+					UINT16 AccountView:1 = FormatString("               (%s) %s", this.ToBitString,this?"Allow viewing of account properties":"Do NOT allow viewing of account properties");
+					UINT16 AccountAdjustPrivileges:1 = FormatString("   (%s) %s", this.ToBitString,this?"Allow adjusting of an account's privileges":"Do NOT allow adjusting of an account's privileges");
+					UINT16 AccountAdjustQuotas:1 = FormatString("       (%s) %s", this.ToBitString,this?"Allow adjusting of an account's quotas":"Do NOT allow adjusting of an account's quotas");
+					UINT16 AccountAdjustSystemAccess:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow adjusting of an account's system access":"Do NOT allow adjusting of an account's system access");
+					UINT16 Reserved:12 = FormatString("                 (%s)", this.ToBitString);
+				}
+				MSRPCAccessRights AccessRights;
+			};
+		Default:
+			Struct
+			{
+				MSRPCAccessRights AccessRights;
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 Reserved:12 = FormatString("                 (%s)", this.ToBitString);
+					UINT16 AccountAdjustSystemAccess:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow adjusting of an account's system access":"Do NOT allow adjusting of an account's system access");
+					UINT16 AccountAdjustQuotas:1 = FormatString("       (%s) %s", this.ToBitString,this?"Allow adjusting of an account's quotas":"Do NOT allow adjusting of an account's quotas");
+					UINT16 AccountAdjustPrivileges:1 = FormatString("   (%s) %s", this.ToBitString,this?"Allow adjusting of an account's privileges":"Do NOT allow adjusting of an account's privileges");
+					UINT16 AccountView:1 = FormatString("               (%s) %s", this.ToBitString,this?"Allow viewing of account properties":"Do NOT allow viewing of account properties");
+				}
+			};
+	}
+}
+
+//
+//	ACCESS_MASK - used with trusted domain objects
+//	Alignment: Align4
+//
+Struct LSADTrustedDomainObjectAccessMask = FormatString("0x%08X", UINT32(FrameData,FrameOffset))
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct
+			{
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 TrustedQueryDomainName:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow querying of the trusted domain name, attributes, security identifier, or direction information":"Do NOT allow querying of the trusted domain name, attributes, security identifier, or direction information");
+					UINT16 TrustedQueryControllers:1 = FormatString("(%s) %s", this.ToBitString,this?"Allow querying the domain controller (DC) names in the trusted domain":"Do NOT allow querying the domain controller (DC) names in the trusted domain");
+					UINT16 TrustedSetControllers:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow setting of DC names in the trusted domain":"Do NOT allow setting of DC names in the trusted domain");
+					UINT16 TrustedQueryPosix:1 = FormatString("      (%s) %s", this.ToBitString,this?"Allow querying for the trusted domain's posix number":"Do NOT allow querying for the trusted domain's posix number");
+					UINT16 TrustedSetPosix:1 = FormatString("        (%s) %s", this.ToBitString,this?"Allow setting of the trusted domain's posix number":"Do NOT allow setting of the trusted domain's posix number");
+					UINT16 TrustedSetAuth:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow setting of the trusted domain's authentication information":"Do NOT allow setting of the trusted domain's authentication information");
+					UINT16 TrustedQueryAuth:1 = FormatString("       (%s) %s", this.ToBitString,this?"Allow querying of the trusted domain's authentication information":"Do NOT allow querying of the trusted domain's authentication information");
+					UINT16 Reserved:9 = FormatString("               (%s)", this.ToBitString);
+				}
+				MSRPCAccessRights AccessRights;
+			};
+		Default:
+			Struct
+			{
+				MSRPCAccessRights AccessRights;
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 Reserved:9 = FormatString("               (%s)", this.ToBitString);
+					UINT16 TrustedQueryAuth:1 = FormatString("       (%s) %s", this.ToBitString,this?"Allow querying of the trusted domain's authentication information":"Do NOT allow querying of the trusted domain's authentication information");
+					UINT16 TrustedSetAuth:1 = FormatString("         (%s) %s", this.ToBitString,this?"Allow setting of the trusted domain's authentication information":"Do NOT allow setting of the trusted domain's authentication information");
+					UINT16 TrustedSetPosix:1 = FormatString("        (%s) %s", this.ToBitString,this?"Allow setting of the trusted domain's posix number":"Do NOT allow setting of the trusted domain's posix number");
+					UINT16 TrustedQueryPosix:1 = FormatString("      (%s) %s", this.ToBitString,this?"Allow querying for the trusted domain's posix number":"Do NOT allow querying for the trusted domain's posix number");
+					UINT16 TrustedSetControllers:1 = FormatString("  (%s) %s", this.ToBitString,this?"Allow setting of DC names in the trusted domain":"Do NOT allow setting of DC names in the trusted domain");
+					UINT16 TrustedQueryControllers:1 = FormatString("(%s) %s", this.ToBitString,this?"Allow querying of domain controller (DC) names in the trusted domain":"Do NOT allow querying of domain controller (DC) names in the trusted domain");
+					UINT16 TrustedQueryDomainName:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow querying of the trusted domain name, attributes, security identifier, or direction information":"Do NOT allow querying of the trusted domain name, attributes, security identifier, or direction information");
+				}																					 
+			};
+	}
+}
+
+//
+//	ACCESS_MASK - used with secret objects
+//	Alignment: Align4
+//
+Struct LSADSecretObjectAccessMask = FormatString("0x%08X", UINT32(FrameData,FrameOffset))
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+			Struct
+			{
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 SecretSetValue:1 = FormatString("   (%s) %s", this.ToBitString,this?"Allow setting of a secret value":"Do NOT allow setting of a secret value");
+					UINT16 SecretQueryValue:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow querying for a secret value":"Do NOT allow querying for a secret value");
+					UINT16 Reserved:14 = FormatString("        (%s)", this.ToBitString);
+				}
+				MSRPCAccessRights AccessRights;
+			};
+		Default:
+			Struct
+			{
+				MSRPCAccessRights AccessRights;
+				UINT16 SpecificRights = FormatString("0x%04X", UINT16(FrameData,FrameOffset))
+				{
+					UINT16 Reserved:14 = FormatString("        (%s)", this.ToBitString);
+					UINT16 SecretQueryValue:1 = FormatString(" (%s) %s", this.ToBitString,this?"Allow querying for a secret value":"Do NOT allow querying for a secret value");
+					UINT16 SecretSetValue:1 = FormatString("   (%s) %s", this.ToBitString,this?"Allow setting of a secret value":"Do NOT allow setting of a secret value");
+				}
+			};
+	}
+}
+
+//
+//	_LSAPR_OBJECT_ATTRIBUTES
+//	Alignment: None
+//
+Struct LSADLsaprObjectAttributes = FormatString("ObjectName = %s", ObjectName.ToString ? ObjectName.ToString : "NULL")
+{
+	NdrAlign Pad;
+	UINT32 Length;
+	NdrPtr pRootDirectory;
+	NdrPtr pObjectName;
+	UINT32 Attributes;//This field MUST be ignored
+	NdrPtr pSecurityDescriptor;
+	NdrPtr pSecurityQualityOfService;
+	Switch
+	{
+		Case pRootDirectory.ReferentID != 0:
+			UINT8 RootDirectory;
+	}
+	Switch
+	{
+		Case pObjectName.ReferentID != 0:
+			LSADString ObjectName;
+	}
+	Switch
+	{
+		Case pSecurityDescriptor.ReferentID != 0:
+			NdrSecurityDescriptor SecurityDescriptor;
+	}
+	Switch
+	{
+		Case pSecurityQualityOfService.ReferentID != 0:
+			LSADSecurityQualityOfService SecurityQualityOfService;
+	}
+}
+
+//
+//	_STRING
+//	Alignment: None
+//
+Struct LSADString  = (Pointer.ReferentID > 0) ? Array.toString : FormatString( "NULL" )
+{
+	NdrAlign Pad;
+	UINT16 Length;
+	UINT16 MaximumLength;
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+			Struct
+			{
+				NdrConformantVarying Length;
+				switch
+				{
+					Case Length.ActualCount > 0:
+						Struct Array = ArrayData.ToString
+						{
+							AsciiString (Length.ActualCount) ArrayData = UINT8( FrameData, Offset ) ? AsciiString( FrameData, Offset, Length.ActualCount ) : "<Empty>";
+						}
+				}
+			}
+	}
+}
+
+//
+//	_SECURITY_IMPERSONATION_LEVEL
+//	Alingment: None
+//
+Struct LSADSecurityImpersonationLevel
+{
+	NdrEnum Value = LSADSecurityImpersonationLevelTable(this.Value, TRUE);
+}
+
+Table LSADSecurityImpersonationLevelTable( Value, Description )
+{
+	Switch( Value )
+	{
+		Case 0: FormatString("SecurityAnonymous %s", Description? "- The server cannot obtain information about the client and cannot impersonate the client." : "");
+		Case 1: FormatString("SecurityIdentification %s", Description? "- The server can obtain information such as security identifiers and privileges, but the server cannot impersonate the client." : "");
+		Case 2: FormatString("SecurityImpersonation %s", Description? "- The server can impersonate the client's security context on its local system, but cannot impersonate the client when communicating with services on remote systems." : "");
+		Case 3: FormatString("SecurityDelegation %s", Description? "- The server can impersonate the client's security context when communicating with services on remote systems." : "");
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_SECURITY_QUALITY_OF_SERVICE
+//	Alignment: Align4
+//
+Struct LSADSecurityQualityOfService
+{
+	UINT32 Length;
+	LSADSecurityImpersonationLevel ImpersonationLevel;
+	UINT8 ContextTrackingMode = LSADContextTrackingModeTable(this);
+	BOOLEAN EffectiveOnly = this? "Server enables privileges and groups." : "Server disables privileges and groups";
+	Switch( Property.MSRPCNdr64 )
+	{
+		Case TRUE: Align4 Pad;
+	}
+}
+
+Table LSADContextTrackingModeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The server is given a snapshot of the client's security context.";
+		Case 0x01: "The server is continually updated with changes.";
+		Default: FormatString("Unknow Value (0x%02X)", Value);
+	}
+}
+
+//
+//	_LSAPR_SR_SECURITY_DESCRIPTOR
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprSrSecurityDescriptor
+{
+	UINT32 Length;
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+			Struct 
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						NdrSecurityDescriptor SecurityDescriptor;
+				}
+			}
+	}
+}
+
+//
+//	_POLICY_INFORMATION_CLASS
+//	Alignment: None
+//
+Struct LSADPolicyInformationClass = FormatString("InfoClass = %s",LSADPolicyInformationClassTable(Value.Value, FALSE) )
+{
+	NdrEnum Value = LSADPolicyInformationClassTable(this.Value, TRUE);
+}
+
+Table LSADPolicyInformationClassTable( Value, Description )
+{
+	Switch( Value )
+	{
+		Case 1: FormatString("PolicyAuditLogInformation %s", Description? "- Information about audit log.":"");
+		Case 2: FormatString("PolicyAuditEventsInformation %s", Description? "- Auditing options.":"");
+		Case 3: FormatString("PolicyPrimaryDomainInformation %s", Description? "- Primary domain information.":"");
+		Case 4: FormatString("PolicyPdAccountInformation %s", Description? "- Obsolete information class.":"");
+		Case 5: FormatString("PolicyAccountDomainInformation %s", Description? "- Account domain information.":"");
+		Case 6: FormatString("PolicyLsaServerRoleInformation %s", Description? "- Server role information.":"");
+		Case 7: FormatString("PolicyReplicaSourceInformation %s", Description? "- Replica source information.":"");
+		Case 8: FormatString("PolicyDefaultQuotaInformation %s", Description? "- Obsolete information class.":"");
+		Case 9: FormatString("PolicyModificationInformation %s", Description? "- Obsolete information class.":"");
+		Case 10: FormatString("PolicyAuditFullSetInformation %s", Description? "- Audit log behavior.":"");
+		Case 11: FormatString("PolicyAuditFullQueryInformation %s", Description? "- Audit log state.":"");
+		Case 12: FormatString("PolicyDnsDomainInformation %s", Description? "- DNS domain information.":"");
+		Case 13: FormatString("PolicyDnsDomainInformationInt %s", Description? "- DNS domain information.":"");
+		Case 14: FormatString("PolicyLocalAccountDomainInformation %s", Description? "- Local account domain information.":"");
+		Case 15: FormatString("PolicyLastEntry %s", Description? "- Not used in this protocol. Present to mark the end of the enumeration.":"");
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_LSAPR_POLICY_INFORMATION
+//
+Struct LSADLsaprPolicyInformation = FormatString("InfoClass = %s", LSADPolicyInformationClassTable( SwitchValue.Value.Value, FALSE ) )
+{
+	Switch
+		{
+			case Property.MSRPCNdr64:
+			Align8 pad1;
+		}
+	LSADPolicyInformationClass SwitchValue;
+	Align8 Pad;
+	Switch( SwitchValue.Value.Value )
+	{
+		Case 1:
+			LSADPolicyAuditLogInfo PolicyAuditLogInfo;
+		Case 2:
+			LSADLsaprPolicyAuditEventsInfo PolicyAuditEventsInfo;
+		Case 3:
+			LSADLsaprPolicyPrimaryDomInfo PolicyPrimaryDomainInfo;
+		Case 4:
+			LSADLsaprPolicyPdAccountInfo PolicyPdAccountInfo;
+		Case 5:
+			LSADLsaprPolicyAccountDomInfo PolicyAccountDomainInfo;
+		Case 6:
+			LSADPolicyLsaServerRoleInfo PolicyServerRoleInfo;
+		Case 7:
+			LSADLsaprPolicyReplicaSrceInfo PolicyReplicaSourceInfo;
+		Case 9:
+			LSADPolicyModificationInfo PolicyModificationInfo;
+		Case 10:
+			LSADPolicyAuditFullSetInfo PolicyAuditFullSetInfo;
+		Case 11:
+			LSADPolicyAuditFullQueryInfo PolicyAuditFullQueryInfo;
+		Case 12:
+			LSADLsaprPolicyDnsDomainInfo PolicyDnsDomainInfo;
+		Case 13:
+			LSADLsaprPolicyDnsDomainInfo PolicyDnsDomainInfoInt;
+		Case 14:
+			LSADLsaprPolicyAccountDomInfo PolicyLocalAccountDomainInfo;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "LSAD", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_POLICY_AUDIT_LOG_INFO
+//	Alignment: Align8
+//
+Struct LSADPolicyAuditLogInfo = FormatString("AuditLogPercentFull = %u%, AuditLogFullShutdownInProgress = %s", AuditLogPercentFull, AuditLogFullShutdownInProgress.ToString)
+{
+	UINT32 AuditLogPercentFull = FormatString("%u%", this);
+	UINT32 MaximumLogSize;
+	INT64 AuditRetentionPeriod;
+	BOOLEAN AuditLogFullShutdownInProgress;
+	Align8 Pad1;
+	INT64 TimeToShutdown;
+	UINT32 NextAuditRecordId;
+	Switch( Property.MSRPCNdr64 )
+	{
+		Case TRUE: Align8 Pad2;
+	}
+}
+
+//
+//	_LSAPR_POLICY_AUDIT_EVENTS_INFO
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprPolicyAuditEventsInfo = FormatString(" AuditingMode = %s, MaximumAuditEventCount = %u", AuditingMode.ToString, MaximumAuditEventCount)
+{
+	BOOLEAN AuditingMode = this? "Auditing is disabled" : "Auditing is enabled";
+	NdrPtr pEventAuditingOptions;
+	UINT32 MaximumAuditEventCount;
+	Switch( Property.MSRPCNdr64 )
+	{
+		Case TRUE: Align8 Pad;
+	}
+	Switch
+	{
+		Case pEventAuditingOptions.ReferentID != 0 :
+			Struct EventAuditingOptionsList = Size.ToString
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCOunt > 0:
+						[ Local.ArrayLoop = 0 ]
+						Struct
+						{
+							While[ Local.ArrayLoop < Size.MaxCount ]
+							{
+								[ Local.ArrayLoop = Local.ArrayLoop + 1 ]
+								UINT32 EventAuditingOption = LSADLsaprPolicyAuditEventsInfoEventAuditingOptionsTable(this);
+							}
+						}
+				}
+			}
+	}
+}
+
+Table LSADLsaprPolicyAuditEventsInfoEventAuditingOptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "POLICY_AUDIT_EVENT_UNCHANGED - Leave existing auditing options unchanged for events of this type; used only for set operations.";
+		Case 0x00000004: "POLICY_AUDIT_EVENT_NONE - Cancel all auditing options for events of this type. If set, the success/failure flags are ignored.";
+		Case 0x00000001: "POLICY_AUDIT_EVENT_SUCCESS - When auditing is enabled, audit all successful occurrences of events of the given type.";
+		Case 0x00000002: "POLICY_AUDIT_EVENT_FAILURE - When auditing is enabled, audit all unsuccessful occurrences of events of the given type.";
+		Default: FormatString("Unknow Value (0x%08X)", Value);
+	}
+}
+
+//
+//	_LSAPR_POLICY_PRIMARY_DOM_INFO
+//	Alignment: None
+//
+Struct LSADLsaprPolicyPrimaryDomInfo = FormatString("Name = %s", Name? Name.ToString : "NULL")
+{
+	NdrUnicodeStringHeader NameHeader;
+	NdrPtr pSid;
+	Switch
+	{
+		Case NameHeader.BufferPtr.ReferentID !=0:
+			NdrWideString Name;
+	}
+	Switch
+	{
+		Case pSid.ReferentID !=0: 
+			SID (TRUE) SID;
+	}
+}
+
+//
+//	_LSAPR_POLICY_ACCOUNT_DOM_INFO
+//	Alignment: None
+//
+Struct LSADLsaprPolicyAccountDomInfo = "DomainName = " + DomainName.ToString? DomainName.ToString : "NULL"
+{
+	NdrUnicodeStringHeader DomainNameHeader;
+	NdrPtr pDomainSid;
+	Switch
+	{
+		Case DomainNameHeader.BufferPtr.ReferentID !=0:
+			NdrWideString DomainName;
+	}
+	Switch
+	{
+		Case pDomainSid.ReferentID != 0: 
+			SID (TRUE) SID;
+	}
+}
+
+//
+//	_LSAPR_POLICY_PD_ACCOUNT_INFO - obsolete and exists for backward compatibility purposes only.
+//	Alignment: None
+//
+Struct LSADLsaprPolicyPdAccountInfo = "NameName = " + Name.ToString
+{
+	NdrUnicodeString Name;
+}
+
+//
+//	_POLICY_LSA_SERVER_ROLE_INFO
+//	Alignment: None
+//
+Struct LSADPolicyLsaServerRoleInfo = FormatString("LsaServerRole = %s", LSADPolicyLsaServerRoleTable(LsaServerRole.Value))
+{
+	NdrEnum LsaServerRole = LSADPolicyLsaServerRoleTable(this.Value);
+}
+
+Table LSADPolicyLsaServerRoleTable( Value )
+{
+	Switch( Value )
+	{
+		Case 2: "PolicyServerRoleBackup - A backup account database.";
+		Case 3: "PolicyServerRolePrimary - A primary account database.";
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_LSAPR_POLICY_REPLICA_SRCE_INFO - obsolete and exists for backward compatibility purposes only
+//	Alignment: None
+//
+Struct LSADLsaprPolicyReplicaSrceInfo = "ReplicaSource = " + ReplicaSource.ToString? ReplicaSource.ToString : "NULL" + ", ReplicaAccountName = " + ReplicaAccountName.ToString? ReplicaAccountName.ToString : "NULL"
+{
+	NdrUnicodeStringHeader ReplicaSourceHeader;
+	NdrUnicodeStringHeader ReplicaAccountNameHeader;
+	Switch
+	{
+		Case ReplicaSourceHeader.BufferPtr.ReferentID != 0 :
+			NdrWideString ReplicaSource;
+	}
+	Switch
+	{
+		Case ReplicaAccountNameHeader.BufferPtr.ReferentID != 0 :
+			NdrWideString ReplicaAccountName;
+	}
+}
+
+//
+//	_POLICY_MODIFICATION_INFO - obsolete and exists for backward compatibility purposes only
+//	Alignment: Align8
+//
+Struct LSADPolicyModificationInfo
+{
+	INT64 ModifiedId;
+	INT64 DatabaseCreationTime;
+}
+
+//
+//	_POLICY_AUDIT_FULL_SET_INFO
+//	Alignment: None
+//
+Struct LSADPolicyAuditFullSetInfo
+{
+	BOOLEAN ShutDownOnFull = this? "System MUST shut down when the event log is full" : "System MUST NOT shut down when the event log is full";
+}
+
+
+//
+//	_POLICY_AUDIT_FULL_QUERY_INFO
+//	Alignment: None
+//
+Struct LSADPolicyAuditFullQueryInfo
+{
+	BOOLEAN ShutDownOnFull = this? "System MUST shut down when the event log is full" : "System MUST NOT shut down when the event log is full";
+	BOOLEAN LogIsFull = this? "The event log is full" : "The event log is NOT full";
+}
+
+
+//
+//	_LSAPR_POLICY_DNS_DOMAIN_INFO
+//	Alignment: None
+//
+Struct LSADLsaprPolicyDnsDomainInfo = FormatString("Name = %s, DNSDomainName = %s, DNSForestName = %s", Name? Name.ToString : "NULL", DNSDomainName? DNSDomainName.ToString : "NULL", DNSForestName? DNSForestName.ToString : "NULL")
+{
+	NdrUnicodeStringHeader NameHeader;
+	NdrUnicodeStringHeader DnsDomainNameHeader;
+	NdrUnicodeStringHeader DnsForestNameHeader;
+	Guid(TRUE) DomainGuid;
+	NdrPtr pSid;
+	Switch
+	{
+		Case NameHeader.BufferPtr.ReferentID != 0:
+			NdrWideString Name;
+	}
+	Switch
+	{
+		Case DnsDomainNameHeader.BufferPtr.ReferentID != 0:
+			NdrWideString DNSDomainName;
+	}
+	Switch
+	{
+		Case DnsForestNameHeader.BufferPtr.ReferentID != 0:
+			NdrWideString DNSForestName;
+	}
+	Switch
+	{
+		Case pSid.ReferentID != 0:
+			SID (TRUE) Sid;
+	}
+}
+
+//
+//	_POLICY_DOMAIN_INFORMATION_CLASS
+//	Alignment: None
+//
+Struct LSADPolicyDomainInformationClass = FormatString("InfoClass = %s", LSADPolicyDomainInformationClassTable(this.Value, FALSE) )
+{
+	NdrEnum Value = LSADPolicyDomainInformationClassTable(this.Value, TRUE);
+}
+
+Table LSADPolicyDomainInformationClassTable( Value, Description )
+{
+	Switch( Value )
+	{
+		Case 1: FormatString("PolicyDomainQualityOfServiceInformation %s", Description? "- Information about the quality of service within the domain.":"");
+		Case 2: FormatString("PolicyDomainEfsInformation %s", Description? "- Information about Encrypted File System (EFS).":"");
+		Case 3: FormatString("PolicyDomainKerberosTicketInformation %s", Description? "- Information about the Kerberos security provider.":"");
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_LSAPR_POLICY_DOMAIN_INFORMATION
+//
+Struct LSADLsaprPolicyDomainInformation = SwitchValue.ToString
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	LSADPolicyDomainInformationClass SwitchValue;
+	Align8 PadUnion;
+	Switch( SwitchValue.Value.Value )
+	{
+		Case 1:
+			LSADPolicyDomainQualityOfServiceInfo PolicyDomainQualityOfServiceInfo;
+		Case 2:
+			LSADLsaprPolicyDomainEfsInfo PolicyDomainEfsInfo;
+		Case 3:
+			LSADPolicyDomainKerberosTicketInfo PolicyDomainKerbTicketInfo;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "LSAD", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_POLICY_DOMAIN_QUALITY_OF_SERVICE_INFO - obsolete and exists for backward compatibility purposes only
+//	Alignment: Align4
+//
+Struct LSADPolicyDomainQualityOfServiceInfo
+{
+	UINT32 QualityOfService = MustBeSetToTable(this, "0");
+}
+
+//
+//	_LSAPR_POLICY_DOMAIN_EFS_INFO
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprPolicyDomainEfsInfo
+{
+	UINT32 InfoLength;
+	NdrPtr pEfsBlob;
+	Switch
+	{
+		Case pEfsBlob.ReferentID != 0:	
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Blob(Size.MaxCount) EfsBlob;
+				}
+			}
+	}
+}
+
+//
+//	_POLICY_DOMAIN_KERBEROS_TICKET_INFO
+//	Alignment: Align8
+//
+Struct LSADPolicyDomainKerberosTicketInfo
+{
+	UINT32 AuthenticationOptions
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 Unused1:7 = FormatString( "(%s)", this.ToBitString );
+					UINT32 VC:1 = FormatString( "     (%s) %s", this.ToBitString, this? "The AuthenticationOptions flag of the Key Distribution Center (KDC) configuration setting will be set to POLICY_KERBEROS_VALIDATE_CLIENT" : "POLICY_KERBEROS_VALIDATE_CLIENT will NOT be set" );
+					UINT32 Unused2:24 = FormatString( "(%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused1:24 = FormatString( "(%s)", this.ToBitString );
+					UINT32 VC:1 = FormatString( "     (%s) %s", this.ToBitString, this? "The AuthenticationOptions flag of the Key Distribution Center (KDC) configuration setting will be set to POLICY_KERBEROS_VALIDATE_CLIENT" : "POLICY_KERBEROS_VALIDATE_CLIENT will NOT be set" );
+					UINT32 Unused2:7 = FormatString( "(%s)", this.ToBitString );
+				}
+		}
+	};
+	Align8 Pad1;
+	INT64 MaxServiceTicketAge;
+	INT64 MaxTicketAge;
+	INT64 MaxRenewAge;
+	INT64 MaxClockSkew;
+	INT64 Reserved;
+}
+
+//
+//	_LSAPR_ACCOUNT_INFORMATION - Pointer part
+//	Alignment: None
+//
+Struct LSADLsaprAccountInformation
+{
+	[ Property.RpcSidPtrsCount = this.ReferentID != 0 ? Property.RpcSidPtrsCount + 1 : Property.RpcSidPtrsCount ]
+	NdrPtr pSid;
+}
+
+//
+//	_LSAPR_ACCOUNT_ENUM_BUFFER
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprAccountEnumBuffer = FormatString("%u Entries",EntriesRead)
+{
+	UINT32 EntriesRead;
+	NdrPtr pInformation;
+	Switch
+	{
+		Case pInformation.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							[ Property.RpcSidPtrsCount = 0 ]
+							LSADLsaprAccountInformation Information[ Size.MaxCount ];
+							Switch
+							{
+								Case Property.RpcSidPtrsCount > 0:
+									Sid(TRUE) SID[ Property.RpcSidPtrsCount ];
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LSAPR_USER_RIGHT_SET
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprUserRightSet = FormatString("%u Entries",Entries)
+{
+	UINT32 Entries;
+	NdrPtr pUserRights;
+	Switch
+	{
+		Case pUserRights.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.Maxcount > 0:
+						Struct
+						{
+							[ Property.NdrUnicodeStringHeaderPtrCount = 0 ]
+							NdrUnicodeStringHeader UserRightsHeader[ Size.MaxCount ];
+							Switch
+							{
+								Case Property.NdrUnicodeStringHeaderPtrCount > 0:
+									NdrWideString UserRights[ Property.NdrUnicodeStringHeaderPtrCount ];
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LUID
+//	Alignment: Align4
+//
+Struct LSADLuid = FormatString("LUID: %d-%u",HighPart, LowPart) 
+{
+	UINT32 LowPart;
+	INT32 HighPart;
+}
+
+//
+//	_LSAPR_LUID_AND_ATTRIBUTES
+//	Alignment: Align4
+//
+Struct LSADLsaprLuidAndAttributes
+{
+	LSADLuid Luid;
+	UINT32 Attributes
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 D:1 = FormatString( "       (%s) %s", this.ToBitString, this ? "The Privilege is ENABLED by default" : "The Privilege is DISABLED by default");
+					UINT32 E:1 = FormatString( "       (%s) %s", this.ToBitString, this ? "The Privilege is ENABLED" : "The Privilege is DISABLED");
+					UINT32 Unused1:30 = FormatString( " (%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused1:30 = FormatString( " (%s)", this.ToBitString );
+					UINT32 E:1 = FormatString( "       (%s) %s", this.ToBitString, this ? "The Privilege is ENABLED" : "The Privilege is DISABLED");
+					UINT32 D:1 = FormatString( "       (%s) %s", this.ToBitString, this ? "The Privilege is ENABLED by default" : "The Privilege is DISABLED by default");				
+				}
+		}
+	};
+}
+
+//
+//	_LSAPR_PRIVILEGE_SET
+//	Alignment: None
+//
+Struct LSADLsaprPrivilegeSet = FormatString("PrivilegeCount = %u", PrivilegeCount)
+{
+	NdrConformant Size;
+	UINT32 PrivilegeCount;
+	UINT32 Control
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 O:1 = FormatString( "      (%s) %s", this.ToBitString, this ? "All specified privileges that are not already assigned should be assigned." : "Presence of any privileges in the user's access token grants the access");
+					UINT32 Unused1:31 = FormatString( "(%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused1:31 = FormatString( "(%s)", this.ToBitString );	
+					UINT32 O:1 = FormatString( "      (%s) %s", this.ToBitString, this ? "All specified privileges that are not already assigned should be assigned." : "Presence of any privileges in the user's access token grants the access");
+				}
+		}
+	};
+	Switch
+	{
+		Case Size.MaxCount > 0:
+			LSADLsaprLuidAndAttributes Privilege[ Size.MaxCount ];
+	}
+}
+
+//
+//	_LSAPR_TRUST_INFORMATION
+//	Alignment: None
+//
+Struct LSADLsaprTrustInformation
+{
+	LSADLsaprTrustInformationHeader TrustInformationHeader;
+	LSADLsaprTrustInformationBody(0) TrustInformationBody;
+}
+
+//
+//	_LSAPR_TRUST_INFORMATION - Pointer part
+//	Alignment: None
+//
+[ Post.Property.LSADHeaderArrayLoop = Property.LSADHeaderArrayLoop + 1 ]
+Struct LSADLsaprTrustInformationHeader
+{
+	[ Property.LSADLsaprTrustInformationNameHeaderArray$[ Property.LSADHeaderArrayLoop ] = this.BufferPtr.ReferentID ]
+	NdrUnicodeStringHeader NameHeader;
+	[ Property.LSADLsaprTrustInformationSidPtrArray$[ Property.LSADHeaderArrayLoop ] = this.ReferentID  ]
+	NdrPtr SidPtr;
+}
+
+//
+//	_LSAPR_TRUST_INFORMATION - Referent part
+//	Alignment: None
+//
+Struct LSADLsaprTrustInformationBody( Index ) = FormatString("Name = %s", Name? Name.ToSTring : "NULL")
+{
+	Switch
+	{
+		Case Property.LSADLsaprTrustInformationNameHeaderArray$[ Index ] != 0:
+			NdrWideString Name;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustInformationSidPtrArray$[ Index ] != 0:
+			SID(TRUE) Sid;
+	}
+}
+			
+//
+//	_TRUSTED_INFORMATION_CLASS
+//	Alignment: None
+//
+Struct LSADTrustedInformationClass = FormatString("InfoClass = %s",LSADTrustedInformationClassTable(Value.Value, FALSE))
+{
+	NdrEnum Value = LSADTrustedInformationClassTable(this.Value, TRUE);
+}
+
+Table LSADTrustedInformationClassTable( Value, Description )
+{
+	Switch( Value )
+	{
+		Case 1: FormatString("TrustedDomainNameInformation %s", Description? "- Communicate the name of a trusted domain" : "");
+		Case 2: FormatString("TrustedControllersInformation %s", Description? "-  Communicates a set of names of domain controllers (DCs) in a trusted domain" : "");
+		Case 3: FormatString("TrustedPosixOffsetInformation %s", Description? "- Communicates any offset necessary for POSIX compliance" : "");
+		Case 4: FormatString("TrustedPasswordInformation %s", Description? "- Communicate trust-authentication material" : "");
+		Case 5: FormatString("TrustedDomainInformationBasic %s", Description? "- Identifies a domain" : "");
+		Case 6: FormatString("TrustedDomainInformationEx %s", Description? "- Communicates properties of a trusted domain" : "");
+		Case 7: FormatString("TrustedDomainAuthInformation %s", Description? "- Communicates authentication material" : "");
+		Case 8: FormatString("TrustedDomainFullInformation %s", Description? "- Communicates identification, POSIX compatibility, and authentication information for a trusted domain" : "");
+		Case 9: FormatString("TrustedDomainAuthInformationInternal %s", Description? "- Communicates authentication material" : "");
+		Case 10: FormatString("TrustedDomainFullInformationInternal %s", Description? "- Communicates identification and authentication information for a trusted domain" : "");
+		Case 11: FormatString("TrustedDomainInformationEx2Internal %s", Description? "- Communicates properties of a trusted domain" : "");
+		Case 12: FormatString("TrustedDomainFullInformation2Internal %s", Description? "- Communicate identification, POSIX compatibility, and authentication information for a trusted domain" : "");
+		Case 13: FormatString("TrustedDomainSupportedEncryptionTypes %s", Description? "- Present the encryption types that are allowed through a trust" : "");
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFO
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprTrustedDomainInfo = SwitchValue.ToString
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	LSADTrustedInformationClass SwitchValue;
+	NdrAlign PadUnion;
+	Switch( SwitchValue.Value.Value )
+	{
+		Case 1:
+			LSADLsaprTrustedDomainNameInfo TrustedDomainNameInfo;
+		Case 2:
+			LSADLsaprTrustedControllersInfo TrustedControllersInfo;
+		Case 3:
+			LSADTrustedPosixOffsetInfo TrustedPosixOffsetInfo;
+		Case 4:
+			LSADLsaprTrustedPasswordInfo TrustedPasswordInfo;
+		Case 5:
+			LSADLsaprTrustInformation TrustedDomainInfoBasic;
+		Case 6:
+			LSADLsaprTrustedDomainInformationEx TrustedDomainInfoEx;
+		Case 7:
+			LSADLsaprTrustedDomainAuthInformation TrustedAuthInfo;
+		Case 8:
+			LSADLsaprTrustedDomainFullInformation TrustedFullInfo;
+		Case 9:
+			LSADLsaprTrustedDomainAuthInformationInternal TrustedAuthInfoInternal;
+		Case 10:
+			LSADLsaprTrustedDomainFullInformationInternal TrustedFullInfoInternal;
+		Case 11:
+			LSADLsaprTrustedDomainInformationEx2 TrustedDomainInfoEx2;
+		Case 12:
+			LSADLsaprTrustedDomainFullInformation2 TrustedFullInfo2;
+		Case 13:
+			LSADTrustedDomainSupportedEncryptionTypes TrustedDomainSETs;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "LSAD", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_NAME_INFO
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainNameInfo = FormatString("Name = %s", Name.ToString)
+{
+	NdrUnicodeString Name;
+}
+
+//
+//	_LSAPR_TRUSTED_CONTROLLERS_INFO
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprTrustedControllersInfo = FormatString("%u Entries", Entries)
+{
+	UINT32 Entries;
+	NdrPtr pNames;
+	Switch
+	{
+		Case pNames.ReferentID != 0:
+			Struct Names
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							[ Property.NdrUnicodeStringHeaderPtrCount = 0 ]
+							NdrUnicodeStringHeader NameHeader[ Size.MaxCount ];
+							Switch
+							{
+								Case Property.NdrUnicodeStringHeaderPtrCount > 0:
+									NdrWideString Name[ Property.NdrUnicodeStringHeaderPtrCount ];
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_TRUSTED_POSIX_OFFSET_INFO
+//	Alignment: Align4
+//
+Struct LSADTrustedPosixOffsetInfo = FormatString("Offset = 0x%08X", Offset)
+{
+	UINT32 Offset;
+}
+
+//
+//	_LSAPR_TRUSTED_PASSWORD_INFO
+//	Alignment: None
+//
+Struct LSADLsaprTrustedPasswordInfo
+{
+	NdrPtr pPassword;
+	NdrPtr pOldPassword;
+	Switch
+	{
+		Case pPassword.ReferentID != 0:
+			LSADLsaprCrCipherValue Password;
+	}
+	Switch
+	{
+		Case pOldPassword.ReferentID != 0:
+			LSADLsaprCrCipherValue OldPassword;
+	}
+}
+//
+//	_LSAPR_CR_CIPHER_VALUE
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprCrCipherValue
+{
+	UINT32 Length;
+	UINT32 MaximumLength;
+	NdrPtr pBuffer;
+	Switch
+	{
+		Case pBuffer.ReferentID != 0:
+			Struct
+			{
+				NdrConformantVarying NdrConformantVarying;
+				BLOB(NdrConformantVarying.ActualCount) Buffer;
+			}
+	}
+}
+
+Struct LSADLsaprCrCipherValuePtr
+{
+	NdrPtr pLsaprCrCipherValue;
+	Switch
+	{
+		Case pLsaprCrCipherValue.ReferentID != 0:
+			LSADLsaprCrCipherValue LsaprCrCipherValue;
+	}
+}
+
+Struct LSADLsaprCrCipherValuePtrPtr
+{
+	NdrPtr ppLsaprCrCipherValue;
+	Switch
+	{
+		Case ppLsaprCrCipherValue.ReferentID != 0:
+			LSADLsaprCrCipherValuePtr pLsaprCrCipherValue;
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainInformationEx
+{
+	[ Property.LSADHeaderArrayLoop = 0 ]
+	LSADLsaprTrustedDomainInformationExHeader TrustedDomainInformationExHeader;
+	LSADLsaprTrustedDomainInformationExBody(0) TrustedDomainInformationExBody;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX - Pointer part
+//	Alignment: None
+//
+[ Post.Property.LSADHeaderArrayLoop = Property.LSADHeaderArrayLoop + 1 ]
+Struct LSADLsaprTrustedDomainInformationExHeader = FormatString("TrustType = %s", LSADLsaprTrustedDomainInformationExTrustTypeTable( TrustType ))
+{
+	[ Property.LSADLsaprTrustedDomainInformationExNameHeaderArray$[ Property.LSADHeaderArrayLoop] = this.BufferPtr.ReferentID ]
+	NdrUnicodeStringHeader NameHeader;
+
+	[ Property.LSADLsaprTrustedDomainInformationExFlatNameHeaderArray$[ Property.LSADHeaderArrayLoop] = this.BufferPtr.ReferentID ]
+	NdrUnicodeStringHeader FlatNameHeader;
+
+	[ Property.LSADLsaprTrustedDomainInformationExSidPtrArray$[ Property.LSADHeaderArrayLoop] = this.ReferentID ]
+	NdrPtr SidPtr;
+	LSADTrustDirection TrustDirection;
+	UINT32 TrustType = LSADLsaprTrustedDomainInformationExTrustTypeTable(this);
+	LSADTrustAttributes TrustAttributes;
+	Switch( Property.MSRPCNdr64 )
+	{
+		Case TRUE: Align8 Pad;
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX - Referent part
+//
+Struct LSADLsaprTrustedDomainInformationExBody( Index ) = FormatString("Name = %s, FlatName = %s", Name.ToString? Name.ToString: "NULL", FlatName.ToString? FlatName.ToString : "NULL")
+{
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationExNameHeaderArray$[ Index ] != 0:
+			NdrWideString Name;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationExFlatNameHeaderArray$[ Index ] != 0:
+			NdrWideString FlatName;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationExSidPtrArray$[ Index ] != 0:
+			SID(TRUE) SID;
+	}
+}
+
+Struct LSADTrustDirection = FormatString("0x%08X", Flags)
+{
+	UINT32 Flags = UINT32(FrameData, FrameOffset) == 0 ? "Trust is disabled" : FormatString("%s%s",I?"I":".", O?"O":".")
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32	I:1 = FormatString("     (%s) %s", this.ToBitString,this?"Trust is ENABLED for inbound traffic":"Trust is DISABLED for inbound traffic");
+					UINT32	O:1 = FormatString("     (%s) %s", this.ToBitString,this?"Trust is ENABLED for outbound traffic":"Trust is DISABLED for outbound traffic");
+					UINT32	Unused:30 = FormatString("(%s)", this.ToBitString);
+				}
+			Default:
+				Struct
+				{
+					UINT32	Unused:30 = FormatString("(%s)", this.ToBitString);
+					UINT32	O:1 = FormatString("     (%s) %s", this.ToBitString,this?"Trust is ENABLED for outbound traffic":"Trust is DISABLED for outbound traffic");
+					UINT32	I:1 = FormatString("     (%s) %s", this.ToBitString,this?"Trust is ENABLED for inbound traffic":"Trust is DISABLED for inbound traffic");
+				}
+		}
+	}
+}
+
+Struct LSADTrustAttributes = FormatString("0x%08X", Flags)
+{
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32	TANT:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link does NOT allow transitivity":"Trust link allows transitivity");
+					UINT32	TAUO:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link is valid only for uplevel clients":"Trust link is NOT valid only for uplevel clients");
+					UINT32	TAQD:1 = FormatString("      (%s) %s", this.ToBitString,this?"Allow quarantined domains":"Do NOT allow quarantined domains");
+					UINT32	TAFT:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link might contain forest trust information":"Trust link does NOT contain forest trust information");
+					UINT32	TACO:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is for a domain or forest that is NOT part of the enterprise":"Trust is for a domain or forest that is part of the enterprise");
+					UINT32	TAWF:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is internal to this forest":"Trust is external to this forest");
+					UINT32	TATE:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is treated as external for trust boundary purposes":"Trust is treated as internal for trust boundary purposes");
+					UINT32	TARC:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is using RC4 Encryption":"Trust is Not using RC4 Encryption");
+					
+					UINT32	R_bit8_21:14 = FormatString(" (%s) Reserved", this.ToBitString);
+					UINT32	O_bit22_23:1 = FormatString("(%s) Obsolete", this.ToBitString);
+					UINT32	R_bit24_32:8 = FormatString("(%s) Reserved", this.ToBitString);
+				}
+			Default:
+				Struct
+				{
+					UINT32	R_bit0_8:8 = FormatString("  (%s) Reserved", this.ToBitString);
+					UINT32	O_bit9_10:1 = FormatString(" (%s) Obsolete", this.ToBitString);
+					UINT32	R_bit11_24:14 = FormatString("(%s) Reserved", this.ToBitString);
+						
+					UINT32	TARC:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is using RC4 Encryption":"Trust is Not using RC4 Encryption");
+					UINT32	TATE:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is treated as external for trust boundary purposes":"Trust is treated as internal for trust boundary purposes");
+					UINT32	TAWF:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is internal to this forest":"Trust is external to this forest");
+					UINT32	TACO:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust is for a domain or forest that is NOT part of the enterprise":"Trust is for a domain or forest that is part of the enterprise");
+					UINT32	TAFT:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link might contain forest trust information":"Trust link does NOT contain forest trust information");
+					UINT32	TAQD:1 = FormatString("      (%s) %s", this.ToBitString,this?"Allow quarantined domains":"Do NOT allow quarantined domains");
+					UINT32	TAUO:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link is valid only for uplevel clients":"Trust link is NOT valid only for uplevel clients");
+					UINT32	TANT:1 = FormatString("      (%s) %s", this.ToBitString,this?"Trust link does NOT allow transitivity":"Trust link allows transitivity");
+				}
+		}
+	}
+}
+
+Table LSADLsaprTrustedDomainInformationExTrustTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Trust with a windows domain that is not running Active Directory.";
+		Case 0x00000002: "Trust with a windows domain that is running Active Directory.";
+		Case 0x00000003: "Trust with a nonwindows-compliant Kerberos distribution.";
+		Case 0x00000004: "Trust with a distributed computing environment (DCE) realm.";
+		Default: FormatString("Unknow Value (0x%08X)", Value);
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainInformationEx2
+{
+	LSADLsaprTrustedDomainInformationEx2Header TrustedDomainInformationEx2Header;
+	LSADLsaprTrustedDomainInformationEx2Body TrustedDomainInformationEx2Body;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 - Pointer part
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainInformationEx2Header = FormatString("TrustType = %s, Length = %u", LSADLsaprTrustedDomainInformationExTrustTypeTable( TrustType ), ForestTrustLength )
+{
+	[ Property.LSADLsaprTrustedDomainInformationEx2NameHeader = this.BufferPtr.ReferentID ]
+	NdrUnicodeStringHeader NameHeader;
+
+	[ Property.LSADLsaprTrustedDomainInformationEx2FlatNameHeader = this.BufferPtr.ReferentID ]
+	NdrUnicodeStringHeader FlatNameHeader;
+	
+	[ Property.LSADLsaprTrustedDomainInformationEx2SidPtr = this.ReferentID ]
+	NdrPtr SidPtr;
+	LSADTrustDirection TrustDirection;
+	UINT32 TrustType = LSADLsaprTrustedDomainInformationExTrustTypeTable(this);
+	LSADTrustAttributes TrustAttributes;
+	UINT32 ForestTrustLength;
+	
+	[ Property.LSADLsaprTrustedDomainInformationEx2ForestTrustInfoPtr = this.ReferentID ]
+	NdrPtr ForestTrustInfoPtr;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_INFORMATION_EX2 - Referent part
+//
+Struct LSADLsaprTrustedDomainInformationEx2Body = FormatString("Name = %s, FlatName = %s", Name.ToString? Name.ToString : "NULL", FlatName.ToString? FlatName.ToString: "NULL")
+{
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationEx2NameHeader != 0:
+			NdrWideString Name;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationEx2FlatNameHeader != 0:
+			NdrWideString FlatName;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationEx2SidPtr != 0:
+			SID(TRUE) Sid;
+	}
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainInformationEx2ForestTrustInfoPtr != 0:
+			Struct ForestTrustInfoBinaryData
+			{
+				NdrConformant Size;
+				BLOB( Size.MaxCount ) ForestTrustInfo;
+			}
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION - Pointer part
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainAuthInformation
+{
+	LSADLsaprTrustedDomainAuthInformationHeader TrustedDomainAuthInformationHeader;
+	LSADLsaprTrustedDomainAuthInformationBody TrustedDomainAuthInformationBody;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION - Pointer part
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainAuthInformationHeader = FormatString("%u Inbound Entries, %u Outbound Entries", IncomingAuthInfos, OutgoingAuthInfos)
+{
+	NdrAlign Pad;
+	UINT32 IncomingAuthInfos;
+
+	[ Property.LSADAuthenticationInformationPtr = this.ReferentID ]
+	NdrPtr IncomingAuthenticationInformationPtr;
+
+	[ Property.LSADIncomingPreviousAuthenticationInformationPtr = this.ReferentID ]
+	NdrPtr IncomingPreviousAuthenticationInformationPtr;
+	UINT32 OutgoingAuthInfos;
+	
+	[ Property.LSADOutgoingAuthenticationInformationPtr = this.ReferentID ]
+	NdrPtr OutgoingAuthenticationInformationPtr;
+	
+	[ Property.LSADOutgoingPreviousAuthenticationInformationPtr = this.ReferentID ]
+	NdrPtr OutgoingPreviousAuthenticationInformationPtr;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION - Referent part
+//
+Struct LSADLsaprTrustedDomainAuthInformationBody
+{
+	Switch
+	{
+		Case Property.LSADAuthenticationInformationPtr != 0:
+			LSADLsaprAuthInformation IncomingAuthenticationInformation;
+	}
+	Switch
+	{
+		Case Property.LSADIncomingPreviousAuthenticationInformationPtr != 0:
+			LSADLsaprAuthInformation IncomingPreviousAuthenticationInformation;
+	}
+	Switch
+	{
+		Case Property.LSADOutgoingAuthenticationInformationPtr  != 0:
+			LSADLsaprAuthInformation OutgoingAuthenticationInformation;
+	}
+	Switch
+	{
+		Case Property.LSADOutgoingPreviousAuthenticationInformationPtr != 0:
+			LSADLsaprAuthInformation OutgoingPreviousAuthenticationInformation;
+	}
+
+}
+
+//
+//	_LSAPR_AUTH_INFORMATION
+//	Alignment: None
+//
+Struct LSADLsaprAuthInformation = FormatString("AuthType = %s", LSADLsaprAuthInformationAuthTypeTable( AuthType ))
+{
+	Align8 Pad;
+	INT64 LastUpdateTime;
+	UINT32 AuthType = LSADLsaprAuthInformationAuthTypeTable(this);
+	UINT32 AuthInfoLength;
+	NdrPtr AuthInfoPtr;
+	Switch
+	{
+		Case AuthInfoPtr.ReferentID != 0:
+			Struct AuthInfo
+			{
+				NdrConformant Size;	
+				// different format of authentication data  according to AuthType			
+				Switch( AuthType)
+				{
+					Case 1:
+						UnicodeString( Size.MaxCount/2 ) RC4HMACKey;
+					Case 2:
+						UnicodeString( Size.MaxCount/2 ) Password;
+					Case 3:
+						UINT32 PasswordVersionNumber;
+					Default:
+						BLOB( Size.MaxCount ) IgnoredData;
+				}
+			}
+	}
+}
+
+Table LSADLsaprAuthInformationAuthTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "This type MUST be ignored.";
+		Case 0x00000001: "Derived RC4HMAC key.";
+		Case 0x00000002: "A plaintext password. Indicates that the information stored in the attribute is a Unicode plaintext password.";
+		Case 0x00000003: "A plaintext password version number.";
+		Default: FormatString("Unknow Value (0x%08X)", Value);
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_AUTH_INFORMATION_INTERNAL
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainAuthInformationInternal
+{
+	LSADLsaprTrustedDomainAuthBlob AuthBlob;
+}
+
+Struct LSADLsaprTrustedDomainAuthInformationInternalHeader
+{
+	LSADLsaprTrustedDomainAuthBlobHeader AuthBlobHeader;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_AUTH_BLOB
+//	Alignment: None
+//
+[ Property.LSADLsaprTrustedDomainAuthBlob = TRUE ]
+Struct LSADLsaprTrustedDomainAuthBlob = FormatString("Buffer Size = %u", AuthSize)
+{
+	NdrAlign Pad;
+	UINT32 AuthSize;
+	NdrPtr pAuthBlob;
+	Switch
+	{
+		Case pAuthBlob.ReferentID != 0:
+			Struct AuthBlob = "Encrypted Data"
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.Maxcount > 0:
+						BLOB( Size.MaxCount ) EncryptedData;
+				}
+			}
+	}
+}
+
+Struct LSADLsaprTrustedDomainAuthBlobHeader
+{
+	NdrAlign Pad;
+	UINT32 AuthSize;
+	[ Property.LSADLsaprTrustedDomainAuthBlobHeaderAuthBlobPtr = this.ReferentID ]
+	NdrPtr pAuthBlob;
+}
+
+Struct LSADLsaprTrustedDomainAuthBlobBody
+{
+	NdrConformant Size;
+	Switch
+	{
+		Case Size.Maxcount > 0:
+			BLOB( Size.MaxCount ) EncryptedData;
+	}
+}
+			
+//
+//	_LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainFullInformation
+{
+	[ Property.LSADHeaderArrayLoop = 0 ]
+	LSADLsaprTrustedDomainInformationExHeader InformationHeader;
+	LSADTrustedPosixOffsetInfo PosixOffset;
+	LSADLsaprTrustedDomainAuthInformationHeader AuthInformationHeader;
+
+	LSADLsaprTrustedDomainInformationExBody(0) Information;
+	LSADLsaprTrustedDomainAuthInformationBody AuthInformation;
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION_INTERNAL
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainFullInformationInternal
+{
+	[ Property.LSADHeaderArrayLoop = 0 ]
+	LSADLsaprTrustedDomainInformationExHeader InformationHeader;
+	LSADTrustedPosixOffsetInfo PosixOffset;
+	LSADLsaprTrustedDomainAuthInformationInternalHeader AuthInformationHeader;
+
+	LSADLsaprTrustedDomainInformationExBody(0) Information;
+	Switch
+	{
+		Case Property.LSADLsaprTrustedDomainAuthBlobHeaderAuthBlobPtr != 0:
+			LSADLsaprTrustedDomainAuthBlobBody AuthInformation;
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_DOMAIN_FULL_INFORMATION2
+//	Alignment: None
+//
+Struct LSADLsaprTrustedDomainFullInformation2
+{
+	LSADLsaprTrustedDomainInformationEx2Header InformationHeader;
+	LSADTrustedPosixOffsetInfo PosixOffset;
+	LSADLsaprTrustedDomainAuthInformationHeader AuthInformationHeader;
+	
+	LSADLsaprTrustedDomainInformationEx2Body Information;
+	LSADLsaprTrustedDomainAuthInformationBody AuthInformation;
+}
+
+//
+//	_TRUSTED_DOMAIN_SUPPORTED_ENCRYPTION_TYPES
+//	Alignment: Align4
+//
+Struct LSADTrustedDomainSupportedEncryptionTypes
+{
+	UINT32 SupportedEncryptionTypes = FormatString("%s%s%s%s%s", C?"C":".", M?"M":".", R?"R":".", A?"A":".",S?"S":".")
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 C:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports CRC32" : "NOT supports CRC32");
+					UINT32 M:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports RSA-MD5" : "NOT supports RSA-MD5");
+					UINT32 R:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports RC4-HMAC-MD5" : "NOT supports RC4-HMAC-MD5");
+					UINT32 A:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports HMAC-SHA1-96-AES128" : "NOT supports HMAC-SHA1-96-AES128");
+					UINT32 S:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports HMAC-SHA1-96-AES256" : "NOT supports HMAC-SHA1-96-AES256");
+					UINT32 Unused:27 = FormatString("(%s) Ignored", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT32 Unused:27 = FormatString("(%s) Ignored", this.ToBitString );
+					UINT32 S:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports HMAC-SHA1-96-AES256" : "NOT supports HMAC-SHA1-96-AES256");
+					UINT32 A:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports HMAC-SHA1-96-AES128" : "NOT supports HMAC-SHA1-96-AES128");
+					UINT32 R:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports RC4-HMAC-MD5" : "NOT supports RC4-HMAC-MD5");
+					UINT32 M:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports RSA-MD5" : "NOT supports RSA-MD5");
+					UINT32 C:1 = FormatString("     (%s) %s", this.ToBitString, this? "Supports CRC32" : "NOT supports CRC32");
+				}
+		}
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_ENUM_BUFFER
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprTrustedEnumBuffer = FormatString("%u Entries", EntriesRead)
+{
+	UINT32 EntriesRead;
+	NdrPtr pInformation;
+	Switch
+	{
+		Case pInformation.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.Maxcount > 0:
+						Struct
+						{
+							[ Property.LSADHeaderArrayLoop = 0 ]
+							LSADLsaprTrustInformationHeader InformationHeader[ Size.MaxCount ];
+							[ Local.ArrayLoop = 0 ]
+							While[ Local.ArrayLoop < Size.MaxCount ]
+							{
+								[ Local.ArrayLoop = Local.ArrayLoop + 1 ]
+								LSADLsaprTrustInformationBody( Local.ArrayLoop - 1) Information;
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LSAPR_TRUSTED_ENUM_BUFFER_EX
+//	ALignment: NdrAlign
+//
+Struct LSADLsaprTrustedEnumBufferEx = FormatString("%u Entries", EntriesRead)
+{
+	UINT32 EntriesRead;
+	NdrPtr pEnumerationBuffer;
+	Switch
+	{
+		Case pEnumerationBuffer.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							[ Property.LSADHeaderArrayLoop = 0 ]
+							LSADLsaprTrustedDomainInformationExHeader DomainInformationHeader[ Size.MaxCount ];
+							[ Local.ArrayLoop = 0 ]
+							While[ Local.ArrayLoop < Size.MaxCount ]
+							{
+								[ Local.ArrayLoop = Local.ArrayLoop + 1 ]
+								LSADLsaprTrustedDomainInformationExBody( Local.ArrayLoop - 1) DomainInformation;
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_RECORD
+//	Alignment: None
+//
+Struct LSADLsaForestTrustRecord
+{
+	Align8 Pad1;
+	LSADLsaForestTrustRecordFlags( UINT16( FrameData, FrameOffset + 4 ) ) Flags;
+	LSADLsaForestTrustRecordType ForestTrustType;
+	Align8 Pad2;
+	INT64 Time;
+	LSADNestedForestTrustDataLsaForestTrustRecord ForestTrustData;
+	Switch( Property.MSRPCNdr64 )
+	{
+		Case TRUE: Align8 Pad3;
+	}
+}
+
+Struct LSADLsaForestTrustRecordFlags( RecordType ) = FormatString("0x%08X", Flags)
+{
+	UINT32 Flags
+	{
+		Switch( RecordType )
+		{
+			Case 0x0002: //ForestTrustType==0x0002, the flag MUST be used only with a forest trust record type of ForestTrustDomainInfo.
+				Switch( Property.MSRPCByteOrder )
+				{
+					Case LittleEndian:
+						Struct
+						{
+							UINT32 SIDDisabledAdmin:1 = FormatString("   (%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED by administrative action":"LSA_SID_DISABLED_ADMIN is Not set");
+							UINT32 SIDDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED due to a conflict with an existing SID":"LSA_SID_DISABLED_CONFLICT is Not set");
+							UINT32 NBDisabledAdmin:1 = FormatString("    (%s) %s", this.ToBitString,this?"The forest trust NetBIOS record was DISABLED by administrative action":"LSA_NB_DISABLED_CONFLICT is Not set");
+							UINT32 NBDisabledConflict:1 = FormatString(" (%s) %s", this.ToBitString,this?"The forest trust NetBIOS account was DISABLED due to a conflict with an existing NetBIOS record":"LSA_NB_DISABLED_CONFLICT is Not set");
+							UINT32 Reserved:28 = FormatString("           (%s)", this.ToBitString);
+						}
+					Default:
+						Struct
+						{
+							UINT32 Reserved:28 = FormatString("           (%s)", this.ToBitString);
+							UINT32 NBDisabledConflict:1 = FormatString(" (%s) %s", this.ToBitString,this?"The forest trust NetBIOS account was DISABLED due to a conflict with an existing NetBIOS record":"LSA_NB_DISABLED_CONFLICT is NOT set");
+							UINT32 NBDisabledAdmin:1 = FormatString("    (%s) %s", this.ToBitString,this?"The forest trust NetBIOS record was DISABLED by administrative action":"LSA_NB_DISABLED_CONFLICT is NOT set");
+							UINT32 SIDDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED due to a conflict with an existing SID":"LSA_SID_DISABLED_CONFLICT is NOT set");
+							UINT32 SIDDisabledAdmin:1 = FormatString("   (%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED by administrative action":"LSA_SID_DISABLED_ADMIN is NOT set");
+						}
+			}
+
+			Default: // ForestTrustType==0x0000 || ForestTrustType==0x0001, the flag MUST be used only with a forest trust record type of ForestTrustDomainInfo.
+				Switch( Property.MSRPCByteOrder )
+				{
+					Case LittleEndian:
+						struct
+						{
+							UINT32 TLNDisabledNew:1 = FormatString("     (%s) %s", this.ToBitString,this?"The forest trust account was DISABLED upon creation and should be enabled":"LSA_TLN_DISABLED_NEW is NOT Set");
+							UINT32 TLNDisabledAdmin:1 = FormatString("   (%s) %s", this.ToBitString,this?"The forest trust account was DISABLED by administrative action":"LSA_TLN_DISABLED_ADMIN is NOT set");
+							UINT32 TLNDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust account was DISABLED due to a conflict with an existing forest trust account":"LSA_TLN_DISABLED_CONFLICT is NOT set");
+							UINT32 Reserved:29 = FormatString("           (%s)", this.ToBitString);
+						}
+					Default:
+						struct
+						{
+							UINT32 Reserved:29 = FormatString("           (%s)", this.ToBitString);
+							UINT32 TLNDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust account was DISABLED due to a conflict with an existing forest trust account":"LSA_TLN_DISABLED_CONFLICT is NOT set");
+							UINT32 TLNDisabledAdmin:1 = FormatString("   (%s) %s", this.ToBitString,this?"The forest trust account was DISABLED by administrative action":"LSA_TLN_DISABLED_ADMIN is NOT set");
+							UINT32 TLNDisabledNew:1 = FormatString("     (%s) %s", this.ToBitString,this?"The forest trust account was DISABLED upon creation and should be enabled":"LSA_TLN_DISABLED_NEW is NOT Set");
+						}
+				}
+		}
+	}
+}
+	
+//
+//	_LSA_FOREST_TRUST_RECORD_TYPE
+//	Alignment: None
+//
+Struct LSADLsaForestTrustRecordType = FormatString("RecordType = %s", LSADLsaForestTrustRecordTypeTable(Value.Value, FALSE))
+{
+	NdrEnum Value = LSADLsaForestTrustRecordTypeTable(this.Value, TRUE);
+}
+
+Table LSADLsaForestTrustRecordTypeTable( Value, Description )
+{
+	Switch( Value )
+	{
+		Case 0: FormatString("ForestTrustTopLevelName %s", Description? "- The DNS name of the trusted forest.": "");
+		Case 1: FormatString("ForestTrustTopLevelNameEx %s", Description? "- The DNS name of the trusted forest.": "");
+		Case 2: FormatString("ForestTrustDomainInfo %s", Description? "- A record containing identification and name information.": "");
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_nested_ForestTrustData_LSA_FOREST_TRUST_RECORD
+//
+Struct LSADNestedForestTrustDataLsaForestTrustRecord
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	LSADLsaForestTrustRecordType SwitchValue;
+	Switch( SwitchValue.Value.Value )
+	{
+		Case 0:
+		Case 1:
+			NdrUnicodeString TopLevelName;
+		Case 2:
+			LSADLsaForestTrustDomainInfo DomainInfo;
+		Default:
+			LSADLsaForestTrustBinaryData Data;
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_BINARY_DATA
+//	Alignment: None
+//
+Struct LSADLsaForestTrustBinaryData
+{
+	NdrAlign Pad;
+	UINT32 Length;
+	NdrPtr pBuffer;
+	Switch
+	{
+		Case pBuffer.ReferentID != 0:
+			Struct
+			{
+				NdrConformant Size;
+				BLOB( Size.MaxCount ) Buffer;
+			}
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_DOMAIN_INFO
+//	Alignment: None
+//
+Struct LSADLsaForestTrustDomainInfo
+{
+	[ Property.LSADLsaForestTrustDomainInfoSidPtrCount = Property.LSADLsaForestTrustDomainInfoSidPtrCount + this.ReferentID? 1 : 0  ]
+	NdrPtr pSid;
+	NdrUnicodeStringHeader DnsNameHeader;
+	NdrUnicodeStringHeader NetbiosNameHeader;
+	Switch
+	{
+		Case pSid.ReferentID != 0:
+			SID(TRUE) Sid;
+	}
+	Switch
+	{
+		Case DnsNameHeader.BufferPtr.ReferentID != 0:
+			NdrWideString DnsName;
+	}
+	Switch
+	{
+		Case NetbiosNameHeader.BufferPtr.ReferentID != 0:
+			NdrWideString NetbiosName;
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_INFORMATION
+//	Alignment: NdrAlign
+//
+Struct LSADLsaForestTrustInformation = FormatString("%u Records", RecordCount)
+{
+	UINT32 RecordCount;
+	NdrPtr pEntries;
+	Switch
+	{
+		Case pEntries.ReferentID != 0 :
+			Struct Entries
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							NdrPtr pForestTrustRecord[ Size.MaxCount ];
+							[ Local.ArrayLoop = 0 ]		
+							While[ Local.ArrayLoop < Size.MaxCount ]
+							{
+								[ Local.ArrayLoop = Local.ArrayLoop + 1]
+								Switch
+								{
+									Case pForestTrustRecord[ Local.ArrayLoop - 1 ].ReferentID != 0:
+										LSADLsaForestTrustRecord ForestTrustRecord;
+								}
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_COLLISION_RECORD_TYPE
+//	Alignment: None
+//
+Struct LSADLsaForestTrustCollisionRecordType = FormatString("RecordType = %s", LSADLsaForestTrustCollisionRecordTypeTable( Value.Value ))
+{
+	NdrEnum Value = LSADLsaForestTrustCollisionRecordTypeTable(this.Value);
+}
+
+Table LSADLsaForestTrustCollisionRecordTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "CollisionTdo - Collision with another trusted domain object in Active Directory.";
+		Case 1: "CollisionXref - Collision with a cross-reference object belonging to the forest to which the server belongs.";
+		Case 2: "CollisionOther - Collision for an unknown reason.";
+		Default: FormatString("Unknow Value (%u)", Value);
+	}
+}
+
+//
+//	_LSA_FOREST_TRUST_COLLISION_RECORD
+//	Alignment: None
+//
+Struct LSADLsaForestTrustCollisionRecord = Type.ToString
+{
+	NdrAlign Pad;
+	UINT32 Index;
+	LSADLsaForestTrustCollisionRecordType Type;
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT32 Reserved1:1 = FormatString("          (%s)", this.ToBitString);
+					UINT32 SIDDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED due to a conflict with an existing SID":"LSA_SID_DISABLED_CONFLICT is Not set");
+					UINT32 TLNDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust account was DISABLED due to a conflict with an existing forest trust account":"LSA_TLN_DISABLED_CONFLICT is NOT set");
+					UINT32 Reserved2:29 = FormatString("          (%s)", this.ToBitString);
+				}
+			Default:
+				Struct
+				{
+					UINT32 Reserved1:29 = FormatString("          (%s)", this.ToBitString);
+					UINT32 TLNDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust account was DISABLED due to a conflict with an existing forest trust account":"LSA_TLN_DISABLED_CONFLICT is NOT set");
+					UINT32 SIDDisabledConflict:1 = FormatString("(%s) %s", this.ToBitString,this?"The forest trust SID was DISABLED due to a conflict with an existing SID":"LSA_SID_DISABLED_CONFLICT is Not set");
+					UINT32 Reserved2:1 = FormatString("          (%s)", this.ToBitString);
+				}
+		}
+	}
+	NdrUnicodeString Name;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+//
+//	_LSA_FOREST_TRUST_COLLISION_INFORMATION
+//	Alignment: NdrAlign
+//
+Struct LSADLsaForestTrustCollisionInformation = FormatString("%u Records", RecordCount)
+{
+	UINT32 RecordCount;
+	NdrPtr pEntries;
+	Switch
+	{
+		Case pEntries.ReferentID != 0:
+			Struct Entries = Size.ToString
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							NdrPtr pForestTrustCollisionRecord[ Size.MaxCount ];
+							[ Local.ArrayLoop = 0 ]
+							While[ Local.ArrayLoop < Size.MaxCount ]
+							{
+								[ Local.ArrayLoop = Local.ArrayLoop + 1 ]
+								Switch
+								{
+									Case pForestTrustCollisionRecord.ReferentID[ Local.ArrayLoop - 1 ] != 0:
+										LSADLsaForestTrustCollisionRecord ForestTrustCollisionRecord;
+								}
+							}
+						}
+				}
+			}
+	}
+}
+
+//
+//	_LSAPR_POLICY_PRIVILEGE_DEF - Pointer Part
+//	Alignment: None
+//
+Struct LSADLsaprPolicyPrivilegeDef
+{
+	NdrUnicodeStringHeader Name;
+	LSADLuid LocalValue;
+}
+
+//
+//	_LSAPR_PRIVILEGE_ENUM_BUFFER
+//	Alignment: NdrAlign
+//
+Struct LSADLsaprPrivilegeEnumBuffer = FormatString("%u Entries", Entries)
+{
+	UINT32 Entries;
+	NdrPtr pPrivileges;
+	Switch
+	{
+		Case pPrivileges.ReferentID != 0:
+			Struct Privileges = Size.ToString
+			{
+				NdrConformant Size;
+				Switch
+				{
+					Case Size.MaxCount > 0:
+						Struct
+						{
+							[ Property.NdrUnicodeStringHeaderPtrCount = 0 ]
+							LSADLsaprPolicyPrivilegeDef Privilege[ Size.MaxCount ];
+							NdrWideString Name[Property.NdrUnicodeStringHeaderPtrCount ];
+						}			
+				}
+			}
+	}
+}

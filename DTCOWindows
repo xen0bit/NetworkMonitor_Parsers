@@ -1,0 +1,1366 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  MSDTC Connection Manager: OleTx Transaction Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DTCO]: MSDTC Connection Manager: OleTx Transaction Protocol Specification (12.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/17/2009
+//#
+//####
+
+table DTCOOletxIsolationLevelTable( value )
+{
+	switch( value )
+	{
+	case 0x00000010: "IsolationLevelChaos - Data is not isolated";
+	case 0x00000100: "IsolationLevelReadUncommitted - Transaction can read any data; any type of new data can be inserted";
+	case 0x00001000: "IsolationLevelReadCommitted - Must not read data being modified that has not committed; and type of new data can be inserted";
+	case 0x00010000: "IsolationLevelRepeatAbleRead - Data being read must not be modified by another transaction; any type of new data can be inserted";
+	case 0x00100000: "IsolationLevelSerializable - Data being read must not be modified by another transaction; new data must not be inserted by another transaction";
+	case 0xFFFFFFFF: "IsolationLevelUnspecified - No isolation level specified";
+	}
+}
+
+table DTCOIsolationFlagsTable( value )
+{
+	switch( value )
+	{
+	case 0x00000000: "IsoflagRetainDefault - No locks retained on any transaction termination requests";
+	case 0x00000001: "IsoflagRetainCommitDc - Locks retained on transaction commit regardless of its success or failure";
+	case 0x00000002: "IsoflagRetainCommit - Locks retained on successful transaction commit";
+	case 0x00000003: "IsoflagRetainCommitNo - Locks not retained on transaction commit";
+	case 0x00000004: "IsoflagRetainAbortDc - Locks retained on transaction abort regardless of its success or failure";
+	case 0x00000005: "IsoflagRetainDontcare - Locks retained on all transaction termination requests regardless if abort or commit";
+	case 0x00000008: "IsoflagRetainAbort - Locks retained on a successful transaction abort";
+	case 0x0000000C: "IsoflagRetainAbortNo - Locks not retained on a transaction abort";
+	case 0x0000000A: "IsoflagRetainBoth - Locks retained on all successful transaction termination requests regardless if abort or commit";
+	case 0x0000000F: "IsoflagRetainNone - Locks not retained on any transaction termination requests";
+	case 0x00000010: "IsoflagOptimistic - Optimistic locking allowed";
+	case 0x00000020: "IsoflagReadonly - Transaction not expected to modify data";
+	}
+}
+
+table DTCOTrunTxbeginErrorsTable( value )
+{
+	switch( value )
+	{
+	case  1: "TrunTxbeginErrorNoMem - Insufficient memory to allocate the data structures to create new transaction";
+	case 20: "TrunTxbeginErrorBeginLogFull - Insufficient space in transaction manager log to accommodate new transaction";
+	case 30: "TrunTxbeginErrorNotifyAborted - Transaction has aborted";
+	case 31: "TrunTxbeginErrorNotifyCommitted - Transaction has committed";
+	case 32: "TrunTxbeginErrorNotifyIndoubt - Transaction has completed but the outcome cannot be determined";
+	case 33: "TrunTxbeginErrorDuplicateGuid - An attempt was made to create or promote a transaction, but a transaction with the specified transaction identifier already exists";
+	}
+}
+ 
+table DTCOTmProtocolTable( value )
+{
+	switch( value )
+	{
+	case 0: "TmProtocolNone - No transaction-manager-to-transaction-manager protocol is available";
+	case 1: "TmProtocolTip - The Transaction Internet Protocol (TIP) is available";
+	case 2: "TmProtocolMsdtcV1 - The OleTx protocol is available with basic information";
+	case 3: "TmProtocolMsdtcV2 - The OleTx protocol is available with additional information";
+	case 4: "TmProtocolExtended - An extension protocol is available";
+	}
+}
+
+table DTCOTrunTximportErrorsTable( value )
+{
+	switch( value )
+	{
+	case 1: "TrunTximportErrorNoMem - Not enough memory to complete the operation";
+	case 20: "TrunTximportErrorImportTxNotFound - Specified transaction was not found";
+	case 30: "TrunTximportErrorNotifyAborted - Transaction aborted";
+	case 31: "TrunTximportErrorNotifyCommitted - Transaction committed";
+	case 32: "TrunTximportErrorNotifyIndoubt - Transaction completed, but outcome could not be determined";
+	}
+}
+
+table DTCOPartnertmPropagatePreparereqdoneResponseTable( value )
+{
+	switch( value )
+	{
+	case 0: "PartnertmPropagatePreparereqdoneOk - Prepare request was successful and enlistment requires the transaction outcome";
+	case 1: "PartnertmPropagatePreparereqdoneAbort - Prepare request was unsuccessful and the transaction must be aborted";
+	case 2: "PartnertmPropagatePreparereqdoneReadOnly - Transaction commitment preparation request was successful with no further involvement required";
+	case 3: "PartnerPropagatePreparereqdoneSinglephaseCommit - Sender chose the single-phase commit option and committed the transaction";
+	case 4: "PartnertmPropagatePreparereqdoneSinglephaseIndoubt - The prepare request was unsuccessful, and the transaction outcome is no longer determinable";
+	}
+}
+
+table DTCOTxuserVoterVoterreqdoneResponseTable( value )
+{
+	switch( value )
+	{
+	case 0: "TxuserVoterVotereqdoneOk - Prepare request was successful and the voter requires the transaction outcome";
+	case 1: "TxuserVoterVotereqdoneAbort - Prepare request was unsuccessful and the transaction must be aborted";
+	case 2: "TxuserVoterVotereqdoneReadOnly - Prepare request was successful and the voter does not require the transaction outcome";
+	}
+}
+
+//
+//Connection Types
+//
+table DTCOConnectTypesTable ( value )
+{
+	switch(value)
+	{
+		case 0x00000001: "CONNTYPETXUSERBEGINNER - This connection type is used by applications that begin, commit, and roll back transactions.";
+		case 0x00000002: "CONNTYPETXUSERIMPORT -  This connection type is used by a destination application to complete a Push Propagation that is initiated by a source application.";
+		case 0x00000003: "CONNTYPETXUSERENLISTMENT - This connection type is used by a durable resource manager to establish an enlistment with its transaction manager.";
+		case 0x00000004: "CONNTYPETXUSEREXPORT - This connection type is used by a source application to initiate a Push Propagation to a destination application.";
+		case 0x00000005: "CONNTYPETXUSERRESOURCEMANAGER - This connection type is used by a durable resource manager to register with its transaction manager.";
+		case 0x00000006: "CONNTYPETXUSERREENLIST - This connection type is used by a durable resource manager to determine the outcome of an In Doubt transaction.";
+		case 0x00000007: "CONNTYPETXUSERRESOLVE - This connection type is used by an application either to manually resolve the outcome of an In Doubt transaction or to cause its transaction manager to forget a transaction that is in the Failed to Notify state.";
+		case 0x00000009: "CONNTYPETXUSERVOTER - This connection type is used by a volatile resource manager to establish a voter enlistment with its transaction manager.";
+		case 0x00000011: "CONNTYPETXUSERASSOCIATE - This connection type is used by a destination application to complete the Pull Propagation of a transaction from a source application";
+		case 0x00000022: "CONNTYPETXUSERGETTXDETAILS - This connection type is used by an application to retrieve details about a transaction from its transaction manager.";
+		case 0x00000024: "CONNTYPETXUSERPHASE0 - This connection type is used by a resource manager to enlist for Phase Zero notifications from its transaction manager.";
+		case 0x00000028: "CONNTYPETXUSERBEGIN2 - This connection type is used by an application to begin, commit, or roll back a transaction or to change the time-out of a transaction.";
+		case 0x00000033: "CONNTYPETXUSERIMPORT2 - This connection type is used by a destination application to complete a Push Propagation that is initiated by a source application.";
+		case 0x00000035: "CONNTYPETXUSERGETSECURITYFLAGS - This connection type is used by an application to obtain the security configuration of its transaction manager.";
+		case 0x00000036: "CONNTYPETXUSERTRACE - This connection type is used by an application to ask its transaction manager to trace the status of a transaction by using an implementation-specific mechanism.";
+		case 0x00000037: "CONNTYPETXUSERSETTXTIMEOUT - This connection type is used by an application to modify the time-out of a transaction.";
+		case 0x00000038: "CONNTYPETXUSERSETTXTIMEOUT2 - This connection type is used by an application to query the transaction manager's support for modifying the time-out of a transaction.";
+		case 0x00000039: "CONNTYPETXUSERPROMOTE - This connection type is used by an application to,Begin a transaction using an application-specified transaction identity,Commit or rollback a transaction ,Change the time-out of a transaction";
+		case 0x0000003D: "CONNTYPETXUSEREXTENDEDWHEREABOUTS - This connection type is used by an application to obtain Extended Whereabouts from its transaction manager.";
+		case 0x00000046: "CONNTYPETXUSERRESOURCEMANAGERINTERNAL - This connection type is used by a durable resource manager to register with a transaction manager and to detect duplicate registrations.";
+		case 0x00000048: "CONNTYPETXUSEREXPORT2 - This connection type is used by a source application to initiate a Push Propagation to a destination application.";
+		case 0x00000101: "CONNTYPEPARTNERTMPROPAGATE - This connection type is used by a superior transaction manager to do a Push Propagation of a transaction to its subordinate transaction manager and to execute the Two-Phase Commit Protocol.";
+		case 0x00000102: "CONNTYPEPARTNERTMREDELIVERCOMMIT - This connection type is used by a superior transaction manager to redeliver a Commit notification for a transaction to its subordinate transaction manager.";
+		case 0x00000103: "CONNTYPEPARTNERTMCHECKABORT - This connection type is used by a subordinate transaction manager to query the outcome of a transaction from its superior transaction manager.";
+		case 0x00000104: "CONNTYPEPARTNERTMBRANCH - A subordinate transaction manager uses this connection type to register a new subordinate enlistment with a superior transaction manager";
+	}
+}
+
+//
+//TXUSER_ENLISTMENT_PREPAREREQDONE_RESPONSE
+//
+table DTCOTxuserEnlistmentPreparereqdoneResponseTable( value )
+{
+	switch (value)
+	{
+		case 0: "TXUSERENLISTMENTPREPAREREQDONEOK - The prepare request was successful, and the enlistment requires the transaction outcome";
+		case 1: "TXUSERENLISTMENTPREPAREREQDONEABORT - The prepare request was unsuccessful, and the transaction MUST be aborted";
+		case 2: "TXUSERENLISTMENTPREPAREREQDONEREADONLY - The request to prepare the transaction for commitment was successful, and no further involvement in the transaction is required";
+		case 3: "TXUSERENLISTMENTPREPAREREQDONESINGLEPHASECOMMIT - The sender chose the single-phase commit option and committed the transaction";
+	}
+}
+
+//------------------ MS-DTCO ------------------
+struct DTCOPartnertmPropagateMtagPhase0complete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_GETTXDETAILS_MTAG_GOTIT
+//
+struct DTCOTxuserGettxdetailsMtagGotit
+{
+	CMPMessagePacket MsgHeader;
+	INT32 LSubordinateCount;
+	UINT32 Reserved;
+	DTCOOletxVarlenString SuperiorName;
+	Align4 Pad1;
+	DTCOOletxVarlenString SuperiorID;
+	[local.count == 0]
+	while[local.count < LSubordinateCount * 2]
+	{
+		Align4 Pad2;
+		[post.local.count = local.count + 1]
+		DTCOOletxVarlenString RgSubordinates;
+	}
+}
+
+//
+//	TXUSER_RESOLVE_MTAG_CHILD_ABORT
+//
+struct DTCOTxuserResolveMtagChildAbort
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+struct DTCOPartnertmPropagateMtagAbortreqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagAbortreq
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagCommitreqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagPhase0
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmCheckabortMtagAborted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagCommitreq
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagPhase0register
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	PARTNERTM_PROPAGATE_MTAG_PREPAREREQ
+//
+struct DTCOPartnertmPropagateMtagPreparereq
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 GrfRM;
+	INT32 FSinglePhase;
+}
+
+//
+//	TXUSER_RESOURCEMANAGER_MTAG_CREATE
+//
+struct DTCOTxuserResourcemanagerMtagCreate
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidRM;
+	GUID(True) GuidSession;
+}
+
+//
+//	TXUSER_ENLISTMENT_MTAG_PREPAREREQ
+//
+struct DTCOTxuserEnlistmentMtagPreparereq
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 GrfRM;
+	INT32 FSinglePhase;
+}
+
+//
+//	TXUSER_IMPORT2_MTAG_IMPORT_WITH_SET
+//
+struct DTCOTxuserImport2MtagImportWithSet
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this ); 
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	AsciiString(40) Desc;
+}
+
+//
+//	TXUSER_IMPORT_MTAG_ABORT
+//
+struct DTCOTxuserImportMtagAbort
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidReason;
+}
+
+struct DTCOTxuserTraceMtagRequestFailed
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagDuplicate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_IMPORT2_MTAG_SINK_IMPORTED
+//
+struct DTCOTxuserImport2MtagSinkImported
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+}
+
+struct DTCOTxuserBeginnerMtagCommitIndoubt
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResolveMtagChildNotPrepared
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_RESOLVE_MTAG_FORGET_COMMITTED
+//
+struct DTCOTxuserResolveMtagForgetCommitted
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	PARTNERTM_BRANCH_MTAG_BRANCH_TOO_MANY
+//
+struct DTCOPartnertmBranchMtagBranchTooMany
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagAssociated
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmRedelivercommitMtagRetry
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResourcemanagerMtagReenlistmentcomplete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserGetsecurityflagsMtagGetsecurityflags
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagAbortnotify
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserReenlistMtagReenlistTimeout
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExportMtagExportTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagLogFullLocal
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	Propagation_Token
+//	Alingment:4
+//
+struct DTCOPropagationToken
+{
+	UINT32 VersionMin;
+	UINT32 VersionMax;
+	GUID(True) GuidTx;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	UINT32 CbSourceTmAddr;
+	AsciiString(40) Desc;
+	switch
+	{
+		case VersionMax != 1:
+		_struct
+		{
+			DTCONameObjectBlob NameObject;
+			Align4 Pad;
+			DTCOAssociateMsgVersion2 AssociateMsgVersion2;
+		}
+	}
+	switch
+	{
+		case VersionMax == 3:
+		_struct
+		{
+			Align4 Pad;
+			DTCOAssociateMsgVersion3 AssociateMsgVersion3;
+		}
+	}
+}
+
+struct DTCOPartnertmPropagateMtagPhase0registered
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserTraceMtagRequestComplete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExtendedwhereaboutsMtagNomem
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_EXTENDEDWHEREABOUTS_MTAG_GOT
+//
+struct DTCOTxuserExtendedwhereaboutsMtagGot
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 ProtocolCount;
+	switch
+	{
+	case ProtocolCount > 0:
+		struct
+		{
+			[local.count == 0]
+			while[local.count < ProtocolCount]
+			{
+				Align4 Pad;
+				[post.local.count = local.count + 1]
+				DTCOSTmToTmProtocol RgtmprotUsableList;
+			}
+		}
+	}
+}
+
+struct DTCOTxuserExtendedwhereaboutsMtagGet
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserVoterMtagCreateTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserSettxtimeoutMtagRequestComplete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_TRACE_MTAG_DUMP_TRANSACTION
+//
+struct DTCOTxuserTraceMtagDumpTransaction
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	TXUSER_VOTER_MTAG_CREATE
+//
+struct DTCOTxuserVoterMtagCreate
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+struct DTCOTxuserEnlistmentMtagEnlistTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_VOTER_MTAG_VOTEREQDONE
+//
+struct DTCOTxuserVoterMtagVotereqdone
+{
+	CMPMessagePacket MsgHeader;
+	INT32 VoteReqDone;
+}
+
+struct DTCOTxuserResolveMtagAccessdenied
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_BEGIN2_MTAG_COMMIT
+//
+struct DTCOTxuserBegin2MtagCommit
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 GrfRM;
+}
+
+//
+//	OLETX_VARLEN_STRING
+//
+struct DTCOOletxVarlenString
+{
+	UINT32 CbLength;
+	switch
+	{
+	case CbLength > 0:
+		AsciiString(CbLength) String;
+	}
+}
+
+struct DTCOTxuserEnlistmentMtagEnlisted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	SDtcCmEndpointInfoV1
+//
+struct DTCOSDtcCmEndpointInfoV1
+{
+	CMPOComProtocol ComprotSupported;
+	GUID(True) GuidEndpointID;
+	AsciiString Hostname;
+}
+
+struct DTCOPartnertmCheckabortMtagRetry
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserReenlistMtagReenlistCommitted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	SOleTxInfoForTip
+//
+struct DTCOSOleTxInfoForTip
+{
+	AsciiString(40) Description;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	AsciiString TipTmUrl;
+}
+
+struct DTCOTxuserAssociateMtagCommFailed
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	PARTNERTM_PROPAGATE_MTAG_PREPAREREQDONE
+//
+struct DTCOPartnertmPropagateMtagPreparereqdone
+{
+	CMPMessagePacket MsgHeader;
+	INT32 PrepareReqDone;
+	GUID(True) GuidReason;
+}
+
+//
+//	Associate_Msg_Version2
+//
+struct DTCOAssociateMsgVersion2
+{
+	UINT32 CbHostNameW;
+	UnicodeString HostName;
+}
+
+struct DTCOTxuserPhase0MtagPhase0req
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBeginnerMtagCommitTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBeginnerMtagBeginNoMem
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBeginnerMtagAbort
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidReason;
+}
+
+struct DTCOTxuserExportMtagExportTooMany
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmBranchMtagBranchTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	PARTNERTM_REDELIVERCOMMIT_MTAG_COMMITREQ
+//
+struct DTCOPartnertmRedelivercommitMtagCommitreq
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	TXUSER_GETTXDETAILS_MTAG_GET
+//
+struct DTCOTxuserGettxdetailsMtagGet
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+struct DTCOPartnertmBranchMtagBranchNoMem
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExportMtagExportLogFull
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_EXPORT_MTAG_EXPORT
+//
+struct DTCOTxuserExportMtagExport
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+}
+
+struct DTCOTxuserAssociateMtagLogFullRemote
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_IMPORT2_MTAG_IMPORT
+//
+struct DTCOTxuserImport2MtagImport
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+}
+
+struct DTCOTxuserImport2MtagAbort
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagNoMemRemote
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExportMtagCreateBadTmaddr
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_EXPORT_MTAG_CREATE2
+//
+struct DTCOTxuserExportMtagCreate2
+{
+	CMPMessagePacket MsgHeader;
+	DTCOOletxTmAddr SourceTmAddr;
+}
+
+//
+//	TXUSER_EXPORT_MTAG_CREATE
+//
+struct DTCOTxuserExportMtagCreate
+{
+	CMPMessagePacket MsgHeader;
+	DTCOOletxTmAddr SourceTmAddr;
+}
+
+//
+//	TXUSER_IMPORT2_MTAG_SINK_ERROR
+//
+struct DTCOTxuserImport2MtagSinkError
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 Error=DTCOTrunTximportErrorsTable(this);
+}
+
+struct DTCOTxuserExportMtagCreated
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagPhase0registrationrejected
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_SETTXTIMEOUT_MTAG_SETTXTIMEOUT
+//
+struct DTCOTxuserSettxtimeoutMtagSettxtimeout
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+	UINT32 TxTimeout;
+}
+
+struct DTCOTxuserExportMtagCreateNetTxDisabled
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserVoterMtagVotereq
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserVoterMtagCreated
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	NAMEOBJECTBLOB
+//  Alignment: 4
+//
+struct DTCONameObjectBlob
+{
+	AsciiString(40) Guid;
+	UINT32 CbHostName;
+	UINT32 Reserved1;
+	CMPOComProtocol GrbComProtsSupported;
+	AsciiString HostName;
+}
+
+struct DTCOPartnertmPropagateMtagNoMem
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserStatusMtagIndoubt
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserStatusMtagCommitted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserStatusMtagAborted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagLogFull
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserVoterMtagCreateTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserSettxtimeoutMtagTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmPropagateMtagProtocolError
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagTooManyLocal
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResolveMtagForgetTxNotCommitted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	SExtendedEndpointInfo
+//
+struct DTCOSExtendedEndpointInfo
+{
+	GUID(True) GuidProtocolExtension;
+	UINT8 RgbProtocolExtensionData; //??? what in the world is this in the documentation ???
+}
+
+//
+//	PARTNERTM_PROPAGATE_MTAG_PROPAGATE
+//
+struct DTCOPartnertmPropagateMtagPropagate
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	AsciiString(40) Desc;
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	
+}
+
+struct DTCOPartnertmPropagateMtagPropagated
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExportMtagExportTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBeginnerMtagRequestCompleted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_BEGINNER_MTAG_BEGUN
+//
+struct DTCOTxuserBeginnerMtagBegun
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+struct DTCOPartnertmRedelivercommitMtagCommitreqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	OLETX_TM_ADDR
+//
+struct DTCOOletxTmAddr
+{
+	GUID(True) GuidSignature;
+	GUID(True) GuidEndpoint;
+	CMPOComProtocol GrbComProtsSupported;
+	UnicodeString HostName;
+}
+
+//
+//	TXUSER_RESOLVE_MTAG_CHILD_COMMIT
+//
+struct DTCOTxuserResolveMtagChildCommit
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	Associate_Msg_Version3
+//
+struct DTCOAssociateMsgVersion3
+{
+	INT32 FNetworkTxEnabled;
+	INT32 FTipEnabled;
+	INT32 CbTipTmUrl;
+	switch
+	{
+	case CbTipTmUrl > 0:
+		AsciiString TipTmUrl;
+	}
+}
+
+//
+//	TXUSER_BEGINNER_MTAG_BEGIN
+//
+struct DTCOTxuserBeginnerMtagBegin
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 Timeout;
+	AsciiString(40) Desc;
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+}
+
+struct DTCOTxuserResolveMtagRequestComplete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmBranchMtagBranched
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	STmToTmProtocol
+//
+struct DTCOSTmToTmProtocol
+{
+	UINT32							ProtocolDescribed = DTCOTmProtocolTable( this );
+	UINT32							ProtocolDataSize;
+	switch( ProtocolDescribed )
+	{
+	case 2: //Basic OleTx protocol
+		DTCOSDtcCmEndpointInfoV1		Data2;
+	case 3: //Additional OleTx protocol
+		DTCOSDtcCmEndpointInfoV2		Data3;
+	case 4: //Extension protocol
+		DTCOSExtendedEndpointInfo		Data4;
+	}
+}
+
+//
+//	SDtcCmEndpointInfoV2
+//
+struct DTCOSDtcCmEndpointInfoV2
+{
+	UnicodeString Hostname;
+}
+
+struct DTCOPartnertmBranchMtagBranchTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserPhase0MtagPhase0reqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_IMPORT_MTAG_IMPORT
+//
+struct DTCOTxuserImportMtagImport
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+struct DTCOTxuserImportMtagAbortTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagNoMemLocal
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_GETSECURITYFLAGS_MTAG_FETCHED
+//
+struct DTCOTxuserGetsecurityflagsMtagFetched
+{
+	CMPMessagePacket MsgHeader;
+	DTCODTCADVCONFIG GrfNetworkDtcAccess;
+	UINT32 GrfXaTransactions;
+	UINT32 GrfReserved3;
+}
+
+struct DTCOTxuserImportMtagRequestCompleted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_IMPORT_MTAG_IMPORTED
+//
+struct DTCOTxuserImportMtagImported
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+}
+
+struct DTCOTxuserImportMtagImportTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmBranchMtagBranchLogFull
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserSettxtimeoutMtagTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_BEGIN2_MTAG_SINK_BEGUN
+//
+struct DTCOTxuserBegin2MtagSinkBegun
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	TXUSER_REENLIST_MTAG_REENLIST
+//
+struct DTCOTxuserReenlistMtagReenlist
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+	UINT32 Timeout;
+	GUID(True) GuidRm;
+}
+
+struct DTCOTxuserAssociateMtagTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagTooManyRemote
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserEnlistmentMtagAbortreqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResolveMtagTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserPhase0MtagUnenlist
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserExportMtagExportNoMem
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	SWhereabouts
+//
+struct DTCOSWhereabouts
+{
+	GUID(True) GuidSignature;
+	UINT32 CTmToTmProtocols;
+	[OLETXTmToTmProtocolCounter = 0]
+	while OLETXTmToTmProtocolElements[ OLETXTmToTmProtocolCounter < CTmToTmProtocols ]
+	{
+		Align4 Pad;
+		[Post.OLETXTmToTmProtocolCounter = OLETXTmToTmProtocolCounter + 1]
+		DTCOSTmToTmProtocol RgtmprotUsableList;
+		
+	}
+}
+
+//
+//	STxInfo
+//
+struct DTCOSTxInfo
+{
+	GUID(True) GuidSignature;
+	switch(GuidSignature.ToString)
+	{
+	case "{2ADB4463-BD41-11D0-B12E-00C04FC2F3EF}":
+		_struct
+		{
+			GUID(True) UowTx;
+			UINT32 TmprotUsed = DTCOTmProtocolTable( this );
+			UINT32 CbProtocolSpecificTxInfo = FormatString( "Protocol specific data size = %d bytes", this );
+			switch
+			{
+			case CbProtocolSpecificTxInfo > 0:
+				DTCOSOleTxInfoForTip ProtocolSpecificTxInfo;
+			}
+		}
+	}
+}
+
+struct DTCOTxuserTraceMtagTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserPhase0MtagCreateTooLate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_PHASE0_MTAG_CREATE
+//
+struct DTCOTxuserPhase0MtagCreate
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+}
+
+//
+//	TXUSER_BEGINNER_MTAG_PROMOTE
+//
+struct DTCOTxuserBeginnerMtagPromote
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 Timeout;
+	AsciiString(40) Desc;
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	GUID(True) GuidTx;
+}
+
+struct DTCOTxuserPhase0MtagPhase0reqAbort
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBeginnerMtagCommit
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 GrfRM;
+	INT32 FAsyncFull;
+}
+
+struct DTCOTxuserEnlistmentMtagPreparereqdone
+{
+	CMPMessagePacket MsgHeader;
+	INT32 PrepareReqDone;
+	GUID(True) GuidReason;
+}
+
+struct DTCOTxuserBeginnerMtagBeginLogFull
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserReenlistMtagReenlistAborted
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOPartnertmCheckabortMtagCheck
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+}
+
+struct DTCOPartnertmBranchMtagBranching
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+}
+
+struct DTCOTxuserEnlistmentMtagEnlistTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserEnlistmentMtagEnlistTooMany
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCODtcAdvConfig
+{//??? The doc table needs to be fixed in the pdf ???
+	UINT32 RemoteCommunicationsFlags = FormatString( "0x%08X", this )
+	{
+		switch( Property.MSRPCByteOrder )
+		{
+		case LittleEndian:
+			struct
+			{
+				UINT32 NetworkDtcAccessEnable:1 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessAdmin:1 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessTransaction:1 = FormatString( "      (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessClients:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessTIP:1 = FormatString( "              (%s)", this.ToBitString );
+				UINT32 OutboundNetworkTransaction:1 = FormatString( "       (%s)", this.ToBitString );
+				UINT32 InboundNetworkTransaction:1 = FormatString( "        (%s)", this.ToBitString );
+				UINT32 SecurityLevelNoSecurity:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 SecurityLevelAuthenticatedOnly:1 = FormatString( "   (%s)", this.ToBitString );
+				UINT32 SecurityLevelMutualAuthentication:1 = FormatString( "(%s)", this.ToBitString );
+				UINT32 Unused:22 = FormatString("                           (%s)", this.ToBitString );
+			}
+		default:
+			struct
+			{
+				UINT32 Unused:22 = FormatString("                           (%s)", this.ToBitString );
+				UINT32 SecurityLevelMutualAuthentication:1 = FormatString( "(%s)", this.ToBitString );
+				UINT32 SecurityLevelAuthenticatedOnly:1 = FormatString( "   (%s)", this.ToBitString );
+				UINT32 SecurityLevelNoSecurity:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 InboundNetworkTransaction:1 = FormatString( "        (%s)", this.ToBitString );
+				UINT32 OutboundNetworkTransaction:1 = FormatString( "       (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessTIP:1 = FormatString( "              (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessClients:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessTransaction:1 = FormatString( "      (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessAdmin:1 = FormatString( "            (%s)", this.ToBitString );
+				UINT32 NetworkDtcAccessEnable:1 = FormatString( "           (%s)", this.ToBitString );
+			}
+		}
+	}
+}
+
+//
+//DTCADVCONFIG_OPTIONS
+//
+struct DTCODtcadvconfigOptions
+{
+	UINT32 OptionsForDtcadvconfig= FormatString( "0x%08X", this )
+	{
+		switch( property.MSRPCByteOrder)
+		{
+			case littleEndian:
+				struct
+				{
+					UINT32 DtcadvconfigOptionsLutransactionsDisable:1=FormatString( "           (%s)", this.ToBitString );
+					UINT32 Unused:31=FormatString("                                             (%s)", this.ToBitString );
+				}
+			default:
+				struct
+				{
+					UINT32 Unused:31=FormatString("                                             (%s)", this.ToBitString );
+					UINT32 DtcadvconfigOptionsLutransactionsDisable:1=FormatString( "           (%s)", this.ToBitString );
+				}
+		}
+	}
+}
+
+struct DTCOTxuserEnlistmentMtagCommitreq
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResourcemanagerinternalMtagDuplicatedetected
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserGettxdetailsMtagTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserAssociateMtagCreateBadTmaddr
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserBegin2MtagAbort
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserEnlistmentMtagEnlistLogFull
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_ENLISTMENT_MTAG_ENLIST
+//
+struct DTCOTxuserEnlistmentMtagEnlist
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTX;
+	GUID(True) GuidRM;
+	GUID(True) GuidSession;
+}
+
+struct DTCOTxuserEnlistmentMtagCommitreqdone
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserResourcemanagerMtagDuplicate
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_ASSOCIATE_MTAG_ASSOCIATE
+//
+struct DTCOTxuserAssociateMtagAssociate
+{
+	CMPMessagePacket MsgHeader;
+	GUID(True) GuidTx;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+	UINT32 CbSourceTmAddr;
+	AsciiString(40) Desc;
+	DTCOOletxTmAddr SourceTmAddr;
+}
+
+struct DTCOTxuserExportMtagExported
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_BEGIN2_MTAG_SINK_ERROR
+//
+struct DTCOTxuserBegin2MtagSinkError
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 Error=DTCOTrunTxbeginErrorsTable(this);
+}
+
+struct DTCOTxuserResourcemanagerMtagRequestComplete
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserPhase0MtagCreated
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserPhase0MtagCreateTxNotFound
+{
+	CMPMessagePacket MsgHeader;
+}
+
+struct DTCOTxuserEnlistmentMtagAbortreq
+{
+	CMPMessagePacket MsgHeader;
+}
+
+//
+//	TXUSER_BEGIN2_MTAG_BEGIN
+//
+struct DTCOTxuserBegin2MtagBegin
+{
+	CMPMessagePacket MsgHeader;
+	UINT32 IsoLevel = DTCOOletxIsolationLevelTable( this );
+	UINT32 Timeout;
+	AsciiString(40) Desc;
+	UINT32 IsoFlags = DTCOIsolationFlagsTable( this );
+}
+
+//
+//TXUSER_RESOLVE_MTAG_NOT_CHILD
+//
+struct DCTOTxuserResolveMtagNotChild
+{
+	CMPMessagePacket MsgHeader;
+}
+
+
+//
+//TXUSER_EXPORT_MTAG_EXPORT_COMM_FAILED
+//
+struct DTCOTxuserExportMtagExportCommFailed
+{
+	CMPMessagePacket MsgHeader;
+}
+
+

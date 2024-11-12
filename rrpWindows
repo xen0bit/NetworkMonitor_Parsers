@@ -1,0 +1,1719 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Remote Registry Protocol
+//#
+//#  Details:                formerly called Winreg Protocol
+//#
+//#  Microsoft References:   [MS-RRP]: Windows Remote Registry Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+//==============================LPBYTE==========================================
+const RegNone			        = 0;  // No value type is defined. 
+const RegSZ			          = 1;  // Null-terminated string 
+const RegExpandSZ		      = 2;  // Null-terminated string with unexpanded references 
+const RegBinary			      = 3;  // Binary data in any form. 
+const RegDword			      = 4;  // A 32-bit number 	 
+const RegDWordBigEndian		= 5;  // A 32-bit number  
+const RegLink			        = 6;  // Unicode symbolic link. 
+const RegMulti			      = 7;  // Array of null-terminated strings that are terminated by two NULL characters. 
+const RegResourceList		  = 8;  // Device-driver resource list. 
+const RegQword			      = 11; // A 64-bit number. 
+
+const WrUnique = 1;
+const WrNoAttrib = 0;
+
+//====================================protocol============================================
+Protocol RRP = FormatString( "%s %s%s%s%s%s%s", 
+	WinregMethodNameTable( Property.MSRPCOpnum ),
+	Property.MSRPCPType ? "Response" : "Request",
+	( Property.MSRPCPfcFlags & 0x03 ) == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.WinregSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ?  ", " + Property.WinregSummary : "",
+	Property.MSRPCPtype ? ", Status: " + WinErrorCodeNameTable( ReturnValue ) : "")
+{
+	[Property.WinregSummary = ""]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct OpenClassesRoot
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default: 
+									Struct 
+									{	
+										WCHARPtr ServerName;
+										ALIGN4 Pading;
+										WinregRegSam SamDesired;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct OpenClassesRootRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);							
+								}
+							}
+						}
+				}
+			}
+
+		Case 1:
+			_Struct OpenCurrentUser
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct OpenCurrentUserreq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 Pading;
+									WinregREGSAM SamDesired;						
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct OpenCurrentUserRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);						
+								}
+							}
+						}
+				}
+			}
+
+		Case 2:
+			_Struct OpenLocalMachine
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct OpenLocalMachineReq
+								{
+									WCHARPtr ServerName;
+									Align4 pad;
+									WinregREGSAM SamDesired;
+								}									
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct OpenLocalMachineRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+									
+								}
+							}
+						}
+				}
+			}
+
+		Case 3:
+			_Struct OpenPerformanceData
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 Pading;
+									WinregREGSAM SamDesired;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 4:
+			_Struct OpenUsers
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 Pad;
+									WinregREGSAM SamDesired;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 5:
+			_Struct BaseRegCloseKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcHKey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 6:
+			_Struct BaseRegCreateKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Options=0x%X", Request.ContentReq.Options )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+									NdrUnicodeString SubKey;
+									NdrUnicodeString Class;					
+									Align4 Pad3;
+									UINT32 Options;
+									WinregREGSAM SamDesired;
+									WinregRpcSecurityAttributesStructPtr SecurityAttributes;
+									UINT32Ptr LpdwDisposition = WinregBaseRegCreateKeylpdwDispositionTable( this.Value );
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcHKey PhKey;
+									UINT32Ptr LpdwDisposition = WinregBaseRegCreateKeylpdwDispositionTable( this.Value );
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 7:
+			_Struct BaseRegDeleteKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+									NdrUnicodeString SubKey;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								[ReturnValue = UINT32( FrameData, Offset )]
+								UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 8:
+			_Struct BaseRegDeleteValue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+									NdrUnicodeString ValueName;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 9:
+			_Struct BaseRegEnumKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Index=0x%X", Request.ContentReq.Index )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+									UINT32 Index;									
+									NdrUnicodeString lpName;
+									NdrUnicodeStringPtr lpClass;									
+									FileTimePtr LpftLastWriteTime;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									//NdrConformant lpNameArray;
+									NdrUnicodeString lpName;
+									NdrUnicodeStringPtr lpClass;									
+									FileTimePtr LpftLastWriteTime;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 10:
+			_Struct BaseRegEnumValue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Index=0x%X", Request.ContentReq.Index )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey PhKey;
+									UINT32 Index;									
+									NdrUnicodeString ValueName;
+									UINT32Ptr Type = WinregRegValueTypeTable(Type.Value);
+									WinregLPByte(WrUnique,Type.Value) Data;
+									UINT32Ptr LpcbData;
+									UINT32Ptr LpcbLen;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									NdrUnicodeString ValueName;
+									UINT32Ptr Type = WinregRegValueTypeTable(Type.Value);
+									WinregLPByte(WrUnique,Type.Value) Data;
+									UINT32Ptr LpcbData;
+									UINT32Ptr LpcbLen;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 11:
+			_Struct BaseRegFlushKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 12:
+			_Struct BaseRegGetKeySecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									WinregSecurityInformation SecurityInformation;
+									WinregRpcSecurityDescriptorStruct RpcSecurityDescriptor;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcSecurityDescriptorStruct RpcSecurityDescriptor;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 13:
+			_Struct BaseRegLoadKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString SubKey;
+									NdrUnicodeString File;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 15:
+			_Struct BaseRegOpenKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Options=0x%X", Request.ContentReq.Options )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString SubKey;
+									Align4 Pad2;
+									UINT32 Options;
+									WinregREGSAM SamDesired;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									WinregRpcHKey PhkResult;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 16:
+			_Struct BaseRegQueryInfoKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString Class;
+								}								
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									NdrUnicodeString lpClass;
+									Align4 Pad;
+									UINT32 LpcSubKeys;
+									UINT32 LpcbMaxSubKeyLen;
+									UINT32 LpcbMaxClassLen;
+									UINT32 LpcValues;
+									UINT32 LpcbMaxValueNameLen;
+									UINT32 LpcbMaxValueLen;
+									UINT32 LpcbSecurityDescriptor;
+									FileTime LpftLastWriteTime;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}								
+							}
+						}
+				}
+			}
+
+		Case 17:
+			_Struct BaseRegQueryValue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct BaseRegQueryValueRequest
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString ValueName;
+									UINT32Ptr Type = WinregRegValueTypeTable(Type.Value);
+									WinregLPByte(WrUnique,Type.Value) Data;
+									UINT32Ptr LpcbData;
+									UINT32Ptr LpcbLen;								
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct BaseRegQueryValueResponse
+								{
+									UINT32Ptr Type = WinregRegValueTypeTable(Type.Value);
+									WinregLPByte(WrUnique,Type.Value) Data;
+									UINT32Ptr LpcbData;
+									UINT32Ptr LpcbLen;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);		
+								}
+							}
+						}
+				}
+			}
+
+		Case 18:
+			_Struct BaseRegReplaceKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString SubKey;
+									NdrUnicodeString NewFile;
+									NdrUnicodeString OldFile;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 19:
+			_Struct BaseRegRestoreKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Flags=0x%X", Request.ContentReq.Flags )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString File;
+									Align4 Pad2;
+									UINT32 Flags;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue  = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 20:
+			_Struct BaseRegSaveKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString File;
+									WinregRpcSecurityAttributesStructPtr SecurityAttributes;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 21:
+			_Struct BaseRegSetKeySecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									WinregSecurityInformation SecurityInformation;
+									WinregRpcSecurityDescriptorStruct RpcSecurityDescriptor;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 22:
+			_Struct BaseRegSetValue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Type=0x%X CbData=0x%X", Request.ContentReq.Type, Request.ContentReq.CbData )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString ValueName;
+									Align4 Pad2;
+									UINT32 Type = WinregRegValueTypeTable(this);
+									//WinregLPByte(WrNoAttrib,Type) Data;
+									[StrOffset = DataArray.MaxCount + FrameOffset + 4]
+									NdrConformant DataArray;
+									switch(Type)
+									{
+										case 7:
+										_struct MultiStr
+										{
+											while[FrameOffset < StrOffset]
+											{
+												UnicodeString StrData;
+											}
+										}
+										default:
+											UnicodeString(DataArray.MaxCount/2) strData;
+									}
+									Align4 Pad3;
+									UINT32 CbData;									
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 23:
+			_Struct BaseRegUnloadKey
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHKey HKey;
+									NdrUnicodeString SubKey;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 26:
+			_Struct BaseRegGetVersion
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHkey HKey;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct
+								{
+									UINT32 LpdwVersion;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 27:
+			_Struct OpenCurrentConfig
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 pading;
+									WinregRegSam SamDesired;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default: 
+								_struct
+								{
+									WinregRpcHkey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 29:
+			_Struct BaseRegQueryMultipleValues
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Num_vals=0x%X", Request.ContentReq.Num_vals )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHkey HKey;
+									NdrConformantVarying ListNumber;
+									WinregRVALENTArray(ListNumber.ActualCount) Val_list;
+									Align4 pad1;
+									UINT32 Num_vals;
+									WinregCHARPtr LpvalueBuf;
+									Align4 pad2;
+									UINT32 LdwTotsize;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									NdrConformantVarying ListNumber;
+									WinregRVALENTArray(ListNumber.ActualCount) Val_list;
+									WinregCHARPtr LpvalueBuf;
+									Align4 pad;
+									UINT32 LdwTotsize;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 31:
+			_Struct BaseRegSaveKeyEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Flags=0x%X", Request.ContentReq.Flags )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHkey HKey;
+									NdrUnicodeString File;
+									WinregRpcSecurityAttributesStructPtr SecurityAttributes;
+									Align4 pad;
+									UINT32 Flags;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+
+		Case 32:
+			_Struct OpenPerformanceText
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 Pading;
+									WinregRegSam SamDesired;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct
+								{
+									WinregRpcHkey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 33:
+			_Struct OpenPerformanceNlsText
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WCHARPtr ServerName;
+									ALIGN4 Pading;
+									WinregRegSam SamDesired;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct
+								{
+									WinregRpcHkey PhKey;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 34:
+			_Struct BaseRegQueryMultipleValues2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Num_vals=0x%X", Request.ContentReq.Num_vals )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHkey HKey;
+									NdrConformantVarying ListNumber;
+									WinregRVALENTArray(ListNumber.ActualCount) Val_listIn;
+									Align4 pad1;
+									UINT32 Num_vals;
+									WinregCHARPtr LpvalueBuf;
+									Align4 pad2;
+									UINT32 LdwTotsize;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentRes
+								{
+									NdrConformantVarying ListNumber;
+									WinregRVALENTArray(ListNumber.ActualCount) Val_listIn;
+									WinregCHARPtr LpvalueBuf;
+									Align4 pad;
+									UINT32 LdwRequiredSize;
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+			}
+
+		Case 35:
+			_Struct BaseRegDeleteKeyEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WinregSummary = FormatString( "Reserved=0x%X", Request.ContentReq.Reserved )]
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+								_struct ContentReq
+								{
+									WinregRpcHkey HKey;
+									NdrUnicodeString lpSubKey;
+									Align4 pad1;
+									WinregRegSam AccessMask = WinregBaseRegDeleteKeyExAccessMaskTable( this );
+									UINT32 Reserved;
+								}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								default:
+									[ReturnValue = UINT32( FrameData, Offset )]
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+							}
+						}
+				}
+			}
+		Case 14:
+		Case 24:
+		Case 25:
+		Case 28:
+		Case 30:
+		struct NotUsedOnWire
+		{
+			Switch (property.MSRPCPType)
+			{
+		// REQUEST
+				case 0x00:
+				[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+				struct Request 
+				{
+					ReportParserWarning("Winreg", "Invalid Winreg method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+					Blob(FrameLength - Offset) PayloadData;
+				}
+
+		// RESPONSE
+				case 0x02:
+				[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+				struct Response
+				{
+					ReportParserWarning("Winreg", "Invalid Winreg method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+					Blob(FrameLength - Offset) PayloadData;					
+				}
+			}
+		}
+
+		Default:
+			ReportParserError(ParserErrorProtocolClassWindows, "Winreg", "Unknown winreg method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+Table WinregMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "OpenClassesRoot";
+		Case 1: "OpenCurrentUser";
+		Case 2: "OpenLocalMachine";
+		Case 3: "OpenPerformanceData";
+		Case 4: "OpenUsers";
+		Case 5: "BaseRegCloseKey";
+		Case 6: "BaseRegCreateKey";
+		Case 7: "BaseRegDeleteKey";
+		Case 8: "BaseRegDeleteValue";
+		Case 9: "BaseRegEnumKey";
+		Case 10: "BaseRegEnumValue";
+		Case 11: "BaseRegFlushKey";
+		Case 12: "BaseRegGetKeySecurity";
+		Case 13: "BaseRegLoadKey";
+		Case 14: "Opnum14NotImplemented";
+		Case 15: "BaseRegOpenKey";
+		Case 16: "BaseRegQueryInfoKey";
+		Case 17: "BaseRegQueryValue";
+		Case 18: "BaseRegReplaceKey";
+		Case 19: "BaseRegRestoreKey";
+		Case 20: "BaseRegSaveKey";
+		Case 21: "BaseRegSetKeySecurity";
+		Case 22: "BaseRegSetValue";
+		Case 23: "BaseRegUnloadKey";
+		Case 24: "BaseInitiateSystemShutdown";
+		Case 25: "BaseAbortSystemShutdown";
+		Case 26: "BaseRegGetVersion";
+		Case 27: "OpenCurrentConfig";
+		Case 28: "Opnum28NotImplemented";
+		Case 29: "BaseRegQueryMultipleValues";
+		Case 30: "BaseInitiateSystemShutdownEx";
+		Case 31: "BaseRegSaveKeyEx";
+		Case 32: "OpenPerformanceText";
+		Case 33: "OpenPerformanceNlsText";
+		Case 34: "BaseRegQueryMultipleValues2";
+		Case 35: "BaseRegDeleteKeyEx";
+		Default: "unknown";
+	}
+}
+
+
+Table WinregBaseRegCreateKeylpdwDispositionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "REG_CREATED_NEW_KEY - The key did not exist and was created.";
+		Case 0x00000002: "REG_OPENED_EXISTING_KEY - The key already existed and was opened without being changed. If this parameter is NULL, it is ignored.";
+		Default: "unknown";
+	}
+}
+
+Table WinregRVALENTve_typeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 3: "REG_BINARY - Binary data in any form.";
+		//Case 4: //"REG_DWORD - A 32-bit number.";
+		Case 4: "REG_DWORD_LITTLE_ENDIAN - A 32-bit number in little-endian format. is designed to run on little-endian computer architectures. Therefore, this value is defined as REG_DWORD in the  header files.";
+		Case 5: "REG_DWORD_BIG_ENDIAN - A 32-bit number in big-endian format.";
+		Case 2: "REG_EXPAND_SZ - A null-terminated string that contains unexpanded references to environment variables (for example, '%PATH%'). It will be a Unicode or ANSI string depending upon whether the Unicode or ANSI functions are used to manipulate the string.";
+		Case 6: "REG_LINK - Reserved for system use.";
+		Case 7: "REG_MULTI_SZ - A sequence of null-terminated strings, terminated by an empty string (\0)";
+		Case 0: "REG_NONE - No defined value type.";
+		//Case 11: //"REG_QWORD - A 64-bit number.";
+		Case 11: "REG_QWORD_LITTLE_ENDIAN - A 64-bit number in little-endian format. is designed to run on little-endian computer architectures. Therefore, this value is defined as REG_QWORD in the  header files.";
+		Case 1: "REG_SZ - A null-terminated string. This string is either a Unicode or an ANSI string, depending on whether the Unicode or ANSI functions are used to manipulate the string.";
+		Default: "unknown";
+	}
+}
+
+Table WinregBaseRegDeleteKeyExAccessMaskTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000100: "KEY_WOW64_64KEY - Explicitly delete a 64-bit key from a 32-bit or 64-bit application.";
+		Case 0x00000200: "KEY_WOW64_32KEY - Explicitly delete a 32-bit key from a 32-bit or 64-bit application.";
+		Default: "unknown";
+	}
+}
+
+Table WinregRegValueTypeTable(Value)
+{
+	switch(value)
+	{
+		case 0: "No defined value";
+		case 1: "UnicodeString Type";
+		case 2: "UnicodeString Contains Evironment";
+		case 3: "Binary";
+		case 4: "Little-endian 32 BIT";
+		case 5: "Big-endian 32bit";
+		case 7: "Multiple UnicodeStrings";
+		case 11:"Little-endian 64 BIT";
+		default: FormatString("Undefined Value(%d)", value);
+	}
+}
+UnsignedNumber WinregRpcHKey
+{
+	Size = 20;
+	DisplayFormat = FormatString( "{%02X%02X%02X%02X-%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}", this[0], this[1], this[2], this[3], this[4], this[5], this[6], this[7], this[8], this[9], this[10], this[11], this[12], this[13], this[14], this[15], this[16], this[17], this[18], this[19] );
+}
+
+//
+//[MS-RRP]:RPC_SECURITY_DESCRIPTOR
+//Alignment:None
+//
+Struct WinregRpcSecurityDescriptor
+{
+	NdrPtr SecurityDescriptorPtr;
+	UINT32 CbInSecurityDescriptor;
+	UINT32 CbOutSecurityDescriptor;
+	Switch
+	{
+		case SecurityDescriptorPtr.ReferentID != 0:
+			Struct
+			{
+				NdrConformantVarying Length;
+				BLOB(Length.ActualCount) SecurityDescriptor;
+			}
+	}
+}
+
+Struct WinregRpcSecurityDescriptorStruct
+{
+	WinregRpcSecurityDescriptor RpcSecurityDescriptor;
+}
+
+//
+//[MS-RRP]:RPC_SECURITY_ATTRIBUTES
+//Alignment:NdrAlign
+//
+Struct WinregRpcSecurityAttributes
+{
+	UINT32 NLength;
+	WinregRpcSecurityDescriptorStruct RpcSecurityDescriptor;
+	BOOLEAN BInheritHandle;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+//
+//[MS-RRP]:RPC_SECURITY_ATTRIBUTES
+//Alignment:NdrAlign
+//
+Struct WinregRpcSecurityAttributesStruct
+{
+	WinregRpcSecurityAttributes RpcSecurityAttributes;
+}
+
+//
+//[MS-RRP]:PRPC_SECURITY_ATTRIBUTES
+//Alignment:None
+//
+Struct WinregRpcSecurityAttributesStructPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentId != 0:
+			WinregRpcSecurityAttributesStruct RpcSecurityAttributesStruct;
+	}
+}
+
+Struct WinregRVALENT
+{
+	NdrPtr ve_valuename;
+	UINT32 Ve_valuelen;
+	UINT32 Ve_valueptr;
+	UINT32 Ve_type = WinregRVALENTve_typeTable( this );
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+}
+
+Struct WinregRVALENTArray(Number)
+{
+	[Property.RRPContentCount = 0]
+	while [Number > Property.RRPContentCount]
+	{
+		[RRPContentCount = RRPContentCount + 1,]
+		[Property.RRPCountTable$[RRPContentCount] = RVALENT.ve_valuename.ReferentID]
+		WinregRVALENT RVALENT;
+	}
+	[Property.RRPContentString = 0]
+	while [RRPContentString < Number]
+	{
+		[RRPContentString = RRPContentString + 1]
+		switch
+		{
+			case Property.RRPCountTable$[RRPContentString] > 0:
+				NdrUnicodeString VeValueName;
+		}
+	}
+}
+
+Struct WinregCHARPtr
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentId != 0:
+		_struct
+		{
+			NdrConformantVarying ValueCount;
+			switch
+			{
+				case FrameLength - FrameOffset < ValueCount.ActualCount:BLOB(FrameLength - FrameOffset) UnparsedData;
+				default: BLOB(ValueCount.ActualCount) Data;
+			}
+		}
+	}
+}
+
+struct WinregRegSam
+{
+	UINT16 REGSAM
+	{
+		UINT16 QueryValue : 1 = FormatString("  (%s)%s",this.toBitString,this?"Query the values":"");
+		UINT16 UpdateValue : 1 = FormatString(" (%s)%s",this.toBitString,this?"Delete,Create or set the values":"");
+		UINT16 CreateSubkey : 1 = FormatString("(%s)%s",this.toBitString,this?"Create a Subkey":"");
+		UINT16 Enumerate : 1 = FormatString("   (%s)%s",this.toBitString,this?"Enumerate subkey":"");
+		UINT16 Notification : 1 = FormatString("(%s)%s",this.toBitString,this?"Change key's notification":"");
+		UINT16 Symbolic : 1 = FormatString("    (%s)%s",this.toBitString,this?"Create a symbolic link":"");
+		UINT16 Reserved67 : 2 = FormatString("  (%s)%s",this.toBitString,this?"Reserved":"");
+		UINT16 Version64 : 1 = FormatString("   (%s)%s",this.toBitString,this?"Is 64-bit Version":"");
+		UINT16 Version32 : 1 = FormatString("   (%s)%s",this.toBitString,this?"Is 32-bit Version":"");
+		UINT16 Reserved10 : 6 = FormatString("  (%s)%s",this.toBitString,this?"Reserved":"");
+	}
+	MSRPCAccessRights accessmask;
+}
+
+struct WinregSecurityInformation
+{
+	UINT32 SecurityInfo
+	{
+		UINT32 Owner : 1 = FormatString("    (%s)%s",this.toBitString,this?"Parameter receives the LSAPR_SID of the object's owner":"");
+		UINT32 Group : 1 = FormatString("    (%s)%s",this.toBitString,this?"security identifier (SID) (LSAPR_SID) of the object's primary group":"");
+		UINT32 Dacl : 1 = FormatString("     (%s)%s",this.toBitString,this?"security descriptor must include the object's discretionary access control list (DACL).":"");
+		UINT32 Sacl : 1 = FormatString("     (%s)%s",this.toBitString,this?"the security descriptor must include the object's system access control list (SACL).":"");
+		UINT32 Reserved : 28 = FormatString("(%s)Reserved",this.toBitString);
+	}
+}
+
+
+[lpbyteSummary = ""]
+Struct WinregLPByte(AttribType1, TypeIn) = FormatString("%s",lpbyteSummary)
+{
+	[property.UpPointer = 0, property.AttribType = AttribType1, property.lpType = TypeIn]
+	switch 
+	{ 
+		case property.AttribType == WrUnique : 
+		_struct
+		{
+			[Post.property.UpPointer = Pointer.ReferentID]
+			NdrPtr Pointer;
+		} 
+	}
+	switch 
+	{ 
+		case (property.AttribType == WrUnique && property.UpPointer > 0) || (property.AttribType == WrNoAttrib) :	
+		_Struct _doLPBYTE
+		{ 
+			[StringOffset = ndrArray.ActualCount + FrameOffset + 12]
+			NdrConformantVarying 	ndrArray;
+			switch	
+			{ 
+				case property.lpType == RegNone && ndrArray.ActualCount > 0 : 
+				struct 
+				{
+					UINT8 bytedata[ndrArray.ActualCount];					
+				}
+
+				case property.lpType == RegSZ && ndrArray.ActualCount > 0 : 
+				struct
+				{ 
+					[Post.lpbyteSummary = "String Data = " + StringData.ToString]					
+					UnicodeString StringData;				
+				}
+
+				case property.lpType == RegExpandSZ && ndrArray.ActualCount > 0 : 
+				Struct
+				{	
+					UnicodeString (ndrArray.ActualCount/2) StringData;					
+				}
+
+				case property.lpType == RegBinary && ndrArray.ActualCount > 0 : 
+				Struct
+				{	
+					UINT8 bytedata[ndrArray.ActualCount];					
+				}
+
+				case property.lpType == RegDword && ndrArray.ActualCount > 0 :
+				struct
+				{
+					[Post.lpbyteSummary = "Key Value = " + dworddata1] //,Post.WINREGSummary = WINREGSummary + "Value Data = " + dworddata1]
+					UINT32 dworddata1[ndrArray.ActualCount/4];
+				}	
+
+				case property.lpType == RegDWordBigEndian && ndrArray.ActualCount > 0 : UINT32 dworddata2[ndrArray.ActualCount/4];
+
+				case property.lpType == RegLink && ndrArray.ActualCount > 0 : 
+				Struct
+				{	
+					UnicodeString (ndrArray.ActualCount/2) StringData;				
+				}
+
+				case property.lpType == RegMulti && ndrArray.ActualCount > 0 :
+				Struct
+				{	
+					while[FrameOffset < StringOffset]
+					{
+						UnicodeString StringData;
+					}					
+				}
+
+				case property.lpType == RegResourceList && ndrArray.ActualCount > 0 : 
+				Struct
+				{	
+					UnicodeString (ndrArray.ActualCount/2) StringData;					
+				}
+				case property.lpType == RegQword && ndrArray.ActualCount > 0 : INT64 QWordData[ndrArray.ActualCount/8];
+				default: 
+				Struct
+				{
+					UINT8	bytedata[ndrArray.ActualCount];					
+				}
+
+			}
+		}
+	}
+}
+

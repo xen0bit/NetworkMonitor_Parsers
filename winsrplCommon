@@ -1,0 +1,318 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Internet Naming Service (WINS) Replication and Autodiscovery Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WINSRA]: Windows Internet Naming Service (WINS) Replication and Autodiscovery Protocol Specification (4.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/10/2010
+//#
+//####
+
+[RegisterBefore(TCPPayload.Smtp,WinsRpl,42)]
+[RegisterBefore(TCPPayload.Smtp,WinsRpl,1512)]
+[RegisterBefore(UDPPayload.Ssrp,WinsRpl,42)]
+[Property.WinsSummary = ""]
+Protocol WinsRpl = FormatString("%s", Property.WinsSummary)
+{
+	switch
+	{
+		case !conversation.Winsrpl.Id:
+		[BuildConversationWithParent]
+		struct{};
+	}
+	[
+		Conversation.ConversationDescription = 
+			( UDP.Port == 42 ? "(AutoDiscovery) ": (UINT8( Framedata, Offset + 6 ) == 0x78? "(Replication) ": "") ) +
+			( FormatString("ConvID = %d", ConvID) ) 
+	]
+	switch(UDP.Port)
+	{
+		case 42:
+			AutoDiscoveryMessage AutoDiscoveryMessage;
+		default:
+			[
+				Post.PayloadStart(
+					NetworkDirection, /* direction */
+					0, //identifier
+					0, //sequence token
+					0, //next sequence
+					Property.WinsrplTotalLength, //total payload length
+					Property.WinsrplIsFirst, //is first
+					0, //is last	
+					RssmblyIndStartBit + RssmblySelfBit + RssmblyIndLengthBit
+				)
+			]
+			[Property.WinsrplIsFirst = false]
+			switch
+			{
+				case UINT32(FrameData, FrameOffset) > 0 // PacketLength > 0
+					&& UINT8( Framedata, Offset + 6 ) == 0x78 // SigId == 0x78
+					&& UINT32(FrameData, FrameOffset + 12) <= 0x00000003: // MessageType: 0, 1, 2, 3
+					[property.WinsrplIsFirst = true]
+					_struct ReplicationMessage
+					{
+						CommonReplicationMessageHeader CommonReplicationMessageHeader;
+						switch(Property.WinSraMessageType)
+						{
+							case 0:
+								AssociationStartRequestMessage AssociationStartRequestMessage;
+							case 1:
+								AssociationStartResponseMessage AssociationStartResponseMessage;
+							case 2:
+								AssociationStopRequestMessage AssociationStopRequestMessage;
+							case 3:
+								switch(UINT8( Framedata, Offset + 3 ))
+								{
+									case 0:
+										OwnerVersionMapRequestMessage OwnerVersionMapRequestMessage;
+									case 1:
+										OwnerVersionMapResponseMessage OwnerVersionMapResponseMessage;
+									case 2:
+										NameRecordsRequestMessage NameRecordsRequestMessage;
+									case 3:
+										NameRecordsResponseMessage NameRecordsResponseMessage;
+									case 4:
+									case 5:
+									case 8:
+									case 9:
+										UpdateNotificationMessage UpdateNotificationMessage;
+									default:
+										_struct UnhandledData
+										{
+											ReportParserError( 1, "WINSRA", "Unhandled Replication Message Type") WINSRAMessageTypeError;
+											BLOB(FrameLength - FrameOffset) UnknownOpCodeData;
+										}
+								}
+							default:
+								_struct UnhandledMessageType
+								{
+									ReportParserError( 1, "WINSRA", "Unhandled Message Type") WINSRAMessageTypeError;
+									BLOB(FrameLength - FrameOffset) UnknownOperation;
+								}
+						}
+					}
+				default:
+					[property.WinsSummary = "ContinuedPayload"]
+					BLOB(FrameLength - FrameOffset) ContinuedPayload;
+			}
+	}
+}
+Table AutoDiscoveryOpcodeMeaningTable(Opcode)
+{
+	switch(Opcode)
+	{
+		case 0x000000000: "NBNS server MUST announce that it is present and functional using this OpCode";
+		default:	"NBNS server MUST announce that it is shutting down using this OpCode";
+	}
+}
+
+Table AssociationStopReasonTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "The association stopped normally";
+		case 0x00000004: "The association stopped due to some error condition";
+		default: "This value must be ingored";
+	}
+}
+
+Table WinsraMessageTypeTable(value)
+{
+	switch(value)
+	{
+		case 0:	"Association Start Request Message";
+		case 1:	"Association Start Response Message";
+		case 2:	"Association Stop Request Message";
+		case 3:	"Replication Message";
+		default:	"Unkown Message Type";
+	}
+}
+
+Table NameRecordGroupTable(value)
+{
+	switch(value)
+	{
+		case 0: "Unique Name";
+		case 1: "Group Name";
+		default:	"Invalid Value, Treated as Group Name.";
+	}
+}
+
+Table WinsrplUpdateNotificationMessageRplOpCodeTable(value)
+{
+	switch(value)
+	{
+		case 0x04: "Update notification without persistent connection";
+		case 0x05: "Update notification without persistent connection";
+		case 0x08: "Update notification with persistent connection";
+		case 0x09: "Update notification with persistent connection";
+		default: "Unknown value";
+	}
+}
+
+[WinsSummary = this.toString]
+struct AutoDiscoveryMessage = FormatString("Transport on UDP: %s",WinsSummary, Opcode.toString)
+{
+	[DataFieldByteOrder=LittleEndian]
+	UINT32 SigId;
+	[DataFieldByteOrder=LittleEndian]
+	UINT32 Opcode = FormatString("%s",AutoDiscoveryOpcodeMeaningTable(this));
+	NBNSIPv4AddressList NBNSIPv4Address;
+	switch
+	{
+		case FrameOffset < FrameLength:
+		BLOB(FrameLength - FrameOffset) IgnoredData;
+	}
+}
+
+//BigEndian?
+//[DataTypeByteOrder=LittleEndian]
+struct NBNSIPv4AddressList
+{
+	while [!(Ipv4Address(FrameData, FrameOffset) == 0)]
+	{
+		IPv4Address IPv4Address;
+	}
+}
+
+struct CommonReplicationMessageHeader = MessageType.toString
+{
+	[Property.WinsrplTotalLength = PacketLength + 4]
+	UINT32 PacketLength;
+	UINT16 Reserved1;
+	UINT8 SigId;
+	UINT8 Reserved2;
+	UINT32 DestinationAssociationHandle;
+	[Property.WinSraMessageType,Property.WinsSummary = "Transport on TCP: " + WinsraMessageTypeTable(this)]
+	UINT32 MessageType = FormatString("%s",WinsraMessageTypeTable(this));
+}
+
+struct AssociationStartRequestMessage = FormatString("Version: %u.%u", NBNSMajorVersion, NBNSMinorVersion)
+{
+	UINT32 SenderAssociationHandle;
+	UINT16 NBNSMajorVersion;
+	UINT16 NBNSMinorVersion;
+	BLOB(21) Reserved;
+}
+
+struct AssociationStartResponseMessage = FormatString("Version: %u.%u", NBNSMajorVersion, NBNSMinorVersion)
+{
+	UINT32 SenderAssociationHandle;
+	UINT16 NBNSMajorVersion;
+	UINT16 NBNSMinorVersion;
+	BLOB(21) Reserved;
+}
+
+struct AssociationStopRequestMessage = AssociationStopReason.toString
+{
+	UINT32 AssociationStopReason = FormatString("%s",AssociationStopReasonTable(this));
+	BLOB(24) Reserved;
+}
+
+struct OwnerVersionMapRequestMessage = "Owner Version Map Request"
+{
+	UINT24 Reserved;
+	UINT8 RplOpCode;
+}
+
+struct OwnerVersionMapResponseMessage = "Owner Version Map Response"
+{
+	UINT24 Reserved1 = MustBeSetToTable(this, 0);
+	UINT8 RplOpCode;
+	UINT32 NumberofOwners;
+	OwnerRecord OwnerRecord[NumberofOwners];
+	UINT32 Reserved2 = MustBeSetToTable(this, 0);
+}
+
+struct OwnerRecord = "Owner Record"
+{
+	IPv4Address OwnerIPv4Address;
+	UINT32 MaxVersionNumberHi;
+	UINT32 MaxVersionNumberLo;
+	UINT32 MinVersionNumberHi;
+	UINT32 MinVersionNumberLo;
+	UINT32 Reserved = MustBeSetToTable(this, 1);
+}
+
+struct UpdateNotificationMessage = "Update Notification"
+{
+	UINT24 Reserved = MUSTBeSetToTable(this, 0);
+	UINT8 RplOpCode = WinsrplUpdateNotificationMessageRplOpCodeTable(this);
+	UINT32 NumberofOwners;
+	OwnerRecord OwnerRecord[NumberofOwners];
+	IPv4Address InitiatorIPv4Address;
+}
+
+struct NameRecordsRequestMessage = "Name Records Request"
+{
+	UINT24 Reserved1 = MustBeSetToTable(this, 0);
+	UINT8 RplOpCode;
+	IPv4Address OwnerIPv4Address;
+	UINT32 MaxVersionNumberHi;
+	UINT32 MaxVersionNumberLo;
+	UINT32 MinVersionNumberHi;
+	UINT32 MinVersionNumberLo;
+	UINT32 Reserved2;
+}
+
+struct NameRecordsResponseMessage = FormatString("%u Record(s)",NumberofNameRecords)
+{
+	UINT24 Reserved = MUSTBeSetToTable(this, 0);
+	UINT8 RplOpCode;
+	UINT32 NumberofNameRecords;
+	NameRecord NameRecord[NumberofNameRecords];
+}
+
+struct NameRecord = FormatString("Version: %u.%u, Name: %s",VersionNumberHi, VersionNumberLo,Name.toString)
+{
+	UINT32 NameLength;
+	AsciiString(NameLength) Name;
+	WinSRAAlign4Default Padding;
+	UINT24 Reserved1 = MUSTBeSetToTable(this, 0);
+	UINT8 Flags
+	{
+		UINT8 SFlag:1 = FormatString(" (%s)  %s",this.tobitstring,this?"static record":"dynamic record");
+		UINT8 NTFlag:2 = FormatString("(%s)  %s",this.tobitstring,this==0?"B node":this==1?"P node":this==2?"M node":"Reserved");
+		UINT8 LFlag:1 = FormatString(" (%s)  %s",this.tobitstring,this?"replica":"local record");
+		UINT8 STFlag:2 = FormatString("(%s)  %s",this.tobitstring,this==0?"active":this==2?"tombstoned":"MUST NOT be used");
+		[local.NameRecordETFlag]
+		UINT8 ETFlag:2 = FormatString("(%s)  %s",this.tobitstring,this==0?"Unique Name":this==1?"Normal Group Name":this==2?
+											"Special Group Name":"Multihomed machine name");
+	}; 
+	UINT8 Group = FormatString("%s : %s",this,NameRecordGroupTable(this));
+	UINT24 Reserved2 = MustBeSetToTable(this, 0);
+	UINT32 VersionNumberHi;
+	UINT32 VersionNumberLo;
+	switch(local.NameRecordETFlag)
+	{
+		case 0:
+		case 1:
+		IPv4Address AddressRecordIPv4;
+		default:
+		AddressRecord AddressRecord;
+	}
+	UINT32 Reserved3 = MustBeSetToTable(this, 0xFFFFFFFF);
+}
+
+struct AddressRecord = FormatString("%u Address pair(s)", NumberofAddresses)
+{
+	UINT8 NumberofAddresses;
+	UINT24 Reserved;
+	WinSRAIPv4AddressList IPv4AddressList[NumberofAddresses];
+}
+struct WinSRAIPv4AddressList = FormatString("Member Address:%s, Owner Address: %s",MemberIPv4Address.toString,OwnerIPv4Address.toString)
+{
+	IPv4Address OwnerIPv4Address;
+	IPv4Address MemberIPv4Address;
+}
+
+
+Struct WinSRAAlign4Default = FormatString( "%u Bytes", Local.PadLen ) 
+{
+	[Local.PadLen = (CurrentProtocolOffset % 4 == 0)? 4 : (4 - CurrentProtocolOffset % 4)]
+		BLOB (Local.PadLen) Padding;//if field is 4-byte aligned, then padding 4 bytes
+}

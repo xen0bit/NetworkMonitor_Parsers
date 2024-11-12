@@ -1,0 +1,147 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  PPPoE -  Point-to-Point Protocol over Ethernet
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2516
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/2/2009
+//#
+//####
+
+// [RFC 2516    Page 3    2.  PPP Encapsulation over Ethernet]
+
+// Tag Types
+const pppoeEndOfList         = 0x0000;
+const pppoeServiceName       = 0x0101;
+const pppoeAcName            = 0x0102;
+const pppoeHostUniq          = 0x0103;
+const pppoeAcCookie          = 0x0104;
+const pppoeVendorSpecific    = 0x0105;
+const pppoeRelaySessionId    = 0x0110;
+const pppoeServiceNameError  = 0x0201;
+const pppoeAcSystemError     = 0x0202;
+const pppoeGenericError      = 0x0203;
+
+[BuildConversationWithParent,
+RegisterAfter(Ethernet.IPX, PPPoE, 0x8863),
+RegisterAfter(Ethernet.IPX, PPPoE, 0x8864)]
+Protocol PPPoE = FormatString("%s %s",PPPoETypeSet(Ethernet.EthernetType),PPPoECodeSet(PppoeCode))
+{	
+	[Conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d",SourceRawHardwareAddress, DestinationRawHardwareAddress,ConvID)]
+	[Version_Type]
+	UINT8 PPPoEVerType = FormatString("Version %d, Type %d", this.Version, this.Type )
+	{
+		UINT8 Version:4 = FormatString("%s, (%#x)",this.ToBitString, this);
+		UINT8 Type:4 = FormatString("   %s, (%#x)",this.ToBitString, this);
+	};
+	[PppoeCode]
+	UINT8 Code = PPPoECodeSet( this );
+	[SessionID]
+	UINT16 Session_ID;
+	UINT16 Length;
+	switch(Ethernet.EthernetType)
+	{
+		case 0x8863:
+			[DataFieldFrameLength = FrameOffset + Length]
+			PAD Pad_Data;
+		default:
+			PPP Session_Data;
+	}
+}
+
+
+
+Table PPPoETypeSet( value )
+{
+	switch( value )
+	{
+		case 0x8863: "Active Discovery";
+		case 0x8864: "Session";
+		default: FormatString( "Unknown; %#x", value );
+	};
+}
+
+Table PPPoECodeSet( value )
+{
+	switch( value )
+	{
+		case 0x00: "Data";
+		case 0x07: "Offer (PADO)";
+		case 0x09: "Initiation (PADI)";
+		case 0x19: "Request (PADR)";
+		case 0x65: "Session-confirmation (PADS)";
+		case 0xa7: "Terminate (PADT)";
+		default: FormatString( "Unknown; %#x", value );
+	};
+}
+
+Table PPPoETagSet( value )
+{
+	switch( value )
+	{
+		case pppoeEndOfList:         "End-Of-List";
+		case pppoeServiceName:       "Service-Name";
+		case pppoeAcName:            "AC-Name";
+		case pppoeHostUniq:          "Host-Uniq";
+		case pppoeAcCookie:          "AC-Cookie";
+		case pppoeVendorSpecific:    "Vendor-Specific";
+		case pppoeRelaySessionId:    "Relay-Session-Id";
+		case pppoeServiceNameError:  "Service-Name-Error";
+		case pppoeAcSystemError:     "AC-System-Error";
+		case pppoeGenericError:      "Generic-Error";
+		default:                FormatString( "Unknown; %#x", value );
+	};
+}
+
+Struct PAD 
+{
+	[Local.PPPoETagType = 0x1]
+	while Tags[Local.PPPoETagType && frameOffset < frameLength]
+	{
+		[TagValue = ""]
+		struct PPPoETag = FormatString( "%s %s", PPPoETagSet( TagType ), TagValue)
+		{
+			[Local.PPPoETagType]
+			UINT16 TagType = FormatString("%s, %d(0x%#X)", PPPoETagSet( this ), this, this);
+			UINT16 TagLength;
+			
+			switch
+			{
+				case TagLength > 0:
+					switch(TagType)
+					{
+						case pppoeHostUniq:
+							[TagValue = FormatString("%d", Host_ID)]
+							Integer(TagLength) Host_ID;
+						case pppoeAcCookie:
+							[TagValue = FormatString("%s", Cookie)]
+							BLOB(TagLength) Cookie;
+						case pppoeRelaySessionId:
+							[TagValue = FormatString("%d", RelayId)]
+							Integer(TagLength) RelayId;
+						case pppoeAcName:
+							[TagValue = FormatString("%s", Ac_Name)]
+							AsciiString(TagLength) Ac_Name;
+						case pppoeServiceName:
+							[TagValue = FormatString("%s", Svc_Name)]
+							AsciiString(TagLength) Svc_Name;
+						case pppoeAcSystemError:
+						case pppoeGenericError:
+						case pppoeServiceNameError:
+							[TagValue = ""]
+							AsciiString(TagLength) Error_Data;
+						case pppoeVendorSpecific:
+						case pppoeEndOfList:
+							[TagValue = ""]
+							BLOB(TagLength) Data;
+					}
+				}
+		};
+	}
+};
+
+

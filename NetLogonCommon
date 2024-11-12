@@ -1,0 +1,987 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Net Logon Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://protoserver/protocol_without_lh/
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 12/02/2009
+//#
+//####
+
+//
+////////////////****************************************************************////////////////
+////////////////******************** NtLmNetLogon Protocol **********************///////////////
+////////////////****************************************************************////////////////
+//
+[DataTypeByteOrder = LittleEndian]
+Protocol NetLogon = Property.NetLogonPropSecBlobSummary
+{
+	[
+		NetLogonPropSecBlobEndOffset = (NetLogonPropSecBlobEndOffset > 0)
+			? NetLogonPropSecBlobEndOffset : FrameLength,
+		NetLogonOpcode = UINT16(FrameData,Offset),
+		Post.NetLogonPropSecBlobSummary = FormatString("%s (%s): %d (0x%X)",
+			NetLogonOpcodeNames(NetLogonOpcode), NetLogonOpcodeDescriptions(NetLogonOpcode),
+			NetLogonOpcode, NetLogonOpcode)
+	]
+	
+	Switch (NetLogonOpcode)
+	{
+		Case  0: NetLogonLogonRequest         LogonRequest;
+		Case  1: NetLogonLogonResponse        LogonResponse;
+		Case  2: NetLogonLogonQuery           LogonCentralQuery;
+		Case  3: NetLogonLogonQuery           LogonDistribQuery;
+		Case  4: NetLogonLogonQuery           LogonCentralResponse;
+		Case  5: NetLogonLogonQuery           LogonDistribResponse;
+		Case  6: NetLogonLogonResponse2       LogonResponse2;
+		Case  7: NetLogonLogonQuery           LogonPrimaryQuery;
+		Case  8: NetLogonPrimary               LogonPrimary;
+		Case  9: NetLogonFailPrimary          LogonFailPrimary;
+		Case 10: NetLogonDBChange             LogonDbChange;
+		Case 11: NetLogonNoUser               LogonNoUser;
+		Case 12: NetLogonPrimary               LogonPrimaryResponse;
+		Case 13: NetLogonWkStaReLogonResponsePacket  WkStaRelogonResponse;
+		Case 14: NetLogonWkStaInfoResponsePacket     LogonWkStaInfoResponse;
+		Case 15: NetLogonLogonResponse2       LogonPauseResponse;
+		Case 16: NetLogonLogonResponse2       LogonUserUnknownResponse;
+		Case 17: NetLogonLogonAccountUpdate           LogonUpdateAccount;
+		Case 18: NetLogonSAMLogonRequest     SamLogonRequest;
+		Case 19: NetLogonSAMLogonResponse    SamLogonResponse;
+		Case 20: NetLogonSAMLogonResponse    SamPauseResponse;
+		Case 21: NetLogonSAMLogonResponse    SamLogonUserUnknownResponse;
+		Case 22: NetLogonWkStaInfoResponsePacket     LogonSamWkStaInfoResponse;
+		Case 23: NetLogonSAMLogonResponseEX SamLogonResponseEx;
+		Case 24: NetLogonSAMLogonResponseEX SamPauseResponseEx;
+		Case 25: NetLogonSAMLogonResponseEX SamuserUnknownEx;
+		Default: NetLogonUnknown               NetlogonUnknown;
+//#? TODO Do any of these go in both directions?
+//		Case 13: NetLogonWkStaReLogonResponsePacket WkStaRelogonResponse;
+//			Switch ( Property.SMBResponse )
+//			{
+//				Case  1:	// LOGON_RELOGON_RESPONSE
+//					NetLogonWkStaReLogonResponsePacket WkStaRelogonResponse;
+//				Default:
+//					WKSTA_RELOGON_REQUEST_PACKET WkStaRelogonRequest;
+//			};
+//		Case 14: NetLogonWkStaInfoResponsePacket LogonWkStaInfoResponse;
+//			Switch ( Property.SMBResponse )
+//			{
+//				Case  1:	// LOGON_WKSTINFO_RESPONSE
+//					NetLogonWkStaInfoResponsePacket LogonWkStaInfoResponse;
+//				Default:		// TODO: is this valid?
+//					WKSTA_INFO_INTERROGATE_PACKET WkStaInfoInterrogate;
+//			}
+//		Case 22: NetLogonWkStaInfoResponsePacket LogonSamWkStaInfoResponse;
+//			Switch ( Property.SMBResponse )
+//			{
+//				Case  1:	// LOGON_SAM_WKSTINFO_RESPONSE (deprecated after NT4)
+//					NetLogonWkStaInfoResponsePacket LogonSamWkStaInfoResponse;
+//				Default:	// TODO: is this valid?
+//					WKSTA_INFO_INTERROGATE_PACKET SamWkStaInfoInterrogate;
+//			}
+	}
+	Switch
+	{
+		// Consume any remainders, since this is a top-edge (leaf) protocol
+		Case ( (FrameLength - Offset) > 0 ):
+			Blob(FrameLength - Offset) NTLMSSPBufferTail;
+	}
+}
+//
+//*****************************************************************************************
+// NtLmNetLogon Tables
+//*****************************************************************************************
+//
+
+Table NetLogonOpcodeNames(value)
+{
+	Switch (value)
+	{
+		Case  0: "LogonRequest";
+		Case  1: "LogonResponse";
+		Case  2: "LogonCentralQuery";
+		Case  3: "LogonDistribQuery";
+		Case  4: "LogonCentralResponse";
+		Case  5: "LogonDistribResponse";
+		Case  6: "LogonResponse2";
+		Case  7: "LogonPrimaryQuery";
+		Case  8: "LogonStartPrimary"; // deprecated after NT3.1
+		Case  9: "LogonFailPrimary";
+		Case 10: "LogonUASChange";
+		Case 11: "LogonNoUser";
+		Case 12: "LogonPrimaryResponse";
+		Case 13: "LogonReLogonResponse";
+		Case 14: "LogonWkStInfoResponse";
+		Case 15: "LogonPauseResponse";
+		Case 16: "LogonUserUnknown";
+		Case 17: "LogonUpdateAccount";
+		Case 18: "LogonSAMLogonRequest";
+		Case 19: "LogonSAMLogonResponse";
+		Case 20: "LogonSAMPauseResponse";
+		Case 21: "LogonSAMUserUnknown";
+		Case 22: "LogonSAMWkStInfoResponse";	// deprecated after NT4
+		Case 23: "LogonSAMLogonResponseEX";
+		Case 24: "LogonSAMPauseResponseEX";
+		Case 25: "LogonSAMUserUnknownEX";
+		Default: "Unknown Opcode";
+	}
+}
+
+Table NetLogonOpcodeDescriptions(value)
+{
+	Switch (value)
+	{
+		Case  0: "LM1.0/2.0 Logon Request from client";
+		Case  1: "LM1.0 Response to LogonRequest";
+		Case  2: "LM1.0 Query for centralized initialization";
+		Case  3: "LM1.0 Query for non-centralized initialization";
+		Case  4: "LM1.0 Response to LogonCentralQuery";
+		Case  5: "LM1.0 Response to LogonDistribQuery";
+		Case  6: "LM2.0 Response to LogonRequest";
+		Case  7: "Query for Primary DC";
+		Case  8: "Announce startup of Primary DC"; // deprecated after NT3.1
+		Case  9: "Announce failed Primary DC";
+		Case 10: "Announce change to UAS or SAM";
+		Case 11: "Announce no user on machine";
+		Case 12: "Response to LogonPrimaryQuery";
+		Case 13: "LM1.0/2.0 Response to relogon request";
+		Case 14: "LM1.0/2.0 Response to interrogate request";
+		Case 15: "LM2.0 Response when NetLogon is paused";
+		Case 16: "LM2.0 Response when user is unknown";
+		Case 17: "LM2.1 Announce account updates";
+		Case 18: "SAM Logon Request from client";
+		Case 19: "SAM Response to SAM logon request";
+		Case 20: "SAM Response when Netlogon is paused";
+		Case 21: "SAM Response when user is unknown";
+		Case 22: "SAM Response to interrogate request";	// deprecated after NT4
+		Case 23: "SAM Response to SAM logon request";
+		Case 24: "SAM Response when Netlogon is paused";
+		Case 25: "SAM Response when user is unknown";
+		Default: "Not Defined";
+	}
+}
+
+Table NetLogonNlIsResponse(value,defaultValue)
+{
+	Switch (value)
+	{
+		Case  0: 0; // LOGON_REQUEST
+		Case  1: 1; // LOGON_RESPONSE
+		Case  2: 0; // LOGON_CENTRAL_QUERY
+		Case  3: 0; // LOGON_DISTRIB_QUERY
+		Case  4: 1; // LOGON_CENTRAL_RESPONSE
+		Case  5: 1; // LOGON_DISTRIB_RESPONSE
+		Case  6: 1; // LOGON_RESPONSE2
+		Case  7: 0; // LOGON_PRIMARY_QUERY
+		Case  8: 0; // LOGON_START_PRIMARY (deprecated after NT3.1)
+		Case  9: 0; // LOGON_FAIL_PRIMARY
+		Case 10: 0; // LOGON_UAS_CHANGE
+		Case 11: 0; // LOGON_NO_USER
+		Case 12: 1; // LOGON_PRIMARY_RESPONSE
+		Case 13: 1; // LOGON_RELOGON_RESPONSE
+		Case 14: 1; // LOGON_WKSTINFO_RESPONSE
+		Case 15: 1; // LOGON_PAUSE_RESPONSE
+		Case 16: 1; // LOGON_USER_UNKNOWN
+		Case 17: 0; // LOGON_UPDATE_ACCOUNT
+		Case 18: 0; // LOGON_SAM_LOGON_REQUEST
+		Case 19: 1; // LOGON_SAM_LOGON_RESPONSE
+		Case 20: 1; // LOGON_SAM_PAUSE_RESPONSE
+		Case 21: 1; // LOGON_SAM_USER_UNKNOWN
+		Case 22: 1; // LOGON_SAM_WKSTINFO_RESPONSE (deprecated after NT4)
+		Case 23: 1; // LOGON_SAM_LOGON_RESPONSE_EX
+		Case 24: 1; // LOGON_SAM_PAUSE_RESPONSE_EX
+		Case 25: 1; // LOGON_SAM_USER_UNKNOWN_EX
+		Default: defaultValue;
+	}
+}
+
+Table NetLogonNlUpdateTypes(value)
+{
+	Switch (value)
+	{
+		Case  1: "Lockout";
+		Case  2: "Logon";
+		Case  3: "Logoff";
+		Default: "Unknown Update Type";
+	}
+}
+
+//
+// NetLogonResponseAddressType
+//
+// This table is used in the following structures:
+//
+//      NetLogonSAMLogonResponseEX
+//         Opcodes:
+//         LOGON_SAM_LOGON_RESPONSE_EX (SAM only)
+//         LOGON_SAM_USER_UNKNOWN_EX   (SAM only)
+//         LOGON_SAM_PAUSE_RESPONSE_EX (SAM only)
+//
+Table NetLogonResponseAddrType(value) 
+{
+	Switch (value)
+	{
+		Case  0: "AF_UNSPEC";
+		Case  1: "AF_UNIX";
+		Case  2: "AF_INET";
+		Case  3: "AF_IMPLINK";
+		Case  4: "AF_PUP";
+		Case  5: "AF_CHAOS";
+		Case  6: "AF_IPX/AF_NS";
+		Case  7: "AF_ISO/AF_OSI";
+		Case  8: "AF_ECMA";
+		Case  9: "AF_DATAKIT";
+		Case 10: "AF_CCITT";
+		Case 11: "AF_SNA";
+		Case 12: "AF_DECnet";
+		Case 13: "AF_DLI";
+		Case 14: "AF_LAT";
+		Case 15: "AF_HYLINK";
+		Case 16: "AF_APPLETALK";
+		Case 17: "AF_NETBIOS";
+		Case 18: "AF_VOICEVIEW";
+		Case 19: "AF_FIREFOX";
+		Case 21: "AF_BAN";
+		Case 22: "AF_ATM";
+		Case 23: "AF_INET6";
+		Case 24: "AF_CLUSTER";
+		Case 25: "AF_12844";
+		Case 26: "AF_IRDA";
+		Case 28: "AF_NETDES";
+		Case 29: "AF_TCNPROCESS";
+		Case 30: "AF_TCNMESSAGE";
+		Case 31: "AF_ICLFXBM";
+		Default: "Unknown";
+	}
+}
+
+Table NetLogonResponseAddressType(value) 
+{
+	Switch (value)
+	{
+		Case  0: "AF_UNSPEC: unspecified";
+		Case  1: "AF_UNIX: local to host (pipes, portals)";
+		Case  2: "AF_INET: internetwork: UDP, TCP, etc.";
+		Case  3: "AF_IMPLINK: arpanet imp addresses";
+		Case  4: "AF_PUP: pup protocols: e.g. BSP";
+		Case  5: "AF_CHAOS: MIT CHAOS protocols";
+		Case  6: "AF_IPX/AF_NS: IPX protocols: IPX, SPX, etc., XEROX NS protocols";
+		Case  7: "AF_ISO/AF_OSI: ISO/OSI protocols";
+		Case  8: "AF_ECMA: European computer manufacturers";
+		Case  9: "AF_DATAKIT: datakit protocols";
+		Case 10: "AF_CCITT: CCITT protocols, X.25 etc";
+		Case 11: "AF_SNA: IBM SNA";
+		Case 12: "AF_DECnet: DECnet";
+		Case 13: "AF_DLI: Direct data link interface";
+		Case 14: "AF_LAT: LAT";
+		Case 15: "AF_HYLINK: NSC Hyperchannel";
+		Case 16: "AF_APPLETALK: AppleTalk";
+		Case 17: "AF_NETBIOS: NetBios-style addresses";
+		Case 18: "AF_VOICEVIEW: VoiceView";
+		Case 19: "AF_FIREFOX: Protocols from Firefox";
+		Case 21: "AF_BAN: Banyan";
+		Case 22: "AF_ATM: Native ATM Services";
+		Case 23: "AF_INET6: Internetwork Version 6";
+		Case 24: "AF_CLUSTER: Microsoft Cluster";
+		Case 25: "AF_12844: IEEE 1284.4 WG AF";
+		Case 26: "AF_IRDA: IrDA";
+		Case 28: "AF_NETDES: Network Designers OSI & gateway enabled protocols";
+		Case 29: "AF_TCNPROCESS";
+		Case 30: "AF_TCNMESSAGE";
+		Case 31: "AF_ICLFXBM";
+		Default: "Unknown Address Family";
+	}
+}
+//
+// NetLogonWkStaRRSStatus
+//
+// This table is used in the following structures:
+//
+//      NetLogonWkStaReLogonResponsePacket
+//         Opcodes:
+//         LOGON_RELOGON_RESPONSE
+//
+Table NetLogonWkStaRRSStatus(value)
+{
+	Switch ( value )
+	{
+		Case  0: FormatString("WKRRS_STATUS_SUCCEEDED: Operation succeeded %d (0x%X)", value, value);
+		Case  1: FormatString("WKRRS_STATUS_DENIED: Operation denied to caller %d (0x%X)", value, value);
+		Case  2: FormatString("WKRRS_STATUS_FAILED: Operation tried but failed %d (0x%X)", value, value);
+		Default: FormatString("Unknown Status: %d (0x%X)", value, value);
+	}
+}
+
+Table NetLogonNlNtVersionTable(value)
+{
+	Switch (value)
+	{
+		Case  5: "NT Version 5";
+		Case  4: "NT Version 4";
+		Default: "Windows 9x / Windows for Workgroups";
+	}
+}
+Table NetLogonNlNtVerTable(value)
+{
+	Switch (value)
+	{
+		Case  5: "NT5";
+		Case  4: "NT4";
+		Default: "W9x/WFW";
+	}
+}
+
+Table NetLogonLmTokenByteDescription(value1,value2)
+{
+	Switch (value1)
+	{
+		Case 0xfe: FormatString("Windows For Workgroups Networking: 0x%X%X", value1, value2);
+		Case 0xff: FormatString("OS/2 LAN Manager 2.0 (or later) Networking: 0x%X%X", value1, value2);
+		Default:   FormatString("Unknown: 0x%X%X", value1, value2);
+	}
+}
+
+Table NetLogonLmTokenByte(value)
+{
+	Switch (value)
+	{
+		Case 0xfe: FormatString("LMWFW_TOKENBYTE: %d 0x%X", value, value);
+		Case 0xff: FormatString("LM20_TOKENBYTE: %d 0x%X", value, value);
+		Default:   FormatString("Unknown: 0x%X%X", value, value);
+	}
+}
+
+Table NetLogonNtTokenByteDescription(value1,value2)
+{
+	Switch (value1)
+	{
+		Case 0xff: FormatString("Windows NT Networking: 0x%X%X", value1, value2);
+		Default:   FormatString("0x%X%X", value1, value2);
+	}
+}
+
+Table NetLogonNtTokenByte(value)
+{
+	Switch (value)
+	{
+		Case 0xff: FormatString("LMNT_TOKENBYTE: %d (0x%X)", value, value);
+		Default:   FormatString("%d (0x%X)", value, value);
+	}
+}
+
+//
+//*****************************************************************************************
+// NtLmNetLogon Field Structs
+//*****************************************************************************************
+//
+Struct NetLogonLmToken = NetLogonLmTokenByteDescription(UINT8(FrameData,Offset),UINT8(FrameData,Offset+1))
+{
+	UINT8 LmTokenByte1 = NetLogonLmTokenByte(this);
+	UINT8 LmTokenByte2 = NetLogonLmTokenByte(this);
+}
+//
+//
+//
+Struct NetLogonNtToken = NetLogonNtTokenByteDescription(UINT8(FrameData,Offset),UINT8(FrameData,Offset+1))
+{
+	UINT8 NtTokenByte1 = NetLogonNtTokenByte(this);
+	UINT8 NtTokenByte2 = NetLogonNtTokenByte(this);
+}
+//
+// This structure is used for the following Opcodes:
+//      WKSTA_RELOGON_REQUEST_PACKET
+//
+//Struct NetLogonWkStaRRFlags = FormatString("0x%08X", UINT32(FrameData,Offset))
+//{
+//	UINT32 WkRRQFlagLogonServer:1  = FormatString("(%s) %s", this.ToBitString, this ? "From official logon server." : "Not from official logon server.");
+// 	UINT32 Reserved:31 = FormatString("             (%s)", this.ToBitString);
+//}
+//
+// Version flags NetLogonNtVersion
+//
+Struct NetLogonNtVersion = FormatString("0x%08X %s %s",
+	UINT32(FrameData,Offset),
+	NetLogonNlNtVersionTable(NetLogonNlNtVer),
+	((Property.SMBResponse==1) ? "Server": "Client"))
+{
+	[ NetLogonNlNtVer = (UINT8(FrameData,Offset) & 0x0e) ? 5 : ((UINT8(FrameData,FrameLength-2) == 0xff) ? 4 : 0) ]
+	UINT32 NetLogonNTVersion1:1  = FormatString("           (%s) %s", this.ToBitString,this ? "NT Version 4" : NetLogonNlNtVersionTable(NetLogonNlNtVer));
+	UINT32 NetLogonNTVersion5:1  = FormatString("           (%s) %s", this.ToBitString, NetLogonNlNtVersionTable(NetLogonNlNtVer));
+	UINT32 NetLogonNTVersion5EX:1  = FormatString("         (%s) %s", this.ToBitString,this ? "Request for LogonResponseEX." : "Request for a LogonResponse.");
+	UINT32 NetLogonNTVersion5EXWithIP:1  = FormatString("   (%s) %s", this.ToBitString,this ? "Requesting responding DC IP address." : "Not requesting responding DC IP address.");
+	UINT32 Reserved:20 = FormatString("                     (%s)", this.ToBitString);
+	UINT32 NetLogonNTVersionAvoidNT4EMul:1  = FormatString("(%s) %s", this.ToBitString,this ? "Caller wants to avoid NT4.0 emulation." : "Caller doesn't care about NT4.0 emulation.");
+	UINT32 Reserved3:3  = FormatString("                    (%s)", this.ToBitString);
+	UINT32 NetlogonNTVersionPDC:1  = FormatString("         (%s) %s", this.ToBitString,this ? "Query for a PDC." : "Not a query for a PDC.");
+	UINT32 NetlogonNTVersionIP:1  = FormatString("          (%s) %s", this.ToBitString,this ? "Query for a DC running IP." : "Not a query for a DC running IP.");
+	UINT32 NetlogonNTVersionLocal:1  = FormatString("       (%s) %s", this.ToBitString,this ? "Caller is the local machine." : "Caller is a remote system.");
+	UINT32 NetlogonNTVersionGC:1  = FormatString("          (%s) %s", this.ToBitString,this ? "Query for a GC." : "Not a query for a GC.");
+}
+//
+// NetLogonNlFlags & NetLogonNlPing
+//
+// This structure is used in the following structures:
+//
+//      NetLogonSAMLogonResponseEX
+//         Opcodes:
+//         LOGON_SAM_LOGON_RESPONSE_EX (SAM only)
+//         LOGON_SAM_USER_UNKNOWN_EX   (SAM only)
+//         LOGON_SAM_PAUSE_RESPONSE_EX (SAM only)
+//
+//      NetLogonSAMLogonResponse
+//         Opcodes:
+//         LOGON_SAM_LOGON_RESPONSE (SAM only)
+//         LOGON_SAM_USER_UNKNOWN   (SAM only)
+//         LOGON_SAM_PAUSE_RESPONSE (SAM only)
+//
+Struct NetLogonNlFlags = FormatString("0x%08X %s", UINT32(FrameData,Offset), Property.NetLogonNlFlagsSummary)
+{
+	[ NetLogonNlFlagBits = (((UINT8(FrameData,Offset+1)&7) << 8) + (UINT8(FrameData,Offset) & 0xfd)) ]
+	UINT32 DSPDCFLAG:1  = FormatString("                (%s) %s", this.ToBitString,this ? "DC is a PDC of Domain." : "DC is not a PDC of Domain.");
+	UINT32 Reserved1:1  = FormatString("                (%s)", this.ToBitString);
+	UINT32 DSGCFlag:1  = FormatString("                 (%s) %s", this.ToBitString,this ? "DC is a GC of forest." : "DC is not a GC of forest.");
+	UINT32 DSLDAPFlag:1  = FormatString("               (%s) %s", this.ToBitString,this ? "Server supports an LDAP server." : "Not an LDAP server.");
+	UINT32 DSDSFlag:1  = FormatString("                 (%s) %s", this.ToBitString,this ? "DC supports a DS and is a Domain Controller." : "DC does not support a DS.");
+	UINT32 DSKDCFlag:1  = FormatString("                (%s) %s", this.ToBitString,this ? "DC is running KDC service." : "DC is not running KDC service.");
+	UINT32 DSTimeServFlag:1  = FormatString("           (%s) %s", this.ToBitString,this ? "DC is running time service." : "DC is not running time service.");
+	UINT32 DSClosestFlag:1  = FormatString("            (%s) %s", this.ToBitString,this ? "DC is in closest site to client." : "DC is not in closest site to client.");
+	UINT32 DSWritableFlag:1  = FormatString("           (%s) %s", this.ToBitString,this ? "DC has a writable DS." : "DC does not have a writable DS.");
+	UINT32 DSGoodTimeServFlag:1  = FormatString("       (%s) %s", this.ToBitString,this ? "DC is running time service (has clock hardware)." : "DC is running time service (does not have clock hardware).");
+	UINT32 DSNDNCFlag:1  = FormatString("               (%s) %s", this.ToBitString,this ? "DomainName is a domain NC serviced by the LDAP server." : "DomainName is a non-domain NC serviced by the LDAP server.");
+	[
+		NetLogonNlFlagsSummary = (NetLogonNlFlagBits & 0x0080) ? "In closest site to client" : "Not in closest site to client",
+		Post.NetLogonNlFlagsSummary = NetLogonNlFlagsSummary
+			+ ((NetLogonNlFlagBits & 0x0110) == 0) ? "" : ((NetLogonNlFlagBits & 0x0100) ? ", Writeable DS" : "DS")
+			+ ((NetLogonNlFlagBits & 0x0004) ? ", GC"  : "")
+			+ ((NetLogonNlFlagBits & 0x0020) ? ", KDC" : "")
+			+ ((NetLogonNlFlagBits & 0x0001) ? ", PDC" : "")
+			+ ((NetLogonNlFlagBits & 0x0008) ? ", LDAP server" : "")
+			+ ((NetLogonNlFlagBits | 0x0240) ? ", Time server" : "")
+	]
+	UINT32 DSSelectSecretDomain6Flag:1  = FormatString("(%s) %s", this.ToBitString,this ? "The server is an RODC." : "The server is notan RODC.");
+	UINT32 DSFullSecretDomain6Flag:1  = FormatString("  (%s) %s", this.ToBitString,this ? "The server is a writable DC." : "The server is not a writable DC.");
+	UINT32 DSWSFlag:1  = FormatString("                 (%s) %s", this.ToBitString,this ? "The Active Directory Web Service is present on the server." : "The Active Directory Web Service is not present on the server.");
+	UINT32 Reserved:15 = FormatString("                 (%s)", this.ToBitString);
+	UINT32 DSDNSControllerFlag:1  = FormatString("      (%s) %s", this.ToBitString,this ? "DomainControllerName is a DNS name." : "DomainControllerName is not a DNS name.");
+	UINT32 DSDNSDomainFlag:1  = FormatString("          (%s) %s", this.ToBitString,this ? "DomainName is a DNS name." : "DomainName is not a DNS name.");
+	UINT32 DSDNSForestFlag:1  = FormatString("          (%s) %s", this.ToBitString,this ? "DnsForestName is a DNS name." : "DnsForestName is not a DNS name.");
+}
+
+Struct NetLogonNlPing = FormatString("0x%08X PING", UINT32(FrameData,Offset))
+{
+	UINT32 Ping:16 = FormatString("               (%s)", this.ToBitString);
+	UINT32 Reserved:13 = FormatString("           (%s) %s", this.ToBitString);
+	UINT32 DSDNSControllerFlag:1  = FormatString("(%s) %s", this.ToBitString,this ? "DomainControllerName is a DNS name." : "DomainControllerName is not a DNS name.");
+	UINT32 DSDNSDomainFlag:1  = FormatString("    (%s) %s", this.ToBitString,this ? "DomainName is a DNS name." : "DomainName is not a DNS name.");
+	UINT32 DSDNSForestFlag:1  = FormatString("    (%s) %s", this.ToBitString,this ? "DnsForestName is a DNS name." : "DnsForestName is not a DNS name.");
+}
+//
+// NetLogonAccountControl
+//
+// This structure is used in the following structures:
+//      NetLogonSAMLogonRequest
+//      Opcodes:
+//         LOGON_SAM_LOGON_REQUEST (SAM Only)
+//
+//
+Struct NetLogonAccountControl = FormatString("0x%08X %s", UINT32(FrameData,Offset), Property.NetLogonACSummary)
+{
+	[ NetLogonAccountBits = (((UINT8(FrameData,Offset+1)&1) << 8) + (UINT8(FrameData,Offset) & 0xf8)) ]
+	UINT32 UserAccountDisabled:1  = FormatString("                   (%s) %s", this.ToBitString,this ? "User Account Disabled." : "User Account Enabled.");
+	UINT32 UserHomeDirectoryRequired:1  = FormatString("             (%s) %s", this.ToBitString,this ? "User Home Directory Required." : "User Home Directory Not Required.");
+	UINT32 UserPasswordNotRequired:1  = FormatString("               (%s) %s", this.ToBitString,this ? "User Password Not Required." : "User Password Required.");
+	UINT32 UserTempDuplicateAccount:1  = FormatString("              (%s) %s", this.ToBitString,this ? "Temp Duplicate User Account." : "Not a Temp Duplicate User Account.");
+	UINT32 UserNormalAccount:1  = FormatString("                     (%s) %s", this.ToBitString,this ? "Normal User Account." : "Not a Normal User Account.");
+	UINT32 UserMNSLogonAccount:1  = FormatString("                   (%s) %s", this.ToBitString,this ? "Microsoft Services for Netware (MNS) User Account." : "Not a Microsoft Services for Netware (MNS) User Account.");
+	UINT32 UserInterDomainTrustAccount:1  = FormatString("           (%s) %s", this.ToBitString,this ? "Interdomain Trust User Account." : "Not an Interdomain Trust User Account.");
+	UINT32 UserWorkStationTrustAccount:1  = FormatString("           (%s) %s", this.ToBitString,this ? "Workstation Trust User Account." : "Not a Workstation Trust User Account.");
+	UINT32 UserServerTrustAccount:1  = FormatString("                (%s) %s", this.ToBitString,this ? "Server Trust User Account." : "Not a Server Trust User Account.");
+	UINT32 UserDontExpirePassword:1  = FormatString("                (%s) %s", this.ToBitString,this ? "Don't Expire User Password." : "User Password Will Expire.");
+	UINT32 UserAccountAutoLocked:1  = FormatString("                 (%s) %s", this.ToBitString,this ? "User Account Auto Locked." : "User Account Not Auto Locked.");
+	UINT32 UserEncryptedTextPasswordAllowed:1  = FormatString("      (%s) %s", this.ToBitString,this ? "Encrypted Text Password Allowed." : "Encrypted Text Password Not Allowed.");
+	UINT32 UserSmartCardRequired:1  = FormatString("                 (%s) %s", this.ToBitString,this ? "Smartcard Required." : "Smartcard not Required.");
+	UINT32 UserTrustedForDelegation:1  = FormatString("              (%s) %s", this.ToBitString,this ? "Trusted for Delegation." : "Not Trusted for Delegation.");
+	UINT32 UserNotDelegated:1  = FormatString("                      (%s) %s", this.ToBitString,this ? "User not delegated." : "User delegated.");
+	UINT32 UserUseDesKeyOnly:1  = FormatString("                     (%s) %s", this.ToBitString,this ? "Use DES Key Only." : "Use DES Key Only Not Required.");
+	UINT32 UserDontRequirePreAuth:1  = FormatString("                (%s) %s", this.ToBitString,this ? "Don't Require Pre-Authorization." : "Require Pre-Authorization.");
+	UINT32 UserPasswordExpired:1  = FormatString("                   (%s) %s", this.ToBitString,this ? "User Account Expired." : "User Account Not Expired.");
+	UINT32 UserTrustedToAuthenticateForDelegation:1  = FormatString("(%s) %s", this.ToBitString,this ? "Trusted to Authenticate for Delegation." : "Not Trusted to Authenticate for Delegation.");
+	[
+		NetLogonACSummary = ((NetLogonAccountBits & 0x01f8) == 0) ? "" :
+			((NetLogonAccountBits & 0x0018) ? "User account" :
+			((NetLogonAccountBits & 0x0040) ? "InterDomain trust account" :
+			((NetLogonAccountBits & 0x0080) ? "Workstation trust account" :
+			((NetLogonAccountBits & 0x0100) ? "Server trust account" : "MNS account"))))
+			+ ((UserAccountDisabled) ? ", disabled"         : "")
+			+ ((UserAccountAutoLocked) ? ", locked"           : "")
+			+ ((UserPasswordExpired) ? ", Password expired" : "")
+	]
+	UINT32 UserNoAuthDataRequired:1  = FormatString("                (%s) %s", this.ToBitString,this ? "No authentication data required." : "Authentication data required.");
+ 	UINT32 Reserved:12 = FormatString("                              (%s)", this.ToBitString);
+}
+//
+// This structure is used in the following structures:
+//
+//      NETLOGON_DB_STRUCTURE
+//         Opcodes:
+//         LOGON_UAS_CHANGE
+//
+Struct NetLogonDBChangeInfo
+{
+	UINT32   DBIndex;
+	UINT64   LargeSerialNumber;
+	FILETIME NtDateAndTime;
+}
+//
+//*****************************************************************************************
+// NtLmNetLogon custom/complex Data Types
+//*****************************************************************************************
+//
+// Host byte order (a.k.a. big-endian)
+//
+UnsignedNumber BigEndianIPv4Address
+{
+	Size = 4;
+	DisplayFormat = FormatString( "%u.%u.%u.%u", this[0], this[1], this[2], this[3] );
+}
+//
+// Host byte order (a.k.a. big-endian)
+//
+UnsignedNumber BigEndianIPv6Address
+{
+	Size = 16;
+	DisplayFormat = FormatString( "%X:%X:%X:%X:%X:%X:%X:%X", this[0]  * 256 + this[1],
+								  this[2]  * 256 +  this[3], this[4]  * 256 + this[5],
+								  this[6]  * 256 +  this[7], this[8]  * 256 + this[9],
+								  this[10] * 256 + this[11], this[12] * 256 + this[13],
+								  this[14] * 256 + this[15] );
+}
+
+//
+//*****************************************************************************************
+// NtLmNetLogon Message Structs
+//*****************************************************************************************
+//
+// NetLogonSAMLogonResponseEX
+//
+// This structure is used for the following Opcodes:
+//      LOGON_SAM_LOGON_RESPONSE_EX (SAM only)
+//      LOGON_SAM_USER_UNKNOWN_EX   (SAM only)
+//      LOGON_SAM_PAUSE_RESPONSE_EX (SAM only)
+//
+// All character fields are compressed UTF-8 per RFC 1035
+//
+Struct NetLogonSAMLogonResponseEX = Property.NetLogonAddrInfo
+{
+    UINT16 Opcode = NetLogonOpcodeNames(this);
+    UINT16 Sbz;
+	Switch (UINT16(FrameData,Offset))
+	{
+		Case 0xffff: NetLogonNlPing  Ping;
+		Default:     NetLogonNlFlags Flags;
+	}
+    GUID(TRUE) DomainGuid;
+    DNSString  DnsForestName;
+    DNSString  DnsDomainName;
+	[ NetLogonAddrInfo = DnsHostName ]
+    DNSString  DnsHostName;
+    DNSString  NetbiosDomainName;
+    DNSString  NetbiosComputerName;
+    DNSString  UserName;
+    DNSString  DcSiteName;
+    DNSString  ClientSiteName;
+	Switch
+	{
+		Case (UINT8(FrameData,FrameLength-8) & 0x08) > 0:
+			// The following fields should be present for
+			// NetLogonNtVersion.NETLOGON_NT_VERSION_5EX_WITH_IP only
+			Struct DCAddress = NetLogonResponseAddrType(UINT16(FrameData,Offset+1))
+			{
+				UINT8  AddressSize;
+				UINT16 AddressType = FormatString("%s: %d (0x%X)", NetLogonResponseAddressType(this), this, this);
+				Switch ( AddressType )
+				{
+					Case  2: // AF_INET
+					Case 23: // AF_INET6
+						UINT16 Port;
+				}
+				Switch ( AddressType )
+				{
+					Case  2: // AF_INET
+						_Struct
+						{
+							BigEndianIPv4Address IP4Address;
+							ArrayAsHex(8) sin_zero;
+						};
+					Case 23: // AF_INET6
+						BigEndianIPv6Address IP6Address;
+					Default:
+						ArrayAsHex(AddressSize) PortAndAddress;
+				}
+			};
+		Case FrameLength - Offset > 8:
+			DNSString  NextClosestSiteName;
+	}
+	NetLogonNtVersion Version;
+	NetLogonNtToken   LmNtToken;
+	NetLogonLmToken   Lm20Token;
+}
+//
+// NetLogonSAMLogonResponse
+//
+// This structure is used for the following Opcodes:
+//      LOGON_SAM_LOGON_RESPONSE (SAM only)
+//      LOGON_SAM_USER_UNKNOWN   (SAM only)
+//      LOGON_SAM_PAUSE_RESPONSE (SAM only)
+//
+Struct NetLogonSAMLogonResponse = Property.NetLogonAddrInfo
+{
+    UINT16        Opcode = NetLogonOpcodeNames(this);
+	[ NetLogonAddrInfo = UnicodeLogonServer ]
+    UnicodeString UnicodeLogonServer;
+    UnicodeString UnicodeUserName;
+    UnicodeString UnicodeDomainName;
+	Switch
+	{
+		Case (UINT8(FrameData,FrameLength-8) & 0x02) > 0:
+			// The following fields are present for NetLogonNtVersion.NETLOGON_NT_VERSION_5 only
+			_Struct
+			{
+				GUID(TRUE) DomainGuid;
+				GUID(TRUE) SiteGuid;
+				DNSString  DnsForestName;
+				DNSString  DnsDomainName;
+				DNSString  DnsHostName;
+				BigEndianIPv4Address DcIpAddress;
+				Switch (UINT16(FrameData,Offset))
+				{
+					Case 0xffff: NetLogonNlPing  Ping;
+					Default:     NetLogonNlFlags Flags;
+				}
+			};
+		Case FrameLength - Offset > 8:
+			Blob( FrameLength - 8 - Offset) Unknown;
+	}
+	NetLogonNtVersion Version;
+	NetLogonNtToken   LmNtToken;
+	NetLogonLmToken   Lm20Token;
+}
+//
+// NetLogonSAMLogonRequest
+//
+// This structure is used for the following Opcodes:
+//      LOGON_SAM_LOGON_REQUEST (SAM Only)
+//
+// This message exceeds the maximum size for broadcast mailslot messages.
+// In practice, this will only be a problem if the UnicodeUserName
+// is over 100 characters long.
+//
+Struct NetLogonSAMLogonRequest
+{
+    UINT16         Opcode = NetLogonOpcodeNames(this);
+    UINT16         RequestCount;
+    UnicodeString  UnicodeComputerName;
+    UnicodeString  UnicodeUserName;
+    AsciiString    MailslotName;
+    NetLogonAccountControl AllowableAccountControlBits;
+	UINT32         DomainSidSize;
+	Switch
+	{
+		Case DomainSidSize > 0:
+			// Domain SID always appears at a 4-byte boundary in the message.
+			_Struct
+			{
+				ALIGN4 Align;
+				
+				SID(FALSE) DomainSid;
+			};
+	}
+	NetLogonNtVersion Version;
+	NetLogonNtToken   LmNtToken;
+	NetLogonLmToken   Lm20Token;
+}
+//
+// NetLogonLogonAccountUpdate [defined here only]
+//
+// This structure is used for the following Opcodes:
+//      LOGON_UPDATE_ACCOUNT
+//
+Struct NetLogonLogonAccountUpdate
+{
+	UINT16        Opcode = NetLogonOpcodeNames(this);
+	ArrayAsHex(8) AuthenticationSignature; // Account update authentication signature
+	UNIXTIMESTAMP	DateAndTime;
+	AsciiString   ComputerName;
+	AsciiString   UserName;
+	UINT16        UpdateType = NetLogonNlUpdateTypes(this);
+	NetLogonNtVersion     Version;
+	NetLogonNtToken       LmNtToken;
+	NetLogonLmToken       Lm20Token;
+}
+//
+// NetLogonFailPrimary
+//
+// This structure is used for the following Opcodes:
+//      LOGON_FAIL_PRIMARY (All LanMan versions)
+//
+Struct NetLogonFailPrimary
+{
+	UINT16    Opcode = NetLogonOpcodeNames(this);
+	NetLogonNtVersion Version;
+	NetLogonNtToken   LmNtToken;
+	NetLogonLmToken   Lm20Token;
+}
+//
+// WKSTA_INFO_INTERROGATE_PACKET
+//
+// This structure is used for the following Opcodes:
+//      LOGON_WKSTINFO_RESPONSE
+//      LOGON_SAM_WKSTINFO_RESPONSE (deprecated after NT4)
+//
+//Struct WKSTA_INFO_INTERROGATE_PACKET
+//{
+//	UINT16       Opcode = NetLogonOpcodeNames(this);
+//	UINT8        CompatibilityPad;
+//	AsciiString  ReturnMailslot;
+//}
+//
+// NetLogonWkStaInfoResponsePacket
+//
+// This structure is used for the following Opcodes:
+//      LOGON_WKSTINFO_RESPONSE
+//      LOGON_SAM_WKSTINFO_RESPONSE
+//
+Struct NetLogonWkStaInfoResponsePacket
+{
+	UINT16       Opcode = NetLogonOpcodeNames(this);
+    UINT8        CompatibilityPad;
+    UINT8        VersionMajor;
+    UINT8        VersionMinor;
+    UINT16       OsVersion;
+	AsciiString  ComputerName;
+	Switch
+	{
+		Case Offset < FrameLength:
+			AsciiString UserName;
+	}
+	Switch
+	{
+		Case Offset < FrameLength:
+			AsciiString LogonDomain;
+	}
+}
+//
+// WKSTA_RELOGON_REQUEST_PACKET
+// This structure is used for the following Opcodes:
+//      LOGON_RELOGON_RESPONSE
+//
+//Struct WKSTA_RELOGON_REQUEST_PACKET
+//{
+//	UINT16       Opcode = NetLogonOpcodeNames(this);
+//	UINT8        CompatibilityPad;	// Sbz
+//	UINT16       Delay;
+//	NetLogonWkStaRRFlags Flags;
+//	AsciiString  ComputerName;
+//	AsciiString  DC_Name;
+//}
+//
+// NetLogonWkStaReLogonResponsePacket
+//
+// This structure is used for the following Opcodes:
+//      LOGON_RELOGON_RESPONSE
+//
+Struct NetLogonWkStaReLogonResponsePacket
+{
+	UINT16      Opcode = NetLogonOpcodeNames(this);
+    UINT8       CompatibilityPad;	// Sbz
+    UINT16      Status = NetLogonWkStaRRSStatus(this);
+    AsciiString ComputerName;
+}
+//
+// NetLogonNoUser [defined here only]
+//
+// This structure is used for the following Opcodes:
+//      LOGON_NO_USER
+//
+Struct NetLogonNoUser
+{
+	UINT16      Opcode = NetLogonOpcodeNames(this);
+    AsciiString ComputerName;
+}
+//
+// NETLOGON_DB_STRUCTURE contains common change info for all databases and
+//  array of per database change info. First half of this structure is
+//  identical to downlevel NETLOGON_UAS_CHANGE message and contains SAM
+//  database change info.
+//
+// This structure is used for the following Opcodes:
+//      LOGON_UAS_CHANGE
+//
+Struct NetLogonDBChange
+{
+	UINT16      Opcode = NetLogonOpcodeNames(this);
+    UINT32      LowSerialNumber;
+    FILETIME    DateAndTime;
+    UINT32      Pulse;
+    UINT32      Random;
+	AsciiString PrimaryDCName;
+	AsciiString DomainName;
+	Switch
+	{
+		Case Offset < FrameLength:
+			// The following fields are present if and only if
+			// this message is from an NT system
+			_Struct
+			{
+				Switch
+				{
+					Case (CurrentProtocolOffset % 2) > 0:
+						UINT8 Align;
+				}
+				UnicodeString  UnicodePrimaryDCName;
+				UnicodeString  UnicodeDomainName;
+				UINT32         DBCount;
+				NetLogonDBChangeInfo DBChangeInfo[DBCount];
+				UINT32         DomainSidSize;
+				// Domain SID always appears at a 4-byte boundary in the message.
+				ALIGN4         Align4;
+				//SID(FALSE) DomainSid;
+				SID(FALSE)            DomainSid;
+				NetLogonNtVersion      Version;
+				NetLogonNtToken        LmNtToken;
+				NetLogonLmToken        Lm20Token;
+			};
+	}
+}
+//
+// NetLogonPrimary
+//
+// This structure is used for the following Opcodes:
+//      LOGON_START_PRIMARY (deprecated after NT3.1)
+//      LOGON_PRIMARY_RESPONSE
+//
+Struct NetLogonPrimary
+{
+    UINT16      Opcode = NetLogonOpcodeNames(this);
+    AsciiString PrimaryDCName;
+	Switch
+	{
+		Case Offset < FrameLength:
+			// The following fields are present if and only if
+			// this message is from an NT system
+			_Struct
+			{
+				Switch
+				{
+					Case (CurrentProtocolOffset % 2) > 0:
+						UINT8 Align;
+				}
+				UnicodeString UnicodePrimaryDCName;
+				UnicodeString UnicodeDomainName;
+				NetLogonNtVersion     Version;
+				NetLogonNtToken       LmNtToken;
+				NetLogonLmToken       Lm20Token;
+			};
+	}
+}
+//
+// NetLogonLogonResponse2
+//
+// This structure is used for the following Opcodes:
+//      LOGON_RESPONSE2      (LM 2.0 only)
+//      LOGON_USER_UNKNOWN   (LM 2.0 only)
+//      LOGON_PAUSE_RESPONSE (LM 2.0 only)
+//
+Struct NetLogonLogonResponse2
+{
+    UINT16				Opcode = NetLogonOpcodeNames(this);
+	AsciiString			LogonServer;
+	NetLogonLmToken     Lm20Token;
+}
+//
+// NetLogonLogonQuery:
+//
+// This structure is used for the following Opcodes:
+//      LOGON_PRIMARY_QUERY    (all LanMan versions)
+//      LOGON_CENTRAL_QUERY    (LM 1.0 only)
+//      LOGON_CENTRAL_RESPONSE (LM 1.0 only)
+//      LOGON_DISTRIB_QUERY    (LM 1.0 only)
+//      LOGON_DISTRIB_RESPONSE (LM 1.0 only)
+//
+Struct NetLogonLogonQuery
+{
+    UINT16      Opcode = NetLogonOpcodeNames(this);
+    AsciiString ComputerName;
+	AsciiString MailslotName;
+	Switch
+	{
+		//
+		// These fields present if and only if this is a
+		// NETLOGON_PRIMARY_QUERY from an NT system
+		//
+		// Switch criteria:
+		//
+		// 1. UINT8(FrameData,FrameLength-1) == 0xff (LM20_TOKENBYTE)
+		// 2. FrameLength - Offset > 2 [this is a sufficient check]
+		//
+		Case FrameLength - Offset > 2:
+			_Struct
+			{
+				Switch
+				{
+					Case (CurrentProtocolOffset % 2) > 0:
+						UINT8 Align;
+				}
+				UnicodeString UnicodeComputerName;
+				NetLogonNtVersion     Version;
+				NetLogonNtToken       LmNtToken;
+			};
+	}
+	NetLogonLmToken   Lm20Token;
+}
+//
+// NetLogonLogonResponse:
+//
+// This structure is used for the following Opcodes:
+//      LOGON_RESPONSE (To LM 1.0 clients only).
+//
+Struct NetLogonLogonResponse
+{
+	UINT16      Opcode = NetLogonOpcodeNames(this);
+	AsciiString UseName;
+	AsciiString ScriptName;
+}
+//
+// NetLogonLogonRequest
+//
+// This structure is used for the following Opcodes:
+//      LOGON_REQUEST (LM 1.0 and LM 2.0 Only)
+//
+Struct NetLogonLogonRequest
+{
+	UINT16      Opcode = NetLogonOpcodeNames(this);
+	AsciiString ComputerName;
+	AsciiString UserName;
+	AsciiString MailslotName;
+	switch
+    {
+	    case (Framelength - FrameOffset) % 2 > 0: UINT8 Pad;
+		//BLOB(DataOffset-CurrentProtocolOffset) Pad2;
+    }
+	
+	UINT16      RequestCount;
+	NetLogonLmToken     Lm20Token;
+}
+//
+// Bucket for unknown messages
+//
+Struct NetLogonUnknown
+{
+	UINT16 Opcode = NetLogonOpcodeNames(this);
+	Blob(FrameLength-Offset) Unknown;
+}
+

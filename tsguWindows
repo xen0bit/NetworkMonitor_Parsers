@@ -1,0 +1,1278 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Terminal Services Gateway Server Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-TSGU]: Terminal Services Gateway Server Protocol Specification (14.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 7/21/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+[RegisterAfter(MSRPCStubData.BPAU,Tsgu,"{44e265dd-7daf-42cd-8560-3cdb6e7a2729}")]
+Protocol TSGU = FormatString( "%s %s%s%s%s%s", 
+	Property.TSGUMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.TSGUSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.TSGUSummary : "" )
+{
+	[Property.TSGUSummary = ""]
+	[Property.TSGUMethodName = TSGUMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 1:
+			_Struct TsProxyCreateTunnel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										TSGUTsgPacket TsgPacket;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "TunnelId=%u ReturnValue=%s", TunnelId, ReturnValue.ToString )]
+									Struct
+									{
+										NdrPtr TsgPacketPtr;
+										Switch
+										{
+											Case TsgPacketPtr.ReferentID > 0:
+												TSGUTsgPacket TsgPacket;
+										}
+										Align4 Pad;
+										ContextHandle TunnelContext;
+										UINT32 TunnelId;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct TsProxyAuthorizeTunnel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle TunnelContext;
+										NdrAlign Pad;
+										TSGUTsgPacket TsgPacket;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										NdrPtr TsgPacketPtr;
+										Switch
+										{
+											Case TsgPacketPtr.ReferentID != 0:
+												TSGUTsgPacket TsgPacket;
+										}
+										Align4 Pad;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct TsProxyMakeTunnelCall
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ProcId=%u", ProcId )]
+									Struct
+									{
+										ContextHandle TunnelContext;
+										UINT32 ProcId = TSGUTsProxyMakeTunnelCallProcIdTable(this);
+										NdrAlign Pad;
+										TSGUTsgPacket TsgPacket;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										NdrPtr TSGUTsgPacketPtr;
+										switch
+										{
+											case TSGUTsgPacketPtr.ReferentID > 0:
+												TSGUTsgPacket TsgPacket;
+										}
+										Align4 Pad;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct TsProxyCreateChannel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+								Struct
+								{
+									ContextHandle TunnelContext;
+									TSGUTsendpointinfo Tsendpointinfo;
+								}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ChannelId=%u ReturnValue=%s", ChannelId, ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle ChannelContext;
+										UINT32 ChannelId;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct TsProxyCloseChannel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct TsProxyCloseTunnel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct TsProxySetupReceivePipe
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+								Struct
+								{
+									TSGUTsgClientToTSGServerPacketFormat TsgClientToTSGServerPacketFormat;
+								}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = Property.MSRPCLastFrag?FormatString( "ReturnValue=%s", ReturnValue.ToString) :""]
+									Struct
+									{
+										switch
+										{
+											case Property.MSRPCLastFrag:
+												UINT32 ReturnValue;
+											default:
+												TSGUGenericReceivePipeMessagePacket	GenericReceivePipeMessagePacket;
+										}		
+									}							
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct TsProxySendToServer
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										TSGUGenericSendDataMessagePacket GenericSendDataMessagePacket;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[TSGUSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										UINT32 ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 0:
+		Case 5:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[TSGUSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("TSGU", "Invalid TsProxyRpcInterface method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[TSGUSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("TSGU", "Invalid TsProxyRpcInterface method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("TSGU", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "TSGU", "Unknown TsProxyRpcInterface method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+//
+//	_tsendpointinfo
+//  NdrAlign
+//
+Struct TSGUTsendpointinfo
+{
+	NdrPtr ResourceName;
+	UINT32 NumResourceNames;
+	NdrPtr AlternateResourceNames;
+	UINT16 NumAlternateResourceNames;
+	Align4 pad;
+	UINT32 Port;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign Pad2;
+	}
+	Switch
+	{
+		Case ResourceName.ReferentID > 0:
+		struct
+		{
+			NdrConformant NumResourceNamesConf;
+			[MaxLoopCount = NumResourceNamesConf.Maxcount,Local.ResourceNameCount = 0]
+			while[Local.ResourceNameCount < NumResourceNamesConf.Maxcount]
+			{
+				[Local.ResourceNameCount = Local.ResourceNameCount + 1,
+				Local.ResourceNameCount$[Local.ResourceNameCount] = this.ReferentID]
+				NdrPtr ResourceNamePtr;
+			}
+			[MaxLoopCount = NumResourceNamesConf.Maxcount,Local.ResourceNameRefCount = 0]
+			while [Local.ResourceNameRefCount < NumResourceNamesConf.Maxcount]
+			{
+				[Local.ResourceNameRefCount = Local.ResourceNameRefCount + 1]
+				switch
+				{
+					case Local.ResourceNameCount$[Local.ResourceNameRefCount] > 0 :
+					NdrWideString ResourceName;
+				}
+			}
+		}
+	}
+	Switch
+	{
+		Case AlternateResourceNames.ReferentID > 0:
+		struct
+		{
+			NdrConformant AlternateResourceNamesConf;
+			[MaxLoopCount = AlternateResourceNamesConf.Maxcount,Local.ResourceNameCount = 0]
+			while[Local.ResourceNameCount < AlternateResourceNamesConf.Maxcount]
+			{
+				[Local.AlternateResourceNameCount = Local.AlternateResourceNameCount + 1,
+				Local.AlternateResourceNameCount$[Local.AlternateResourceNameCount] = this.ReferentID]
+				NdrPtr AlternateResourceNamesPtr;
+			}
+			[MaxLoopCount = AlternateResourceNamesConf.Maxcount,Local.AlternateResourceNameRefCount = 0]
+			while [Local.AlternateResourceNameRefCount < AlternateResourceNamesConf.Maxcount]
+			{
+				[Local.AlternateResourceNameRefCount = Local.AlternateResourceNameRefCount + 1]
+				switch
+				{
+					case Local.AlternateResourceNameCount$[Local.AlternateResourceNameRefCount] > 0 :
+					NdrWideString AlternateResourceName;
+				}
+			}
+		}		
+	}
+}
+
+//
+//	TSG_CAPABILITIES_UNION
+//  Align4
+//
+Struct TSGUTsgCapabilitiesUnion
+{
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 1:
+			TSGUTsgCapabilityNap TsgCapNap;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "TSGU", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_TSG_CAPABILITY_NAP
+//  Align4
+//
+Struct TSGUTsgCapabilityNap
+{
+	UINT32 Capabilities = TSGUTsgCapabilityNapCapabilitiesTable(this);
+}
+
+Table TSGUTsgCapabilityNapCapabilitiesTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "The TSG server supports the NAP capability of receiving and processing a quarantine statement of health from the TSG client.";
+		Case 0x00000004: "The TSG server supports the capability of consent messaging.";
+		Case 0x00000008: "The TSG server supports the service message capability.";
+		Case 0x00000010: "The TSG server supports the reauthentication capability.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	TSG_INITIAL_PACKET_TYPE_UNION
+//  NdrAlign
+//
+Struct TSGUTsgInitialPacketTypeUnion
+{
+	UINT32 SwitchValue;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign PadArm;
+	}
+	Switch( SwitchValue )
+	{
+		Case 22083:
+		struct
+		{
+			NdrPtr PacketVersionCapsPtr;
+			switch
+			{
+				case PacketVersionCapsPtr.ReferentId : TSGUTsgPacketVersioncaps PacketVersionCaps;
+			}
+		}
+		Case 16468:
+		struct
+		{
+			NdrPtr PacketAuthPtr;
+			switch
+			{
+				case PacketAuthPtr.ReferentId : TSGUTsgPacketAuth packetAuth;
+			}
+		}		
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "TSGU", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_TSG_PACKET
+//  NdrAlign
+//
+Struct TSGUTsgPacket
+{
+	UINT32 PacketId;
+	//NdrAlign Pad;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign Pad;
+	}
+	TSGUTsgPacketTypeUnion TsgPacket;
+}
+
+//
+//	_TSG_PACKET_AUTH
+//  NdrAlign
+//
+Struct TSGUTsgPacketAuth
+{
+	struct TsgPacketVersionCaps
+	{
+		TSGUTsgPacketHeader TsgHeader;
+		NdrPtr TsgCapsPtr;
+		UINT32 NumCapabilities;
+		UINT16 MajorVersion = TSGUTsgPacketVersioncapsMajorVersionTable(this);
+		UINT16 MinorVersion = TSGUTsgPacketVersioncapsMinorVersionTable(this);
+		UINT16 QuarantineCapabilities = TSGUTsgPacketVersioncapsQuarantineCapabilitiesTable(this);
+	}
+	NdrAlign Pad;
+	UINT32 CookieLen;
+	NdrPtr CookiePtr;
+	switch
+	{
+		case TsgPacketVersionCaps.TsgCapsPtr.ReferentId:
+		struct
+		{
+			NdrConformant NumCapabilitiesConf;
+			TSGUTsgPacketCapabilities tsgCaps[NumCapabilitiesConf.MaxCount];
+		}
+	}
+	switch
+	{
+		case CookiePtr.ReferentId:
+		struct
+		{
+			NdrConformant CookieLenConf;
+			BLOB(CookieLenConf.MaxCount) Cookie;
+		}
+	}
+}
+
+//
+//	_TSG_PACKET_CAPABILITIES
+//  Align4
+//
+Struct TSGUTsgPacketCapabilities
+{
+	UINT32 CapabilityType = TSGUTsgPacketCapabilitiesCapabilityTypeTable(this);
+	TSGUTsgCapabilitiesUnion TsgPacket;
+}
+
+Table TSGUTsgPacketCapabilitiesCapabilityTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "The TSG server supports NAP capability type (TSG_CAPABILITY_TYPE_NAP).windows_xp_sp2, windows_vista, windows_server_2003_sp1, and longhorn_server send the capability type 0x00000001 indicating that each understands NAP capability. Based on quarantine policies set on longhorn_server, it will require quarantine information to be sent from client to server.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	TSG_PACKET_CAPS_RESPONSE
+//  NdrAlign
+//
+Struct TSGUTsgPacketCapsResponse
+{
+	TSGUTsgPacketQuarencResponse PktQuarEncResponse;
+	TSGUTsgPacketMsgResponse PktConsentMessage;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign Pad;
+	}
+	switch
+	{
+		case PktQuarEncResponse.CertChainDataPtr.ReferentId: NdrWideString CertChainData;
+	}
+	switch
+	{
+		case PktQuarEncResponse.VersionCapsPtr.ReferentId: TSGUTsgPacketVersioncaps VersionCaps;
+	}
+	TSGUTsgPacketTypeMessageUnionRef MessageUnionRef;
+}
+
+//
+//	_TSG_PACKET_HEADER
+//  Align2
+//
+Struct TSGUTsgPacketHeader
+{
+	UINT16 ComponentId = TSGUTsgPacketHeaderComponentIdTable(this);
+	UINT16 PacketId;
+}
+
+Table TSGUTsgPacketHeaderComponentIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x5452: "TS Gateway Transport";
+		Default: "Unknown";
+	}
+}
+
+//
+//	TSG_PACKET_MSG_REQUEST
+//  Align4
+//
+Struct TSGUTsgPacketMsgRequest
+{
+	UINT32 MaxMessagesPerBatch;
+}
+
+//
+//	_TSG_PACKET_MSG_RESPONSE
+//  NdrAlign
+//
+Struct TSGUTsgPacketMsgResponse
+{
+	UINT32 MsgID;
+	UINT32 MsgType = TSGUTsgPacketMsgResponseMsgTypeTable(this);
+	INT32 IsMsgPresent;
+	//NdrAlign Pad;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign Pad;
+	}
+	TSGUTsgPacketTypeMessageUnion MessagePacket;
+}
+
+Table TSGUTsgPacketMsgResponseMsgTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "TSG_ASYNC_MESSAGE_CONSENT_MESSAGE - The server is sending a Consent Signing Message.";
+		Case 0x00000002: "TSG_ASYNC_MESSAGE_SERVICE_MESSAGE - The server is sending an Administrative Message.";
+		Case 0x00000003: "TSG_ASYNC_MESSAGE_REAUTH - The server expects the client to Reauthenticate.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_TSG_PACKET_QUARCONFIGREQUEST
+//  Align4
+//
+Struct TSGUTsgPacketQuarconfigrequest
+{
+	UINT32 Flags;
+}
+
+//
+//	_TSG_PACKET_QUARENC_RESPONSE
+//  NdrAlign
+//
+Struct TSGUTsgPacketQuarencResponse
+{
+	UINT32 Flags;
+	UINT32 CertChainLen;
+	NdrPtr CertChainDataPtr;
+	MSRPCGuid Nonce;
+	NdrPtr VersionCapsPtr;
+}
+
+//
+//	_TSG_PACKET_QUARREQUEST
+//  NdrAlign
+//
+Struct TSGUTsgPacketQuarrequest
+{
+	UINT32 Flags;
+	NdrPtr MachineNamePtr;
+	UINT32 NameLength;
+	NdrPtr DataPtr;
+	UINT32 DataLen;
+	switch
+	{
+		case Property.msrpcNdr64:
+			Align8 Pad;
+	}
+	switch
+	{
+		case MachineNamePtr.ReferentId: NdrWideString MachineName;
+	}
+	switch
+	{
+		case DataPtr.ReferentId: 
+		struct
+		{
+			NdrConformant DataLenConf;
+			BLOB(DataLenConf.MaxCount) data;
+		}
+	}	
+}
+
+//
+//	TSG_PACKET_REAUTH
+//  Align8
+//
+Struct TSGUTsgPacketReauth
+{
+	UINT64 TunnelContext;
+	UINT32 PacketId = TSGUTsgPacketReauthPacketIdTable(this);
+	//NdrAlign Pad;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign Pad;
+	}
+	TSGUTsgInitialPacketTypeUnion TsgInitialPacket;
+}
+
+//
+//	TSG_PACKET_REAUTH_MESSAGE
+//  Align8
+//
+Struct TSGUTsgPacketReauthMessage
+{
+	UINT64 TunnelContext;
+}
+
+Table TSGUTsgPacketReauthPacketIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00005643: "TSG_PACKET_TYPE_VERSIONCAPS - This packet is sent when Pluggable Authentication is off.";
+		Case 0x00004054: "TSG_PACKET_TYPE_AUTH - This packet is sent when Pluggable Authentication is on. This packet includes TSG_PACKET_VERSIONCAPS as well as the cookie that is required for authentication.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_TSG_PACKET_RESPONSE
+//  NdrAlign
+//
+Struct TSGUTsgPacketResponse
+{
+	UINT32 Flags = TSGUTsgPacketResponseFlagsTable(this);
+	UINT32 Reserved;
+	NdrPtr ResponseDataPtr;
+	UINT32 ResponseDataLen;
+	TSGUTsgRedirectionFlags RedirectionFlags;
+	switch
+	{
+		case Property.msrpcNdr64:
+			Align8 Pad;
+	}
+	switch
+	{
+		case  ResponseDataPtr.ReferentId: 
+		struct
+		{
+			NdrConformant ResponseDataLenConf;
+			BLOB(ResponseDataLenConf.MaxCount) ResponseData;
+		}
+	}
+}
+
+Table TSGUTsgPacketResponseFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x5052: "TSG_PACKET_TYPE_RESPONSE.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	TSG_PACKET_STRING_MESSAGE
+//  NdrAlign
+//
+Struct TSGUTsgPacketStringMessage
+{
+	INT32 IsDisplayMandatory;
+	INT32 IsConsentMandatory;
+	UINT32 MsgBytes;
+	NdrPtr MsgBufferPtr;
+	switch
+	{
+		case MsgBufferPtr.ReferentId: 
+		struct
+		{
+			NdrConformant MsgBytesConf;
+			UnicodeString(MsgBytesConf/2) MsgBuffer;
+		}
+	}
+}
+
+//
+//	TSG_PACKET_TYPE_MESSAGE_UNION
+//  NdrAlign
+//
+Struct TSGUTsgPacketTypeMessageUnion
+{
+	UINT32 SwitchValue;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign PadArm;
+	}
+	Switch( SwitchValue )
+	{
+		Case 1:
+		struct
+		{
+			[Property.TsguConsentMessagePtr = this .ReferentID]
+			NdrPtr ConsentMessagePtr;
+		}
+		Case 2:
+		struct
+		{
+			[Property.TsguServiceMessagePtr = this .ReferentID]
+			NdrPtr ServiceMessagePtr;
+		}		
+		Case 3:
+		struct
+		{
+			[Property.TsguReauthMessagePtr = this .ReferentID]
+			NdrPtr ReauthMessagePtr;
+		}			
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "TSGU", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Struct TSGUTsgPacketTypeMessageUnionRef
+{
+	switch
+	{
+		case Property.TsguConsentMessagePtr: TSGUTsgPacketStringMessage consentMessage;
+	}
+	switch
+	{
+		case Property.TsguServiceMessagePtr: TSGUTsgPacketStringMessage serviceMessage;
+	}
+	switch
+	{
+		case Property.TsguReauthMessagePtr: 
+		struct
+		{
+			Align8 Pad;
+			TSGUTsgPacketReauthMessage reauthMessage;
+		}
+	}
+}
+
+//
+//	TSG_PACKET_TYPE_UNION
+//  NdrAlign
+//
+Struct TSGUTsgPacketTypeUnion
+{
+	UINT32 SwitchValue;
+	switch
+	{
+		case Property.MSRPCNdr64: NdrAlign PadArm;
+	}
+	Switch( SwitchValue )
+	{
+		Case 18500:
+		struct
+		{
+			NdrPtr PacketHeaderPtr;
+			switch
+			{
+				case PacketHeaderPtr.ReferentID:
+				TSGUTsgPacketHeader packetHeader;
+			}
+		}
+		Case 22083:
+		struct
+		{
+			NdrPtr PacketVersionCapsPtr;
+			switch
+			{
+				case PacketVersionCapsPtr.ReferentID:
+				TSGUTsgPacketVersioncaps packetVersionCaps;
+			}
+		}		
+		Case 20803:
+		struct
+		{
+			NdrPtr PacketQuarConfigRequestPtr;
+			switch
+			{
+				case PacketQuarConfigRequestPtr.ReferentID:
+				TSGUTsgPacketQuarconfigrequest packetQuarConfigRequest;
+			}
+		}		
+		Case 20818:
+		struct
+		{
+			NdrPtr PacketQuarRequestPtr;
+			switch
+			{
+				case PacketQuarRequestPtr.ReferentID:
+				TSGUTsgPacketQuarrequest packetQuarRequest;
+			}
+		}		
+		Case 20562:
+		struct
+		{
+			NdrPtr PacketResponsePtr;
+			switch
+			{
+				case PacketResponsePtr.ReferentID:
+				TSGUTsgPacketResponse packetResponse;
+			}
+		}		
+		Case 17746:
+		struct
+		{
+			NdrPtr PacketQuarEncResponsePtr;
+			switch
+			{
+				case PacketQuarEncResponsePtr.ReferentID:
+				struct
+				{
+					TSGUTsgPacketQuarencResponse packetQuarEncResponse;
+					switch
+					{
+						case packetQuarEncResponse.CertChainDataPtr.ReferentId: NdrWideString CertChainData;
+					}
+					switch
+					{
+						case packetQuarEncResponse.VersionCapsPtr.ReferentId: TSGUTsgPacketVersioncaps VersionCaps;
+					}
+				}
+			}
+		}		
+		Case 17232:
+		struct
+		{
+			NdrPtr PacketCapsResponsePtr;
+			switch
+			{
+				case PacketCapsResponsePtr.ReferentID:
+				TSGUTsgPacketCapsResponse packetCapsResponse;
+			}
+		}		
+		Case 18258:
+		struct
+		{
+			NdrPtr PacketMsgRequestPtr;
+			switch
+			{
+				case PacketMsgRequestPtr.ReferentID:
+				TSGUTsgPacketMsgRequest packetMsgRequest;
+			}
+		}		
+		Case 18256:
+		struct
+		{
+			NdrPtr PacketMsgResponsePtr;
+			switch
+			{
+				case PacketMsgResponsePtr.ReferentID:
+				struct
+				{
+					TSGUTsgPacketMsgResponse packetMsgResponse;
+					TSGUTsgPacketTypeMessageUnionRef MessageUnionRef;
+				}
+			}
+		}		
+		Case 16468:
+		struct
+		{
+			NdrPtr PacketAuthPtr;
+			switch
+			{
+				case PacketAuthPtr.ReferentID:
+				TSGUTsgPacketAuth packetAuth;
+			}
+		}		
+		Case 21072:
+		struct
+		{
+			NdrPtr PacketReauthPtr;
+			switch
+			{
+				case PacketReauthPtr.ReferentID:
+				struct
+				{
+					Align8 Pad;
+					TSGUTsgPacketReauth packetReauth;
+				}
+			}
+		}		
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "TSGU", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_TSG_PACKET_VERSIONCAPS
+//  NdrAlign
+//
+Struct TSGUTsgPacketVersioncaps
+{
+	TSGUTsgPacketHeader TsgHeader;
+	NdrPtr TsgCapsPtr;
+	UINT32 NumCapabilities;
+	UINT16 MajorVersion = TSGUTsgPacketVersioncapsMajorVersionTable(this);
+	UINT16 MinorVersion = TSGUTsgPacketVersioncapsMinorVersionTable(this);
+	UINT16 QuarantineCapabilities = TSGUTsgPacketVersioncapsQuarantineCapabilitiesTable(this);
+	switch
+	{
+		case Property.msrpcNdr64:
+		 Align8 pad;
+	}
+	switch
+	{
+		case TsgCapsPtr.ReferentId:
+		struct
+		{
+			NdrConformant NumCapabilitiesConf;
+			TSGUTsgPacketCapabilities tsgCaps[NumCapabilitiesConf.MaxCount];
+		}
+	}
+}
+
+Table TSGUTsgPacketVersioncapsMajorVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0001: "Current major version of the Terminal Services Gateway Server Protocol.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgPacketVersioncapsMinorVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0001: "Current minor version of the Terminal Services Gateway Server Protocol.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgPacketVersioncapsQuarantineCapabilitiesTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0001: "Quarantine is supported and required by the TSG server.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_TSG_REDIRECTION_FLAGS
+//  Align4
+//
+Struct TSGUTsgRedirectionFlags
+{
+	BOOL EnableAllRedirections = TSGUTsgRedirectionFlagsEnableAllRedirectionsTable(this);
+	BOOL DisableAllRedirections = TSGUTsgRedirectionFlagsDisableAllRedirectionsTable(this);
+	BOOL DriveRedirectionDisabled = TSGUTsgRedirectionFlagsDriveRedirectionDisabledTable(this);
+	BOOL PrinterRedirectionDisabled = TSGUTsgRedirectionFlagsPrinterRedirectionDisabledTable(this);
+	BOOL PortRedirectionDisabled = TSGUTsgRedirectionFlagsPortRedirectionDisabledTable(this);
+	BOOL Reserved;
+	BOOL ClipboardRedirectionDisabled = TSGUTsgRedirectionFlagsClipboardRedirectionDisabledTable(this);
+	BOOL PnpRedirectionDisabled = TSGUTsgRedirectionFlagsPnpRedirectionDisabledTable(this);
+}
+
+Table TSGUTsgRedirectionFlagsClipboardRedirectionDisabledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MAY choose its own redirection settings for enabling or disabling clipboard redirection.";
+		Case 0x01: "The TSG client MUST disable clipboard redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsDisableAllRedirectionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MUST process and honor the remaining fields in this structure and MAY choose its own redirection settings for some devices as indicated by the remaining fields.";
+		Case 0x01: "The TSG client MUST ignore the remaining fields in this structure and disable all device redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsDriveRedirectionDisabledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MAY choose its own redirection settings for enabling or disabling drive redirection.";
+		Case 0x01: "The TSG client MUST disable drive redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsEnableAllRedirectionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MUST process and honor the remaining fields in this structure and MUST NOT choose its own redirection settings.";
+		Case 0x01: "The TSG client MUST ignore the remaining fields in this structure and MAY choose its own redirection settings.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsPnpRedirectionDisabledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MAY choose its own redirection settings for enabling or disabling PnP redirection.";
+		Case 0x01: "The TSG client MUST disable PnP redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsPortRedirectionDisabledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MAY choose its own redirection settings for enabling or disabling port redirection. Port redirection applies to both serial (COM) and parallel ports (LPT).";
+		Case 0x01: "The TSG client MUST disable port redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsgRedirectionFlagsPrinterRedirectionDisabledTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "The TSG client MAY choose its own redirection settings for enabling or disabling printer redirection.";
+		Case 0x01: "The TSG client MUST disable printer redirection.";
+		Default: "Unknown";
+	}
+}
+
+Table TSGUTsProxyMakeTunnelCallProcIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "TSG_TUNNEL_CALL_ASYNC_MSG_REQUEST - Used to request an administrative message when the same is available on the server.";
+		Case 0x00000002: "TSG_TUNNEL_CANCEL_ASYNC_MSG_REQUEST - Used to cancel a pending administrative message request.";
+		Default: "Unknown";
+	}
+}
+
+//
+// Generic Receive Pipe Message Packet (customer marshal)
+//
+struct TSGUGenericReceivePipeMessagePacket
+{
+	[property.TSGURDPPayload = true]
+	RDP RDP;
+	switch
+	{
+		case FrameLength > FrameOffset:Blob(FrameLength - FrameOffset) Pad;
+	}
+}
+
+//
+// TSG Client to TSG Server Packet Format
+//
+struct TSGUTsgClientToTSGServerPacketFormat
+{
+	ContextHandle NoSerialize; 
+}
+
+//
+// Generic Send Data Message Packet (customer marshal)
+//
+struct TSGUGenericSendDataMessagePacket
+{
+	Contexthandle PChannelContextHandleNoserialize;
+	[DataFieldByteOrder = BigEndian]
+	UINT32 totalDataBytes;
+	[DataFieldByteOrder = BigEndian]
+	UINT32 numBuffers = FormatString("%u - limit to a maximum of 3 buffers and a minimum of 1 buffer", this);
+	[DataFieldByteOrder = BigEndian]
+	[Local.BufferTotalLength]
+	UINT32 buffer1Length;
+	switch
+	{
+		case numBuffers > 1:
+			[Local.BufferTotalLength = Local.BufferTotalLength + this]
+			UINT32 buffer2Length;
+	}
+	switch
+	{
+		case numBuffers > 2:
+			[Local.BufferTotalLength = Local.BufferTotalLength + this]
+			UINT32 buffer3Length;
+	}
+	[DataFieldFrameLength = FrameOffset + Local.BufferTotalLength]
+	struct Buffer
+	{
+		[property.TSGURDPPayload = true]
+		RDP RDP;
+		switch 
+		{
+			case FrameLength > FrameOffset: Blob (FrameLength - FrameOffset) Pad;
+		}
+	}
+}
+
+Table TSGUMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Opnum0NotUsedOnWire";
+		Case 1: "TsProxyCreateTunnel";
+		Case 2: "TsProxyAuthorizeTunnel";
+		Case 3: "TsProxyMakeTunnelCall";
+		Case 4: "TsProxyCreateChannel";
+		Case 5: "Opnum5NotUsedOnWire";
+		Case 6: "TsProxyCloseChannel";
+		Case 7: "TsProxyCloseTunnel";
+		Case 8: "TsProxySetupReceivePipe";
+		Case 9: "TsProxySendToServer";
+		Default: "unknown";
+	}
+}

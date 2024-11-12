@@ -1,0 +1,2387 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Data Services Transport Protocol
+//#
+//#  Details:                formerly called Active Data TableGram (ADTG)
+//#
+//#  Microsoft References:   [MS-ADTG]: Remote Data Services (RDS) Transport Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/28/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+const ADTGUnicode=1;
+const ADTGAscii=0;
+
+// ADTGColumnDescriptorCommon PresenceMap bitfields
+const ADTGColumnDescPresMapFriendlyColName=7;
+const ADTGColumnDescPresMapBaseTableOrdinal=6;
+const ADTGColumnDescPresMapBaseTableColOrdinal=5;
+const ADTGColumnDescPresMapBaseTableColName=4;
+const ADTGColumnDescPresMapColumnId=3;
+const ADTGColumnDescPresMapTypeInfo=2;
+const ADTGColumnDescPresMapBaseCatalogName=1;
+const ADTGColumnDescPresMapBaseSchemaName=0;
+
+const ADTGColumnDescPresMapCollatingSequence=15;
+const ADTGColumnDescPresMapComputeMode=14;
+const ADTGColumnDescPresMapDateTimePrecision=13;
+const ADTGColumnDescPresMapDefaultValue=12;
+const ADTGColumnDescPresMapDomainCatalog=11;
+const ADTGColumnDescPresMapDomainSchema=10;
+const ADTGColumnDescPresMapDomainName=9;
+const ADTGColumnDescPresMapIsAutoIncrement=8;
+
+const ADTGColumnDescPresMapIsCaseSensitive=23;
+const ADTGColumnDescPresMapIsMultiValued=22;
+const ADTGColumnDescPresMapIsSearchable=21;
+const ADTGColumnDescPresMapIsUnique=20;
+const ADTGColumnDescPresMapOctetLength=19;
+const ADTGColumnDescPresMapRdsCalculationInfo=18;
+
+const DbtypeEmpty = 0;
+const DbtypeNull = 1;
+const DbtypeI2 = 2;				//INT16
+const DbtypeI4 = 3;				//INT32
+const DbtypeR4 = 4;				//Float
+const DbtypeR8 = 5;				//Double
+const DbtypeCY = 6;				//INT64
+const DbtypeDate = 7;			//Double
+const DbtypeBStr = 8;			//Wchar *
+const DbtypeIDispatch = 9;		//UINT32
+const DbtypeError = 10;			//UINT32
+const DbtypeBool = 11;			//VARIANTBOOL
+const DbtypeVariant = 12;		//VARIANT
+const DbtypeIUnknown = 13;		//UINT32
+const DbtypeDecimal = 14;		//UINT128
+const DbtypeUI1 = 17;			//UINT8
+const DbtypeArray = 0x2000;		//UINT32
+const DbtypeByRef = 0x4000;		//UINT32
+const DbtypeI1 = 16;			//INT8
+const DbtypeUI2 = 18;			//UINT16
+const DbtypeUI4 = 19;			//UINT32
+
+const DbtypeI8 = 20;			//INT64
+const DbtypeUI8 = 21;			//UINT64
+const DbtypeGuid = 72;			//GUID
+const DbtypeVector = 0x1000;
+const DbtypeFileTime = 64;		//FILETIME
+const DbtypeReserved = 0x8000;
+
+const DbtypeBytes = 128;		//UINT8[]
+const DbtypeStr = 129;			//CHAR[]
+const DbtypeWStr = 130;			//WCHAR[]
+const DbtypeNumeric = 131;		//BYTE,BYTE,BYTE,BYTE[16]
+const DbtypeUDT = 132;			//User defined
+const DbtypeDBDate = 133;		//INT16,UINT16,UINT16
+const DbtypeDBTtime = 134;		//UINT16,UINT16,UINT16
+const DbtypeDBTimeStamp = 135;	//INT16,UINT16,UINT16,UINT16,UINT16,UINT16,UINT32
+const DbtypeHChapter = 136;		//UINT32
+const DbtypePropVariant = 138;	//UINT32,UINT32
+const DbtypeVarNumeric = 139;	//UINT8,INT8,UINT8,UINT8
+
+Protocol ADTG = Property.ADTGSummary
+{
+	[Property.ADTGSummary = ADTGMessageTypeTable(HttpUriLocation)]
+	switch
+	{
+		case AsciiStringTerm(FrameData,FrameOffset,"\r\n").Contains("ADCClientVersion:01.06"):
+			[Property.ADTGSummary = Property.ADTGSummary + " Request"]
+			ADTGClientVersion ClientVersion;
+		case AsciiStringTerm(FrameData,FrameOffset,"\r\n\r\n").Contains("Content-Type"):
+			[Property.ADTGSummary = Property.ADTGSummary + " Response"]
+			_struct ADTGResponse {};
+		default:
+			Blob(FrameLength - FrameOffset) ContinuationData;
+	}
+	ADTGHeaders Headers;
+	[Property.RDSTStatus = 0]
+	switch(RdstMediaType)
+	{
+		case "multipart":
+			_struct
+			{
+				while MultiPartEntities[AsciiStringTerm(FrameData,FrameOffset,"\r\n\r\n").Contains("Content-Type") && FrameOffset < FrameLength]
+				{
+					//rdsParamHeader ParamHeader;
+					switch(Property.ADTGSummary)
+					{
+						case "Execute Request":
+							struct ExecuteRequest = formatstring("QueryString: %s, Handlerstring: %s, ConnectionString: %s", Property.QueryString, Property.Handlerstring, Property.ConnectionString)
+							{
+								switch(Property.RDSTNumArgs)
+								{
+									case 8:
+										ADTGParametersExecuteReq8Args ParametersExecuteReq8Args;
+									case 9:
+										ADTGParametersExecuteReq9Args ParametersExecuteReq9Args;
+									case 10:
+										ADTGParametersExecuteReq10Args ParametersExecuteReq10Args;	
+								}
+							}
+						case "Execute Response":
+							struct ExecuteResponseArgs
+							{
+								switch(Property.RDSTNumArgs)
+								{
+									case 8:
+										struct
+										{
+											ADTGParametersExecuteRes8Args ParametersExecuteRes8Args;
+											ADTGReturnValueExecuteRes ReturnValueExecuteRes;
+										}
+									case 9:
+										struct
+										{
+											ADTGParametersExecuteRes9Args ParametersExecuteRes9Args;
+											ADTGReturnValueExecuteRes ReturnValueExecuteRes;
+										}
+									case 10:
+										struct
+										{
+											ADTGParametersExecuteRes10Args ParametersExecuteRes10Args;
+											ADTGReturnValueExecuteRes ReturnValueExecuteRes;
+										}
+									default:
+										ADTGDataType ExecuteResData;
+								}
+							}
+						case "Query Request":
+							struct QueryRequest
+							{
+								ADTGParametersQueryReq ParametersQueryReq;
+							}
+							
+						case "Query Response":
+							struct QueryResponse
+							{
+								ADTGParametersQueryRes ParametersQueryRes;
+								ADTGReturnValueExecuteRes ReturnValueQueryRes;
+							}
+							
+						case "Synchronize Request":
+							struct SynchronizeRequest
+							{
+								switch(Property.RDSTNumArgs)
+								{
+									case 5:
+										ADTGParametersSynchronizeReq5Args ParametersSynchronizeReq5Args;
+									case 6:
+										ADTGParametersSynchronizeReq6Args ParametersSynchronizeReq6Args;
+									case 7:
+										ADTGParametersSynchronizeReq7Args ParametersSynchronizeReq7Args;
+								}
+							}
+						case "Synchronize Response":
+							struct SynchronizeResponse
+							{
+								switch(Property.RDSTNumArgs)
+								{
+									case 5:
+										_struct
+										{
+											ADTGParametersSynchronizeRes5Args ParametersSynchronizeRes5Args;
+											ADTGReturnValueSynchronizeRes ReturnValueSynchronizeRes;
+										}
+									case 6:
+										_struct
+										{
+											ADTGParametersSynchronizeRes6Args ParametersSynchronizeRes6Args;
+											ADTGReturnValueSynchronizeRes ReturnValueSynchronizeRes;
+										}
+									case 7:
+										_struct
+										{
+											ADTGParametersSynchronizeRes7Args ParametersSynchronizeRes7Args;
+											ADTGReturnValueSynchronizeRes ReturnValueSynchronizeRes;
+										}
+								}
+							}
+						case "SubmitChanges Request":
+							struct SubmitChangesRequest
+							{
+								ADTGParametersSubmitChangesReq ParametersSubmitChangesReq;
+							}
+							
+						case "SubmitChanges Response":
+							struct SubmitChangesResponse
+							{
+								ADTGParametersSubmitChangesRes ParametersSubmitChangesRes;
+							}
+							
+						case "ConvertToString Request":
+							struct ConvertToStringRequest
+							{
+								ADTGParametersConvertToStringReq ParametersConvertToStringReq;
+							}
+							
+						case "ConvertToString Response":
+							struct ConvertToStringResponse
+							{
+								ADTGParametersConvertToStringRes ParametersConvertToStringRes;
+								ADTGReturnValueConvertToStringRes ReturnValueConvertToStringRes;
+							}
+							
+						case "CreateRecordset Request":
+							struct CreateRecordsetRequest
+							{
+								ADTGParametersCreateRecordsetReq ParametersCreateRecordsetReq;
+							}
+							
+						case "CreateRecordset Response":
+							struct CreateRecordsetResponse
+							{
+								ADTGParametersCreateRecordsetRes ParametersCreateRecordsetRes;
+								ADTGReturnValueCreateRecordsetRes ReturnValueCreateRecordsetRes;
+							}
+							
+						default:
+							struct UnknownMessage
+							{
+								ReportParserError(ParserErrorProtocolClassWindows, "ADTG", "Unknown Message") MessageError;
+								ADTGParamHeader Header;
+								while [!(UINT16(FrameData,FrameOffset) == 0x0D0A) && FrameOffset < FrameLength]
+								{
+									ADTGDataType Data;
+								}
+							}
+					}
+				}
+				ADTGCloseDelimiter CloseDelimiter;
+			}
+		case "application":
+			[Property.ADTGSummary = "Method Response Error"]
+			ADTGMethodResponseError MethodResponseError;
+		default:
+			while [!(UINT16(FrameData,FrameOffset) == 0x0D0A) && FrameOffset < FrameLength]
+			{
+				ADTGDataType Data;
+			}
+	}
+}
+
+/** Documented type **/
+Table ADTGTypeTable (Type) {
+	switch(Type) {
+		case 0x01: "ADTG_HANDLER";
+		case 0x02: "ADTG_HANDLEROPTIONS (0x02)";
+		case 0x03: "ADTG_RESULTDESCRIPTOR (0x03)";
+		case 0x05: "ADTG_TABLEDESCRIPTOR (0x05)";
+		case 0x06: "ADTG_COLUMNDESCRIPTOR (0x06)";
+		case 0x07: "ADTG_ORIGINALRESULTSETROW (0x07)";
+		case 0x0A: "ADTG_CHANGE (0x0A)";
+		case 0x0B: "ADTF_CHANGEBASETABLEROW (0x0B)";
+		case 0x0C: "ADTG_DELETE (0x0C)";	
+		case 0x0D: "ADTG_INSERT (0x0D)";
+		case 0x0F: "ADTG_DONE (0x0F)";
+		case 0x10: "ADTG_RESULTSETCONTEXT (0x10)";
+		case 0x80: "ADTG_CHILDROW (0x80)";
+		case 0x87: "ADTG_CHILDRESULTROW (0x87)";
+		case 0x8A: "ADTG_CHILDCHANGE (0x8A)";
+		case 0x8C: "ADTG_CHILDDELETE (0x8C)";
+		case 0x8D: "ADTG_CHILDINSERT (0x8D)";
+		default: FormatString("Unknown ADTG Token Type (%d)", Type);
+	}
+}
+
+Table ADTGOperationTable(Operation)
+{
+	switch(Operation) {
+		case 1: "Change";
+		case 2: "Delete";
+		case 3: "Insert";
+		case 4: "Unchange";
+		}
+}
+
+struct ADTGHeader 
+{
+	UINT8 TokenHeader;
+	UINT8 HeaderSize;
+	AsciiString(3) Signature;
+	UINT8 MajorVersion;
+	UINT8 MinorVersion;
+	[AdtgDataByteOrder = this?BigEndian:LittleEndian]
+	UINT8 ByteOrder = ADTGHeaderByteOrder(this);//0,LittleEndian;1,ByteEndian
+	UINT8 Unicode = FormatString("%s",this?"UnicodeString":"NonUnicodeString");//0,ASC;1.unicode
+}
+
+Table ADTGHeaderByteOrder(Byte) {
+	switch (Byte) {
+		case 0: "Little-endian (0)";
+		case 1: "Big-endian (1)";
+		default: FormatString("Unknown byte order (%d)", Byte);
+	}
+}
+
+Table ADTGUpdateTablegramTypeTable(Type) {
+	switch (Type) {
+		case 1: "Send only the updated columns of each row. Key and version columns also sent (1)";
+		case 2: "Send only updated rows.  The updated columns of each row along with the original values are sent. The key and version columns are also sent (2)";
+		case 3: "Send all the initiall selected rows, both updated and not updated. All columns of a row are sent (3)";
+		default: FormatString("Unknown UpdateType (%d)", Type);
+	}
+}
+
+Table ADTGMarshalTable(Option) {
+	switch (Option) {
+		case 0: "Server is used for cursor location (0)";
+		case 1: "Fetch row data synchronously (1)";
+		case 2: "Fetch row data asynchronously while blocking (2)";
+		case 3: "Fetch row data asynchronously while not blocking (3)";
+		default: FormatString("Invalid Marshalling option (%d)", Option);
+	}
+}
+
+struct ADTGHandlerOptions 
+{
+	UINT8 TokenHandlerOptions = "Shoule be 0x02";
+	UINT16 Length;
+	GUID(true) ClsId;
+	UINT8 UpdateTableGramType = ADTGUpdateTablegramTypeTable(this);
+	PrefixedLengthString OriginUrl; 
+	PrefixedLengthString UpdateUrl; 
+	PrefixedLengthString FriendlyUrl;
+	UINT16 AsyncOptions = ADTGMarshalTable(this);
+}
+
+struct PrefixedLengthString = FormatString("%s",Stringvalue)
+{
+	UINT16 Length;
+	UnicodeString(Length) Stringvalue;
+}
+
+Table ADTGCursorModelTable(Model) {
+	switch (Model) {
+		case 0: "Read-only snapshot (0)";
+		case 1: "Greedy keyset (1)";
+		case 2: "Keyset (2)";
+		case 3: "Updatable snapshot (3)";
+		default: FormatString("Unknown Cursor Model (%d)", Model);
+	}
+}
+
+struct ADTGResultDescriptor 
+{
+	[AdtgColDescTotalNullable = 0, ADTGColDescTotalKeyColNullable = 0, ADTGNumOfTableDescriptor = 0, ADTGColDesRowVerExist = 0, ADTGColDescTotalNumOfKey = 0]
+	UINT8 TokenResultDescriptor = ADTGTypeTable(this);
+	UINT16 TokenSize;
+	GUID(0) GuidResultDescriptor;
+	UINT8 ResultInfo;
+	UINT8 CursorModel = ADTGCursorModelTable(this);
+	UINT8 Normalization = this?"Normalized":"Not normalized";
+	UINT16 VisibleColumnsCount;	
+	[property.AdtgResultNoOfColumns = TotalColumnsCount]
+	UINT16 TotalColumnsCount;
+	UINT16 ComputedColumnsCount;
+	UINT16 TableCount;
+	UINT16 OrderByColumnsCount;
+	UINT32 RowCount;
+	[AdtgResDescTotalColumns$[AdtgColumnRowArrayCount]=TotalColumnsCount]
+	[AdtgTotalRow$[AdtgColumnRowArrayCount]=RowCount,AdtgColumnRowArrayCount=AdtgColumnRowArrayCount+1]
+	switch {
+		Case TokenSize > 33: ADTGPropertySets PropertySets;
+	}
+}
+
+struct ADTGPropertySets
+{
+	UINT16 PropSetCount;
+	ADTGPropertySet PropertySet[PropSetCount];
+}	
+
+struct ADTGPropertySet
+{
+	GUID(true) GUIDPropertySet = ADTGResultSetContextGuidPropertySet(this);
+	UINT16 PropertyCount;
+	ADTGProperty Property[PropertyCount];
+}
+
+Table ADTGBooleanPropertyTable (Value) {
+	switch(Value) {
+		case 0xFFFF: "VARIANT_TRUE ";
+		case 0: "VARIANT_FALSE";
+		default: FormatString("Unknown ADTG Booleen Property Value (%d)", Value);
+	}
+}
+
+Table ADTGUpdateResyncTable (Value) {
+	switch(Value) {
+		case 0: "adResyncNone - No auto-resynchronization performed.";
+		case 1: "adResyncAutoIncrement - Auto-resynchronization, autoincrement columns for inserted rows.";
+		case 2: "adResyncConflicts - Auto-resynchronization performed on rows with conflicts.";
+		case 4: "adResynchUpdates - Auto-resynchronization performed on any successfully updated row.";
+		case 8: "adResyncInserts - Auto-resynchronization performed on any newly inserted rows.";
+		case 15: "adResyncAll - Auto-resynchronization performed on all columns for all changes; acts as a shortcut for all the others.";
+		default: FormatString("Unknown ADTG Update Resync Value (%d)", Value);
+	}
+}
+
+struct ADTGProperty = FormatString( "Id=(0x%X)%s Value=%s", PropertyId, ADTGResultSetContextPropertyId(PropertyId), Property.ADTGPropertyValue )
+{
+	UINT32 PropertyId = ADTGResultSetContextProperty(this);
+	switch(PropertyId)
+	{
+		case 0x7F:
+		case 0x86:
+			[Property.ADTGPropertyValue = BooleanValue.ToString]
+			struct BooleanProperty
+			{
+				UINT16 BooleanSize;
+				UINT16 BooleanValue = ADTGBooleanPropertyTable(this);
+			}
+		case 0x22:
+		case 0x49:
+		case 0x3:
+		case 0x7:
+		case 0x8:
+		case 0x4:
+		case 0x5:
+		case 0xB:
+		case 0x13:
+			struct IntegerProperty = ADTGUpdateResyncTable(IntegerValue)
+			{
+				UINT16 IntegerSize;
+				[Property.ADTGPropertyValue = FormatString( "0x%X", UINT32(FrameData, Offset))]
+				switch {
+					case PropertyId == 0x13:
+						UINT32 IntegerValueUpdateResync = ADTGUpdateResyncTable(this);
+					default:
+						UINT32 IntegerValue;
+				}
+			}
+		case 0xD:
+		case 0xE:
+		case 0xF:
+		case 0x10:
+		case 0x12:
+			[Property.ADTGPropertyValue = Value.ToString]
+			struct StringProperty
+			{
+				UINT16 Size;
+				UnicodeString(Size / 2) Value;
+			}
+	}
+}
+
+
+struct ADTGResultsetContext 
+{
+	UINT8 Type = ADTGTypeTable(this);
+	UINT16 Length;
+	AdtgPropertySets NumPropertySets;
+}
+
+Table ADTGResultSetContextGuidPropertySet(Guid)
+{
+	switch (Guid) {
+		case 0x3D774400AA00E5AD11CE5CF3C8B522BE: 
+			FormatString( "DBPROPSET_ROWSET {%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+						   Guid[3], Guid[2], Guid[1], Guid[0], Guid[5], Guid[4], Guid[7], Guid[6],
+						   Guid[8], Guid[9], Guid[10], Guid[11], Guid[12], Guid[13], Guid[14],
+						   Guid[15] );
+		case 0x58FE5F00AA00F68D11D06DEBB68E3CC1: 
+			FormatString( "DBPROPSET_ADC {%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+						   Guid[3], Guid[2], Guid[1], Guid[0], Guid[5], Guid[4], Guid[7], Guid[6],
+						   Guid[8], Guid[9], Guid[10], Guid[11], Guid[12], Guid[13], Guid[14],
+						   Guid[15] );			
+		default: "Unknown type";
+	}
+}
+
+Table ADTGResultSetContextPropertyID(Id)
+{
+	switch (Id) {
+		case 0x22: FormatString("DBPROP_COMMANDTIMEOUT (0x%x)", Id);
+		case 0x7F: FormatString("DBPROP_IRecordSetChange (0x%x)", Id);
+		case 0x86: FormatString("DBPROP_IRecordSetUpdate (0x%x)", Id);
+		case 0x49: FormatString("DBPROP_MAXROWS (0x%x)", Id);
+		case 0x3: FormatString("Background Fetch Size (0x%x)", Id);
+		case 0x7: FormatString("Initial Fetch Size (0x%x)", Id);
+		case 0x8: FormatString("Background Thread Priority (0x%x)", Id);
+		case 0x4: FormatString("Batch Size (0x%x)", Id);
+		case 0x5: FormatString("Update Criteria (0x%x)", Id);
+		case 0xB: FormatString("Auto Recalc (0x%x)", Id);
+		case 0xD: FormatString("Unique Table (0x%x)", Id);
+		case 0xE: FormatString("Unique Schema (0x%x)", Id);
+		case 0xF: FormatString("Unique Catalog (0x%x)", Id);
+		case 0x10: FormatString("Resync Command (0x%x)", Id);
+		case 0x12: FormatString("Reshape Name (0x%x)", Id);
+		case 0x13: FormatString("Update Resync (0x%x)", Id);
+		default: FormatString("Unknown (0x%x)", Id);
+	}
+}
+
+Table ADTGResultSetContextProperty(Id)
+{
+	switch (Id) {
+		case 0x22: FormatString("DBPROP_COMMANDTIMEOUT (0x%x) - Specifies the number of seconds for which a RecordSet implementation should wait for the data store to process the operation.", Id);
+		case 0x7F: FormatString("DBPROP_IRecordSetChange (0x%x) - Specifies if the RecordSet can be changed.", Id);
+		case 0x86: FormatString("DBPROP_IRecordSetUpdate (0x%x) - Specifies if the changes to the RecordSet can be propagated to the originating server.", Id);
+		case 0x49: FormatString("DBPROP_MAXROWS (0x%x) - Specifies the maximum number of Rows that can be returned in this RecordSet.", Id);
+		case 0x3: FormatString("Background Fetch Size (0x%x) - The number of Rows to fetch when parsing the RecordSet data incrementally.", Id);
+		case 0x7: FormatString("Initial Fetch Size (0x%x) - The number of Rows to parse when the RecordSet is used.", Id);
+		case 0x8: FormatString("Background Thread Priority (0x%x) - The priority of the thread performing asynchronous or incremental operations", Id);
+		case 0x4: FormatString("Batch Size (0x%x) - The number of Rows to be batched together when changes to the RecordSet are propagated to the originating server.", Id);
+		case 0x5: FormatString("Update Criteria (0x%x) - The criterion used to select the columns of an altered Row included in a propagation message", Id);
+		case 0xB: FormatString("Auto Recalc (0x%x) - Specifies when calculated expressions in the RecordSets obtained by executing a Shape command language query need to be recalculated.", Id);
+		case 0xD: FormatString("Unique Table (0x%x) - Specifies the table to which the update or updates in this adtgTablegram need to be applied.", Id);
+		case 0xE: FormatString("Unique Schema (0x%x) - Specifies the schema to which the update or updates in this adtgTablegram need to be applied. ", Id);
+		case 0xF: FormatString("Unique Catalog (0x%x) - Specifies the catalog to which the update or updates in this adtgTablegram need to be applied.", Id);
+		case 0x10: FormatString("Resync Command (0x%x) - Specifies the query that is executed on the data store to refresh the data in the adtgRecordset after update, insert, and delete operations have been applied.", Id);
+		case 0x12: FormatString("Reshape Name (0x%x) - Specifies a unique name for each RecordSet in an adtgTablegram that is generated from a Shape command language query.", Id);
+		case 0x13: FormatString("Update Resync (0x%x) - Defines if the update operation on the RecordSet is followed by an implicit Synchronize operation.", Id);
+		default: FormatString("Unknown type (0x%x)", Id);
+	}
+}
+
+Table ADTGResultSetContextThreadPriority(Prio)
+{
+	switch (Prio) {
+		case 0x1: FormatString("AdPriorityLowest (0x%x)", Prio);
+		case 0x2: FormatString("AdPriorityBelowNormal (0x%x)", Prio);
+		case 0x3: FormatString("AdPriorityNormal (0x%x)", Prio);
+		case 0x4: FormatString("AdPriorityAboveNormal (0x%x)", Prio);
+		case 0x5: FormatString("AdPriorityHighest (0x%x)", Prio);
+		default: FormatString("Unknown type (0x%x)", Prio);
+	}
+}
+
+Table ADTGResultSetContextUpdateCriteria(Cri)
+{
+	switch (Cri) {
+		case 0x0: FormatString("AdCriteriaKey (0x%x)", Cri);
+		case 0x1: FormatString("AdCriteriaAllCols (0x%x)", Cri);
+		case 0x2: FormatString("AdCriteriaUpdCols (0x%x)", Cri);
+		case 0x3: FormatString("AdCriteriaTimeStamp (0x%x)", Cri);
+		default: FormatString("Unknown type (0x%x)", Cri);
+	}
+}
+
+struct ADTGTableDescriptor 
+{
+	[AdtgNumOfTableDescriptor = ADTGNumOfTableDescriptor + 1]
+	UINT8 Type = ADTGTypeTable(this);
+	UINT16 TokenSize;
+	UINT16 TableOrdinal;
+//	AdtgString OriginTableName;
+	UINT16 OriginTableNameLength;
+	UnicodeString(OriginTableNameLength) OriginTableName;
+//	AdtgString UpdateTableName;
+	UINT16 UpdateTableNameLength;
+	UnicodeString(UpdateTableNameLength) UpdateTableName;
+	UINT16 CodePage;
+	UINT16 ColumnCount;
+//	UINT16 FixedColumns;
+	UINT16 KeyColumnCount;
+	UINT16 Keys[KeyColumnCount];
+}
+
+Table ADTGComputeModeTable (Mode) {
+	switch (Mode & 0xF) {
+		case 1: "The value in the column is computed (1)";
+		case 2: "The value in the column is dynamic (2)";
+		case 3: "The value in the column is not computed (3)";
+		default: FormatString("Unknown mode (%d)", Mode);
+	}
+}
+
+struct ADTGBaseTableInformation
+{
+	//[adtgBaseTableInformation] structure
+	switch 
+	{
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapBaseTableOrdinal) & 0x1) != 0:
+			UINT16 BaseTableOrdinal;
+	}
+	switch 
+	{
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapBaseTableColOrdinal) & 0x1) != 0:
+			UINT16 BaseTableColumnOrdinal;
+	}
+	switch 
+	{
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapBaseTableColName) & 0x1) != 0:// || ((AdtgColDescPresMap >> ADTGColumnDescPresMapFriendlyColName) & 0x1) != 0:
+			_struct 
+			{
+				UINT16 BaseTableColumnNameLength;
+				UnicodeString(BaseTableColumnNameLength) BaseTableColumnName;
+			}
+	}
+}
+
+struct ADTGColumnDescriptorCommon {
+	UINT8 TokenColumnDescriptor = ADTGTypeTable(this);
+	UINT16 TokenSize;
+	[AdtgColDescPresMap]
+	UINT24 ColumnDescriptorPresenceMap {
+		UINT24 BaseSchemaName:1;
+		UINT24 BaseCatalogName:1;
+		UINT24 Reserved1:2;
+		UINT24 BaseTableColumnName:1;
+		UINT24 BaseTableColumnOrdinal:1;
+		[AdtgColDescBaseTableOrdinal]
+		UINT24 BaseTableOrdinal:1;
+		UINT24 FriendlyColumnName:1;
+		UINT24 IsAutoIncrement:1;
+		UINT24 Reserved2:3;
+		UINT24 VariantDefaultValue:1;
+		UINT24 DateTimePrecision:1;
+		UINT24 ComputeMode:1;
+		UINT24 CollatingSequence:1;
+		UINT24 Reserved3:2;
+		[AdtgCalculationInfo]
+		UINT24 CalculationInfo:1;
+		UINT24 OctetLength:1;
+		UINT24 IsUnique:1;
+		UINT24 IsSearchable:1;
+		UINT24 IsMultiValued:1;
+		UINT24 IsCaseSensitive:1;
+	}
+	UINT16 ColumnOrdinal;
+	switch 
+	{
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapFriendlyColName) & 0x1) != 0:
+			struct FriendlyColName
+			{
+				UINT16 FriendlyColumnNameLength;
+				UnicodeString(FriendlyColumnNameLength) FriendlyColumnName;
+			}
+	}	
+	ADTGBaseTableInformation BaseTableInformation;
+	[AdtgColDescDBType$[ColumnOrdinal]]			// Store the Data type
+	UINT16 DbType;
+	[AdtgColDescColSize$[ColumnOrdinal]]		// Store the Column size
+	UINT32 ColumnMaxLength;
+	UINT32 Precision;
+	INT32 Scale;
+	UINT32 ColumnFlags {
+		UINT32 Reserved0:1;
+		UINT32 FMayDefer:1;
+		UINT32 FWrite:1;
+		UINT32 FWriteUnknown:1;
+		[AdtgColDescIsFixedLen$[ColumnOrdinal]]	// Store the IsFixedLength boolean 
+		UINT32 FlsFixedLength:1;
+		[AdtgColDescIsNullable$[ColumnOrdinal]]	// Store the IsNullable boolean
+		UINT32 FlsNullable:1;
+		[AdtgColDescMaybeNull]
+		UINT32 FMaybeNull:1;
+		UINT32 FlsLong:1;
+		UINT32 FlsRowID:1;
+		[AdtgColDesIsRowVer$[ColumnOrdinal]]	// Store the IsRowVer boolean
+		UINT32 FlsRowVer:1;
+		UINT32 Reserved1:2;
+		UINT32 FCacheDeferred:1;
+		[AdtgColDesIsChapter]
+		UINT32 FlsChapter:1;
+		UINT32 FScaleIsNegative:1;
+		[AdtgColDescKeyCol$[ColumnOrdinal]]		// Store the KeyColumn boolean
+		UINT32 FKeyColumn:1;
+		UINT32 Reserved2:16;
+	};
+	switch (AdtgColDesIsChapter)
+	{
+		case 1:
+			[Property.ChildCount = Property.ChildCount + 1]struct {}
+	}
+	[AdtgColDescIsNullable$[ColumnOrdinal] = ADTGColDescIsNullable$[ColumnOrdinal] | ADTGColDescMaybeNull | ADTGColDesIsChapter]
+	[AdtgTempProp = ADTGColDescKeyCol$[ColumnOrdinal] & ADTGColDescIsNullable$[ColumnOrdinal] ? 1 : 0]
+	[AdtgColDescTotalKeyColNullable = ADTGColDescTotalKeyColNullable + ADTGTempProp]				// Total nullable key columns
+	[AdtgColDescTotalNullable = ADTGColDescTotalNullable + ADTGColDescIsNullable$[ColumnOrdinal]]	// Total nullable columns
+	[AdtgTempProp = ADTGColDesIsRowVer$[ColumnOrdinal] ? 1 : 0]
+	[AdtgColDesRowVerExist = ADTGColDesRowVerExist + ADTGTempProp]									
+	[AdtgColDescTotalNumOfKey = ADTGColDescTotalNumOfKey + ADTGColDescKeyCol$[ColumnOrdinal]]		// Total number of keys
+
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapBaseCatalogName) & 0x1) != 0:
+			_struct {
+				UINT16 BaseCatalogNameLength;
+				UnicodeString(BaseCatalogNameLength) BaseCatalogName;
+			}
+	}	
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapBaseSchemaName) & 0x1) != 0:
+			_struct {
+				UINT16 BaseSchemaNameLength;
+				UnicodeString(BaseSchemaNameLength) BaseSchemaName;
+			}
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapCollatingSequence) & 0x1) != 0:
+			INT32 CollatingSequence;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapComputeMode) & 0x1) != 0:
+			INT32 ComputeMode = ADTGComputeModeTable(this);
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapDateTimePrecision) & 0x1) != 0:
+			UINT32 DateTimePrecision;
+	}
+	switch 
+	{
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapDefaultValue) & 0x1) != 0:
+			UINT8 VariantDefaultValue[16];
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapIsAutoIncrement) & 0x1) != 0:
+			VARIANTBOOL IsAutoIncrement;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapIsCaseSensitive) & 0x1) != 0:
+			VARIANTBOOL IsCaseSensitive;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapIsMultiValued) & 0x1) != 0:
+			VARIANTBOOL IsMultiValued;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapIsSearchable) & 0x1) != 0:
+			VARIANTBOOL IsSearchable;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapIsUnique) & 0x1) != 0:
+			VARIANTBOOL IsUnique;
+	}
+	switch {
+		case ((AdtgColDescPresMap >> ADTGColumnDescPresMapOctetLength) & 0x1) != 0:
+			UINT32 OctetLength;
+	}
+	VARIANTBOOL IsVisible;
+}
+
+/** Row types **/
+struct ADTGOriginalResultSetRow = formatstring("Operation: %s", property.IsUnChange ? ADTGOperationTable(property.IsUnChange) : ""){
+	[property.IsUnChange = 4]
+	UINT8 Type = ADTGTypeTable(this);
+	OriginalRowData OriginalRowData;
+}
+
+[property.Operation = 1, property.IsUnChange = 0]
+struct ADTGChange {
+	UINT8 Type = ADTGTypeTable(this);
+	UpdateRowData UpdateRowData;
+}
+
+[property.Operation = 2, property.IsUnChange = 0]
+struct ADTGDelete {
+	[AdtgRowCnt=0,AdtgColumnCnt=0]
+	UINT8 Type = ADTGTypeTable(this);
+}
+
+[property.Operation = 3, property.IsUnChange = 0]
+struct ADTGInsert {
+	UINT8 Type = ADTGTypeTable(this);
+	UpdateRowData UpdateRowData;
+}
+
+/* Child row types */
+
+struct ADTGTokenChildResultRow = formatstring("Operation: %s", property.IsUnChange ? ADTGOperationTable(property.IsUnChange) : ""){
+	[property.IsUnChange = 1]
+	UINT8 Type = ADTGTypeTable(this);
+	UINT32 ChildRecordSetId;
+	OriginalRowData OriginalRowData;
+}
+[property.Operation = 1, property.IsUnChange = 0]
+struct ADTGChildChange {
+	UINT8 Type = ADTGTypeTable(this);
+	UINT32 ChildRowId;
+	UpdateRowData UpdateRowData;
+}
+
+[property.Operation = 2, property.IsUnChange = 0]
+struct ADTGChildDelete {
+	UINT8 Type = ADTGTypeTable(this);
+	UINT32 ChildRowId;
+}
+
+[property.Operation = 3, property.IsUnChange = 0]
+struct ADTGChildInsert {
+	UINT8 Type = ADTGTypeTable(this);
+	UINT32 ChildRowId;
+	UpdateRowData UpdateRowData;
+}
+
+struct OriginalRowData {
+	switch {
+		case ADTGColDescTotalNullable % 8 == 0:
+			_struct {
+				[AdtgColPresenceMap]
+				UINT8 PresenceMap[AdtgColDescTotalNullable>>3];
+			}
+		default:
+			_struct {
+				[AdtgColPresenceMap]
+				UINT8 PresenceMap[(AdtgColDescTotalNullable>>3)+1];
+			}
+	}
+	RowData RowData;
+}
+
+struct UpdateRowData {
+	switch {
+		case ADTGResultNoOfColumns % 8 == 0:
+			_struct {
+				[AdtgColUpdateMap]
+				UINT8 UpdateMap[AdtgResultNoOfColumns>>3];
+				[AdtgColForceNullMap]
+				UINT8 ForceNullMap[AdtgResultNoOfColumns>>3];
+			}
+		default:
+			_struct {
+				[AdtgColUpdateMap]
+				UINT8 UpdateMap[(AdtgResultNoOfColumns>>3)+1];
+				[AdtgColForceNullMap]
+				UINT8 ForceNullMap[(AdtgResultNoOfColumns>>3)+1];				
+			}
+	}
+	ChangeRowData RowData;
+}
+
+struct RowData {
+	[AdtgColCnt = 1, ADTGNullableCol = 0]
+	[MaxLoopCount = ADTGResDescTotalColumns$[AdtgColumnCnt]]
+	while coldataloop[AdtgColCnt <= ADTGResDescTotalColumns$[AdtgColumnCnt]] {
+		[post.AdtgColCnt = ADTGColCnt + 1]	
+		[post.AdtgNullableCol = ADTGNullableCol + 1]
+		switch {
+			case (AdtgColDescIsNullable$[AdtgColCnt] == 0): 
+				[post.AdtgNullableCol = ADTGNullableCol - 1]
+				ColData ColData;		// Not Nullable
+			case (AdtgColDescIsNullable$[AdtgColCnt] == 0x1) && (((AdtgColPresenceMap[AdtgNullableCol>>3] >> (7-(AdtgNullableCol&0x7))) & 0x1) == 0x1):	
+				ColData ColDataNullable;// Nullable but present
+		}	
+	}
+	[AdtgRowCnt=AdtgRowCnt+1]
+	switch 
+	{
+		case ADTGRowCnt== ADTGTotalRow$[AdtgColumnCnt]&& (AdtgColumnCnt<AdtgColumnRowArrayCount):
+			struct 
+			{
+				[AdtgColumnCnt=AdtgColumnCnt+1]
+				[AdtgRowCnt=0]
+				struct{}
+			}
+		case ADTGColumnCnt==AdtgColumnRowArrayCount:
+			struct 
+			{
+				[AdtgColumnCnt=0]
+				[AdtgRowCnt=0]
+				struct{}
+			}
+	}
+}
+
+struct ChangeRowData {
+	[AdtgColCnt = 1, ADTGNullableCol = 0]
+	[MaxLoopCount = ADTGResultNoOfColumns]
+	while coldataloop[AdtgColCnt <= ADTGResultNoOfColumns] 
+	{
+		[post.AdtgColCnt = ADTGColCnt + 1]	
+		[post.AdtgNullableCol = ADTGNullableCol + 1]
+		switch 
+		{
+			case ((AdtgColUpdateMap[AdtgNullableCol>>3] >> (7-(AdtgNullableCol&0x7))) & 0x1) == 0x1:	
+				ColData UpdatedColData;// Column has updated value
+		}	
+	}
+}
+
+struct ColData {
+	switch {	
+		case ADTGColDescIsFixedLen$[AdtgColCnt] == 1:		// Is the Length fixed?
+			struct ElementFixedLen {						// If yes: then the size of the row is in ColumnDescriptor.ColumnSize
+				//UINT8 ElementData[AdtgColDescColSize$[AdtgColCnt]];	
+				[AdtgElementLength = ADTGColDescColSize$[AdtgColCnt]]
+				ElementData ElementData;
+			}
+		default:											// If not:
+			switch {
+				case ADTGColDescColSize$[AdtgColCnt] < 255:	// If the max element Length is < 255, Length specified is 1 byte
+					struct ElementVarLen {
+						[AdtgElementLength]
+						UINT8 ElementLength;
+						ElementData ElementData;
+						//UINT8 ElementData[ElementLength];
+					}
+				default:									// else Length specifier is 4 bytes
+					struct ElementVarLen255 {
+						[AdtgElementLength]
+						UINT32 ElementLength;
+						ElementData ElementData;
+						//UINT8 ElementData[ElementLength];
+					}
+			}
+	}
+}
+
+struct ElementData {
+	switch (AdtgColDescDBType$[AdtgColCnt]) {
+		case DbtypeI1: 
+			_struct {
+				INT8 Value;
+			}
+		case DbtypeUI1:
+			_struct {
+				UINT8 Value;
+			}
+		case DbtypeI2:
+			_struct {
+				INT16 Value;
+			}
+		case DbtypeVariant:
+		case DbtypeUI2:
+			_struct {
+				UINT16 Value;
+			}
+		case DbtypeI4:
+			_struct {
+				INT32 Value;
+			}
+		case DbtypeIDispatch:
+		case DbtypeError:
+		case DbtypeIUnknown:
+		case DbtypeArray:
+		case DbtypeByRef:
+		case DbtypeUI4:
+		case DbtypeHChapter:
+			_struct {
+				UINT32 Value;
+			}
+		case DbtypeI8:
+			_struct {
+				INT64 Value;
+			}
+		case DbtypeUI8:
+			_struct {
+				UINT64 Value;
+			}
+		case DbtypeDecimal:
+			_struct {
+				UINT8 Value[16];
+			}
+		case DbtypeR4:
+			_struct {
+				Float Value;
+			}
+		case DbtypeR8:
+		case DbtypeDate:
+			_struct {
+				Double Value;
+			}
+		case DbtypeCY:
+			_struct {
+				INT64 Value;
+			}
+		case DbtypeBStr:
+			_struct {
+				WCHAR Value[AdtgElementLength/2];
+			}
+		case DbtypeStr:
+			_struct {
+				AsciiString (AdtgElementLength) Value;
+			}
+		case DbtypeWStr:
+			_struct {
+				UnicodeString (AdtgElementLength/2) Value;
+			}
+		case DbtypeBool:
+			_struct {
+				VARIANTBOOL Value;
+			}
+		case DbtypeGuid:
+			_struct {
+				Guid(0) Value;
+			}
+		case DbtypeFileTime:
+			_struct {
+				FILETIME Value;
+			}
+		case DbtypeBytes:
+			_struct {
+				UINT8 Value[AdtgElementLength];
+			}
+		case DbtypeNumeric:
+			_struct {
+				UINT8 Numeric0;
+				UINT8 Numeric1;
+				UINT8 Numeric2;
+				UINT8 Numeric3[16];
+			}
+		case DbtypeDBDate:
+			_struct {
+				INT16 Date0;
+				UINT16 Date1;
+				UINT16 Date2;
+			}
+		case DbtypeDBTtime:
+			_struct {
+				UINT16 Date0;
+				UINT16 Date1;
+				UINT16 Date2;
+			}
+		case DbtypeDBTimeStamp:
+			_struct {
+				INT16 TimeStamp0;
+				UINT16 TimeStamp1;
+				UINT16 TimeStamp2;
+				UINT16 TimeStamp3;
+				UINT16 TimeStamp4;
+				UINT16 TimeStamp5;
+				UINT32 TimeStamp6;
+			}
+		case DbtypePropVariant:
+			_struct {
+				UINT32 PropVariant0;
+				UINT32 PropVariant1;
+			}
+		case DbtypeVarNumeric:
+			_struct {
+				UINT8 VarNumeric0;
+				UINT8 VarNumeric1;
+				UINT8 VarNumeric2;
+				UINT8 VarNumeric3;
+			}
+	}
+}
+
+/** End Row Types **/
+
+struct ADTGDone {
+	UINT8 Type = ADTGTypeTable(this);
+}
+
+Table ADTGMessageTypeTable
+{
+	switch
+	{
+		
+		case value.Contains("Execute"): 				"Execute";
+		case value.Contains("Query"): 					"Query";
+		case value.Contains("Synchronize"): 		"Synchronize";
+		case value.Contains("SubmitChanges"): 	"SubmitChanges";
+		case value.Contains("ConvertToString"): "ConvertToString";
+		case value.Contains("CreateRecordset"): "CreateRecordset";
+		default: "Unknown Message Type";
+	}
+}
+
+struct ADTGClientVersion = AsciiStringTerm(FrameData, FrameOffset, "\r\n")
+{
+	DynamicSwitch AsciiStringTerm(":")
+	{
+		case "ADCClientVersion":
+			AsciiStringTerm("\r\n") ADCClientVersion
+			{
+				AsciiStringTerm(".") VerMajor;
+				AsciiString VerMinor;
+			};
+		default:
+			AsciiStringTerm("\r\n") DefaultName;
+	}
+}
+
+struct ADTGHeaders = AsciiStringTerm(FrameData, FrameOffset, "\r\n\r\n")
+{
+	while Headers[!(UINT16(FrameData, FrameOffset) == 0x0D0A) && FrameOffset < FrameLength]
+	{
+		while Spaces[UINT8(FrameData, FrameOffset) == 0x20]
+		{
+			UINT8 WhiteSpace;
+		}
+		DynamicSwitch AsciiStringTerm(":")
+		{
+			case "Content-Type":
+				AsciiStringTerm("\r\n", true) ContentType
+				{
+					[
+						Local.SubTypeTerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+						Local.SubTypeTerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+					]
+					while Spaces[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+					{
+						UINT8 WhiteSpace;
+					}
+					[RdstMediaType]
+					AsciiStringTerm("/") MediaType;
+					AsciiStringTerm(";") SubType;
+					while Parameters[!(UINT16( FrameData, Offset ) == 0x0D0A)]
+					{
+						while Spaces[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+						{
+							UINT8 WhiteSpace;
+						}
+						DynamicSwitch AsciiStringTerm("=")
+						{
+							case "boundary":
+								struct
+								{
+									MimeBoundary MimeBoundary;
+									switch
+									{
+										case AsciiString(FrameData, FrameOffset, 1) == ";":
+											DynamicSwitch AsciiString(1)
+											{
+												default: struct{}
+											};
+									}
+								}
+							case "num-args":
+								[Property.RDSTNumArgs = StringtoNumber(this)]
+								AsciiStringTerm("\r\n", 1) ParamCount; //5,6,7,8,9,10
+							default:
+								AsciiStringTerm("\r\n", 1) DefaultName;
+						}
+					}
+				}
+			default:
+				AsciiStringTerm("\r\n") DefaultName;
+		}
+	}
+}
+
+struct ADTGParamHeader = FormatString("ContentType: %s%s", Local.rdsContentType, ADTGContentLength > 0 ? ", ContentLength: " + ADTGContentLength : "")
+{
+	UINT16 HeaderStart = "CRLF";
+	AsciiStringTerm("\r\n") Boundary;
+	[ADTGContentLength = 0]
+	while Headers[!(UINT16(FrameData, FrameOffset) == 0x0D0A) && FrameOffset < FrameLength]
+	{
+		while Spaces[UINT8(FrameData, FrameOffset) == 0x20]
+		{
+			UINT8 WhiteSpace;
+		}
+		DynamicSwitch AsciiStringTerm(": ")
+		{
+			case "Content-Type":
+				[Local.rdsContentType]
+				AsciiStringTerm("\r\n") ContentType
+				{
+					while Spaces[UINT8(FrameData, FrameOffset) == 0x20]
+					{
+						UINT8 WhiteSpace;
+					}
+					AsciiStringTerm("/") MediaType = MimeMediaTypeTable(this);
+					AsciiStringTerm("\r\n") SubType = MimeSubTypeTable(this);
+				};
+			case "Content-Length":
+				[ADTGContentLength = StringToNumber(ContentLength)]
+				AsciiStringTerm("\r\n", 1) ContentLength;
+			default:
+				AsciiStringTerm("\r\n", 1) DefaultName;
+		}
+	}
+	switch 
+	{
+		case UINT16(FrameData,FrameOffset) == 0x0D0A:
+			UINT16 HeaderEnd = "CRLF";
+	}
+}
+
+Table ADTGDataTypeTable
+{
+	switch(value)
+	{
+		case 0x0000: "VT_EMPTY";
+		case 0x0001: "VT_NULL";
+		case 0x0002: "VT_I2";
+		case 0x0003: "VT_I4";
+		case 0x0004: "VT_R4";
+		case 0x0005: "VT_R8";
+		case 0x0006: "VT_CY";
+		case 0x0007: "VT_DATE";
+		case 0x0008: "VT_BSTR";
+		case 0x0009: "VT_DISPATCH";
+		case 0x000A: "VT_ERROR";
+		case 0x000B: "VT_BOOL";
+		case 0x000D: "VT_UNKNOWN";
+		case 0x0011: "VT_UI1";
+		case 0x0019: "VT_UI4";
+		case 0x0021: "VT_UI8";
+		case 0x000E: "DBTYPE_DECIMAL";
+		case 0x0010: "DBTYPE_I1";
+		case 0x0012: "DBTYPE_UI2";
+		case 0x0013: "DBTYPE_UI4";
+		case 0x0014: "DBTYPE_I8";
+		case 0x0015: "DBTYPE_UI8";
+		case 0x0040: "DBTYPE_FILETIME";
+		case 0x0048: "DBTYPE_GUID";
+		case 0x0080: "DBTYPE_BYTES";
+		case 0x0081: "DBTYPE_STR";
+		case 0x0082: "DBTYPE_WSTR";
+		case 0x0085: "DBTYPE_DBDATE";
+		case 0x0086: "BTYPE_DBTIME";
+		case 0x0087: "DBTYPE_DBTIMESTAMP";
+		case 0x008B: "DBTYPE_VARNUMERIC";
+		case 0x2000: "VT_ARRAY_EMPTY";
+		case 0x2001: "VT_ARRAY_NULL";
+		case 0x2002: "VT_ARRAY_I2";
+		case 0x2003: "VT_ARRAY_I4";
+		case 0x2004: "VT_ARRAY_R4";
+		case 0x2005: "VT_ARRAY_R8";
+		case 0x2006: "VT_ARRAY_CY";
+		case 0x2007: "VT_ARRAY_DATE";
+		case 0x2008: "VT_ARRAY_BSTR";
+		case 0x2009: "VT_ARRAY_DISPATCH";
+		case 0x200A: "VT_ARRAY_ERROR";
+		case 0x200B: "VT_ARRAY_BOOL";
+		case 0x200C: "VT_ARRAY_VARIANT";
+		case 0x200D: "VT_ARRAY_UNKNOWN";
+		case 0x2011: "VT_ARRAY_UI1";
+		default:     "Unknown Data Type";
+		
+	}
+}
+struct ADTGRdsLCID = FormatString( "0x%04X", LCID )
+{
+	UINT32 LCID;
+}
+
+Table ADTGRelationTypeTable(Type)
+{
+	switch(Type) {
+		case 0: "RelationType_Relation - ";
+		case 1: "RelationType_Grouped";
+		case 2: "RelationType_GrandTotal";
+		default: FormatString("Unknown ADTG Relation Type (%d)", Type);
+	}
+}
+
+struct ADTGRelationConditions
+{
+	UINT32 RelationConditionsSize;
+	ADTGRelationConditionsData RelationConditionsData;
+	UINT32 RelationType = ADTGRelationTypeTable(this);
+	struct ZeroByteList
+	{
+		[Maxloopcount = 4]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			UINT8 ZeroByte;
+		}
+	}
+}
+
+struct ADTGRelationConditionsData
+{
+	UINT32 ParentColumnOrdinal;
+	UINT32 ChildColumnOrdinal;
+}
+
+struct ADTGCalculationInfo
+{
+	switch (UINT32(FrameData,FrameOffset))
+	{
+		case 1:
+			_struct
+			{
+				UINT32 CalculationInfoNull;
+				UINT8 ZeroByte;
+			}
+		default:
+			_struct
+			{
+				UINT32 CalculationInfoSize;
+				ADTGCalculationInfoData CalculationInfoData;
+			}
+	}
+}
+
+Table ADTGFunctionTypeTable (Type)
+{
+	switch(Type) {
+		case 0x00: "FunctionType_Expression";
+		case 0x01: "FunctionType_AggregateExpression";
+		case 0x02: "FunctionType_Sum";
+		case 0x03: "FunctionType_Average";
+		case 0x04: "FunctionType_Maximum";
+		case 0x05: "FunctionType_Minimum";
+		case 0x06: "FunctionType_Count";
+		case 0x07: "FunctionType_StandardDeviation";
+		default: FormatString("Unknown ADTG Token Type (%d)", Type);
+	}
+}
+
+struct ADTGCalculationInfoData
+{
+	UINT32 FunctionType = ADTGFunctionTypeTable(this);
+    UINT32 ChapterColumnOrdinal;
+    UINT32 ChildColumnOrdinal;
+    struct CalculationExpression = this.CalculationExpressionValue
+    {
+		UINT16 CalculationExpressionLen;
+		unicodestring(CalculationExpressionLen) CalculationExpressionValue;
+    }
+}
+
+struct ADTGParentMetaInformation = formatstring("%d table, %d column", AdtgTableCount, AdtgColumnCount)
+{
+	[AdtgParentChild=0,AdtgColumnRowArrayCount =0,AdtgRowCnt=0,AdtgColumnCnt=0]
+	AdtgResultDescriptor ResultDescriptor;
+	AdtgResultSetContext ResultSetContext;
+				
+	struct TableDescriptor = FormatString( "%d table", resultDescriptor.TableCount )
+	{
+		[AdtgTableCount=0]
+		while tableDescriptors[AdtgTableCount<resultDescriptor.TableCount] {
+			[post.AdtgTableCount = ADTGTableCount + 1]
+			ADTGTableDescriptor TableDescriptor;
+		}
+	}
+				
+	struct ColumnDescriptorParent = FormatString( "%d column", AdtgResultNoOfColumns )
+	{
+		[AdtgColumnCount=0, Property.ChildCount = 0]
+		while columnDescriptors[AdtgColumnCount < AdtgResultNoOfColumns] {
+			[post.AdtgColumnCount = ADTGColumnCount+1]
+			ADTGColumnDescriptorCommon ColumnDescriptor;
+			switch (AdtgColDesIsChapter)
+			{
+				case 1:
+					ADTGRelationConditions RelationConditions;
+			}
+			switch (AdtgCalculationInfo)
+			{
+				case 1:
+					ADTGCalculationInfo CalculationInfo;
+			}
+		}
+	}
+}
+
+struct ADTGAllRowOperations = formatstring("%d rows", ADTGRowCount)
+{
+	[AdtgRowCount=0,AdtgMoreResults=1,MaxLoopCount=200]
+	while RowSet[AdtgMoreResults!=0] {
+		switch(UINT8( Framedata, Offset )) {
+			case 0x07: 
+				[post.AdtgRowCount = ADTGRowCount+1]
+				ADTGOriginalResultSetRow OriginalResultSetRow;
+			case 0x0A: ADTGChange Change;
+			case 0x0C: ADTGDelete Delete;
+			case 0x0D: 
+				[post.AdtgRowCount = ADTGRowCount+1]
+				ADTGInsert Insert;
+			case 0x87:
+				[post.AdtgRowCount = ADTGRowCount+1]
+				ADTGTokenChildResultRow ChildResultRow;
+			case 0x8A: ADTGChildChange ChildChange;
+			case 0x8C: ADTGChildDelete ChildDelete;
+			case 0x8D:
+				[post.AdtgRowCount = ADTGRowCount+1]
+				ADTGChildInsert ChildInsert;
+			case 0x0F: 
+				[post.AdtgMoreResults=0]
+				AdtgDone Done;
+		}
+	}
+}
+
+struct ADTGChildMetaInformation = formatstring("%d table, %d column", AdtgTableCount, AdtgColumnCount)
+{
+	[AdtgParentChild=0,AdtgColumnRowArrayCount =0,AdtgRowCnt=0,AdtgColumnCnt=0]
+	AdtgResultDescriptor ResultDescriptor;
+	AdtgResultSetContext ResultSetContext;
+				
+	struct TableDescriptor = FormatString( "%d table", resultDescriptor.TableCount )
+	{
+		[AdtgTableCount=0]
+		while tableDescriptors[AdtgTableCount<resultDescriptor.TableCount] {
+			[post.AdtgTableCount = ADTGTableCount + 1]
+			ADTGTableDescriptor TableDescriptor;
+		}
+	}
+				
+	struct ColumnDescriptorChild = FormatString( "%d column", AdtgResultNoOfColumns )
+	{
+		[AdtgColumnCount=0, Property.ChildCount = 0]
+		while columnDescriptors[AdtgColumnCount < AdtgResultNoOfColumns] {
+			[post.AdtgColumnCount = ADTGColumnCount + 1]
+			ADTGColumnDescriptorCommon ColumnDescriptor;
+			UINT32 ChildRecordSetId;
+			switch (AdtgColDesIsChapter)
+			{
+				case 1:
+					ADTGRelationConditions RelationConditions;
+			}
+			switch (AdtgCalculationInfo)
+			{
+				case 1:
+					ADTGCalculationInfo CalculationInfo;
+			}
+		}
+	}
+	
+	switch
+	{
+		case Property.ChildCount > 0:
+			while [Property.ChildCount != 0]
+			{
+				[post.Property.ChildCount = Property.ChildCount - 1]
+				ADTGChildMetaInformation ChildMetaInformation;
+			}
+	}
+}
+
+[Property.ChildCount = 0]
+struct ADTGAllMetaInformation
+{
+	ADTGParentMetaInformation ParentMetaInformation;
+	switch
+	{
+		case Property.ChildCount > 0:
+			while [Property.ChildCount != 0]
+			{
+				[post.Property.ChildCount = Property.ChildCount - 1]
+				ADTGChildMetaInformation ChildMetaInformation;
+			}
+	}
+}
+
+struct ADTGTablegram
+{
+	[AdtgMoreResults=1]
+	AdtgHeader Header;
+	AdtgHandlerOptions HandlerOptions;
+	ADTGAllMetaInformation AllMetaInformation;
+	ADTGAllRowOperations AllRowOperations;
+}
+
+struct ADTGResponse = "Response Data"
+{
+	switch (UINT8(FrameData,FrameOffset))
+	{
+		case 0:
+			_struct
+			{
+				UINT8 ZeroByte;
+				GUID(true) InterfaceId;
+				GUID(true) ImplementationId;
+				ADTGTablegram Tablegram;
+			}
+		default:
+			UINT8 Null;
+	}
+	
+}
+
+struct ADTGArrayVariant
+{
+	UINT8 ZeroByte;
+	UINT16 NumDims;
+	UINT16 ArrayFeatures;
+	UINT32 ElementSize;
+	UINT32 ArraySize;
+	UINT32 LowerBound;
+	[post.Property.ArrayParamType = UINT16(FrameData,FrameOffset), post.Property.ThisParamType = UINT16(FrameData,FrameOffset)]
+	struct{}
+	while options[ !(UINT16(FrameData,FrameOffset) == 0x200C) && (Property.ArrayParamType == Property.ThisParamType) && (AsciiString(FrameData,FrameOffset,2) != "\r\n")]
+	{
+		switch(UINT16(FrameData,FrameOffset))
+		{				
+			case 0x0000: UINT16 VariantType = ADTGDataTypeTable(this);
+			case 0x0002: ADTGDataType I2FieldParamValue;
+			case 0x0003: ADTGDataType I4InformationParamValue;
+			case 0x0008: ADTGDataType BSTRParamValue;
+			case 0x000A: ADTGDataType ErrorValueParamValue;
+			case 0x000B: ADTGDataType BooleanValueParamValue;
+			case 0x0011: ADTGDataType NumericScaleParamValue;
+			case 0x0019: ADTGDataType RdstLCIDParamValue;
+			case 0x200C: ADTGDataType ArrayVariantParamValue;
+		}
+		[post.Property.ThisParamType = UINT16(FrameData,FrameOffset)]struct{}
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ADTGFieldShapeArray
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	UINT16 FieldShapeArrayNumDims;
+	UINT16 FieldShapeArrayArrayFeatures;
+	UINT32 FieldShapeArrayElementSize;
+	[Local.FieldShapeCount]
+	UINT32 FieldShapeArraySize;
+	UINT32 FieldShapeArrayLowerBound;
+	ADTGFieldShape FieldShape[Local.FieldShapeCount];
+}
+
+struct ADTGFieldShape
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	UINT16 FieldShapeArrayNumDims;
+	UINT16 FieldShapeArrayArrayFeatures;
+	UINT32 FieldShapeArrayElementSize;
+	UINT32 FieldShapeArrayArraySize;
+	UINT32 FieldShapeArrayLowerBound;
+	ADTGFieldShapeSafeArrayData FieldShapeSafeArrayData;
+}
+
+struct ADTGFieldShapeSafeArrayData
+{
+	ADTGDataType FieldNameVariant;
+	ADTGDataType FieldDBTYPEVariant;
+	ADTGDataType FieldColumnSizeVariant;
+	ADTGDataType FieldNullableVariant;
+}
+
+struct BSTRStruct = FormatString("%s",ContentValue.toString)
+{
+	BSTRNullable ContentValue;
+}
+		
+struct BSTRNullable = FormatString("%s",Length?StrVal.toString:"Null")
+{
+	UINT32 Length;
+	switch(Length)
+	{
+		case 0:
+			UINT8 ZeroByte;
+		default:
+			UnicodeString(Length/2) StrVal;
+	}
+}
+
+struct vt_I2 = FormatString("%d",wordValue)
+{
+	UINT16 wordValue;
+}
+
+struct VT_I4 = FormatString("%d",Value)
+{
+	INT32 Value;
+}
+struct VT_R4 =  FormatString("%s",FloatValue.toString)
+{
+	float FloatValue;
+}
+
+struct VT_R8 = FormatString("%s",DoubleValue.toString)
+{
+	double DoubleValue;
+}
+
+struct VT_Date = FormatString("%s",DateValue.toString)
+{
+	FILETIME DateValue;
+}
+
+struct VT_BOOL = FormatString("%s",BoolValue.toString)
+{
+	UINT16 BoolValue = FormatString("%s",this?"TRUE":"FALSE");
+}
+
+struct VT_UI1 = FormatString("%d",scaleValue)
+{
+	UINT8 scaleValue;	
+}
+
+struct ErrorReturnValue = ReturnValue
+{
+	[ReturnValue = "Null"]
+	switch(UINT32(FrameData,FrameOffset))
+	{
+		case 0:
+			[ReturnValue = "Success"]
+			UINT32 NoError;
+		default:
+		_struct VARIANTERROR
+		{
+			UINT32 Scode;
+			switch
+			{
+				case AsciiString(FrameData,FrameOffset,2) != "\r\n":
+					[ReturnValue = BstrValue.Source.toString]
+					ADTGExcepInfo BstrValue;
+			}
+		}
+	}
+}
+
+struct VT_CY = FormatString("%d.%d",CYHigh,CYLow)
+{
+	INT32 CYLow;
+	UINT32 CYHigh;
+}
+struct DBTYPE_VARNUMERIC
+{
+	UINT8 dbVARNUMERICPrec;
+	UINT8 dbVARNUMERICScale;
+	UINT8 dbVARNUMERICSign = FormatString("%s",this?"Positive":"Negative");
+	
+}
+
+struct DBTYPE_DBDATE = FormatString("%d-%d-%d",dbDBDATEMonth,dbDBDATEDay,dbDBDATEYear)
+{
+	INT16 dbDBDATEYear;
+	UINT16 dbDBDATEMonth;
+	UINT16 dbDBDATEDay;
+}
+
+struct DBTYPE_DBTIME = FormatSTring("%d:%d:%d",dbDBTIMEHour,dbDBTIMEMinute,dbDBTIMESecond)
+{
+	UINT16 dbDBTIMEHour;
+	UINT16 dbDBTIMEMinute;
+	UINT16 dbDBTIMESecond;
+}
+
+struct DBTYPE_DBTIMESTAMP
+{
+	ADTGDataType dbDateData;
+	ADTGDataType dbTimeData;
+	UINT32 dbDBTIMENanoSecond;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ADTGDataType = FormatString("%s", ADTGDataSummary)
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	switch(VariantType)
+	{
+		case 0x0000:
+			[ADTGDataSummary = "Empty Field"]
+			_struct ADTGEmpty{};
+		case 0x0001:
+			[ADTGDataSummary = "NullField"]
+			_struct ADTGNullField{};
+		case 0x0002:
+			[ADTGDataSummary = "" + FormatString("%d",vt_I2.wordValue)]
+			vt_I2 vt_I2;
+		case 0x0003:
+			[ADTGDataSummary = FormatString("%s",I4Information.toString)]
+			VT_I4 I4Information;
+		case 0x0004:
+			[ADTGDataSummary = FormatString("%f",VT_R4.FloatValue)]
+			VT_R4 VT_R4;
+		case 0x0005:
+			[ADTGDataSummary = FormatString("%f",VT_R8.DoubleValue)]
+			VT_R8 VT_R8;
+		case 0x0006:
+			[ADTGDataSummary = FormatString("%s",VT_CY.toString)]
+			VT_CY VT_CY;
+		case 0x0007:
+			[ADTGDataSummary = FormatString("%s",VT_Date.toString)]
+			VT_Date VT_Date;
+		case 0x0008:
+			[ADTGDataSummary = FormatString("%s",BSTR.toString)]
+			BSTRStruct BSTR;
+		case 0x0009:
+			[ADTGDataSummary = FormatString("%s",ResponseData.toString)]
+			ADTGResponse ResponseData;
+		case 0x000A:
+			[ADTGDataSummary = FormatString("%s",ErrorReturnValue.toString)]
+			ErrorReturnValue ErrorReturnValue;
+		case 0x000B:
+			[ADTGDataSummary = FormatString("%s",Boolean.toString)]
+			VT_BOOL Boolean;
+		//case 0x000D:
+		case 0x0011:
+			[ADTGDataSummary = ""]
+			VT_UI1 decimalscale;
+		case 0x0013:
+			[ADTGDataSummary = FormatString("%s",LCID.toString)]
+			ADTGRdsLCID LCID;
+		//case 0x0021:
+		case 0x200C:
+			[ADTGDataSummary = "Variant Array"]
+			ADTGArrayVariant VariantDataArray;
+		case 0x2003:
+			[ADTGDataSummary = "BSTR String Array"]
+			ADTGStatusArray StatusArray;
+		case 0x0085:
+			[ADTGDataSummary = FormatString("%s",DbDate.toString)]
+			DBTYPE_DBDATE DbDate;
+		case 0x0086:
+			[ADTGDataSummary = FormatString("%s",DBTIME.toString)]
+			DBTYPE_DBTIME DBTIME;
+		case 0x0087:
+			[ADTGDataSummary = FormatString("%s",DBTIMESTAMP.toString)]
+			DBTYPE_DBTIMESTAMP DBTIMESTAMP;
+		case 0x008B:
+			[ADTGDataSummary = "Numeric value"]
+			DBTYPE_VARNUMERIC VarNumeric;
+		default:
+			[ADTGDataSummary = "Unkown Data"]
+			ReportParserError(ParserErrorProtocolClassWindows, "ADTG", "Unknown Data Type") DataTypeError;
+	}
+}
+
+[Property.ExecuteReqTableName = "Empty"]
+struct ADTGExecuteReqTableName = formatstring("%s", Property.ExecuteReqTableName)
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			[Property.ExecuteReqTableName = this.I4Information.value]
+			ADTGDataType TableName;
+	}
+}
+
+struct ADTGExecuteProperties
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ExecuteProperties;
+	}
+}
+
+Table ADTGFetchOptionTable(Value)
+{
+	switch(Value) {
+		case 0x00000001: "All the records of the RecordSet are fetched before control is returned to the application.";
+		case 0x00000002: "Control can return to the application as soon as the first batch of records has been fetched.";
+		case 0x00000003: "Default. Control returns immediately to the application while records are fetched in the background.";
+		default: FormatString("Unknown ADTG Option Value (%d)", Value);
+	}
+}
+
+struct ADTGParametersExecuteReqCommon
+{
+	ADTGExecuteReqQueryParameters ExecuteReqQueryParameters;
+	ADTGDataType ExecuteOptions;
+	ADTGExecuteReqTableName ExecuteReqTableName;
+	ADTGExecuteProperties ExecuteProperties;
+	ADTGDataType FetchOptions = ADTGFetchOptionTable(this.I4Information.value);
+	[Property.QueryString = this.BSTR.ContentValue.tostring]
+	ADTGDataType QueryString;
+	[Property.HandlerString = this.BSTR.ContentValue.tostring]
+	ADTGDataType HandlerString;
+	[Property.ConnectionString = this.BSTR.ContentValue.tostring]
+	ADTGDataType ConnectionString;
+}
+
+
+struct ADTGExecuteReqQueryParameters
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGParamHeader ParamHeader1;
+				ADTGDataType SQLCommandParameters;
+				ADTGParamHeader ParamHeader2;
+			}
+	}
+}
+
+struct ADTGParametersExecuteReq10Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+	ADTGDataType LCID;
+	ADTGParametersExecuteReqCommon ParametersExecuteReqCommon;
+}
+
+struct ADTGParametersExecuteReq9Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType LCID;
+	ADTGParametersExecuteReqCommon ParametersExecuteReqCommon;
+}
+
+struct ADTGParametersExecuteReq8Args
+{
+	ADTGParamHeader ParamHeader;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGDataType SQLCommandParameters;
+				ADTGParamHeader ParamHeader;
+			}
+	}
+	ADTGDataType ExecuteOptions;
+	ADTGExecuteReqTableName ExecuteReqTableName;
+	ADTGExecuteProperties ExecuteProperties;
+	ADTGDataType FetchOptions;
+	ADTGDataType QueryString;
+	ADTGDataType HandlerString;
+	ADTGDataType ConnectionString;
+}
+
+struct ADTGExecuteResErrorInformation
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGErrorInformation ErrorInformation;
+				ADTGParamHeader ParamHeader;
+			}
+	}
+}
+//coca
+[DataTypeByteOrder = LittleEndian]
+struct ADTGErrorInformation
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				UINT16 VariantType = ADTGDataTypeTable(this);
+				UINT8 ZeroByte;
+				UINT16 esaNumDims;
+				UINT16 esaArrayFeatures;
+				UINT32 SizeOfElemVariant;
+				UINT32 esaNumElems;
+				UINT32 esaLowerBound;
+				ADTGDataType VariantError;
+				ADTGErrorCollection ErrorCollection;
+			}
+	}
+}
+
+struct ADTGErrorCollection
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	UINT16 esaNumDims;
+	UINT16 esaArrayFeatures;
+	UINT32 SizeOfElemVariant;
+	[Local.esaCount]
+	UINT32 NumberOfErrors;
+	UINT32 esaLowerBound;
+	ADTGErrorSafeArray ErrorSafeArray[Local.esaCount];
+}
+
+struct ADTGErrorSafeArray
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	switch (UINT32(FrameData,FrameOffset))
+	{
+		case 0x00000005:
+			ADTGErrorArrayMinimal ErrorArrayMinimal;
+		case 0x0000000B:
+			ADTGErrorArrayExtended ErrorArrayExtended;
+		case 0x0000000D:
+			ADTGErrorArrayExtendedSQL ErrorArrayExtendedSQL;
+	}
+}
+
+struct ADTGErrorArrayMinimal
+{
+	UINT16 esaNumDims;
+	UINT16 esaArrayFeatures;
+	UINT32 SizeOfElemVariant;
+	UINT32 esaElements5;
+	UINT32 esaLowerBound;
+	ADTGEsaData5 esaData5;
+}
+
+struct ADTGEsaData5
+{
+	ADTGDataType esaHR;
+    ADTGDataType esaMinor;
+    ADTGDataType esaClsid;
+    ADTGDataType esaInterfaceId;
+    ADTGDataType esaDispid;
+}
+
+struct ADTGErrorArrayExtended
+{
+	UINT16 esaNumDims;
+	UINT16 esaArrayFeatures;
+	UINT32 SizeOfElemVariant;
+	UINT32 esaElements11;
+	UINT32 esaLowerBound;
+	ADTGEsaData11 esaData11;
+}
+
+struct ADTGEsaData11
+{
+	ADTGEsaData5 esaData5;
+	ADTGDataType esaLCId;
+    ADTGDataType esaDescription;
+    ADTGDataType esaInterfaceId;
+    ADTGDataType esaHelpId;
+    ADTGDataType esaHelpFile;
+    ADTGDataType esaSource;
+}
+
+struct ADTGErrorArrayExtendedSQL
+{
+	UINT16 esaNumDims;
+	UINT16 esaArrayFeatures;
+	UINT32 SizeOfElemVariant;
+	UINT32 esaElements13;
+	UINT32 esaLowerBound;
+	ADTGEsaData13 esaData13;
+}
+
+struct ADTGEsaData13
+{
+	ADTGEsaData11 esaData11;
+	ADTGDataType esaSQLNative;
+    ADTGDataType esaSQLState;
+}
+
+struct ADTGParametersExecuteResCommon
+{
+	ADTGExecuteResSQLCommandParameters ExecuteResSQLCommandParameters;
+	struct EmptyList
+	{
+		[Maxloopcount = 7]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGExecuteResSQLCommandParameters
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGParamHeader ParamHeader1;
+				ADTGDataType SQLCommandParameters;
+				ADTGParamHeader ParamHeader2;
+			}
+	}
+}
+
+struct ADTGParametersExecuteRes10Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGExecuteResErrorInformation ExecuteResErrorInformation;
+	ADTGDataType VT_EMPTY;
+	ADTGParametersExecuteResCommon ParametersExecuteResCommon;
+}
+
+struct ADTGReturnValueExecuteRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType EncapsulatedData;
+}
+
+struct ADTGParametersExecuteRes9Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+	ADTGParametersExecuteResCommon ParametersExecuteResCommon;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ADTGSQLCommandParameters
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	UINT16 PVWNumDims;
+	UINT16 PVWArrayFeatures;
+	UINT32 PVWElementSize;
+	[Local.PVWCount]
+	UINT32 PVWSize;
+	UINT32 PVWLowerBound;
+	ADTGSQLCommandParameterArray SQLCommandParameterArray[Local.PVWCount];
+}
+
+struct ADTGSQLCommandParameterArray
+{
+	UINT16 VariantType = ADTGDataTypeTable(this);
+	UINT8 ZeroByte;
+	UINT16 SCPNumDims;
+	UINT16 SCPArrayFeatures;
+	UINT32 SCPElementSize;
+	UINT32 SCPArraySize;
+	UINT32 SCPLowerBound;
+	ADTGSQLCommandParameter SQLCommandParameter;
+}
+
+struct ADTGSQLCommandParameter
+{
+	ADTGDataType ParamFlags;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ParamName;
+	}
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ParamPrecision;
+	}
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ParamNumericScale;
+	}
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ParamSize;
+	}
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType ParamType;
+	}
+	
+	ADTGDataType ParamValue;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				switch (UINT8(FrameData,FrameOffset))
+				{
+					case 0:
+						UINT8 ParamDataOnly;
+					case 1:
+						UINT8 ParamIncludeMeta;
+					default:
+						ADTGDataType ParamOrdinal;
+				}
+			}
+			
+	}
+}
+
+struct ADTGParametersExecuteRes8Args
+{
+	ADTGParamHeader ParamHeader;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGSQLCommandParameters SQLCommandParameters;
+				ADTGParamHeader ParamHeader;
+			}
+	}
+	struct EmptyList
+	{
+		[Maxloopcount = 7]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGParametersQueryReq
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType SQLCommandString;
+	ADTGDataType ConnectionString;
+}
+
+struct ADTGParametersQueryRes
+{
+	ADTGParamHeader ParamHeader;
+	struct EmptyList
+	{
+		[Maxloopcount = 2]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGParametersSynchronizeReq7Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType LCID;
+	}
+	ADTGParametersSynchronizeReqCommon ParametersSynchronizeReqCommon;
+}
+
+Table ADTGSynchronizeOptionTable(Value)
+{
+	switch(Value) {
+		case 0x00000001: "UpdateTransact";
+		case 0x00000002: "RefreshWithUpdate";
+		case 0x00000003: "Refresh";
+		case 0x00000004: "RefreshConflicts";
+		default: FormatString("Unknown ADTG Option Value (%d)", Value);
+	}
+}
+
+struct ADTGParametersSynchronizeReqCommon
+{
+	ADTGOptionalStatusArray OptionalStatusArray;
+	ADTGParamHeader ParamHeader1;
+	ADTGDataType EncapsulatedData;
+	ADTGParamHeader ParamHeader2;
+	ADTGDataType SynchronizeOptions = ADTGSynchronizeOptionTable(this.I4Information.value);
+	ADTGDataType HandlerString;
+	ADTGDataType ConnectionString;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct ADTGStatusArray = formatstring("Status count: %d", this.StatusElementCount)
+{
+	UINT8 ZeroByte;
+	UINT16 SANumDims;
+	UINT16 SAFeatures;
+	UINT32 SAElementSize;
+	[Local.SACount]
+	UINT32 StatusElementCount;
+	UINT32 SALowerBound;
+	ADTGStatusElement StatusElement[Local.SACount];
+}
+
+struct ADTGStatusElement
+{
+	UINT32 Status = ADTGStatusElementTable(this);
+}
+
+Table ADTGStatusElementTable (Type) {
+	switch(Type) {
+		case 0x00000000: "OK";
+		case 0x00000002: "MultipleChanges";
+		case 0x00000004: "Canceled";
+		case 0x00000007: "ConcurrencyViolation";
+		case 0x00000008: "Deleted";
+		case 0x0000000A: "NewlyInserted";
+		case 0x0000000B: "IntegrityViolation";
+		case 0x0000000C: "Invalid";
+		case 0x0000000D: "MaxPendingChangesExceeded";	
+		case 0x0000000F: "OutofMemory";
+		case 0x00000010: "PermissionDenied";
+		case 0x00000011: "LimitReached";
+		case 0x00000012: "SchemaViolation";
+		case 0x00000013: "Fail";
+		default: FormatString("Unknown ADTG Status Type (%d)", Type);
+	}
+}
+
+struct ADTGOptionalStatusArray = Local.StatusArraySummary
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			[ Local.StatusArraySummary = "Empty" ]
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGParamHeader ParamHeader;
+				[ Local.StatusArraySummary = formatstring("Element count: %d", StatusArray.StatusElementCount) ]
+				ADTGDataType StatusArray;
+			}
+	}
+}
+
+struct ADTGParametersSynchronizeReq6Args
+{
+	ADTGParamHeader ParamHeader;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType LCID;
+	}
+	ADTGParametersSynchronizeReqCommon ParametersSynchronizeReqCommon;
+}
+
+struct ADTGParametersSynchronizeReq5Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGParametersSynchronizeReqCommon ParametersSynchronizeReqCommon;
+}
+
+struct ADTGParametersSynchronizeRes7Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGSynchronizeResErrorInformation SynchronizeResErrorInformation;
+	ADTGDataType VT_EMPTY;
+	ADTGParametersSynchronizeResCommon ParametersSynchronizeResCommon;
+}
+
+struct ADTGSynchronizeResErrorInformation
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			_struct
+			{
+				ADTGErrorInformation ErrorInformation;
+				ADTGParamHeader ParamHeader;
+			}
+	}
+}
+
+struct ADTGParametersSynchronizeResCommon
+{
+	ADTGOptionalStatusArray OptionalStatusArray;
+	ADTGParamHeader ParamHeader1;
+	ADTGDataType EncapsulatedData;
+	ADTGParamHeader ParamHeader2;
+	struct EmptyList
+	{
+		[Maxloopcount = 3]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGReturnValueSynchronizeRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType SynchronizeResult;
+}
+
+struct ADTGParametersSynchronizeRes6Args
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+	ADTGParametersSynchronizeResCommon ParametersSynchronizeResCommon;
+}
+
+struct ADTGParametersSynchronizeRes5Args
+{
+	ADTGParamHeader ParamHeader1;
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:
+			ADTGDataType VT_EMPTY;
+		default:
+			ADTGDataType StatusArray;
+	}
+	ADTGParamHeader ParamHeader2;
+	ADTGDataType EncapsulatedData;
+	ADTGParamHeader ParamHeader3;
+	struct EmptyList
+	{
+		[Maxloopcount = 3]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGParametersSubmitChangesReq
+{
+	ADTGParamHeader ParamHeader1;
+	ADTGDataType EncapsulatedData;
+	ADTGParamHeader ParamHeader2;
+	ADTGDataType ConnectionString;
+}
+
+struct ADTGParametersSubmitChangesRes
+{
+	ADTGParamHeader ParamHeader;
+	struct EmptyList
+	{
+		[Maxloopcount = 2]
+		while EmptyList[UINT16(FrameData,FrameOffset) == 0]
+		{
+			ADTGDataType VT_EMPTY;
+		}
+	}
+}
+
+struct ADTGParametersConvertToStringReq
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType EncapsulatedData;
+}
+
+struct ADTGParametersConvertToStringRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+}
+
+struct ADTGReturnValueConvertToStringRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType MIMERecordSet;
+}
+
+struct ADTGParametersCreateRecordsetReq
+{
+	ADTGParamHeader ParamHeader;
+	ADTGFieldShapeArray FieldShapeArray;
+}
+
+struct ADTGParametersCreateRecordsetRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType VT_EMPTY;
+}
+
+struct ADTGReturnValueCreateRecordsetRes
+{
+	ADTGParamHeader ParamHeader;
+	ADTGDataType EncapsulatedData;
+}
+
+struct ADTGCloseDelimiter = "End of Param"
+{
+	UINT16 CRLF = "CRLF";
+	AsciiStringTerm("\r\n") Boundary;
+}
+
+struct ADTGExcepInfo
+{
+	UINT32 Scode2;
+	BSTRNullable Source;
+	BSTRNullable Description;
+	BSTRNullable HelpFile;
+}
+
+struct ADTGMethodResponseError
+{
+	switch 
+	{
+		case UINT16(FrameData,FrameOffset) == 0x0D0A:
+			UINT16 HeaderEnd = "CRLF";
+	}
+	ADTGDataType ErrorInfor;
+}

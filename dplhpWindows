@@ -1,0 +1,109 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  DirectPlay 8 Protocol: Host and Port Enumeration
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MC-DPLHP]: DirectPlay 8 Protocol: Host and Port Enumeration Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/1/2010
+//#
+//####
+
+[DataTypeByteOrder=LittleEndian]
+Protocol DPLHP = DPDXSummary
+{
+	Switch( UINT8( Framedata, Offset ) )
+	{
+		Case 0x02: [DPDXSummary = this.ToString] DPLHPEnumQuery EnumQuery;
+		Case 0x03: [DPDXSummary = this.ToString] DPLHPEnumResponse EnumResponse;
+	}
+}
+
+Struct DPLHPEnumQuery = "Session Enumeration Query"
+{
+	UINT8 CommandByte = FormatString( "%02X = Enumeration Query", this );
+	UINT16 EnumPayload;
+	UINT8 QueryType = DPLHPSessionQueryTypeTable(this);
+	Switch(QueryType)
+	{
+		case 0x01:
+			GUID(1) ApplicationGUID;
+	}
+	switch
+	{
+		case FrameLength-FrameOffset>0:
+		Blob(FrameLength - FrameOffset) ApplicationPayload;
+	}
+}
+
+Struct DPLHPEnumResponse = FormatString("Session Enumeration Response, Name=%s, Players=%d", SessionName, CurrentPlayers)
+{
+	UINT8 CommandByte;
+	UINT16 EnumPayload;
+	UINT32 ReplyOffset;
+	UINT32 ResponseSize = FormatString("%u bytes", this);
+	UINT32 ApplicationDescSize = MustBeSetToTable(this, "0x00000050");
+	UINT32 ApplicationDescFlags
+	{
+		UINT32 DPNSESSION_CLIENT_SERVER:1 = FormatString("  (%s) %s", this.ToBitString, this ? "A client/server game session" : "a peer-to-peer game session");
+		UINT32 Reserved1:1 = FormatString("                 (%s) %s", this.ToBitString, this );
+		UINT32 DPNSESSION_MIGRATEHOST:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Host migration is allowed." : "Host migration is not allowed."); 
+		UINT32 Reserved2:3 = FormatString("                 (%s) %s", this.ToBitString, this );
+		UINT32 DPNSESSION_NODPNSVR:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Not using DirectPlay Name Server (DPNSVR)." : "Using DirectPlay Name Server (DPNSVR).");
+		UINT32 DPNSESSION_REQUIREPASSWORD:1 = FormatString("(%s) %s", this.ToBitString, this ? "Password required to join game session" : "No password required to join game session");
+		UINT32 DPNSESSION_NOENUMS:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Enumerations are not allowed" : "Enumerations are allowed.");
+		UINT32 DPNSESSION_FAST_SIGNED:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Fast message signing is in use" : "Fast message signing is not in use");
+		UINT32 DPNSESSION_FULL_SIGNED:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Full message signing is in use" : "Full message signing is not in use");
+		UINT32 Reserved4:21 = FormatString("                 (%s) %s", this.ToBitString, this );
+	};
+	UINT32 MaxPlayers;
+	UINT32 CurrentPlayers;
+	UINT32 SessionNameOffset;
+	UINT32 SessionNameSize = FormatString("%d bytes", this);
+	UINT32 PasswordOffset;
+	UINT32 PasswordSize = FormatString("%d bytes", this);
+	UINT32 ReservedDataOffset;
+	UINT32 ReservedDataSize = FormatString("%d bytes", this);
+	UINT32 ApplicationReservedDataOffset;
+	UINT32 ApplicationReservedDataSize = FormatString("%d bytes", this);
+	GUID(1) ApplicationInstanceGUID;
+	GUID(1) ApplicationGUID;
+	Switch
+	{
+		Case SessionNameSize > 0:
+			UnicodeString( SessionNameSize ) SessionName;
+	}
+	Switch
+	{
+		Case PasswordSize > 0:
+			Blob( PasswordSize ) Password;
+	}
+	Switch
+	{
+		Case ReservedDataSize > 0:
+			Blob( ReservedDataSize ) ReservedData;
+	}
+	switch
+	{
+		case ApplicationReservedDataSize>0:
+			Blob(ApplicationReservedDataSize) ApplicationReservedData;
+	}
+	switch
+	{
+		case ResponseSize>0:
+			Blob(ResponseSize) ApplicationData;
+	}
+}
+
+Table DPLHPSessionQueryTypeTable( Value )
+{
+	switch(Value)
+	{
+		case 0x01: "This query contains an ApplicationGUID field";
+		case 0x02: "This query contains no ApplicationGUID field";
+		default: "Unknown type";
+	}
+}

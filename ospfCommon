@@ -1,0 +1,1327 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Open Shortest Path First Routing Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1584, 1812, 1793, 2328, 2370, 2740, 3101, 3623, 3630, 4124
+//#                          http://www.iana.org/assignments/ospf-traffic-eng-tlvs
+//#                          draft-ietf-l3vpn-ospf-2547-05.txt
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol OSPF = FormatString("MessageType = %s", OSPFTypeTable(MessageType))
+{
+	UINT8 Version;
+	[OSPFMessageType]
+	UINT8 MessageType = FormatString("%s, %d(0x%02X)", OSPFTypeTable(this), this, this);
+	UINT16 PacketLength;
+	IPv4Address RouterID;
+	IPv4Address AreaID;
+	UINT16 Checksum;
+	switch(Version)
+	{
+		case  3:
+			_struct OSPFVersion3
+			{
+				UINT8 InstanceID;
+				UINT8 Reserved;
+			};
+		default:
+			_struct OSPFOtherVersion
+			{
+				UINT16 AuthType = OSPFAuthTypeTable(this)+FormatString(",%d(0x%X)",this,this);
+				switch(AuthType)
+				{
+					case 0x00:
+						INT64 AuthenticationData=FormatString("None");
+					//# rfc 1583, page 205
+					//# This essentially serves as a "clear" 64-bit password.
+					case 0x01:
+						AsciiString(8) SimplePassWordAuthData;
+					case 0x02:
+						OSPFAuthentication CryptographicAuthentication
+						{
+							UINT16 Reserved;
+							UINT8  KeyID;
+							UINT8  AuthDataLen = FormatString("%d bytes",this);
+							UINT32 CryptographicSeqNum;
+						};
+					default  :
+						OSPFAuthentication Authentication;
+				};
+			};
+	};
+
+	switch(Version)
+	{
+		case 3:
+			switch(MessageType)
+			{
+				case 0x01:
+					OSPFV3Hello HelloV3;
+				case 0x02:
+					OSPFV3DBDesc DBDescV3;
+				case 0x03:
+					OSPFV3LinkStateReq LinkStateReqV3[(FrameLength - offset)/12];
+				case 0x04:
+					OSPFV3Update UpdateV3;
+				case 0x05:
+					while condition[offset < FrameLength]
+					{
+						OSPFv3LSA LSA;
+					}
+				default  :
+					switch
+					{
+						case FrameLength > FrameOffset:
+							_struct UnhandledVersion
+							{
+								ReportParserError(ParserErrorProtocolClassPublic, "OSPF", "OSPF Version Error") OSPFVersionError;
+								BLOB( FrameLength - FrameOffset ) UnknownData;
+							}
+					}
+			}
+		default:
+			switch(MessageType)
+			{
+				case  0x01:
+					struct OSPFV2Hello
+					{
+						IPv4Address NetMask;
+						UINT16 HelloInterval = FormatString(" %u seconds (%#x)", this, this);
+						OSPFOptions Options;
+						UINT8 RouterPriority;
+						UINT32 DeadInterval = FormatString(" %u seconds (%#x)", this, this);
+						IPv4Address DesignatedRouter;
+						IPv4Address BackupDesignatedRouter;
+						IPv4Address Neighbor[(FrameLength - offset)/4];
+					};
+				case  0x02:
+					struct OSPFV2DBDesc
+					{
+						UINT16 InterfaceMTU = FormatString("%d bytes",this);
+						OSPFOptions Options;
+						UINT8 Flag = FormatString("%s%s%s",this & 0x01 ? "MS":"",this & 0x02 ? " M":"",this & 0x04 ? " I":"")
+						{
+							UINT8 Reserved:5 = FormatString("(%s)",this.ToBitstring );
+							UINT8 I:1  = FormatString("       (%s) %s",this.ToBitString, this ? "First Packet" 
+											  : "Not First Packet" );
+							UINT8 M:1  = FormatString("       (%s) %s",this.ToBitString, this ? "More Database Description Packets are to follow" 
+											  : "No Database Description Packets are to follow" );
+							UINT8 MS:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Router is the Master" 
+											  : "Router is the Slave" );
+						};
+						UINT32 SeqNum;
+						While LSAHeaders[offset < frameLength]
+						{
+							OSPFLSAHeader LSAHeader;
+						};
+					};
+				case  0x03:
+					OSPFLinkStateReq LinkStateReqV2[(FrameLength - offset)/12];
+				case  0x04:
+					struct OSPFV2Update
+					{
+						UINT32 NumofAds;
+						OSPFLSA LSA[NumofAds];
+					};
+				case  0x05:
+					OSPFLSAHeader AckLSA[(FrameLength - offset)/20];
+				default   :
+					switch
+					{
+						case FrameLength > FrameOffset:
+							_struct UnhandledVersion
+							{
+								ReportParserError(ParserErrorProtocolClassPublic, "OSPF", "OSPF Version Error") OSPFVersionError;
+								BLOB( FrameLength - FrameOffset ) UnknownData;
+							}
+					}
+			}
+	}
+}
+
+Table OSPFTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"Hello";
+		case  2:"Database description";
+		case  3:"Link state request";
+		case  4:"Link state update";
+		case  5:"Link state acknowledgment";
+		default:"Unhandled OSPFType";
+	}
+}
+
+//http://www.iana.org/assignments/ospf-authentication-codes
+Table OSPFAuthTypeTable(type)
+{
+	switch(type)
+	{
+		case  0x00:"No Authentication";//rfc 1583
+		case  0x01:"Simple Password Authentication";//rfc 1583
+		case  0x02:"Cryptographic Authentication";//RFC2328
+		default   :"Reserved Type";
+	}
+}
+
+Table OSPFV3LSLinkTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"Point-to-point connection to another router";
+		case  2:"Connection to a transit network";
+		case  3:"Connection to a stub network";
+		case  4:"Virtual link";
+		default:"Unknown link type";
+	}
+}
+
+Table OSPFV3LSATypeTable(type)
+{
+	switch( type )
+	{
+		case 0x01:"Router-LSA";
+		case 0x02:"Network-LSA";
+		case 0x03:"Inter-Area-Prefix-LSA";
+		case 0x04:"Inter-Area-Router-LSA";
+		case 0x05:"AS-External-LSA";
+		case 0x06:"Group-Membership-LSA";
+		case 0x07:"Type-LSA";
+		case 0x08:"Link-LSA";
+		case 0x09:"Intra-Area-Prefix-LSA";
+		default  :"";
+	}
+}
+
+Table OSPFV3SFlagsTable(value)
+{
+	switch( value )
+	{
+		case 0:"Link-Local Scoping";
+		case 1:"Area Scoping";
+		case 2:"As Scoping";
+		case 3:"Reserved";
+	}
+}
+
+Table OSPFLSATypeTable(type)
+{
+	switch(type)
+	{
+		case  0x01:"Router Links";
+		case  0x02:"Network Links";
+		case  0x03:"Summary Link(IP Network)";
+		case  0x04:"Summary Link(ASBR)";
+		case  0x05:"AS External Link";
+		case  0x06:"Group membership LSA"; //rfc1584 [93]
+		case  0x07:"NSSA External Link";//rfc 1587
+		case  0x09:"Opaque LSAs with a link-local scope";//rfc 2370
+		case  0x0A:"Opaque LSAs with a area-local scope";//rfc3630 [4]
+		case  0x0B:"Opaque LSAs with a AS-wide scope";//AS -Autonomous System
+		default   :"Unknown LSA Type";
+	}
+}
+
+Table OSPFTOSTypeTable(type)
+{
+	switch(type)
+	{
+		case   0:"Normal Service";
+		case   2:"Minimize Monetary Cost";
+		case   4:"Maximize Reliability";
+		case   8:"Maximize Throughput";
+		case  16:"Minimize Delay";
+		//rfc2676 [19]
+		case  40:"Bandwidth";
+		case  48:"Delay";
+		default :"Unknown OSPF TOS Type";
+	}
+}
+
+UnsignedNumber OSPFAuthentication
+{
+	size = 8,
+	DisplayFormat = FormatString("0x%02X%02X%02X%02X%02X%02X%02X%02X",this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]),
+}
+
+struct OSPFOptions = FormatString("%s%s%s%s%s%s%s",
+								   O ? "  O":"",
+								  DC ? " DC":"",
+								  EA ? " EA":"",
+								  NP ? " NP":"",
+								  MC ? " MC":"",
+								   E ? "  E":"",
+								  DN ? " DN":"")
+{
+	UINT8 Reserved:1 = FormatString("(%s)", this.ToBitstring );
+	//rfc 2370 [12]
+	UINT8 O:1  = FormatString("       (%s) %s",this.ToBitString, this ? "Willing to receive and forward Opaque-LSAs" 
+					  : "Not Willing to receive and forward Opaque-LSAs " );
+	UINT8 DC:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Support demand circuit extensions" 
+					  : "Does not support demand circuit extensions " );
+	UINT8 EA:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Processes external attributes LSAs" 
+					  : "Does not process external attributes LSAs" );
+	UINT8 NP:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Processes Not-So-Stubby-Area Advertisements" 
+					  : "Does not process Not-So-Stubby-Area Advertisements" );
+	UINT8 MC:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Processes multicast routing extensions(MOSPF)" 
+					  : "Does not support MOSPF" );
+	UINT8 E:1  = FormatString("       (%s) %s",this.ToBitString, this ? "Processes AS External routes" 
+					  : "Does not process AS External routes" );
+	//draft-ietf-l3vpn-ospf-2547-05.txt
+	UINT8 DN:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Type 3 LSA is sent from a PE router to a CE router" 
+					  : "");
+}
+
+Table OSPFLinkTypeAbrTable(type)
+{
+	switch(type)
+	{
+		case  1:"PTP";
+		case  2:"Transit";
+		case  3:"Stub";
+		case  4:"Virtual";
+		default:"Unknown";
+	}
+}
+
+Table OSPFLinkTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"Point-to-point connection to another router";
+		case  2:"Connection to a transit network";
+		case  3:"Connection to a stub network";
+		case  4:"Virtual link";
+		default:"Unknown OSPFLinkType";
+	}
+}
+
+Table OSPFProtectionCapabilitiesTable(value)
+{
+	switch
+	{
+		case value==0x01 :"Extra Traffic";
+		case value==0x02 :"Unprotected";
+		case value==0x04 :"Shared";
+		case value==0x08 :"Dedicated 1:1";
+		case value==0x10 :"Dedicated 1+1";
+		case value==0x20 :"Enhanced";
+		case value==0x40 || value==0x80 :"Reserved";
+		default :"Unknown";
+	}
+}
+
+struct OSPFTOS
+{
+	UINT8  TOS = OSPFTOSTypeTable(this)+FormatString(",%d(0x%X)",this,this);
+	UINT8  Reserved;
+	UINT16 TOSMetric;
+}
+
+struct OSPFSummaryLSAEntry
+{
+	UINT8  TOS = OSPFTOSTypeTable(this)+FormatString(",%d(0x%X)",this,this);
+	UINT24 Metric;
+}
+
+struct OSPFLink = FormatString("Type: %s  ID: %s  Data: %s  Metric: %d",
+							   OSPFLinkTypeAbrTable(Type), LinkID, LinkData, Metric )
+{
+	switch (UINT8( Framedata, Offset + 8 ))
+	{
+		case  2:[LinkID = this.ToString]IPv4Address DesignatedRouter;
+		case  3:[LinkID = this.ToString]IPv4Address NetworkNumber;
+		default:[LinkID = this.ToString]IPv4Address NeighboringRouter;
+	}
+	switch (UINT8( Framedata, Offset + 4 ))
+	{
+		case  3:[LinkData = this.ToString]IPv4Address NetworkMask;
+		default:[LinkData = this.ToString]IPv4Address NextHop;
+	}
+	UINT8  Type = OSPFLinkTypeTable(this)+FormatString(",%d(0x%X)",this,this);
+	UINT8  NumTOS;
+	UINT16 Metric;
+	OSPFTOS TOS[NumTOS];
+}
+
+struct OSPFRouterLSA
+{
+	UINT8 RType
+	{
+		UINT8 Reserved:4 = FormatString("(%s)",this.ToBitstring );
+				//rfc1584 [92]
+		UINT8 W:1 = FormatString("       (%s) %s",this.ToBitString, this ? "Wild-card Multicast Receiver" 
+						 : "Not Wild-card Multicast Receiver" );
+		UINT8 V:1 = FormatString("       (%s) %s",this.ToBitString, this ? "Virtual Link Endpoint" 
+						 : "Not Virtual Link Endpoint" );
+		UINT8 E:1 = FormatString("       (%s) %s",this.ToBitString, this ? "AS Boundary Router(External)" 
+						 : "Not AS Boundary Router(External)" );
+		UINT8 B:1 = FormatString("       (%s) %s",this.ToBitString, this ? "Area Border Router" 
+						 : "Not Area Border Router" );
+	};
+	UINT8 Reserved;
+	UINT16 NumLinks;
+	OSPFLink Link[NumLinks];
+}
+
+struct OSPFExternalLSAEntry
+{
+	UINT8 Type
+	{
+		UINT8 E:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Type 2 (metric is larger than any other link state path)" 
+						 : "Type 1 (metric is specified in the same unit as interface cost)" );
+		UINT8 TOS:7 = FormatString("(%s) %s",this.ToBitString,OSPFTOSTypeTable(this));
+	};
+	UINT24 Metric;
+	IPv4Address ForwardingAddress;
+	UINT32 ExternalRouteTag;
+}
+
+Table OSPFGroupMemVertexTypeTable(type)
+{
+	switch(type)
+	{
+		case  0x01:"Router";
+		case  0x02:"Transit Network";
+		default   :"Unknown OSPF GroupMem VertexType Type";
+	}
+}
+
+struct OSPFGroupMemVertexEntry
+{
+	UINT32 VertexType = OSPFGroupMemVertexTypeTable(this);
+	IPv4Address VertexID;
+}
+
+//http://www.iana.org/assignments/ospf-opaque-types
+Table OSPFLSAIDTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"Traffic Engineering LSA";
+		case  2:"Sycamore Optical Topology Descriptions";
+		case  3:"Grace-LSA";//RFC3623
+		default:"Unhandled type";
+	}
+}
+
+//Traffic Engineering TLVs per [RFC3630]
+Table OSPFTELSATopTLVTypeTable(type)
+{
+	switch
+	{
+		case type == 1:"Router Address";
+		case type == 2:"Link";
+		case type == 3:"Standards Action Required";
+		case type == 4:"Link Local";
+		case type >= 5 &&
+			 type <= 32767:"Standards Action Required";
+		case type == 32768:"TNA Information";
+		case type >= 32768 &&
+			 type <= 32777:"Experimental use";
+		default:"Not Assignable";
+	}
+}
+
+//http://www.iana.org/assignments/ospf-traffic-eng-tlvs
+//RFC3630 1~9
+//RFC4203 11, 14~16
+//RFC4124 17
+Table OSPFTELSASubTLVTypeTable(type)
+{
+	switch
+	{
+		case type ==  0:"Reserved";
+		case type ==  1:"Link type";// (1 octet)
+		case type ==  2:"Link ID";// (4 octets)
+		case type ==  3:"Local interface IP address";// (4 octets)
+		case type ==  4:"Remote interface IP address";// (4 octets)
+		case type ==  5:"Traffic engineering metric";// (4 octets)
+		case type ==  6:"Maximum bandwidth";// (4 octets)
+		case type ==  7:"Maximum reservable bandwidth";// (4 octets)
+		case type ==  8:"Unreserved bandwidth";// (32 octets)
+		case type ==  9:"Administrative group";//RFC 3630 (4 octets); this type is also called "Resource Class/Color" see rfc2702
+		case type == 10:"Unassigned";// (Standards Action Required)
+		case type == 11:"Link Local/Remote Identifiers";// (8 octets)
+		case type >= 12 &&
+			 type <= 13:"Unassigned";// (Standards Action Required)
+		case type == 14:"Link Protection Type";// (4 octets)
+		case type == 15:"Interface Switching Capability Descriptor"; //(variable)
+		case type == 16:"Shared Risk Link Group";// (variable)
+		case type == 17:"Bandwidth Contraints";
+		case type >= 18 &&
+			 type <= 32767:"Unassigned";// (Standards Action Required)
+		case type >= 32768 &&
+			 type <= 32777:"Experimental use";
+		default:"Not Assignable";
+	}
+}
+
+struct OSPFTeLsaTopTLVDefault
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSATopTLVTypeTable(this), this, this);
+	UINT16 Length;
+	AsciiString(Length) Value;
+}
+
+struct OSPFTeLsaTopTLVRouterAddress = RouterAddress.ToString
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSATopTLVTypeTable(this), this, this); //1
+	UINT16 Length; // 4
+	IPv4Address RouterAddress;
+}
+
+Table OSPFTeLsaSubTLVLinkTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"Point-to-point";
+		case  2:"Multi-access";
+		default:"Unhandled Link Type";
+	}
+}
+
+struct OSPFTeLsaSubTLVDefault
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this);
+	UINT16 Length;
+	AsciiString(Length) Value;
+	switch
+	{
+		case Length % 4 > 0:AsciiString(4 - Length % 4) Padding;
+	}
+}
+
+struct OSPFTeLsaSubTLVLinkType = OSPFTeLsaSubTLVLinkTypeTable(LinkType)
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //1
+	UINT16 Length; //1
+	UINT8  LinkType = FormatString("%s, %d(0x%X)", OSPFTeLsaSubTLVLinkTypeTable(this), this, this);
+	UINT24 Padding;
+}
+
+struct OSPFTeLsaSubTLVLinkID = LinkId.toString
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //2
+	UINT16 Length; //4
+	IPv4Address LinkId;
+}
+
+struct OSPFTeLsaSubTLVLocalInterface
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //3
+	UINT16 Length; //4N
+	IPv4Address LocalAddress[Length/4];
+}
+
+struct OSPFTeLsaSubTLVRemoteInterface
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //4
+	UINT16 Length; //4N
+	IPv4Address Neighbor[Length/4];
+}
+
+struct OSPFTeLsaSubTLVTEMetric = FormatString("%u",LinkMetric)
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //5
+	UINT16 Length; //4
+	UINT32 LinkMetric;
+}
+
+/////////////////////////////
+//IEEE floating point format
+//       0                   1                   2                   3
+//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//      |S|    Exponent   |                  Fraction                   |
+//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+//   S is the sign, Exponent is the exponent base 2 in "excess 127"
+//   notation, and Fraction is the mantissa - 1, with an implied binary
+//   point in front of it.  Thus, the above represents the value:
+//
+//      (-1)**(S) * 2**(Exponent-127) * (1 + Fraction)
+////////////////////////////
+
+struct OSPFTeLsaSubTLVMaxBand
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //6
+	UINT16 Length; //4
+	//IEEE floating point format
+	FLOAT MaxBandwidth = FormatString("%0.0f bytes/s", this);
+}
+
+struct OSPFTeLsaSubTLVMaxReservableBand
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //7
+	UINT16 Length; //4
+	//IEEE floating point format
+	FLOAT MaxReservableBandwidth = FormatString("%0.0f bytes/s", this);
+}
+
+struct OSPFTeLsaSubTLVUnreservedBand
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //8
+	UINT16 Length; //32
+	//IEEE floating point format
+	FLOAT BandwidthPri0 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri1 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri2 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri3 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri4 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri5 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri6 = FormatString("%0.0f bytes/s", this);
+	FLOAT BandwidthPri7 = FormatString("%0.0f bytes/s", this);
+}
+
+struct OSPFTeLsaSubTLVAdminGroup = AdminGroupBitMask.toString
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //9
+	UINT16 Length; //4
+	UINT32 AdminGroupBitMask = FormatString("0x%08X",this)
+	{
+		UINT32 Group31:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group31" : " Not Group31");
+		UINT32 Group30:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group30" :  " Not Group30");
+		UINT32 Group29:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group29" :  " Not Group29");
+		UINT32 Group28:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group28" :  " Not Group28");
+		UINT32 Group27:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group27" :  " Not Group27");
+		UINT32 Group26:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group26" :  " Not Group26");
+		UINT32 Group25:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group25" :  " Not Group25");
+		UINT32 Group24:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group24" :  " Not Group24");
+		UINT32 Group23:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group23" :  " Not Group23");
+		UINT32 Group22:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group22" :  " Not Group22");
+		UINT32 Group21:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group21" :  " Not Group21");
+		UINT32 Group20:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group20" :  " Not Group20");
+		UINT32 Group19:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group19" :  " Not Group19");
+		UINT32 Group18:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group18" :  " Not Group18");
+		UINT32 Group17:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group17" :  " Not Group17");
+		UINT32 Group16:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group16" :  " Not Group16");
+		UINT32 Group15:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group15" :  " Not Group15");
+		UINT32 Group14:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group14" :  " Not Group14");
+		UINT32 Group13:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group13" :  " Not Group13");
+		UINT32 Group12:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group12" :  " Not Group12");
+		UINT32 Group11:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group11" :  " Not Group11");
+		UINT32 Group10:1 = FormatString("(%s) %s",this.ToBitString, this ?  " Group10" :  " Not Group10");
+		UINT32 Group9:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group9"  :  " Not Group9");
+		UINT32 Group8:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group8"  :  " Not Group8");
+		UINT32 Group7:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group7"  :  " Not Group7");
+		UINT32 Group6:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group6"  :  " Not Group6");
+		UINT32 Group5:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group5"  :  " Not Group5");
+		UINT32 Group4:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group4"  :  " Not Group4");
+		UINT32 Group3:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group3"  :  " Not Group3");
+		UINT32 Group2:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group2"  :  " Not Group2");
+		UINT32 Group1:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group1"  :  " Not Group1");
+		UINT32 Group0:1 = FormatString(" (%s) %s",this.ToBitString, this ?  " Group0"  :  " Not Group0");
+	};
+}
+
+struct OSPFTeLsaSubTLVLocalRemoteIdentifiers
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //11
+	UINT16 Length; //8
+	IPv4Address LinkLocalIdentifier;
+	IPv4Address LinkRemoteIdentifier;
+}
+
+struct OSPFTeLsaSubTLVProtectionType
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //14
+	UINT16 Length; //4
+//#? dev note - 2005-12-8
+//#? only one bit can be set in ProtectionCapabilities??
+//  UINT8 ProtectionCapabilities = FormatString("%s, %d(0x%X)",OSPFProtectionCapabilitiesTable(this), this,this);
+	UINT8 ProtectionCapabilities
+	{
+		UINT8 Reserved:2 = FormatString("     (%s)", this.ToBitstring );
+		UINT8 Enhanced:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Enhanced" : "Not Enhanced");
+		UINT8 Dedicated:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Dedicated 1+1" : "Not Dedicated 1+1");
+		UINT8 Dedicated1:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Dedicated 1:1" : "Not Dedicated 1:1");
+		UINT8 Shared:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Shared" : "Not Shared");
+		UINT8 Unprotected:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Unprotected" : "Not Unprotected");
+		UINT8 Extra_Traffic:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extra Traffic" : "Not Extra Traffic");
+	};
+	UINT24 Reserved;
+}
+
+Table OSPFLinkSwitchingCapabilitiesType(cap)
+{
+	switch(cap)
+	{
+		case 1  :Formatstring("Packet-Switch Capable-1 (PSC-1), %d(0x%02X)", cap, cap);
+		case 2  :Formatstring("Packet-Switch Capable-2 (PSC-2), %d(0x%02X)", cap, cap);
+		case 3  :Formatstring("Packet-Switch Capable-3 (PSC-3), %d(0x%02X)", cap, cap);
+		case 4  :Formatstring("Packet-Switch Capable-4 (PSC-4), %d(0x%02X)", cap, cap);
+		case 51 :Formatstring("Layer-2 Switch Capable (L2SC), %d(0x%02X)", cap, cap); //No specific information
+		case 100:Formatstring("Time-Division-Multiplex Capable (TDM), %d(0x%02X)", cap, cap);
+		case 150:Formatstring("Lambda-Switch Capable (LSC), %d(0x%02X)", cap, cap); //No specific information
+		case 200:Formatstring("Fiber-Switch Capable (FSC), %d(0x%02X)", cap, cap);
+		default :FormatString("Unknown Capability, %d(0x%02X)", cap, cap);
+	}
+}
+
+Table OSPFPSCIndicationTabe(indication)
+{
+	switch(indication)
+	{
+		case  0:FormatString("The Interface supports Standard SONET/SDH , %d(0x%X)", indication, indication);
+		case  1:FormatString("The Interface supports Arbitrary SONET/SDH , %d(0x%X)", indication, indication);
+		default:FormatString(" , %d(0x%X)", indication, indication);
+	}
+}
+
+//Interface Switching Capability Descriptor
+struct OSPFTeLsaSubTLVISCDescriptor
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //15
+	UINT16 Length;
+	UINT8 SwitchingCapabilitie = OSPFLinkSwitchingCapabilitiesType(this);
+	UINT8 Encoding;
+	UINT16 Reserved;
+	//IEEE floating point format, bytes (not bits!) per second
+	FLOAT MaxLSPBandPri0 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri1 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri2 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri3 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri4 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri5 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri6 = FormatString("%0.0f bytes/s", this);
+	FLOAT MaxLSPBandPri7 = FormatString("%0.0f bytes/s", this);
+	switch(SwitchingCapabilitie)
+	{
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+			struct PSCSpecificInformation
+			{
+				//IEEE floating point format
+				FLOAT MinLSPBand = FormatString("%0.0f bytes/s", this);
+				UINT16 InterfaceMTU;
+				UINT16 Padding;
+			};
+		case 100:
+			struct TDMSpecificInformation
+			{
+				//IEEE floating point format
+				FLOAT MinLSPBand = FormatString("%0.0f bytes/s", this);
+				UINT8 Indication = OSPFPSCIndicationTabe(this);
+				UINT24 Padding;
+			};
+		default :
+			AsciiString(Length - 40) SCSpecificInformation;
+	}
+}
+
+struct OSPFTeLsaSubTLVSharedRiskLinkGroup
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSASubTLVTypeTable(this), this, this); //16
+	UINT16 Length; //4N
+	UINT32 SharedRiskLinkGroupValue[Length/4];
+}
+
+struct OSPFTeLsaTopTLVLink
+{
+	UINT16 Type = FormatString("%s, %d(0x%X)", OSPFTELSATopTLVTypeTable(this), this, this); //2
+	[OSPFTopTLVEndOffset = offset + this + 2]
+	UINT16 Length;
+	While SubOptions[offset < OSPFTopTLVEndOffset]
+	{
+		switch(UINT16(frameData, offset))
+		{
+			case 0x0001:OSPFTeLsaSubTLVLinkType LinkType;
+			case 0x0002:OSPFTeLsaSubTLVLinkID LinkID;
+			case 0x0003:OSPFTeLsaSubTLVLocalInterface LocalInterface;
+			case 0x0004:OSPFTeLsaSubTLVRemoteInterface RemoteInterface;
+			case 0x0005:OSPFTeLsaSubTLVTEMetric TEMetric;
+			case 0x0006:OSPFTeLsaSubTLVMaxBand MaxBand;
+			case 0x0007:OSPFTeLsaSubTLVMaxReservableBand MaxReservableBand;
+			case 0x0008:OSPFTeLsaSubTLVUnreservedBand UnreservedBand;
+			case 0x0009:OSPFTeLsaSubTLVAdminGroup AdminGroup;
+			case 0x000B:OSPFTeLsaSubTLVLocalRemoteIdentifiers LocalRemoteIdentifiers;
+			case 0x000E:OSPFTeLsaSubTLVProtectionType ProtectionType;
+			case 0x000F:OSPFTeLsaSubTLVISCDescriptor ISCDescriptor;
+			case 0x0010:OSPFTeLsaSubTLVSharedRiskLinkGroup SharedRiskLinkGroup;
+			default:    OSPFTeLsaSubTLVDefault DefaultTLV;
+		}
+	}
+}
+
+struct OSPFLSAHeader = OSPFLSATypeTable(LSType)
+{
+	UINT16 LSAge = FormatString("%d seconds(0x%X)",this,this);
+	OSPFOptions Options;
+	UINT8 LSType = FormatString("%s, %d(0x%X)", OSPFLSATypeTable(this), this, this);
+	//RFC 2328 page 119
+	switch(LSType)
+	{
+		case 0x01:IPv4Address OriginRouterID;
+		case 0x02:IPv4Address DesignatedRouter;
+		case 0x03:
+		case 0x05:IPv4Address DestinationNetwork;
+		case 0x04:IPv4Address ASBoundaryRouterID;
+		case 0x06:IPv4Address DestinationGroup;
+		case 0x09:
+		case 0x0A:
+		case 0x0B:
+			struct LSAID = OSPFLSAIDTypeTable(Type) + ", Instance: " + Instance
+			{
+				[OSPFv2LSAMPLSType]
+				UINT8 Type = FormatString("%s, %d(0x%02X)", OSPFLSAIDTypeTable(this), this, this);
+				UINT24 Instance;
+			};
+		default: IPv4Address LinkStateID;
+	}
+	IPv4Address AdvertisingRouter;
+	UINT32 LSSequenceNumber;
+	UINT16 LSChecksum;
+	UINT16 Length;
+}
+
+struct OSPFLSA = OSPFLSATypeTable(LSType)
+{
+	UINT16 LSAge = FormatString("%d seconds(0x%X)",this,this);
+	OSPFOptions Options;
+	UINT8 LSType = FormatString("%s, %d(0x%X)", OSPFLSATypeTable(this), this, this);
+	//RFC 2328 page 119
+	switch(LSType)
+	{
+		case 0x01:IPv4Address OriginRouterID;
+		case 0x02:IPv4Address DesignatedRouter;
+		case 0x03:
+		case 0x05:IPv4Address DestinationNetwork;
+		case 0x04:IPv4Address ASBoundaryRouterID;
+		case 0x06:IPv4Address DestinationGroup;
+		case 0x09:
+		case 0x0A:
+		case 0x0B:
+			struct LSAID = OSPFLSAIDTypeTable(Type) + ", Instance: " + Instance
+			{
+				[OSPFv2LSAMPLSType]
+				UINT8 Type = FormatString("%s, %d(0x%02X)", OSPFLSAIDTypeTable(this), this, this);
+				UINT24 Instance;
+			};
+		default: IPv4Address LinkStateID;
+	}
+	IPv4Address AdvertisingRouter;
+	UINT32 LSSequenceNumber;
+	UINT16 LSChecksum;
+	[LSAEndOffset = offset + this - 18]
+	UINT16 Length;
+	switch
+	{
+		case Length > 20:
+			switch(LSType)
+			{
+				case 0x01:
+					OSPFRouterLSA RouterLSA;
+				case 0x02:
+					struct NetworkLink
+					{
+						IPv4Address NetworkMask;
+						IPv4Address AttachedRouter[(Length - 20 - 4)/4];
+					};
+				case 0x03:
+				case 0x04:
+					struct SummaryLink
+					{
+						IPv4Address NetworkMask;
+						UINT8 Reserved;
+						UINT24 Metric;
+						OSPFSummaryLSAEntry SummaryLSAEntry[(Length - 20 - 8)/4];
+					};
+				case 0x05:
+					struct ASExternalLink
+					{
+						IPv4Address NetworkMask;
+						OSPFExternalLSAEntry ExternalLSAEntry[(Length - 20 - 4)/12];
+					};
+				case 0x06:
+					OSPFGroupMemVertexEntry GroupMemVertexEntry[(Length - 20)/8];
+				case 0x07:
+					struct NSSAExternalLink
+					{
+						IPv4Address NetworkMask;
+						OSPFExternalLSAEntry ExternalLSAEntry[(Length - 20 - 4)/12];
+					}
+				case 0x09:
+				case 0x0A:
+				case 0x0B:
+					switch(Property.OSPFv2LSAMPLSType)
+					{
+						case  1://Traffic Engineering TLVs per [RFC3630]
+							while TELSATopTLVs[offset < LSAEndOffset]
+							{
+								switch(UINT16(frameData, offset))
+								{
+									case 0x0001:OSPFTeLsaTopTLVRouterAddress RouterAddress;
+									case 0x0002:OSPFTeLsaTopTLVLink Link;
+									default:    OSPFTeLsaTopTLVDefault DefaultTLV;
+								}
+							};
+						default:
+							AsciiString(Length -20) OpaqueInformation;
+					}
+				default :
+					AsciiString(Length -20) LSAData;
+			}
+	}
+};
+
+struct OSPFLinkStateReq
+{
+	UINT32 LinkStateType=OSPFV3LSATypeTable(this)+FormatString(", %d(0x%X)",this,this);
+	Ipv4Address LinkStateID;
+	IPv4Address AdvRouter;
+};
+
+struct OSPFv3LSAHeader = LSType.ToString
+{
+	UINT16 LSAge = FormatString("%d seconds(0x%X)",this,this);
+	UINT16 LSType = OSPFV3LSATypeTable(FunctionCode)
+	{
+		UINT16 U:1 = FormatString("(%s) %s",this.ToBitString,this ? "Store and flood the LSA, as if type underdtood" 
+						  : "Treat the LSA as if it hard link-local flooding scope" );
+		UINT16 S:2 = FormatString("(%s) %s",this.ToBitString,OSPFV3SFlagsTable(this) );
+		UINT16 FunctionCode:13 = FormatString("%s, %d(0x%X)", OSPFV3LSATypeTable(this), this, this);
+	};
+	Ipv4Address LinkStateID;
+	Ipv4Address AdvertisingRouter;
+	UINT32 LSSequenceNumber;
+	UINT16 LSChecksum;
+	UINT16 Length;
+}
+
+// RFC 3513, page 4, 2.3 Text Representation of Address Prefixes
+Table IPv6PrefixTable(PrefixLength, IPv6Prefix)
+{
+	switch
+	{
+		case PrefixLength > 0 && PrefixLength <= 32:
+			FormatString("%X:%X::/%d",
+						IPv6Prefix[15]*256+IPv6Prefix[14], IPv6Prefix[13]*256+IPv6Prefix[12],
+						PrefixLength);
+		case PrefixLength > 32 && PrefixLength <= 64:
+			FormatString("%X:%X:%X:%X::/%d",
+						IPv6Prefix[15]*256+IPv6Prefix[14], IPv6Prefix[13]*256+IPv6Prefix[12],
+						IPv6Prefix[11]*256+IPv6Prefix[10], IPv6Prefix[9]*256+IPv6Prefix[8],
+						PrefixLength);
+		case PrefixLength > 64 && PrefixLength <= 96:
+			FormatString("%X:%X:%X:%X:%X:%X::/%d",
+						IPv6Prefix[15]*256+IPv6Prefix[14], IPv6Prefix[13]*256+IPv6Prefix[12],
+						IPv6Prefix[11]*256+IPv6Prefix[10], IPv6Prefix[9]*256+IPv6Prefix[8],
+						IPv6Prefix[7]*256+IPv6Prefix[6], IPv6Prefix[5]*256+IPv6Prefix[4],
+						PrefixLength);
+		case PrefixLength > 96 && PrefixLength <= 128:
+			FormatString("%X:%X:%X:%X:%X:%X:%X:%X/%d",
+						IPv6Prefix[15]*256+IPv6Prefix[14], IPv6Prefix[13]*256+IPv6Prefix[12],
+						IPv6Prefix[11]*256+IPv6Prefix[10], IPv6Prefix[9]*256+IPv6Prefix[8],
+						IPv6Prefix[7]*256+IPv6Prefix[6], IPv6Prefix[5]*256+IPv6Prefix[4],
+						IPv6Prefix[3]*256+IPv6Prefix[2], IPv6Prefix[1]*256+IPv6Prefix[0],
+						PrefixLength);
+	}
+}
+
+struct OSPFIPv6Prefix = IPv6Prefix.ToString
+{
+	UINT8 PrefixLength;
+	UINT8 PrefixOption = FormatString("%s%s%s%s",
+									 this & 0x08 ? " P":"",
+									 this & 0x04 ? " MC":"",
+									 this & 0x02 ? " LA":"",
+									 this & 0x01 ? "NU":"")
+	{
+		UINT8 Reserved:4 = FormatString("(%s)",this.ToBitstring );
+		UINT8 P:1  = FormatString("       (%s) %s",this.ToBitString, this ? "The prefix should be readvertised at the NSSA area border" 
+						  : "The prefix should not be readvertised at the NSSA area border" );
+		UINT8 MC:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be included in IPV6 multicast routing calculations" 
+						  : "The prefix should be excluded from IPV6 multicast routing calculations" );
+		UINT8 LA:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix is actually an IPV6 interface address of the advertising router" 
+						  : "The prefix is not an IPV6 interface address of the advertising router" );
+		UINT8 NU:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be excluded from IPV6 unicast calculations" 
+						  : "The prefix should be included in IPV6 unicast calculations" );
+	};
+	UINT16 Reserved;
+	//# Address Prefix is an encoding of the prefix itself as an even multiple of 32-bit words,
+	//# padding with zero bits as necessary; this encoding consumes (PrefixLength + 31) / 32) 32-bit words.
+	Asciistring(((PrefixLength+31)/32)*4) IPv6Prefix = IPv6PrefixTable(PrefixLength, IPv6Address(frameData, offset));
+}
+
+struct OSPFv3LSA = LSType.ToString
+{
+	UINT16 LSAge = FormatString("%d seconds(0x%X)",this,this);
+	UINT16 LSType = OSPFV3LSATypeTable(FunctionCode)
+	{
+		UINT16 U:1 = FormatString("(%s) %s",this.ToBitString,this ? "Store and flood the LSA, as if type underdtood" 
+						  : "Treat the LSA as if it hard link-local flooding scope" );
+		UINT16 S:2 = FormatString("(%s) %s",this.ToBitString,OSPFV3SFlagsTable(this) );
+		UINT16 FunctionCode:13 = FormatString("%s, %d(0x%X)", OSPFV3LSATypeTable(this), this, this);
+	};
+	Ipv4Address LinkStateID;
+	Ipv4Address AdvertisingRouter;
+	UINT32 LSSequenceNumber;
+	UINT16 LSChecksum;
+	[LSEndOffset = offset + this - 18]
+	UINT16 Length;
+	switch(LSType)
+	{
+		case 0x2001:
+			struct RouterLSA
+			{
+				UINT8 RouterFlags = FormatString("%s%s%s%s",
+												this & 0x08 ? "W":"",
+												this & 0x04 ? "V":"",
+												this & 0x02 ? "E":"",
+												this & 0x01 ? "B":"")
+				{
+					UINT8 Reserved:4 = FormatString("%s",this.ToBitstring );
+					//rfc1584 [92]
+					UINT8 W:1 = FormatString("(%s) %s",this.ToBitString, this ? "Wild-card Multicast Receiver" 
+									 : "Not Wild-card Multicast Receiver" );
+					UINT8 V:1 = FormatString("(%s) %s",this.ToBitString, this ? "Endpoint of an active vitual link" 
+									 : "Not endpoint of an active virtual link" );
+					UINT8 E:1 = FormatString("(%s) %s",this.ToBitString, this ? "AS Boundary Router(External)" 
+									 : "Not AS Boundary Router(External)" );
+					UINT8 B:1 = FormatString("(%s) %s",this.ToBitString, this ? "Area Border Router" 
+							 		 : "Not Area Border Router" );
+				};
+				UINT24 Options = FormatString("%s%s%s%s%s%s",
+												  this & 0x20 ? " DC":"",
+												  this & 0x10 ? " R":"",
+												  this & 0x08 ? " N":"",
+												  this & 0x04 ? " MC":"",
+												  this & 0x02 ? " E":"",
+												  this & 0x01 ? "V6":"")
+				{
+					UINT24 Reserved:18 = FormatString("(%s)", this.ToBitstring );
+					UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+										: "Does not support demand circuit extensions" );
+					UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+										: "The originator is not an active router" );
+					UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+										: "Does not process Not-So-Stubby-Area advertisements" );
+					UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+										: "Does not support MOSPF" );
+					UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+										: "Does not process AS External routes" );
+					UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+										: "Excluded from IPv6 routing calculations" );
+				};
+				while condition[offset < Property.LSEndOffset]
+				{
+					UINT8  LinkType = OSPFV3LSLinkTypeTable(this)+FormatString(",%d(0x%X)",this,this);
+					UINT8  Reserved;
+					UINT16 Metric;
+					UINT32 InterfaceID;
+					UINT32 NeighborInterfaceID;
+					UINT32 NeighborRouterID;
+				};
+			};
+		case 0x2002:
+			struct NetworkLSA
+			{
+				UINT8 Reserved;
+				UINT24 Options = FormatString("%s%s%s%s%s%s",
+												  this & 0x20 ? " DC":"",
+												  this & 0x10 ? " R":"",
+												  this & 0x08 ? " N":"",
+												  this & 0x04 ? " MC":"",
+												  this & 0x02 ? " E":"",
+												  this & 0x01 ? " V6":"")
+				{
+					UINT24 Reserved:18 = FormatString("(%s)", this.ToBitstring );
+					UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+										: "Does not support demand circuit extensions" );
+					UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+										: "The originator is not an active router" );
+					UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+										: "Does not process Not-So-Stubby-Area advertisements" );
+					UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+										: "Does not support MOSPF" );
+					UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+										: "Does not process AS External routes" );
+					UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+										: "Excluded from IPv6 routing calculations" );
+				};
+				while condition[offset < Property.LSEndOffset]
+				{
+					Ipv4Address AttachedRouter;
+				}
+			};
+		case 0x2003:
+			struct InterAreaPrefixLSA
+			{
+				UINT8 Reserved1;
+				UINT24 Metric;
+				OSPFIPv6Prefix Prefix;
+			}
+		case 0x2004:
+			struct InterAreaRouterLSA
+			{
+				UINT8 Reserved1;
+				UINT24 Options = FormatString("%s%s%s%s%s%s",
+												this & 0x20 ? " DC":"",
+												this & 0x10 ? " R":"",
+												this & 0x08 ? " N":"",
+												this & 0x04 ? " MC":"",
+												this & 0x02 ? " E":"",
+												this & 0x01 ? " V6":"")
+				{
+					UINT24 Reserved:18 = FormatString("(%s)",this.ToBitstring );
+					UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+										: "Does not support demand circuit extensions" );
+					UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+										: "The originator is not an active router" );
+					UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+										: "Does not process Not-So-Stubby-Area advertisements" );
+					UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+										: "Does not support MOSPF" );
+					UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+										: "Does not process AS External routes" );
+					UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+										: "Excluded from IPv6 routing calculations" );
+				};
+				UINT8 Reserved2;
+				UINT24 Metric;
+				Ipv4Address DestinationRouterID;
+			};
+		case 0x4005:
+			struct ASExternalLSA
+			{
+				UINT8  Flags = FormatString("%s%s%s",
+											this & 0x04 ? "E" : ".",
+											this & 0x02 ? "F":".",
+											this & 0x01 ? "T":".")
+				{
+					UINT8 Reserved:5 = FormatString("(%s)",this.ToBitstring );
+					UINT8 E:1 = FormatString("       (%s) %s",this.ToBitString, this ? "The metric specified is a Type 2 external metric" 
+								 	 : "The specified metric is a Type 1 external metric" );
+					UINT8 F:1 = FormatString("       (%s) %s",this.ToBitString, this ? "Included a Forwarding Address has been included" 
+								 	 : "Not included a Forwarding Address has been included");
+					UINT8 T:1 = FormatString("       (%s) %s",this.ToBitString, this ? "Included an External Route Tag" 
+								 	 : "Not included an External Route Tag");
+				};
+				UINT24 Metric;
+				UINT8  PrefixLength;
+				UINT8  PrefixOption = FormatString("%s%s%s%s",
+													this & 0x08 ? " P":"",
+													this & 0x04 ? " MC":"",
+													this & 0x02 ? " LA":"",
+													this & 0x01 ? " NU":"")
+				{
+					UINT8 Reserved:4 = FormatString("(%s)",this.ToBitstring );
+					UINT8 P:1  = FormatString("       (%s) %s",this.ToBitString, this ? "The prefix should be readvertised at the NSSA area border" 
+								 	  : "The prefix should not be readvertised at the NSSA area border" );
+					UINT8 MC:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be included in IPV6 multicast routing calculations" 
+									  : "The prefix should be excluded from IPV6 multicast routing calculations" );
+					UINT8 LA:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix is actually an IPV6 interface address of the advertising router" 
+									  : "The prefix is not an IPV6 interface address of the advertising router" );
+					UINT8 NU:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be excluded from IPV6 unicast calculations" 
+									  : "The prefix should be included in IPV6 unicast calculations" );
+				};
+				UINT16 ReferencedLSType = OSPFV3LSATypeTable(FunctionCode)
+				{
+					UINT16 U:1 = FormatString("(%s) %s",this.ToBitString, this ? "Store and flood the LSA, as if type underdtood" 
+									  : "Treat the LSA as if it hard link-local flooding scope" );
+					UINT16 S:2 = FormatString("(%s) %s",this.ToBitString,OSPFV3SFlagsTable(this) );
+					UINT16 FunctionCode:13 = FormatString("%s, %d(0x%X)", OSPFV3LSATypeTable(this), this, this);
+				};
+				Asciistring(((PrefixLength+31)/32)*4) IPv6Prefix = IPv6PrefixTable(PrefixLength, IPv6Address(frameData, offset));
+				switch
+				{
+					case Flags & 0x02:Ipv6Address ForwardingAddress;
+				}
+				switch
+				{
+					case Flags & 0x01:UINT32 ExternalRouteTag;
+				}
+				switch
+				{
+					case ReferencedLSType:Ipv4Address ReferencedLinkStateID;
+				}
+			};
+		//case 0x2006:
+		//case 0x2007:
+		case 0x0008:
+			struct LinkLSA
+			{
+				UINT8 RouterPriority;
+				UINT24 Options = FormatString("%s%s%s%s%s%s",
+												this & 0x20 ? " DC":"",
+												this & 0x10 ? " R":"",
+												this & 0x08 ? " N":"",
+												this & 0x04 ? " MC":"",
+												this & 0x02 ? " E":"",
+												this & 0x01 ? " V6":"")
+				{
+					UINT24 Reserved:18 = FormatString("(%s)",this.ToBitstring );
+					UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+										: "Does not support demand circuit extensions" );
+					UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+										: "The originator is not an active router" );
+					UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+										: "Does not process Not-So-Stubby-Area advertisements" );
+					UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+										: "Does not support MOSPF" );
+					UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+										: "Does not process AS External routes" );
+					UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+										: "Excluded from IPv6 routing calculations" );
+				};
+				Ipv6Address LinkLocalInterfaceAddress;
+				UINT32 PrefixNumbers;
+				OSPFIPv6Prefix Prefix[PrefixNumbers];
+			};
+		case 0x2009:
+			struct IntraAreaPrefixLSA
+			{
+				UINT16 PrefixNumbers;
+				UINT16 ReferencedLSType = OSPFV3LSATypeTable(FunctionCode)
+				{
+					UINT16 U:1 = FormatString("(%s) %s",this.ToBitString, this ? "Store and flood the LSA, as if type underdtood" 
+								 	  : "Treat the LSA as if it hard link-local flooding scope" );
+					UINT16 S:2 = FormatString("(%s) %s",this.ToBitString,OSPFV3SFlagsTable(this) );
+					UINT16 FunctionCode:13 = FormatString("%s, %d(0x%X)", OSPFV3LSATypeTable(this), this, this);
+				};
+				Ipv4Address ReferencedLinkStateID;
+				Ipv4Address ReferencedAdvertisingRouter;
+				struct OSPFIPv6Prefix[PrefixNumbers] = FormatString("%s Metric:%d", IPv6Prefix.ToString, Metric)
+				{
+					UINT8 PrefixLength;
+					UINT8 PrefixOption = FormatString("%s%s%s%s",
+													  this & 0x08 ? " P":"",
+													  this & 0x04 ? " MC":"",
+													  this & 0x02 ? " LA":"",
+													  this & 0x01 ? "NU":""
+													 )
+					{
+						UINT8 Reserved:4 = FormatString("(%s)",this.ToBitstring );
+						UINT8 P:1  = FormatString("       (%s) %s",this.ToBitString, this ? "The prefix should be readvertised at the NSSA area border" 
+										  : "The prefix should not be readvertised at the NSSA area border" );
+						UINT8 MC:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be included in IPV6 multicast routing calculations" 
+										  : "The prefix should be excluded from IPV6 multicast routing calculations" );
+						UINT8 LA:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix is actually an IPV6 interface address of the advertising router" 
+										  : "The prefix is not an IPV6 interface address of the advertising router" );
+						UINT8 NU:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The prefix should be excluded from IPV6 unicast calculations" 
+										  : "The prefix should be included in IPV6 unicast calculations" );
+					};
+					UINT16 Metric;
+					Asciistring(((PrefixLength+31)/32)*4) IPv6Prefix = IPv6PrefixTable(PrefixLength, IPv6Address(frameData, offset));
+				};
+			};
+		default:
+			switch
+			{
+				case offset < Property.LSEndOffset:AsciiString(Property.LSEndOffset - offset) UnknownLSAData;
+			};
+	}
+}
+
+struct OSPFV3LinkStateReq
+{
+	UINT16 Reserved;
+	UINT16 LSType = OSPFV3LSATypeTable(FunctionCode)
+	{
+		UINT16 U:1 = FormatString("(%s) %s",this.ToBitString, this ? "Store and flood the LSA, as if type underdtood" 
+						  : "Treat the LSA as if it hard link-local flooding scope" );
+		UINT16 S:2 = FormatString("(%s) %s",this.ToBitString,OSPFV3SFlagsTable(this) );
+		UINT16 FunctionCode:13 = FormatString("%s, %d(0x%X)", OSPFV3LSATypeTable(this), this, this);
+	};
+	Ipv4Address LinkStateID;
+	Ipv4Address AdvertisingRouter;
+}
+
+struct OSPFV3DBDesc
+{
+	UINT8 Reserved1;
+	UINT24 Options = FormatString("%s%s%s%s%s%s",
+								  this & 0x20 ? " DC":"",
+								  this & 0x10 ? " R":"",
+								  this & 0x08 ? " N":"",
+								  this & 0x04 ? " MC":"",
+								  this & 0x02 ? " E":"",
+								  this & 0x01 ? " V6":""
+								 )
+	{
+		UINT24 Reserved:18 = FormatString("(%s)",this.ToBitstring );
+		UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+							: "Does not support demand circuit extensions" );
+		UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+							: "The originator is not an active router" );
+		UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+							: "Does not process Not-So-Stubby-Area advertisements" );
+		UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+							: "Does not support MOSPF" );
+		UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+							: "Does not process AS External routes" );
+		UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+							: "Excluded from IPv6 routing calculations" );
+	};
+	UINT16 InterfaceMTU;
+	UINT8 Reserved2;
+	UINT8 DBDFlags = FormatString("%s%s%s",this & 0x01 ? "MS":"",this & 0x02 ? " M":"",this & 0x04 ? " I":"")
+	{
+		UINT8 Reserved:5 = FormatString("(%s)",this.ToBitstring );
+		UINT8 I:1  = FormatString("       (%s) %s",this.ToBitString, this ? "First Packet in the sequence of Database Description Packets" 
+						  : "Not First Packet in the sequence of Database Description Packets" );
+		UINT8 M:1  = FormatString("       (%s) %s",this.ToBitString, this ? "More Database Description Packets are to follow"  
+						  : "No More Database Description Packets are to follow"  );
+		UINT8 MS:1 = FormatString("      (%s) %s",this.ToBitString, this ? "Router is the Master" 
+						  : "Router is the Slave" );
+	};
+	UINT32 DDSequenceNumber;
+	while LSAHeaders[offset < FrameLength]
+	{
+		OSPFv3LSAHeader LSAHeader;
+	}
+}
+
+struct OSPFV3Update
+{
+	UINT32 LSANumbers;
+	OSPFv3LSA LSA[LSANumbers];
+}
+
+struct OSPFV3Hello
+{
+	UINT32 InterfaceID;
+	UINT8  RouterPriority;
+	UINT24 Options = FormatString("%s%s%s%s%s%s",
+								  this & 0x20 ? " DC":"",
+								  this & 0x10 ? " R":"",
+								  this & 0x08 ? " N":"",
+								  this & 0x04 ? " MC":"",
+								  this & 0x02 ? " E":"",
+								  this & 0x01 ? " V6":""
+								 )
+	{
+		UINT24 Reserved:18 = FormatString("(%s)",this.ToBitstring );
+		UINT24 DC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Support demand circuit extensions"
+							: "Does not support demand circuit extensions" );
+		UINT24 R:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "The originator is an active router" 
+							: "The originator is not an active router" );
+		UINT24 N:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process Not-So-Stubby-Area advertisements" 
+							: "Does not process Not-So-Stubby-Area advertisements" );
+		UINT24 MC:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Process multicast routing extensions(MOSPF)" 
+							: "Does not support MOSPF" );
+		UINT24 E:1  = FormatString("       (%s) %s",this.ToBitString, this  ? "Process AS External routes" 
+							: "Does not process AS External routes" );
+		UINT24 V6:1 = FormatString("      (%s) %s",this.ToBitString, this  ? "Included in IPv6 routing calculations" 
+							: "Excluded from IPv6 routing calculations" );
+	};
+	UINT16 HelloInterval= FormatString(" %u seconds (%#x)", this, this);
+	UINT16 RouterDeadInterval= FormatString(" %u seconds (%#x)", this, this);
+	Ipv4Address DesignatedRouterID;
+	Ipv4Address BackupDesignatedRouterID;
+	while condition[offset < FrameLength]
+	{
+		Ipv4Address NeighborID;
+	};
+}
+

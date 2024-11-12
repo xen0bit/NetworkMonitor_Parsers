@@ -1,0 +1,108 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IPV6CP
+//#
+//#  Details:                Internet Protocol V6 Control Protocol
+//#
+//#  Public References:      RFC 2153,2472
+//#                          http://www.networksorcery.com/enp/protocol/IPv6CP.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[RegisterAfter(PPP.Ccp,Ipv6cp,0x8057)]
+Protocol IPV6CP = FormatString("Code = %s, Length = %d",IPv6CPCodeTable(Code),Length)
+{
+	UINT8 Code = FormatString("(0x%X) %s",this,IPv6CPCodeTable(this));
+	UINT8 Identifier;
+	UINT16 Length;
+	switch(Code)
+	{
+		case 0x00:
+		struct VendorSpecificPacket
+		{
+			UINT32 MagicNumber;
+			UINT24 OUI = OUITable(this);
+			UINT8 Kind;
+			switch
+			{
+				case Length > 12:
+				while[FrameOffset < ProtocolOffset + Length]
+				{
+					struct VerdorSpecificOption
+					{
+						UINT8 Type;
+						UINT8 OptionLength;
+						UINT24 OUI = OUITable(this);
+						UINT8 Kind;
+						switch
+						{
+							case OptionLength > 6:
+							BLOB(OptionLength - 6) Data;
+						}
+					} 
+				};
+			}
+		};
+		default:
+		while[FrameOffset < ProtocolOffset + Length]
+		{
+			switch(UINT8( Framedata, Offset ))
+			{
+				case 0x01: InterfaceIdentifier InterfaceID;
+				case 0x02: IPv6Compression IPv6Compression;
+				default:
+				struct UnknownAddress = FormatString("Option = %s",IPv6CPOptionTable(Option))
+				{
+					UINT8 Option = FormatString("(0x%X) %s",this,IPv6CPOptionTable(this));
+					UINT8 Length;		
+					BLOB(Length - 2) Data;				
+				}
+			}
+		}		
+	}
+}
+Table IPv6CPCodeTable
+{
+	switch(value)
+	{
+		case 0x00 : "Vendor Specific";
+		case 0x01 : "Configure-Request";
+		case 0x02 : "Configure-Ack";
+		case 0x03 : "Configure-Nak";
+		case 0x04 : "Configure-Reject";
+		case 0x05 : "Terminate-Request";
+		case 0x06 : "Terminate-Ack";
+		case 0x07 : "Code-Reject";
+		default : "Unknown Code";
+	}
+}
+
+Table IPv6CPOptionTable
+{
+	switch(value)
+	{
+		case 0x01: "Interface-Identifier";
+		case 0x02: "IP-Compression-Protocol";
+		default : "Unknown Option";
+	}	
+}
+
+struct InterfaceIdentifier = FormatString("Option = %s",IPv6CPOptionTable(Option))
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPv6CPOptionTable(this));
+	UINT8 Length;	
+	UINT64 InterfaceID;					
+}
+
+struct IPv6Compression = FormatString("Option = %s",IPv6CPOptionTable(Option))
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPv6CPOptionTable(this));
+	UINT8 Length;	
+	UINT16 IPv6Compression;
+	BLOB(Length-4) Data;					
+}
+

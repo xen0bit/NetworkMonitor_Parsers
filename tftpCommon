@@ -1,0 +1,134 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Trivial File Transfer Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.networksorcery.com/enp/protocol/tftp.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 8/7/2009
+//#
+//####
+
+Protocol TFTP = FormatString(" %s - %s", TftpOpCodeTable(OpCode), TftpDesc)
+{
+	[Property.TftpIndex = MakeByteArray(SourceNetworkAddress, SourcePort, DestinationNetworkAddress)] 
+	[Global.TftpData$[Property.TftpIndex] = TRUE]
+
+	UINT16 OpCode = FormatString("%s (%u)", TftpOpCodeTable(this),this);
+
+	switch(OpCode)
+	{
+		case 1:
+			[TftpDesc = this.ToString]
+			TftpRRQ RRQ;
+		case 2:
+			[TftpDesc = this.ToString]
+			TftpWRQ WRQ;
+		case 3:
+			[TftpDesc = this.ToString]
+			TftpDATA DATA; 
+		case 4:
+			[TftpDesc = this.ToString]
+			TftpACK ACK;
+		case 5:
+			[TftpDesc = this.ToString]
+			TftpERROR ERROR;
+		case 6:
+			[TftpDesc = this.ToString]
+			TftpOACK OACK;
+		default:
+			[TftpDesc = FormatString("OpCode: %u", OpCode)]
+			BLOB (FrameLength - FrameOffset) UnknownPayload;
+	}
+
+}
+
+struct TftpRRQ = FormatString("File: %s, Transfer Mode: %s %s", FileName, Mode, TftpRRQOptDesc)
+{
+	AsciiString Filename;
+	AsciiString Mode;
+
+	while OptionList[FrameOffset < FrameLength]
+	{
+		[TftpRRQOptDesc = TftpRRQOptDesc + this.ToString + " "]
+		TftpOption Option;
+	}
+}
+
+struct TftpWRQ = FormatString("File: %s, Transfer Mode %s %s", FileName, Mode, TftpWRQOptDesc) 
+{
+	AsciiString Filename;
+	AsciiString Mode;
+
+	while OptionList[FrameOffset < FrameLength]
+	{
+		[TftpWRQOptDesc = TftpWRQOptDesc + this.ToString + " "]
+		 TftpOption Option;
+	}
+}
+
+struct TftpDATA = FormatString("Block Number: %u", BlockNum)
+{
+	UInt16 BlockNum;
+	BLOB (FrameLength - FrameOffset) Data;
+}
+
+struct TftpACK = FormatString("Block Number: %u", BlockNum)
+{
+	UInt16 BlockNum;
+}
+
+struct TftpERROR = FormatString("ErrorCode: %u, ErrorMessage: %s ", ErrorCode, ErrorMessage )
+{
+	UInt16 ErrorCode =  FormatString("%s (%u)", TftpErrorCodeTable(this),this);
+	AsciiString ErrorMessage;
+}
+
+struct TftpOACK = FormatString("%s", TftpOACKDesc)
+{
+	while OptionList[FrameOffset < FrameLength]
+	{
+		[TftpOACKDesc = TftpOACKDesc + this.ToString + " "]
+		TftpOption Option;
+	}
+}
+
+struct TftpOption = FormatString("%s: %s", Option, Value)
+{
+	AsciiString Option;
+	AsciiString Value;
+}
+
+Table TftpOpCodeTable
+{
+	switch(value)
+	{
+		case 0x01 : "Read Request";
+		case 0x02 : "Write Request";
+		case 0x03 : "Data";
+		case 0x04 : "Acknowledgement";
+		case 0x05 : "Error";
+		case 0x06 : "Option Acknowledgement";
+		default : "Unknown OpCode";
+	}
+}
+
+Table TftpErrorCodeTable
+{
+	switch(value)
+	{
+		case 0x00 : "No Error";
+		case 0x01 : "File not found";
+		case 0x02 : "Access violation";
+		case 0x03 : "Disk full or allocation exceeded";
+		case 0x04 : "Illegal TFTP operation";
+		case 0x05 : "Unknown transfer ID";
+		case 0x06 : "File already exists";
+		case 0x07 : "No such user";
+		case 0x08 : "Terminate transfer due to option negotiation";
+		default : "Unknown error code";
+	}
+}

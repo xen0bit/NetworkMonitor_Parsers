@@ -1,0 +1,555 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Multi-purpose Internet Mail Extensions
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 822 - Standard for ARPA Internet Text Messages
+//#                          RFC 1341 - Mechanisms for Specifying and Describing the Format of Internet Message Bodies
+//#                          RFC 2045 - MIME Part One: Format of Internet Message Bodies
+//#                          RFC 2046 - MIME Part Two: Media Types
+//#                          RFC 2047 - MIME Part Three: Message Header Extensions for Non-ASCII Text
+//#                          RFC 2048 - MIME Part Four: Registration Procedures
+//#                          RFC 2049 - MIME Part Five: Conformance Criteria and Examples
+//#                          RFC 2387 - The MIME Multipart/Related Content-type
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol MIME = FormatString("%s%s",
+				MimeVersion ? "Version = " + MimeVersion : "",
+				MimeMediaType ? (MimeVersion ? ", " : "") + "MediaType = " + MimeMediaType + "/" + MimeSubType : "") 
+{
+	//
+	// Mime Headers
+	//
+	while Headers[AsciiString(FrameData,FrameOffset, 2) != "\r\n" && FrameOffset < FrameLength]
+	{
+		While[UINT8(FrameData, FrameOffset) == 0x20]
+		{
+			UINT8 WhiteSpace;
+		}
+		DynamicSwitch AsciiStringTerm(":")
+		{
+			case "MIME-Version":
+				[MimeVersion]
+				AsciiStringTerm("\r\n") MimeVersion;
+			case "ADCClientVersion":
+				[MimeVersion = MimeVersion ? MimeVersion : "ADCClient " + ADCClientVersion]
+				AsciiStringTerm("\r\n") ADCClientVersion;
+			case "Content-Type":
+				MimeContentType ContentType;
+			default:
+				struct DefaultName = Property.DefaultHeaderContent
+				{
+					[Property.DefaultHeaderContent]
+					AsciiStringTerm("\r\n") Mainpart;
+					while [(UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09) && FrameOffset < FrameLength]
+					{
+						[Property.DefaultHeaderContent = Property.DefaultHeaderContent + this]
+						AsciiStringTerm("\r\n") PartialParameters;
+					}
+				}
+		}
+	}
+	
+	switch
+	{
+		case UINT16(FrameData,FrameOffset) == 0x0D0A:
+			UINT16 HeaderEnd = "CRLF";
+	}
+	
+	//
+	// Mime Body
+	//
+	switch
+	{
+		case FrameOffset < FrameLength:
+			MimeBody MimeBody;
+	}
+}
+// Media Type 
+Table MimeMediaTypeTable (Value)
+{
+	switch
+	{	
+		// discrete type:
+		case Value.Contains("text"): "text - textual information";
+		case Value.Contains("image"): "image - image data";
+		case Value.Contains("audio"): "audio - audio data";
+		case Value.Contains("video"): "video - video data";
+		case Value.Contains("application"): "application - specific application data";
+		// composite type:
+		case Value.Contains("multipart"): "multipart - data consisting of multiple entities of independent data types"; 	
+		case Value.Contains("message"): "message - an encapsulated message";
+		// unknown type:
+		default  : Value;
+	}
+}
+
+// Sub Type
+Table MimeSubTypeTable (Value)
+{
+	switch
+	{
+		// Text subtype:
+		case Value.Contains("plain"): FormatString("%s - text containing no formatting commands or directives of any sort", Value);
+		case Value.Contains("richtext"): FormatString("%s - text with very simple formatting", Value);
+		case Value.Contains("enriched"): FormatString("%s - text with simple formatting", Value);
+		case Value.Contains("msword"): FormatString("%s - Microsoft Word document", Value);
+		case Value.Contains("html"): FormatString("%s - HTML document", Value);
+		// Image subtype:
+		case Value.Contains("JPEG"): FormatString("%s - JPEG image", Value);
+		case Value.Contains("GIF"): FormatString("%s - GIF image", Value);
+		// Audio subtype:
+		case Value.Contains("basic"): FormatString("%s - Basic audio type", Value);
+		// Video subtype:
+		case Value.Contains("mpeg"): FormatString("%s - MPEG audio/video type", Value);
+		// Application subtype:
+		case Value.Contains("octet-stream"): FormatString("%s - arbritary binary data", Value);
+		case Value.Contains("PostScript"): FormatString("%s - PostScript document", Value);
+		case Value.Contains("msexcel"): FormatString("%s - Microsoft Excel document", Value);
+		case Value.Contains("xop+xml"): FormatString("%s - XML-binary optimized packaging", Value);
+		// multipart subtype:
+		case Value.Contains("mixed"): FormatString("%s - a generic mixed set of parts", Value);
+		case Value.Contains("alternative"): FormatString("%s - represents the same data in multiple format", Value);
+		case Value.Contains("parallel"): FormatString("%s - parts intended to be viewed simultaneously", Value);
+		case Value.Contains("digest"): FormatString("%s - multipart entities in which each part has a default type of \"message/rfc822\"", Value);
+		case Value.Contains("related"): FormatString("%s - compound objects consisting of several inter-related body parts", Value);
+		case Value.Contains("signed"): FormatString("%s - signed data", Value);
+		case Value.Contains("encrypted"): FormatString("%s - encrypted data", Value);
+		// message subtype:
+		case Value.Contains("RFC822"): FormatString("%s - body contains an encapsulated message, with the syntax of an RFC 822 message", Value);
+		case Value.Contains("partial"): FormatString("%s - large entities to be delivered as several separate pieces of mail and automatically reassembled by a receiving user agent", Value);
+		case Value.Contains("external-body"): FormatString("%s - actual body aren't included, but merely referenced", Value);
+		// Unknown type:
+		default: Value; 
+	}
+}	
+
+
+
+[Property.MimeBodyDepth = Property.MimeBodyDepth + 1]
+[Post.Property.MimeBodyDepth = Property.MimeBodyDepth - 1]
+struct MimeBody = Property.MimeMediaTypeMultiTable$[FrameOffset]
+{
+	[Property.MimeMultiPartBoundary$[Property.MimeBodyDepth] = Property.MimeMultiBoundary]
+	[Property.MimeMediaTypeMultiTable$[FrameOffset] = MimeMediaType]
+		
+	switch(MimeMediaType)
+	{
+		case "multipart":
+			[MimeMutipartCount = 0]
+			While MultiPartEntities[FrameOffset < FrameLength && !Property.MimeBodyFin]
+			{
+				//Preamble data before Multipart body
+				switch
+				{
+					case !(UINT16(FrameData, FrameOffset) == 0x2d2d): 
+						StringTerm(Ascii, "--" + Property.MimeMultiPartBoundary$[Property.MimeBodyDepth], true, false, false) PreambleData; 
+				}
+				
+				[MimeMutipartCount = MimeMutipartCount + 1]
+				switch
+				{
+					case Contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), Property.MimeMultiPartBoundary$[Property.MimeBodyDepth]):
+						AsciiStringTerm("\r\n") Boundary;
+				}
+					
+				//Epilogue data at the last of the Multipart body
+				switch
+				{
+					case Boundary == "--" + Property.MimeMultiPartBoundary$[Property.MimeBodyDepth] + "--" && FrameOffset < FrameLength:
+						[Property.MimeBodyFin = true]
+						while [FrameOffset < FrameLength]
+						{
+							AsciiStringTerm("\r\n") EpilogueData;
+						}
+					case FrameOffset < FrameLength && !Property.MimeBodyFin:
+						[MimeEntityContentLength = 0, Property.MimeEntityContentType = "text/plain; charset=US-ASCII"]
+						StringTerm(Ascii, "--" + Property.MimeMultiPartBoundary$[Property.MimeBodyDepth], true, false, false) MultiPartEntity = AsciiStringTerm(FrameData, FrameOffset, "\r\n\r\n")
+						{
+							//
+							// Mime Multi Part Entity Headers
+							//
+							While Headers[FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset) == 0x0D0A)]
+							{
+								While[UINT8(FrameData, FrameOffset) == 0x20]
+								{
+									DynamicSwitch AsciiString(1)
+									{
+										default: struct{}
+									};
+								}
+								switch
+								{
+									case Contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), Property.MimeMultiPartBoundary$[Property.MimeBodyDepth]):
+										AsciiStringTerm("\r\n") Boundary;
+									default:
+										DynamicSwitch AsciiStringTerm(": ")
+										{
+											case "Content-Type":
+												MimeContentType ContentType;
+											case "Content-Length":
+												[Post.MimeEntityContentLength = StringToNumber(ContentLength)]
+												AsciiStringTerm("\r\n") ContentLength;
+											default:
+												struct DefaultName = Property.DefaultHeaderContent
+												{
+													[Property.DefaultHeaderContent]
+													AsciiStringTerm("\r\n") Mainpart;
+													while [(UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09) && FrameOffset < FrameLength]
+													{
+														[Property.DefaultHeaderContent = Property.DefaultHeaderContent + this]
+														AsciiStringTerm("\r\n") PartialParameters;
+													}
+												}
+										}
+								}
+							}
+								
+							switch
+							{
+								case UINT16(FrameData,FrameOffset) == 0x0D0A:
+									UINT16 HeaderEnd = "CRLF";
+							}
+							
+							//
+							// Mime Multi Part Entity Body
+							//
+							switch
+							{
+								case Framelength > FrameOffset:
+									switch
+									{
+										case Property.IsPayloadMineBody: // ";":
+											HTTPPayloadData payload;
+										case MimeMediaType == "multipart":
+											[Post.Property.MimeBodyFin = false]
+											MimeBody MimeBody;
+										
+										case MimeMediaType == "application"
+											&& MimeSubType == "x-varg":
+												AsciiStringTerm("\r\n") RDSTData;
+										
+										case  MimeMediaType == "application"
+											&& MimeSubType == "sdp":
+												AsciiStringTerm("\r\n\r\n") SdpBody
+												{
+													sdp sdp;
+												}	
+										case  MimeMediaType == "application"
+											&& MimeSubType == "xop+xml":
+												AsciiStringTerm("\r\n\r\n") XOPBody = Formatstring("%s",Property.MimeStartInfoArgs.contains("application/soap+xml") ? 
+																						"A XOP package using MIME multipart/related packaging to serialize a SOAP message" :
+																						"A XOP package using MIME multipart/related packaging to serialize a non-SOAP message" )
+												{
+													XMLparser XMLXOP;
+												};	
+																						
+										case  MimeMediaType == "application"
+											&& MimeSubType.contains("xml"):
+												XMLparser XML;	
+										case MimeMediaType == "image"
+											&& MimeSubType == "gif" && SmtpReplication:
+												AsciiStringTerm("\r\n") SmtpReplicationData
+												{
+													[DataFieldFrameLength = FrameLength - 2]
+													[MimeSubType = MimeSubType + ", SmtpReplication"]
+													SRPL SRPL;
+												};
+												
+										case MimeMediaType == "image"
+											&& MimeSubType == "gif" && Smtpsrpl:
+												AsciiStringTerm("\r\n") SmtpsrplData
+												{
+													[DataFieldFrameLength = FrameLength - 2]
+													[srplSubType = srplSubType + ", Smtpsrpl"]
+													Srpl Srpl;
+												};
+										
+										case MimeMediaType == "x-vermeer-rpc":
+												AsciiStringTerm("\r\n") FrontPageData
+												{
+													[DataFieldFrameLength = FrameLength - 2]
+													FPSE FrontPage;
+												};
+										
+										default:
+											switch
+											{
+												case MimeEntityContentLength > 0:
+													BLOB(MimeEntityContentLength) MimeEntityBody;
+												default:
+													//MimeEntityContentLength is not always exist
+													While MimeEntityBodys[FrameOffset < FrameLength && !Contains(AsciiStringTerm(FrameData, FrameOffset, "\r\n"), Property.MimeMultiPartBoundary$[Property.MimeBodyDepth])]
+													{
+														// add switch to allow insert
+														switch
+														{
+															default:
+																AsciiStringTerm("\r\n") MimeEntityBody;
+														}
+													}
+											}
+									}
+							}
+								
+							switch
+							{
+								case UINT16(FrameData,FrameOffset) == 0x0D0A:
+									UINT16 DataEnd = "CRLF";
+							}
+						}
+					}
+			}
+		case "image":
+			switch
+			{
+				case MimeSubType == "gif" && SmtpReplication:
+					[MimeSubType = MimeSubType + ", SmtpReplication"]
+					SRPL SRPL;
+				default:
+					BLOB(FrameLength - frameOffset) ImageBody;
+			}
+		case "application":
+			
+			AsciiStringTerm("\r\n") ApplicationData
+			{
+				[DataFieldFrameLength = FrameLength - 2]
+				switch
+				{
+					case MimeSubType == "x-vermeer-rpc":
+						FPSE FrontPage;
+					
+					case MimeSubType == "x-varg":
+							AsciiStringTerm("\r\n") RDSTData;
+						
+					default:
+						BLOB(FrameLength - frameOffset) ApplicationBody;
+				}
+			};
+		default:
+			While MimeBody[FrameOffset < FrameLength]
+			{
+				AsciiStringTerm("\r\n") MimeBody;
+			}
+	}
+}
+
+//
+// When Boundery is used, it always preceded with "--", and the last one will be appended with "--"
+//
+
+struct MimeBoundary = Property.MimeMultiBoundary
+{
+	[
+		Local.MimeBoundaryTerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		Local.MimeBoundaryTerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+	]
+	switch (AsciiString(FrameData, FrameOffset, 1))
+	{
+		case "\"":
+			_struct QuoteBoundary
+			{
+				AsciiStringTerm("\"") OpenQuote;
+				[Property.MimeMultiBoundary]
+				StringTerm(Ascii, "\"", true, false, false) Boundary;
+				AsciiStringTerm("\"") EndQuote;
+			};
+		default:
+			struct
+			{
+				[Property.MimeMultiBoundary]
+				StringTerm(Ascii, Local.MimeBoundaryTerminator, true, false, false) Boundary;
+			}
+	}
+}
+
+struct MimeContentType = Property.MimeEntityContentType
+{
+	[
+		property.SubTypeTerminator.AddToProperty(";", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+		property.SubTypeTerminator.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+	]
+	While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09 ]
+	{
+		DynamicSwitch AsciiString(1)
+		{
+			default: struct{}
+		};
+	}
+	
+	[Property.MimeEntityContentType  = AsciiStringTerm(FrameData, FrameOffset, "\r\n")]
+	[Property.MimeMediaType]
+	AsciiStringTerm("/") MediaType = MimeMediaTypeTable(this);
+	
+	switch(MimeMediaType)
+	{
+		// discrete type:
+		case "text":
+		case "image":
+		case "audio":
+		case "video":
+		case "application":
+		// composite type:
+		case "message":
+			struct
+			{
+				AsciiStringTerm("\r\n") SubContentType
+				{
+					[MimeSubType]
+					StringTerm(Ascii, property.SubTypeTerminator, true, false, false) SubType = MimeSubTypeTable(this);
+					
+					//the parameters in the first line of content-type
+					switch
+					{
+						case AsciiString(FrameData, FrameOffset, 1) == ";":
+							struct
+							{
+								DynamicSwitch AsciiString(1)
+								{
+									default: struct{}
+								};
+								
+								AsciiStringTerm("\r\n") Parameters;
+							}
+						case AsciiString(FrameData, FrameOffset, 2) == "\r\n":
+							DynamicSwitch AsciiString(2)
+							{
+								default: struct{}
+							};
+					}
+				}
+				
+				//the header may be more than one line when the content-type is too long
+				//the beginning of the continue lines must be white space
+				while [UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+				{
+					[Property.MimeEntityContentType = Property.MimeEntityContentType  + this]
+					AsciiStringTerm("\r\n") PartialParametersInContentType;
+				}
+			}
+		// composite type:
+		case "multipart":
+			struct
+			{
+				AsciiStringTerm("\r\n") SubContentTypeofMultipart
+				{
+					[MimeSubType]
+					StringTerm(Ascii, property.SubTypeTerminator, true, false, false) SubType = MimeSubTypeTable(this);
+					
+					//the parameters in the first line of content-type
+					switch
+					{
+						case AsciiString(FrameData, FrameOffset, 1) == ";":
+							struct
+							{
+								DynamicSwitch AsciiString(1)
+								{
+									default: struct{}
+								};
+								
+								while Parameters[ !(UINT16( FrameData, Offset ) == 0x0D0A)]
+								{
+									While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+									{
+										DynamicSwitch AsciiString(1)
+										{
+											default: struct{}
+										};
+									}
+									
+									DynamicSwitch AsciiStringTerm("=")
+									{
+										case "boundary":
+											MimeBoundary MimeBoundary;
+										case "num-args":
+											[Property.MimeNumArgs]
+											StringTerm(Ascii, property.SubTypeTerminator, true, false, false) NumArgs;
+										case "startinfo":
+											[Property.MimeStartInfoArgs]
+											StringTerm(Ascii, property.SubTypeTerminator, true, false, false) StartInfoArgs;																				
+										default:
+											StringTerm(Ascii, property.SubTypeTerminator, true, false, false) DefaultName;
+									}
+									
+									switch
+									{
+										case AsciiString(FrameData, FrameOffset, 1) == ";":
+											DynamicSwitch AsciiString(1)
+											{
+												default: struct{}
+											};
+									}
+								}
+
+								DynamicSwitch AsciiString(2)
+								{
+									default: struct{}
+								};
+							}
+						case AsciiString(FrameData, FrameOffset, 2) == "\r\n":
+							DynamicSwitch AsciiString(2)
+							{
+								default: struct{}
+							};
+					}
+				}
+
+				//the header may be more than one line when the content-type is too long
+				//the beginning of the continue lines must be white space
+				
+				while [UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+				{
+					[Property.MimeEntityContentType  = Property.MimeEntityContentType  + this]
+					AsciiStringTerm("\r\n") PartialParametersInContentTypeofMultipart
+					{
+						While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+						{
+							DynamicSwitch AsciiString(1)
+							{
+								default: struct{}
+							};
+						}
+						
+						while Parameters[ !(UINT16( FrameData, Offset ) == 0x0D0A) ]
+						{
+							While[UINT8(FrameData, FrameOffset) == 0x20 || UINT8(FrameData, FrameOffset) == 0x09]
+							{
+								UINT8 WhiteSpace;
+							}
+							
+							DynamicSwitch AsciiStringTerm("=")
+							{
+								case "boundary":
+									MimeBoundary MimeBoundary;
+								case "num-args":
+									[Property.MimeNumArgs]
+									StringTerm(Ascii, property.SubTypeTerminator, true, false, false) NumArgs;
+								default:
+									StringTerm(Ascii, property.SubTypeTerminator, true, false, false) DefaultName;
+							}
+							
+							switch
+							{
+								case AsciiString(FrameData, FrameOffset, 1) == ";":
+									DynamicSwitch AsciiString(1)
+									{
+										default: struct{}
+									};
+							}
+						}
+						
+						DynamicSwitch AsciiString(2)
+						{
+							default: struct{}
+						};
+					}
+				}				
+			};
+	}
+}

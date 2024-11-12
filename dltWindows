@@ -1,0 +1,654 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Distributed Link Tracking Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DLTM]: Distributed Link Tracking: Central Manager Protocol Specification
+//#                          [MS-DLTW]: Distributed Link Tracking: Workstation Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/6/2010
+//#
+//####
+
+[DLTSummary = Property.MSRPCPType ? " Response" : " Request"]
+Protocol DLT = FormatString( "%s%s%s%s%s", DLTMethodTable( Property.MSRPCIfUuid, Property.MSRPCOpnum ), Property.MSRPCPType ? " Response" : " Request", DLTSummary != "" ? ", " + DLTSummary : "", Property.MSRPCPType ? ", " + "Status = " + Property.DLTReturnValue : "", Property.ParserError ? ", " + Property.ParserErrorMessage : Property.ParserErrorMessage )
+{
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}":
+		_Struct Workstation
+		{
+			Switch( Property.MSRPCOpnum )
+			{
+				Case 0x000C:
+				_Struct LnkSearchMachine
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00:
+						_Struct Request
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										UINT32 Unused = MUSTBeSetToTable(this, "zero");
+										CDomainRelativeObjId DroidBirthLast;
+										CDomainRelativeObjId DroidLast;
+									}
+							}
+
+						}
+
+						Case 0x02:
+						[DLTSummary = Local.McIdNextSummary + ", Path: " + Path.ToString]
+						_Struct Response
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										CDomainRelativeObjId DroidBirthNext;
+										CDomainRelativeObjId DroidNext;
+										CMachineId McIdNext;
+										NdrWideString Path;
+										Align4 padding;
+										[Property.DLTReturnValue = this.ToString, Local.McIdNextSummary = (ReturnValue == 0x8dead101 ? ("Referral Machine ID: " + McIdNext.ToString) : ("Machine ID: " + McIdNext.ToString))]
+										HResult ReturnValue;
+									}
+							}
+
+						}
+					}
+				}
+
+				Case 0x0001:
+				Case 0x0002:
+				Case 0x0003:
+				Case 0x0004:
+				Case 0x0005:
+				Case 0x0006:
+				Case 0x0007:
+				Case 0x0008:
+				Case 0x0009:
+				Case 0x000A:
+				Case 0x000B:
+				Struct NotUsedOnWire
+				{
+					Switch (property.MSRPCPType)
+					{
+						Case 0x00:// REQUEST
+						[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						Struct Request 
+						{
+							ReportParserWarning("DLT", "Invalid dlt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+						
+						Case 0x02:// RESPONSE
+						[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						Struct Response
+						{
+							ReportParserWarning("DLT", "Invalid dlt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					}
+				}
+
+				Default: ReportParserError(ParserErrorProtocolClassWindows, "Distributed Link Tracking", "Unknown DLT Request") ProtocolError;
+			}
+		}
+
+		Case "{4DA1C422-943D-11D1-ACAE-00C04FC2AA3F}":
+		_Struct Server
+		{
+			Switch( Property.MSRPCOpnum )
+			{
+				Case 0x0000:
+				_Struct LnkSvrMessage
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00:
+						[DLTSummary = Msg.ToString]
+						_Struct Request
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										DltTrkSvrMessageUnion Msg;
+									}
+							}
+
+						}
+
+						Case 0x02:
+						[DLTSummary = Msg.ToString]
+						_Struct Response
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										DltTrkSvrMessageUnion Msg;
+										Align4 pad;
+										[Property.DLTReturnValue = this.ToString,]
+										HResult ReturnValue;
+									}
+							}
+						}
+					}
+				}
+
+				Case 0x0001:
+				_Struct LnkSvrMessageCallback
+				{
+					Switch( Property.MSRPCPType )
+					{
+						Case 0x00:
+						[DLTSummary = Msg.ToString]
+						_Struct Request
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										DltTrkSvrMessageUnion Msg;
+									}
+							}
+
+						}
+
+						Case 0x02:
+						[DLTSummary = ""]
+						_Struct Response
+						{
+							Switch 
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									struct
+									{
+										DltTrkSvrMessageUnion Msg;
+										Align4 pad;
+										[Property.DLTReturnValue = this.ToString,]
+										HResult ReturnValue;
+									}
+							}
+						}
+					}
+				}
+
+				Default: ReportParserError(ParserErrorProtocolClassWindows, "Distributed Link Tracking", "Unknown DLT Request") ProtocolError;
+			}
+		}
+	}
+}
+
+
+Table DLTMethodTable( UUID, Opnum )
+{
+	Switch
+	{
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0000: "Opnum0NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0001: "Opnum1NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0002: "Opnum2NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0003: "Opnum3NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0004: "Opnum4NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0005: "Opnum5NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0006: "Opnum6NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0007: "Opnum7NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0008: "Opnum8NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x0009: "Opnum9NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x000A: "Opnum10NotUsedOnWire";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x000B: "Opnum11NotUsedOnWire";
+//		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x000B: "LnkCallSvrMessage";
+		Case UUID == "{300F3532-38CC-11D0-A3F0-0020AF6B0ADD}" && Opnum == 0x000C: "LnkSearchMachine";
+		Case UUID == "{4DA1C422-943D-11D1-ACAE-00C04FC2AA3F}" && Opnum == 0x0000: "LnkSvrMessage";
+		Case UUID == "{4DA1C422-943D-11D1-ACAE-00C04FC2AA3F}" && Opnum == 0x0001: "LnkSvrMessageCallback";
+	}
+}
+Table TrkSvrSyncTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: FormatString( "0x%04X - CreateVolume - Creates a new volume identifier", Value );
+		Case 0x00000001: FormatString( "0x%04X - QueryVolume - Queries the server for volume information", Value );
+		Case 0x00000002: FormatString( "0x%04X - ClaimVolume - Allows a new computer to claim a volume", Value );
+		Case 0x00000003: FormatString( "0x%04X - FindVolume - Searches the server for a volume", Value );
+		Case 0x00000004: FormatString( "0x%04X - TestVolume - Returns E_NOTIMPL", Value );
+		Case 0x00000005: FormatString( "0x%04X - DeleteVolume - Deletes information about a volume", Value );
+		Default    : FormatString( "0x%04X - No Description Available", Value );
+	}
+}
+
+Table DltTrkSvrMessageTypeTable( Type )
+{
+	Switch( Type )
+	{
+		Case 0x00000000: FormatString( "0x%04X - old_SEARCH - Obtains information stored in an old_TRKSVR_CALL_SEARCH structure", Type );
+		Case 0x00000001: FormatString( "0x%04X - MOVE_NOTIFICATION - Obtains information stored in a TRKSVR_CALL_MOVE_NOTIFICATION structure", Type );
+		Case 0x00000002: FormatString( "0x%04X - REFRESH - Obtains information stored in a local structure", Type );
+		Case 0x00000003: FormatString( "0x%04X - SYNC_VOLUMES - information stored in a TRKSVR_CALL_SYNC_VOLUMES structure", Type );
+		Case 0x00000004: FormatString( "0x%04X - DELETE_NOTIFY - Obtains information stored in a TRKSVR_CALL_DELETE structure", Type );
+		Case 0x00000005: FormatString( "0x%04X - STATISTICS - Obtains information stored in a TRKSVR_STATISTICS structure", Type );
+		Case 0x00000006: FormatString( "0x%04X - SEARCH - Obtains information stored in TRKSVR_CALL_SEARCH structure", Type );
+		Case 0x00000007: FormatString( "0x%04X - WKS_CONFIG - Obtains information stored in a TRKWKS_CONFIG structure", Type );
+		Default        : FormatString( "0x%04X - No Description Available", Type );
+	}
+}
+
+Table DltTrkSvrMessagePriorityTable( Type )
+{
+	Switch( Type )
+	{
+		case 0x00000000: FormatString( "0x%04X - PRI_0 - Priority 0, the highest priority.", Type );
+		case 0x00000001: FormatString( "0x%04X - PRI_1 - Priority 1.", Type );
+		case 0x00000002: FormatString( "0x%04X - PRI_2 - Priority 2.", Type );
+		case 0x00000003: FormatString( "0x%04X - PRI_3 - Priority 3.", Type );
+		case 0x00000004: FormatString( "0x%04X - PRI_4 - Priority 4.", Type );
+		case 0x00000005: FormatString( "0x%04X - PRI_5 - Priority 5.", Type );
+		case 0x00000006: FormatString( "0x%04X - PRI_6 - Priority 6.", Type );
+		case 0x00000007: FormatString( "0x%04X - PRI_7 - Priority 7.", Type ); 
+		case 0x00000008: FormatString( "0x%04X - PRI_8 - Priority 8.", Type );
+		case 0x00000009: FormatString( "0x%04X - PRI_9 - Priority 9, the lowest priority.", Type );
+	}
+}
+//
+//	CVolumeId
+//	Alignment:4
+//
+Struct CVolumeID = Volume.ToString {
+	MSRPCUuidT Volume;
+}
+
+//
+//	CObjId
+//	Alignment:4
+//
+Struct CObjID = Object.ToString {
+	MSRPCUuidT Object;
+}
+
+//
+//	CDomainRelativeObjId
+//	Alignment:4
+//
+Struct CDomainRelativeObjId = "Volume = " + Volume.ToString + ", Object = " + Object.ToString
+{
+	CVolumeID Volume;
+	CObjID Object;
+}
+
+//
+//	CVolumeSecret
+//	Alignment:NONE
+//
+Struct CVolumeSecret = Secret.ToString{
+	ArrayAsHex(8) Secret;
+}
+
+//
+//	CMachineId
+//	Alignment:NONE
+//
+Struct CMachineID = MachineID.ToString {
+	AsciiString(16) MachineID;
+}
+
+//
+//	TRKSVR_SYNC_VOLUME
+//	Alignment:4
+//
+Struct TrkSvrSyncVolume
+{
+	Align4 pad;
+	HResult hr;
+	NdrV1Enum(4) SyncType = TrkSvrSyncTypeTable(this);
+	CVolumeId volume;
+	CVolumeSecret secret;
+	CVolumeSecret secretOld;
+	INT32 seq;
+	FILETIME ftLastRefresh;
+	CMachineId machine;
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+}
+
+//
+//	old_TRK_FILE_TRACKING_INFORMATION
+//	Alignment:4
+//
+Struct DltFileOldTrackingInformation
+{
+	Align4 padOldTrackInfo;
+	UnicodeString(257) FilePath;
+	Align4 pad1;
+	CDomainRelativeObjId DRoidBirth;
+	CDomainRelativeObjId DRoidLast;	
+	HResult hr;
+}
+
+//
+//	TRK_FILE_TRACKING_INFORMATION
+//	Alignment:4
+//
+Struct DltFileTrackingInformation
+{
+	Align4 padTrackInfo;
+	CDomainRelativeObjId DRoidBirth;
+	CDomainRelativeObjId DRoidLast;	
+	CMachineID MachineIDLast;
+	HResult hr;
+}
+
+//
+//	TRKSVR_MESSAGE_UNION
+//	Alignment:NONE
+//
+Struct DltTrkSvrMessageUnion = FormatString("Message Type: %s", DltTrkSvrMessageTypeTable(MessageType), Property.MsgUnionSummary != "" ? (", " + Property.MsgUnionSummary) : "") 
+{
+	NdrV1Enum(4) MessageType = DltTrkSvrMessageTypeTable( this );
+	NdrV1Enum(4) Priority = DltTrkSvrMessagePriorityTable(this);
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	NdrV1Enum(4) UnionLevel = DltTrkSvrMessageTypeTable( this );
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	[MsgUnionSummary = ""]
+	Struct MessageUnion
+	{
+		Switch( UnionLevel )
+		{
+			Case 0x00000000: //old_TRKSVR_CALL_SEARCH
+			_Struct DltOldServerCallSearch
+			{
+				[PtrToOldSearchArray = PointerToSearchOldArray.ReferentID]
+				NdrPtr PointerToSearchOldArray;
+			}
+
+			Case 0x00000001: //TRKSVR_CALL_MOVE_NOTIFICATION
+			Struct DltTrkSvrCallMoveNotification
+			{
+				NdrAlign pad;
+				UINT32 Notifications;
+				UINT32 Processed;
+				INT32 SequenceNumber;
+				INT32 ForceSeqNumber = FormatString("0x%X %s", this, this ? "SequenceNumber MUST be ignored" : "SequenceNumber MUST not be ignored");
+				[PtrToVolId = PointerToVolId.ReferentID]
+				NdrPtr PointerToVolId;
+				[PtrToObjIdCurrentArray = ObjIdCurrentArrayPointer.ReferentID]
+				NdrPtr ObjIdCurrentArrayPointer;
+				[PtrToDroidBirthArray = DroidBirthArrayPointer.ReferentID]
+				NdrPtr DroidBirthArrayPointer;
+				[PtrToDroidNewArray = DroidNewArrayPointer.ReferentID]
+				NdrPtr DroidNewArrayPointer;
+			}
+
+			Case 0x00000002: //TRKSVR_CALL_REFRESH
+			Struct DltTrkSvrCallRefresh
+			{
+				NdrAlign pad;
+				UINT32 Sources;
+				[PtrToDroidBirthArray = DroidBirthArrayPointer.ReferentID]
+				NdrPtr DroidBirthArrayPointer;
+				UINT32 Volumes;
+				[PtrToVolIdArray = PointerToVolIdArray.ReferentID]
+				NdrPtr PointerToVolIdArray;
+			}
+
+			Case 0x00000003: //TRKSVR_SYNC_VOLUME
+			Struct DltTrkSvrCallSyncVolumes
+			{
+				NdrAlign pad;
+				UINT32 VolumesCount;
+				[PtrToVolArray = PointerToVolumesArray.ReferentID]
+				NdrPtr PointerToVolumesArray;
+			}
+
+			Case 0x00000004: //TRKSVR_CALL_DELETE
+			Struct DltTrkSvrCallDelete
+			{
+				NdrAlign pad;
+				UINT32 NumberOfDeletions;
+				[PtrToDroidBirthArray = DroidBirthArrayPointer.ReferentID]
+				NdrPtr DroidBirthArrayPointer;
+				UINT32 Volumes = "Unused, MUST be set to zero";
+				[PtrToVolIdArray = PointerToVolIdArray.ReferentID]
+				NdrPtr PointerToVolIdArray = "Unused, MUST be set to zero";
+			}
+
+			Case 0x00000005: //TRKSVR_STATISTICS
+			Struct DltTrkSvrStatistics
+			{				
+				Align4 pad;
+				UINT32 SyncVolumeRequests;
+				UINT32 SyncVolumeErrors;
+				UINT32 SyncVolumeThreads;
+				UINT32 CreateVolumeRequests;
+				UINT32 CreateVolumeErrors;
+				UINT32 ClaimVolumeRequests;
+				UINT32 ClaimVolumeErrors;
+				UINT32 QueryVolumeRequests;
+				UINT32 QueryVolumeErrors;
+				UINT32 FindVolumeRequests;
+				UINT32 FindVolumeErrors;
+				UINT32 TestVolumeRequests;
+				UINT32 TestVolumeErrors;
+				UINT32 SearchRequests;
+				UINT32 SearchErrors;
+				UINT32 SearchThreads;
+				UINT32 MoveNotifyRequests;
+				UINT32 MoveNotifyErrors;
+				UINT32 MoveNotifyThreads;
+				UINT32 RefreshRequests;
+				UINT32 RefreshErrors;
+				UINT32 RefreshThreads;
+				UINT32 DeleteNotifyRequests;
+				UINT32 DeleteNotifyErrors;
+				UINT32 DeleteNotifyThreads;
+				UINT32 GCIterationPeriod;
+				FILETIME LastSuccessfulRequest;
+				HResult LastError;
+				UINT32 MoveLimit;
+				INT32 RefreshCounter;
+				UINT32 CachedVolumeTableCount;
+				UINT32 CachedMoveTableCount;			
+				FILETIME CacheLastUpdated;
+				INT32 DesignatedDC;				
+				FILETIME NextGC;
+				FILETIME ServiceStart;
+				UINT32 MaxRPCThreads;
+				UINT32 AvailableRPCThreads;
+				UINT32 LowestAvailableRPCThreads;
+				UINT32 NumThreadPoolThreads;
+				UINT32 MostThreadPoolThreads;
+				INT16 EntriesToGC;
+				INT16 EntriesGCed;
+				INT16 MaxDsWriteEvents;
+				INT16 CurrentFailedWrites;
+
+				Struct Version = FormatString( "%d.%d.%d", Major, Minor, BuildNumber )
+				{
+					UINT32 Major;
+					UINT32 Minor;
+					UINT32 BuildNumber;
+				}
+			}
+
+			Case 0x00000006: //TRKSVR_CALL_SEARCH
+			Struct DltTrkSvrCallSearch
+			{
+				NdrAlign pad;
+				UINT32 SearchSize;
+				[PtrToSearchArray = SearchArrayPointer.ReferentId]
+				NdrPtr SearchArrayPointer;
+			}
+
+			Case 0x00000007: //TRKWKS_CONFIG
+			[MsgUnionSummary = "Value Modified: " + FormatString( "%d", Parameter ) + ", New Value: " + FormatString( "%d", NewValue )]
+			Struct DltWorkstationConfig
+			{
+				UINT32 Parameter;
+				UINT32 NewValue;
+			}
+		}
+	}
+	[Local.MachineIdPoint = MachineIdPtr.ReferentId]
+	NdrPtr MachineIdPtr;
+
+	_Struct MessageUnionData
+	{
+		Switch( UnionLevel )
+		{	
+			Case 0x00000000: //old_TRKSVR_CALL_SEARCH
+			_Struct DltTrkSvrCallSyncVolumesData
+			{
+				Switch {
+					Case PtrToOldSearchArray > 0:
+					Struct SearchesArray
+					{
+						NdrConformant Size;
+						DltFileOldTrackingInformation Volumes[ Size.MaxCount ];
+					}
+				}
+			}
+							
+			Case 0x00000001: //TRKSVR_CALL_MOVE_NOTIFICATION
+			_Struct DltTrkSvrCallMoveNotificationData
+			{
+				Switch {
+					Case PtrToVolId > 0: CVolumeId VolumeId;
+				}
+
+				Switch {
+					Case PtrToObjIdCurrentArray > 0: 
+					Struct ObjIdCurrentArray
+					{
+						NdrConformant Size;
+						CObjId ObjIdCurrent[ Size.MaxCount ];
+					}
+				}
+
+				Switch {
+					Case PtrToDroidBirthArray > 0: 
+					Struct DroidBirthArray
+					{
+						NdrConformant Size;
+						CDomainRelativeObjId DroidBirth[ Size.MaxCount ];
+					}
+				}
+
+				Switch {
+					Case PtrToDroidNewArray > 0: 
+					Struct DroidNewArray
+					{
+						NdrConformant Size;
+						CDomainRelativeObjId DroidNew[ Size.MaxCount ];
+					}
+				}
+			}
+
+			Case 0x00000002: //TRKSVR_CALL_REFRESH
+			_Struct DltTrkSvrCallRefreshData
+			{
+				Switch {
+					Case PtrToDroidBirthArray > 0:
+					Struct DroidBirthArray
+					{
+						NdrConformant Size;
+						CDomainRelativeObjId DroidBirth[ Size.MaxCount ];
+					}
+				}
+				Switch {
+					Case PtrToVolIdArray > 0:
+					Struct VolIdArray
+					{
+						NdrConformant Size;
+						CVolumeId VolId[ Size.MaxCount ];
+					}
+				}
+			}
+
+			Case 0x00000003: //TRKSVR_SYNC_VOLUME
+			_Struct DltTrkSvrCallSyncVolumesData
+			{
+				Switch {
+					Case PtrToVolArray > 0:
+					Struct VolumesArray
+					{
+						NdrConformant Size;
+						TrkSvrSyncVolume Volumes[ Size.MaxCount ];
+					}
+				}
+			}
+
+			Case 0x00000004: //TRKSVR_CALL_DELETE
+			_Struct DltTrkSvrCallDeleteData
+			{
+				Switch {
+					Case PtrToDroidBirthArray > 0:
+					Struct DroidBirthArray
+					{
+						NdrConformant Size;
+						CDomainRelativeObjId DroidBirth[ Size.MaxCount ];
+					}
+				}
+				Switch {
+					Case PtrToVolIdArray > 0:
+					Struct VolIdArray
+					{
+						NdrConformant Size;
+						CVolumeId VolId[ Size.MaxCount ];
+					}
+				}
+			}
+
+			Case 0x00000006: //TRKSVR_CALL_SEARCH
+			_Struct DltTrkSvrCallSearchData
+			{
+				Switch {
+					Case PtrToSearchArray > 0:
+					Struct SearchArray
+					{
+						NdrConformant Size;
+						DltFileTrackingInformation FileTrackingInformationArray[ Size.MaxCount ];
+					}
+				}
+			}
+
+		}
+	}
+	
+	Switch {
+		Case Local.MachineIdPoint > 0:
+		NdrWideString MachineId;
+	}	
+}
+

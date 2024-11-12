@@ -1,0 +1,452 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  SOCKS Protocol
+//#
+//#  Details:                SOCKSv4 & SOCKSv5 Parser set
+//#
+//#  SOCKS Methods:          http://www.iana.org/assignments/socks-methods/
+//#  SOCKSv4:                http://ftp.icm.edu.pl/packages/socks/socks4/SOCKS4.protocol
+//#  IPv4/6 SOCKS Gateway:   http://www.faqs.org/rfcs/rfc3089.html
+//#  SOCKSv5:                http://www.faqs.org/rfcs/rfc1928.html
+//#                          http://www.faqs.org/rfcs/rfc1929.html
+//#                          http://www.faqs.org/rfcs/rfc1961.html
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 1/21/2010
+//#                          Minor, 2/02/2010
+//#
+//####
+
+//------------------------------------------------------------------------------
+//  Conversation variable set defined and populated by SOCKS parser; used in socks.npl
+//------------------------------------------------------------------------------
+
+/*Conversation data set used for Socket Proxy traffic
+
+	SocksVersion		= SOCKS protocol version; 4 or 5
+	Socks4a			= SOCKS v4a (allows FQDN for address)
+	SocksCmdString		= descriptive text for the current or previous SOCKS command
+	SocksCmd			= SOCKS command value
+	SocksAppAddress	= app server host address (IP, name, FQDN)
+	SocksAppPort		= app server port
+	SocksDataStart		= frame number where SOCKS application data begins
+	SocksAuthStart		= frame number where SOCKS authentication begins
+	SocksCmdStart		= frame number where SOCKS command sequence begins
+	SocksUser			= SOCKS client user name
+*/
+
+//------------------------------------------------------------------------------
+//  SOCKS protocol constants
+//------------------------------------------------------------------------------
+//SOCKS default port
+const SocksPort		= 1080;
+
+//SOCKS versions
+const SocksVersion4		= 4;
+const SocksVersion5		= 5;
+
+//SOCKS command set
+const SocksConnCmd		= 1;
+const SocksMethCmd		= 1;	//SOCKS5 only
+const SocksBindCmd		= 2;
+const SocksUdpAssocCmd  = 3;	//SOCKS5 only
+
+//SOCKS Address Types
+const SocksIPv4		= 1;
+const SocksFqdn		= 3;
+const SocksIPv6		= 4;
+
+//SOCKS5 Auth Method codes
+const SocksNoAuth		= 0;
+const SocksGssApi		= 1;
+const SocksUnamePwd		= 2;
+const SocksCHAP			= 3;
+const SocksUnassigned	= 4;
+const SocksCRAM			= 5;
+const SocksSSL			= 6;
+const SocksNDS			= 7;
+const SocksMAF			= 8;
+//9-127     09-7F   Unassigned
+//128-255   80-FE   Reserved for Private Methods
+const SocksNoMethod		= 0xff;
+
+//SOCKS5 GssApi Message types
+const SocksMsgAuth		= 1;
+const SocksMsgProt		= 2;
+const SocksMsgUser		= 3;
+const SocksMsgAbort		= 0xff;
+
+//SOCKS5 Response codes
+const SocksSucceed		= 0;		// cmd was allowed
+const SocksGenFail		= 1;		// cmd failed
+const SocksRejRules		= 2;		// cmd rejected based on firewall rules
+const SocksNetUnreach	= 3;		// WSANETUNREACH
+const SocksHostUnreach	= 4;		// WSAHOSTUNREACH
+const SocksConnRefused	= 5;		// WSACONNREFUSED
+const SocksTtlExp		= 6;		// SOCKS connection TTL expired
+const SocksStartUnsupp	= 7;		// cmd unsupported
+const SocksAddrUnsupp	= 8;		// address type unsupported
+
+//SOCKS4 Response codes
+const SocksGranted		= 90;		// cmd was allowed 
+const SocksRejFailed	= 91;		// request rejected or failed
+const SocksRejClient	= 92;		// request rejected because SOCKS server cannot connect to identd service on the client
+const SocksRejMatch		= 93;		// request rejected because the client program and identd report different user-ids
+//------------------------------------------------------------------------------
+//  End of SOCKS protocol constants
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+//  SOCKS Version-Generic Protocol definition
+//------------------------------------------------------------------------------
+
+[RegisterAfter(TCPPayload.ILS, SOCKS, SocksPort), RegisterBefore(PayloadHeader.MMS, SOCKS, "SOCKS")]
+Protocol SOCKS = FormatString( "v%d%s %s", 
+								Conversation.SocksVersion,
+								(Conversation.Socks4a)?"A":"",
+								Property.SocksState)
+{
+	[BuildConversationWithParent]
+	[Property.SocksFwd = (SocksPort == Property.DestinationPort)?TRUE:FALSE]
+
+	switch
+	{
+		case ( IsValueNone( Conversation.SocksDataStart ) || FrameNumber < Conversation.SocksDataStart ):
+			switch
+			{
+				case ( SocksVersion4 == Conversation.SocksVersion ||( Property.SocksFwd && SocksVersion4 == UINT8( FrameData, FrameOffset ) ) ):
+					SOCKS4	SOCKS4;
+				case ( SocksVersion5 == Conversation.SocksVersion ||( Property.SocksFwd && SocksVersion5 == UINT8( FrameData, FrameOffset ) ) ):
+					SOCKS5	SOCKS5;
+				default:
+					[Conversation.SocksVersion = 666,
+					Property.SocksState = "Unknown SOCKS packet"]
+					BLOB( FrameLength - FrameOffset )   UnknownSocksFrame;
+			}
+		default:
+			[
+				Local.SocksDstPort = (SocksConnCmd == Conversation.SocksCmd ||
+				SocksBindCmd == Conversation.SocksCmd)?((Property.SocksFwd)?Conversation.SocksAppPort:Property.DestinationPort):Property.DestinationPort,
+				Local.SocksSrcPort = (SocksConnCmd == Conversation.SocksCmd ||SocksBindCmd == Conversation.SocksCmd)?((Property.SocksFwd)?Property.SourcePort:Conversation.SocksAppPort):Property.SourcePort,
+				Property.SocksState = "Application Data",
+				Property.SourcePort = Local.SocksSrcPort, Property.DestinationPort = Local.SocksDstPort
+			]
+			TCPPayload(Local.SocksSrcPort, Local.SocksDstPort) ApplicationData;
+	}
+}
+
+//------------------------------------------------------------------------------
+//  SOCKS v4 Protocol definition
+//------------------------------------------------------------------------------
+//http://ftp.icm.edu.pl/packages/socks/socks4/SOCKS4.protocol
+Protocol SOCKS4 = Property.SocksState
+{
+	switch
+	{
+		case (TRUE == Property.SocksFwd):
+			[
+				PostAfter.Property.SocksState = FormatString("%s to %s/%d for %s",SocksCommandTable(this.Command),Local.DestAddr,this.Port,
+				(this.User)? this.User: "unspecified user"),
+				PostAfter.Conversation.SocksAppAddr = Local.DestAddr,
+				PostAfter.Conversation.SocksAppPort = this.Port,
+				PostAfter.Conversation.SocksCmd = this.Command,
+				PostAfter.Conversation.SocksCmdString = Property.SocksState,
+				PostAfter.Conversation.SocksUser = (this.User)? this.User: "unspecified user",
+				PostAfter.Conversation.SocksVersion = this.Version
+			]
+			struct Socks4Command
+			{
+				UINT8			Version;
+				UINT8			Command = SocksCommandTable(this);
+				UINT16			Port;
+				[Local.DestAddr = this.toString]
+				IPv4Address		Address;
+				AsciiString		User;
+				switch
+				{
+					case 0x1 == Address:
+						[Local.DestAddr = this]
+						[Conversation.Socks4a = TRUE]
+						AsciiString		Fqdn;
+				}
+			};
+		default:
+			[PostAfter.Property.SocksState = FormatString("%s %s",Conversation.SocksCmdString,SocksReplyTable(this.Reply))]
+			struct Socks4Reply
+			{
+				UINT8			Version = FormatString("%d (should be zero)", this);
+				UINT8			Reply = SocksReplyTable(this);
+				UINT16          Port;
+				IPv4Address     Address;
+				switch(Reply)
+				{
+					case SocksGranted:
+						[Conversation.SocksDataStart = FrameNumber + 1]
+						struct{};
+				}
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  End of SOCKS v4 Protocol definition
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+//  SOCKS v5 Protocol definition
+//------------------------------------------------------------------------------
+Protocol SOCKS5 = Property.SocksState
+{
+	switch
+	{
+		//we start with authentication method negotiation
+		case IsValueNone( Conversation.SocksAuthStart ) || FrameNumber < Conversation.SocksAuthStart:
+			Socks5AuthNegotiate AuthNegotiate;
+		//if required, authentication is satisfied
+		case IsValueNone( Conversation.SocksCmdStart ) || FrameNumber < Conversation.SocksCmdStart:
+			Socks5Authenticate	Authenticate;
+		//finally, the command state
+		default:
+			Socks5CmdSeq SocksCommand;
+	}
+};
+
+struct Socks5AuthNegotiate = Local.AuthMethods
+{
+	[Conversation.SocksVersion = this]
+	UINT8   Version;
+	switch
+	{
+		case (TRUE == Property.SocksFwd ):
+			[Property.SocksState = FormatString("Auth Method Request; client supports %d method%s%s",this.NMethods,(1==this.NMethods)?"":"s",Local.AuthMethods)]
+			struct Socks5AuthMethodRequest
+			{
+				[Local.AuthCount = this,
+				Local.AuthMethods = ""]
+				UINT8   NMethods;
+				while [0 < Local.AuthCount]
+				{
+					[Local.AuthCount = Local.AuthCount-1,
+					Local.AuthMethods = FormatString( "%s %s", Local.AuthMethods, SocksAuthMethodTable(this) )]
+					UINT8   Method = SocksAuthMethodTable(this);
+				}
+			};
+		default:
+			[PostAfter.Property.SocksState = FormatString( "Auth Method Response; use %s", SocksAuthMethodTable(this.Method))]
+			[Conversation.SocksAuthStart = FrameNumber + 1]
+			struct Socks5AuthMethodReply
+			{
+				[Conversation.SocksAuthMethod = this]
+				UINT8   Method = SocksAuthMethodTable(this);
+				switch
+				{
+					case ( SocksNoAuth == Method ):
+						[Conversation.SocksCmdStart = FrameNumber + 1]
+						struct{};
+				}
+			};
+	}
+}
+
+struct Socks5Authenticate
+{
+	switch
+	{
+		case SocksGssApi == Conversation.SocksAuthMethod:
+			struct{SocksGssApiAuth  	Authentication;};
+		case SocksUnamePwd == Conversation.SocksAuthMethod:
+			struct{SocksUnamePwdAuth	Authentication;};
+		default:
+			BLOB(FrameLength-FrameOffset)	UnknownAuthBlob;
+	}
+}
+
+//http://www.faqs.org/rfcs/rfc1929.html
+struct SocksUnamePwdAuth
+{
+	UINT8			AuthVersion;
+	switch
+	{
+		case (TRUE == Property.SocksFwd):
+			[PostAfter.Property.SocksState = FormatString("Plaintext authentication request for %s, password %s",this.UserName,this.Password ),
+			PostAfter.Conversation.SocksUser = this.UserName]
+			struct
+			{
+				UINT8 UnameLen;
+				AsciiString(UnameLen) UserName;
+				UINT8 PwdLen;
+				AsciiString(PwdLen) Password;
+			};
+		default:
+			[PostAfter.Property.SocksState = FormatString("Plaintext authentication '%s' reply for %s",SocksReplyTable(this.AuthStatus),Conversation.SocksUser)]
+			struct
+			{
+				UINT8 AuthStatus = SocksReplyTable(this);
+				switch(AuthStatus)
+				{
+					case SocksSucceed: 
+						[Conversation.SocksCmdStart = FrameNumber + 1]
+						struct{};
+				}
+			};
+	}
+}
+
+//http://www.faqs.org/rfcs/rfc1961.html
+struct SocksGssApiAuth
+{
+	UINT8 AuthVersion;
+	[Property.SocksState = FormatString("GSSAPI authentication %s %s",SocksGssApiMsgTable(this),(Property.SocksFwd)?"request":"reply")]
+	UINT8 MsgType = SocksGssApiMsgTable(this);
+	UINT16 MsgLen;
+	GssApi AuthToken;
+}
+
+struct Socks5CmdSeq
+{
+	UINT8   Version;
+	switch
+	{
+		case (TRUE == Property.SocksFwd):
+			[Conversation.SocksCmdState = FrameNumber]
+			[PostAfter.Property.SocksState = FormatString("%s to %s/%d",Property.SocksCmd,Property.DestAddr,Property.DestPort)]
+			[PostAfter.Conversation.SocksCmdString = Property.SocksState]
+			struct Socks5Command
+			{
+				[Property.SocksCmd = SocksCommandTable(this),
+				Conversation.SocksCmd = this]
+				UINT8			Command = SocksCommandTable(this);
+				UINT8           Reserved;
+				UINT8           AddrType = SocksAddrTypeTable(this);
+				[PostAfter.Property.DestAddr = this.Address.ToString]
+				[PostAfter.Conversation.SocksAppAddr = this.Address]
+				switch( AddrType )
+				{
+					case SocksIPv4:
+						struct{IPv4Address     Address;};
+					case SocksIPv6:
+						struct{IPv6Address     Address;};
+					case SocksFqdn:
+						struct{AsciiString     Address;};
+				}
+				[Property.DestPort = this]
+				[Conversation.SocksAppPort = this]
+				UINT16          Port;
+			};
+		default:
+			[PostAfter.Property.SocksState = FormatString("%s %s",Conversation.SocksCmdString,Property.SocksReply)]
+			struct Socks5Reply{
+			[Property.SocksReply = SocksReplyTable(this)]
+			UINT8			Reply = SocksReplyTable(this);
+			switch
+			{
+				case (SocksSucceed == Reply):
+					[Conversation.SocksDataStart = FrameNumber + 1]
+					struct{};
+			}
+			UINT8           Reserved;
+			UINT8           AddrType = SocksAddrTypeTable(this);
+			switch( AddrType )
+			{
+				case SocksIPv4:
+					struct{IPv4Address     Address;};
+				case SocksIPv6:
+					struct{IPv6Address     Address;};
+				case SocksFqdn:
+					struct{AsciiString     Address;};
+			}
+			UINT16			Port;
+			};
+	}
+}
+
+//------------------------------------------------------------------------------
+//  End of SOCKS v5 Protocol definition
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+//  SOCKS data tables 
+//------------------------------------------------------------------------------
+Table SocksCommandTable(value)
+{
+	switch(value)
+	{
+		case SocksConnCmd:		"Connect";
+		case SocksBindCmd:		"Bind";
+		case SocksUdpAssocCmd:	"UDP Associate";    // SOCKS 5 only
+		default:				FormatString("Unknown SOCKS command; %d (%#x)", value, value);
+	}
+}
+
+Table SocksReplyTable(value)
+{
+	switch(value)
+	{
+		//SOCKSv5 status set
+		case SocksSucceed:		"Success";
+		case SocksGenFail:		"General SOCKS server failure";
+		case SocksRejRules:		"Denied by SOCKS server rules";
+		case SocksNetUnreach:	"Destination network unreachable";
+		case SocksHostUnreach:	"Destination host unreachable";
+		case SocksConnRefused:	"Connection refused";
+		case SocksTtlExp:		"TTL expired";
+		case SocksStartUnsupp:	"Unsupported command";
+		case SocksAddrUnsupp:	"Unsupported address type";
+
+		//SOCKSv4 status set
+		case SocksGranted:		"Granted";
+		case SocksRejFailed:	"Rejected; general failure";
+		case SocksRejClient:	"Rejected; Client ident failure";
+		case SocksRejMatch:		"Rejected; Client ident mismatch";
+		default:				FormatString("Unknown SOCKS reply; %d (%#x)", value, value);
+	}
+}
+
+//http://www.iana.org/assignments/socks-methods/
+Table SocksAuthMethodTable(value)
+{
+	switch(value)
+	{
+		case SocksNoAuth:		"Anonymous";									//[RFC1928]
+		case SocksGssApi:		"GSSAPI";										//[RFC1961]
+		case SocksUnamePwd:		"Username / password";							//[RFC1929]
+		case SocksCHAP:			"Challenge-Handshake Authentication Protocol";	//[VanHeyningen]
+		case SocksUnassigned:	"Unassigned auth method";
+		case SocksCRAM:			"Challenge-Response Authentication Method";		//[VanHeyningen]
+		case SocksSSL:			"Secure Sockets Layer";							//[VanHeyningen]
+		case SocksNDS:			"NDS Authentication";							//[Talati]
+		case SocksMAF:			"Multi-Authentication Framework";				//[Fritch]
+		//	  0x09 - 0x7f		IANA assigned 
+		//	  0x80 - 0xfe		Private methods
+		case SocksNoMethod:		"No acceptable authentication methods";						//[RFC1928]
+		default:				FormatString("Unknown SOCKS authentication method; %d (%#x)", value, value);
+	}
+}
+
+Table SocksGssApiMsgTable( value )
+{
+	switch(value)
+	{
+		case SocksMsgAuth:		"Authentication Message";
+		case SocksMsgProt:		"Protection-level negotiation";
+		case SocksMsgUser:		"Encapsulated user data";
+		case SocksMsgAbort:		"Abort";
+		default:				FormatString("Unknown SOCKS GSSAPI message type; %d (%#x)", value, value);
+	}
+}
+
+Table SocksAddrTypeTable(value)
+{
+	switch(value)
+	{
+		case SocksIPv4:			"IPv4";
+		case SocksFqdn:			"FQDN";
+		case SocksIPv6:			"IPv6";
+		default:				FormatString("Unknown SOCKS address type; %d (%#x)", value, value);
+	}
+}
+//------------------------------------------------------------------------------
+//  End of SOCKS data tables 
+//------------------------------------------------------------------------------
+

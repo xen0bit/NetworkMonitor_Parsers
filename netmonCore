@@ -1,0 +1,138 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Netmon Internal Address Family Constants
+//#
+//#  Details:                
+//#
+//#  Public References:      
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/14/2009
+//#
+//####
+
+//
+// Frame that contains the systems start name resolution cache (ipconfig /DisplayDns)
+//
+const AF_INET  = 0x02;
+const AF_INET6 = 0x17;
+Protocol DnsCache = FormatString("Record Count = %d\n", Count)
+{
+    UINT32 Version;
+    UINT32 Count;
+    struct Record[Count] = FormatString("%s = %s",Name, Type == AF_INET ? Ipv4Address.ToString : Ipv6Address.ToString)
+    {
+        [DataFieldByteOrder = LittleEndian]
+        UnicodeString Name;
+        UINT16 Type;        
+        switch(Type)
+        {
+        case AF_INET: 
+            [Global.NameTable$[Ipv4Address] = Name]
+            Ipv4Address Ipv4Address;
+        case AF_INET6: 
+            [Global.NameTable$[Ipv6Address] = Name]
+            Ipv6Address Ipv6Address;
+        }        
+    }
+}
+
+Protocol NetworkInfoEx = FormatString("Network info for %s, Network Adapter Count = %d",ComputerName,AdapterCount)
+{
+    UINT16 Version; 
+    UINT16 AdapterCount;
+    [DataFieldByteOrder = LittleEndian]
+    UnicodeString ComputerName;
+    [MaxLoopCount=AdapterCount, Property.NetworkAdapterInfo = "NetworkInfoEx"]
+    while[true] {
+		NetMonNetworkAdapter NetworkAdapter;
+    }
+}
+
+//
+// Frame that contains the active network adapter used when the capture file was created
+//
+Protocol NetworkInfo = FormatString("Network info for %s, Network Adapter Count = %d",ComputerName,AdapterCount)
+{
+    UINT16 AdapterCount;
+    [DataFieldByteOrder = LittleEndian]
+    UnicodeString ComputerName;
+    [MaxLoopCount=AdapterCount, Property.NetworkAdapterInfo = "NetworkInfo"]
+    while[true] {
+		NetMonNetworkAdapter NetworkAdapter;
+    }
+}
+
+Protocol NetmonFilter = "Updated " + FilterType.ToString + ": " + Filter
+{
+    UINT16 Version;
+    UINT32 FilterType = this==1 ? "Capture Filter" : "Display Filter";
+    UINT32 AppMajorVersion;
+    UINT32 AppMinorVersion;
+    [DataFieldByteOrder = LittleEndian]
+    UnicodeString ApplicationName;
+    [DataFieldByteOrder = LittleEndian]
+    UnicodeString Filter;
+}
+// Address family constants
+//
+
+
+//
+// Converts a link speed into a readable number with units
+//
+Table LinkSpeedTable(Value)
+{
+    switch
+    {
+    case Value >= 1000 * 1000 * 1024: FormatString("%d Gbps", Value / (1000 * 1000 * 1000));
+    case Value >= 1000 * 1000: FormatString("%d Mbps", Value / (1000 * 1000));
+    case Value >= 1000: FormatString("%d Kbps", Value / 1000);
+    default: FormatString("%d bps", Value);
+    }
+}
+
+
+
+Struct NetMonNetworkAdapter = FormatString("%s, %s",Property.NetworkInfoFriendlyName,Property.NetworkInfoHardwareAddr)
+    {
+        [DataFieldByteOrder = LittleEndian]
+        [Property.NetworkInfoFriendlyName]
+        UnicodeString FriendlyName;
+        [DataFieldByteOrder = LittleEndian]
+        UnicodeString Description;
+        switch(Property.NetworkAdapterInfo)
+        {
+            case "NetworkInfo":
+                [DataFieldByteOrder = LittleEndian]
+                UnicodeString LayerName;
+        }
+        [DataFieldByteOrder = LittleEndian]
+        UnicodeString MiniportGuid;
+        UINT32 MediaType;
+        UINT32 Mtu;
+        UINT64 LinkSpeed = LinkSpeedTable(this);
+        [Property.NetworkInfoHardwareAddr = HardwareAddress.ToString]
+        [Global.IpConfig.LocalHardwareAddress.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        MacAddress HardwareAddress;
+        UINT16 Ipv4AddressCount;
+        UINT16 Ipv6AddressCount;
+        UINT16 GatewayAddressCount;
+        UINT16 DhcpServerAddressCount;
+        UINT16 DnsIpv4AddressCount;
+        UINT16 DnsIpv6AddressCount;
+        [Global.IpConfig.LocalIpv4Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv4Address Ipv4Address[Ipv4AddressCount];
+        Ipv4Address SubnetMask[Ipv4AddressCount];
+        [Global.IpConfig.LocalIpv6Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv6Address Ipv6Address[Ipv6AddressCount];
+        [Global.IpConfig.GatewayIpv4Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv4Address GatewayAddress[GatewayAddressCount];
+        [Global.IpConfig.DhcpIpv4Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv4Address DhcpServerAddress[DhcpServerAddressCount];
+        [Global.IpConfig.DnsIpv4Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv4Address DnsIpv4Address[DnsIpv4AddressCount];
+        [Global.IpConfig.DnsIpv6Address.AddToProperty(this, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES | ADD_TO_PROPERTY_FLAG_NO_ZERO)]
+        Ipv6Address DnsIpv6Address[DnsIpv6AddressCount];
+    }

@@ -1,0 +1,342 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RPCBIND Program Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1833
+//#                          IANA Considerations for RPC Net Identifiers and Universal Address Formats
+//#                          draft-ietf-nfsv4-rpc-netid-06.txt
+//#                          http://tools.ietf.org/html/draft-ietf-nfsv4-rpc-netid-06#section-4.2.3
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/3/2009
+//#
+//####
+
+Protocol SunRpcBind = FormatString("MessageType = %s, Version = %d", SunRPCMessageType ? "Service Reply" : "Service Call", conversation.ProgramVersion)
+{
+	switch(SunRPCMessageType)
+	{
+		case 0: //Service Call
+			switch(conversation.ProgramVersion)
+			{
+				case 3:
+					Switch(conversation.ProcedureNumber)
+					{
+						case 4:
+						case 6:
+							struct{};
+						case 1:
+						case 2:
+						case 3:
+							struct RpcBind
+							{
+								UINT32 Program;
+								UINT32 Version;
+								XDRString NetworkId;
+								XDRString UniversalAddress;
+								XDRString Owner;
+							}
+						case 5:
+							struct RpcbindRmtCallArgs
+							{
+								UINT32 Program;
+								UINT32 Version;
+								UINT32 Protocol = ProtocolTypeTable(this);
+								XDRVarLenOpaqueData OpaqueData;
+							}
+						case 7:
+							SunRpcBindUaddr UniversalAddress;
+						case 8:
+							struct NetBuf
+							{
+								UINT32 MaxLenth;
+								XDRVarLenOpaqueData OpaqueData;
+							}
+						}
+				case 4:
+					Switch(conversation.ProcedureNumber)
+					{
+						case 4:
+						case 6:
+						case 12:
+							struct{};
+						case 1:
+						case 2:
+						case 3:
+						case 9:
+						case 11:
+							struct RpcBind
+							{
+								UINT32 Program;
+								UINT32 Version;
+								XDRString NetworkId;
+								XDRString UniversalAddress;
+								XDRString Owner;
+							}
+						case 5:
+						case 10:
+							struct PortMapper
+							{
+								UINT32 Program;
+								UINT32 Version;
+								UINT32 Protocol = ProtocolTypeTable(this);
+								XDRVarLenOpaqueData OpaqueData;
+							}
+						case 7:
+							SunRpcBindUaddr UniversalAddress;
+						case 8:
+							struct NetBuf
+							{
+								UINT32 MaxLength;
+								XDRVarLenOpaqueData OpaqueData;
+							}
+					}
+			}
+		case 1: //Service Reply
+			switch(conversation.ProgramVersion)
+			{
+				case 3:
+					Switch(conversation.ProcedureNumber)
+					{
+						case 1:
+						case 2:
+							XDRBoolean ReturnValue;
+						case 4:
+							struct PRpcBindList
+							{
+								
+								while[UINT32(FrameData, FrameOffSet)]
+								{
+									XDRBoolean Pointer;
+									struct RpcBind
+									{
+										UINT32 Program;
+										UINT32 Version;
+										XDRString NetworkId;
+										XDRString UniversalAddress;
+										XDRString Owner;
+									}
+								}
+								XDRBoolean PointerEnd;
+							}
+						case 5:
+							struct RpcbindRmtCallArgs
+							{
+								SunRpcBindUaddr UniversalAddress;
+								XDRVarLenOpaqueData ResultData;
+							}
+						case 6:
+							UNIXTIMESTAMP LocalTime;
+						case 7:
+							struct NetBuf = FormatString("%d Bytes",MaxLenth)
+							{
+								UINT32 MaxLenth;
+								XDRVarLenOpaqueData OpaqueData;
+							}
+						case 3:
+						case 8:
+							SunRpcBindUaddr UniversalAddress;
+						}
+				case 4:
+					Switch(conversation.ProcedureNumber)
+					{
+						case 1:
+						case 2:
+							XDRBoolean ReturnValue;
+						case 4:
+							struct PRpcBindList
+							{
+								
+								while[UINT32(FrameData, FrameOffSet)]
+								{
+									XDRBoolean Pointer;
+									struct RpcBind
+									{
+										UINT32 Program;
+										UINT32 Version;
+										XDRString NetworkId;
+										XDRString UniversalAddress;
+										XDRString Owner;
+									};
+								}
+								XDRBoolean PointerEnd;
+							}
+						case 5:
+						case 10:
+							struct RpcbindRmtCallArgs
+							{
+								SunRpcBindUaddr UniversalAddress;
+								XDRVarLenOpaqueData ResultData;
+							}
+						case 6:
+							UNIXTIMESTAMP LocalTime;
+						case 7:
+							struct NetBuf
+							{
+								UINT32 MaxLenth;
+								XDRVarLenOpaqueData OpaqueData;
+							}
+						case 3:
+						case 8:
+						case 9:
+							SunRpcBindUaddr UniversalAddress;
+						case 11:
+							SunRpcBindEntryListPtr BindEntryListPtr;
+						case 12:
+							SunRpcBindStat BindStatByVers;
+					}
+			}
+	}
+}
+
+//
+// remote universal address
+//
+Struct SunRpcBindUaddr
+{
+	XDRUnsignedInteger Length;
+	[DataOffset = FrameOffset]
+	AsciiString(Length) Uaddr
+	{
+		switch
+		{
+			case Uaddr.contains(":"):
+				struct IPv6 = FormatString(IPv6Addr1+"."+IPv6Addr2+"."+IPv6Addr3+"."+
+						IPv6Addr4+IPv6Addr5+"."+IPv6Addr6+"."+IPv6Addr7+"."+IPv6Addr8+" Port:"+ Property.PortNum)
+				{
+					Asciistringterm(":") IPv6Addr1;
+					Asciistringterm(":") IPv6Addr2;
+					Asciistringterm(":") IPv6Addr3;
+					Asciistringterm(":") IPv6Addr4;
+					Asciistringterm(":") IPv6Addr5;
+					Asciistringterm(":") IPv6Addr6;
+					Asciistringterm(":") IPv6Addr7;
+					Asciistringterm(".") IPv6Addr8;
+					[Property.Port = 0]
+					while[FrameOffset - DataOffset < Length]
+					{
+						switch(UINT8(FrameData,FrameOffSet))
+						{
+							case 0x2E:
+								struct
+								{
+									String(0,1) Dot;
+								}
+							default:
+								struct
+								{
+									[Property.PortNumber$[Property.Port] = StringToNumber(String(FrameData, FrameOffSet, 0, 1)), Property.Port = Property.Port + 1]
+									String(0,1) PortField;
+								}
+						}
+					}
+					[Property.PortNum = Property.PortNumber$[0] * 256 + Property.PortNumber$[1]]
+					struct {}
+				}
+			default:
+				struct IPv4 = FormatString(IPv4Addr1+"."+IPv4Addr2+"."+IPv4Addr3+"."+IPv4Addr4+" Port:"+ Property.PortNum)
+				{
+					Asciistringterm(".") IPv4Addr1;
+					Asciistringterm(".") IPv4Addr2;
+					Asciistringterm(".") IPv4Addr3;
+					Asciistringterm(".") IPv4Addr4;
+					[Property.Port = 0]
+					while[FrameOffset - DataOffset < Length]
+					{
+						switch(UINT8(FrameData,FrameOffSet))
+						{
+							case 0x2E:
+								struct
+								{
+									String(0,1) Dot;
+								}
+							default:
+								struct
+								{
+									[Property.PortNumber$[Property.Port] = StringToNumber(String(FrameData, FrameOffSet, 0, 1)), Property.Port = Property.Port + 1]
+									String(0,1) PortField;
+								}
+						}
+					}
+					[Property.PortNum = Property.PortNumber$[0] * 256 + Property.PortNumber$[1]]
+					struct {}
+				}
+		}
+	}
+	switch
+	{
+		case Length % 4:
+			BLOB(4 - (Length % 4)) Padding;
+	}
+}
+
+Struct SunRpcBindStat
+{
+	XDRInteger Info[13];
+	XDRInteger SetInfo;
+	XDRInteger UnsetInfo;
+	SunRpcBindsAddrListPtr AddrInfo;
+	SunRpcBindsRemoteCallListPtr RemoteInfo;
+}
+
+Struct SunRpcBindsAddr
+{
+	UINT32 Program;
+	UINT32 Version;
+	XDRInteger Success;
+	XDRInteger Failure;
+	XDRString NetId;
+}
+
+Struct SunRpcBindsAddrListPtr
+{
+	while[UINT32(FrameData, FrameOffSet)]
+	{
+		XDRBoolean Pointer;
+		SunRpcBindsAddr BindsAddr;
+	}
+	XDRBoolean PointerEnd;
+}
+
+Struct SunRpcBindsRemoteCall
+{
+	UINT32 Program;
+	UINT32 Version;
+	UINT32 Protocol = ProtocolTypeTable(this);
+	XDRInteger Success;
+	XDRInteger Failure;
+	XDRInteger Indirect;
+	XDRString NetId;
+}
+
+Struct SunRpcBindsRemoteCallListPtr
+{
+	while[UINT32(FrameData, FrameOffSet)]
+	{
+		XDRBoolean Pointer;
+		SunRpcBindsRemoteCall BindsRemoteCall;
+	}
+	XDRBoolean PointerEnd;
+}
+
+Struct SunRpcBindEntry
+{
+	XDRString MergedAddr;
+	XDRString NetId;
+	UINT32 Semantics;
+	XDRString ProtocolFamily;
+	XDRString ProtocolName;
+}
+
+Struct SunRpcBindEntryListPtr
+{
+	while[UINT32(FrameData, FrameOffSet)]
+	{
+		XDRBoolean Pointer;
+		SunRpcBindEntry RpcBindEntryMap;
+	}
+	XDRBoolean PointerEnd;
+}

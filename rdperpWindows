@@ -1,0 +1,643 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Remote Desktop Protocol
+//#
+//#  Details:                Remote Desktop Protocol parser family - root parser
+//#
+//#  Microsoft References:   [MS-RDPERP]:   Remote Desktop Protocol: Remote Programs Virtual Channel Extension (5.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/17/2010
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPERP = RDPERPTsRailPDUOrderTypeTable(Property.RDPERPOrderType)
+{
+	RDPERPRailPDUHeader Hdr = FormatString("OrderType: %s; OrderLength:%d",RDPERPTsRailPDUOrderTypeTable(Property.RDPERPOrderType),Property.RDPERPOrderLength);
+	switch (Property.RDPERPOrderType)
+	{
+		//case 0x0001: "Exec"; 			// Client to server, always encrypted
+		//case 0x0002: "Activate";		// Client to server, always encrypted
+		case 0x0003: 
+			RDPERPTsRailOrderSysParam(Property.RDPERPOrderLength - 8) SysParam;
+		//case 0x0004: "SysCommand";		// Client to server, always encrypted
+		case 0x0005: 
+			RDPERPTsRailOrderHandShake HandShake;
+		//case 0x0006: "NotifyEvent";		// Client to server, always encrypted
+		//case 0x0008: "WindowMove";		// Client to server, always encrypted
+		case 0x0009: 
+			RDPERPTsRailOrderLocalMoveSize LocalMoveSize;
+		case 0x000A: 
+			RDPERPTsRailOrderMinMaxInfo MinMaxInfo;
+		//case 0x000B: "ClientStatus";	// Client to server, always encrypted
+		//case 0x000C: "SysMenu";			// Client to server, always encrypted
+		case 0x000D:
+			RDPERPTsRailOrderLangBarInfo LanguageBarInformationPDU;
+		//case 0x000E: "GetAppidReq";		// Client to server, always encrypted
+		case 0x0080: 
+			RDPERPTsRailOrderExecResult ExecResult;
+		case 0x000F: 
+			RDPERPRallOrderGetAppidResp RallOrderGetAppidResp;
+		default:
+			BLOB(Property.RDPERPOrderLength - 8) UnknownRailPDU;
+	}
+}
+
+struct RDPERPRailPDUHeader
+{
+	[RDPPacketType = "RAIL " + RDPERPTsRailPDUOrderTypeTable(this)]
+	[Property.RDPERPOrderType = this]
+	UINT16 OrderType = RDPERPTsRailPDUOrderTypeTable(this);
+	[Property.RDPERPOrderLength = this]
+	UINT16 OrderLength;
+}
+
+Table RDPERPRailSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0x0000: "TS_RAIL_LEVEL_NOT_SUPPORTED";
+		case 0x0001: "TS_RAIL_LEVEL_SUPPORTED";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPERPRemoteProgramCapabilitySet = "SupportLevel =  " + RDPERPRailSupportLevelTable(RailSupportLevel) //23
+{
+	UINT32 RailSupportLevel = RDPERPRailSupportLevelTable(this);
+}
+
+
+Table RDPERPWndSupportLevelTable(code)
+{
+	switch (code)
+	{
+		case 0x0000: "TS_WINDOW_LEVEL_DEFAULT";
+		case 0x0001: "TS_WINDOW_LEVEL_SUPPORTED";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+
+struct RDPERPWindowListCapabilitySet = "SupportLevel = " + RDPERPWndSupportLevelTable(WndSupportLevel) //24
+{
+	UINT32 WndSupportLevel = RDPERPWndSupportLevelTable(this);
+	UINT8 NumIconCaches;
+	UINT16 NumIconCacheEntries;
+}
+
+Table RDPERPTsRailPDUOrderTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x0001: "Exec";
+		case 0x0002: "Activate";
+		case 0x0003: "SysParam";
+		case 0x0004: "SysCommand";
+		case 0x0005: "HandShake";
+		case 0x0006: "NotifyEvent";
+		case 0x0008: "WindowMove";
+		case 0x0009: "LocalMoveSize";
+		case 0x000A: "MinMaxInfo";
+		case 0x000B: "ClientStatus";
+		case 0x000C: "SysMenu";
+		case 0x000D: "LangBarInfo";
+		case 0x0080: "ExecResult";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+Table RDPERPTsRailOrderSysParamTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x0011: "SetScreenSaveActive";
+		case 0x0077: "SetScreenSaveSecure";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsRailOrderSysParam(OrderLength) = FormatString("%s(%s)", RDPERPTsRailOrderSysParamTypeTable(SystemParameter), Local.ParamBodyValue)
+{
+	UINT32 SystemParameter = RDPERPTsRailOrderSysParamTypeTable(this);
+	switch (SystemParameter)
+	{
+		case 0x0011:
+			[Local.ParamBodyValue = SetScreenSaveActiveBody.ToString]
+			UINT8 SetScreenSaveActiveBody = this ? "True" : "False";
+		case 0x0077:
+			[Local.ParamBodyValue = SetScreenSaveSecureBody.ToString]
+			UINT8 SetScreenSaveSecureBody = this ? "True" : "False";
+		default:
+			[Local.ParamBodyValue = "Unkown"]
+			BLOB(OrderLength - 4) UnknownOrderBody;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsRailOrderHandShake = FormatString("BuildNumber = %u", BuildNumber)
+{
+	UINT32 BuildNumber;
+}
+
+Table RDPERPTsRailOrderLocalMoveSizeTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "Left";
+		case 2: "Right";
+		case 3: "Top";
+		case 4: "TopLeft";
+		case 5: "TopRight";
+		case 6: "Bottom";
+		case 7: "BottomLeft";
+		case 8: "BottomRight";
+		case 9: "Move";
+		case 10: "KeyMove";
+		case 11: "KeySize";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsRailOrderLocalMoveSize = IsMoveSizeStart ? "MoveSize Start" : "MoveSize End"
+{
+	UINT32 WindowId;
+	UINT16 IsMoveSizeStart = this ? "Start" : "End";
+	UINT16 MoveSizeType = IsMoveSizeStart ? RDPERPTsRailOrderLocalMoveSizeTypeTable(this) : "Unused";
+	UINT16 PosX;
+	UINT16 PosY;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsRailOrderMinMaxInfo
+{
+	UINT32 WindowId;
+	UINT16 MaxWidth;
+	UINT16 MaxHeight;
+	UINT16 MaxPosX;
+	UINT16 MaxPosY;
+	UINT16 MinTrackWidth;
+	UINT16 MinTrackHeight;
+	UINT16 MaxTrackWidth;
+	UINT16 MaxTrackHeight;
+}
+
+Table RDPERPTsRailOrderExecResultTable(code)
+{
+	switch (code)
+	{
+		case 0: "RAIL_EXEC_S_OK";
+		case 1: "RAIL_EXEC_E_HOOK_NOT_LOADED";
+		case 2: "RAIL_EXEC_E_DECODE_FAILED";
+		case 3: "RAIL_EXEC_E_NOT_IN_ALLOWLIST";
+		case 5: "RAIL_EXEC_E_FILE_NOT_FOUND";
+		case 6: "RAIL_EXEC_E_FAIL";
+		case 7: "RAIL_EXEC_E_SESSION_LOCKED";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsRailOrderExecResult = RDPERPTsRailOrderExecResultTable(ExecResult)
+{
+	UINT16 Flags;
+	UINT16 ExecResult = RDPERPTsRailOrderExecResultTable(this);
+	UINT32 RawResult;
+	UINT16 Padding;
+	UINT16 ExeOrFileLength;
+	BLOB(ExeOrFileLength) ExeOrFile;
+}
+struct RDPERPRallOrderGetAppidResp = FormatString("Windowsid: %d; Applicationid: %d",Windowsid, Applicationid)
+{
+	UINT32 Windowsid;
+	UnicodeString(128) Applicationid;
+}
+
+struct RDPERPTsRailOrderLangBarInfo
+{
+	UINT32 LanguageBarStatus
+	{
+		UINT32 ShowNormal:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Display the language bar as a floating window. ": "Not display the language bar as a floating window. ");
+		UINT32 Dock:1 = FormatString("                   (%s) %s",this.ToBitString,this ? "Dock the language bar in its own task pane. ": "Not dock the language bar in its own task pane. ");
+		UINT32 Minimized:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Display the language bar as a single icon in the system tray. ": "Not display the language bar as a single icon in the system tray. ");
+		UINT32 Hidden:1 = FormatString("                 (%s) %s",this.ToBitString,this ? "Hide the language bar. ": "Display the language bar. ");
+		UINT32 NoTransparency:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Make the language bar opaque.": "Not make the language bar transparent.");
+		UINT32 LowTransparency:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Make the language bar partially transparent. Available only on Windows 2000 or later.": "Not make the language bar partially transparent. Available only on Windows 2000 or later.");
+		UINT32 HighTransparency:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Make the language bar highly transparent. Available only on Windows 2000 or later.": "Not make the language bar highly transparent. Available only on Windows 2000 or later.");
+		UINT32 Labels:1 = FormatString("                 (%s) %s",this.ToBitString,this ? "Display text labels next to language bar icons.": "Not display text labels next to language bar icons.");
+		UINT32 NoLabels:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Hide language bar icon text labels.": "Not hide language bar icon text labels.");
+		UINT32 ExtraIconsOnMinmized:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Display text service icons on the taskbar when the language bar is minimized.": "Not display text service icons on the taskbar when the language bar is minimized.");
+		UINT32 NoExtraIconsOnMinimized:1 = FormatString("(%s) %s",this.ToBitString,this ? "Hide text service icons on the taskbar when the language bar is minimized.": "Not hide text service icons on the taskbar when the language bar is minimized.");
+		UINT32 DeskBand:1 = FormatString("               (%s) %s",this.ToBitString,this ? "Dock the language bar in the system task bar. ": "Not dock the language bar in the system task bar. ");
+		UINT32 Unused:20 = FormatString("                 (%s)",this.ToBitString);
+	};
+}
+
+
+
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsUnicodeString = CbString > 0 ? Str : "<Empty>"
+{
+	UINT16 CbString;
+	UnicodeString(CbString/2) Str;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsIconInfo = FormatString("%u*%u@%uBPP", Width, Height, Bpp)
+{
+	UINT16 CacheEntry;
+	UINT8 CacheId;
+	UINT8 Bpp;
+	UINT16 Width;
+	UINT16 Height;
+	switch 
+	{
+		case Bpp <= 8:
+			UINT16 CbColorTable;
+	}
+	UINT16 CbBitsMask;
+	UINT16 CbBitsColor;
+	switch 
+	{
+		case CbBitsMask > 0:
+			BLOB(CbBitsMask) BitsMask;
+	}
+	
+	switch 
+	{
+		case Bpp <= 8 && CbColorTable > 0:
+			BLOB(CbColorTable) ColorTable;
+	}
+	switch 
+	{
+		case CbBitsColor > 0:
+			BLOB(CbBitsColor) BitsColor;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsCachedIconInfo
+{
+	UINT16 CacheEntry;
+	UINT8 CacheId;
+}
+
+Table RDPERPTsWindowOrderWindowShowStateTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Don't show the window";
+		case 0x02: "Show the window minimzied";
+		case 0x03: "Show the window maximized";
+		case 0x05: "Show the window in its current size and position";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsWindowOrderWindow = Local.OrderType
+{
+	UINT32 FieldsPresentFlags
+	{
+		UINT32 Unused1:1 = FormatString("         (%s)",this.ToBitString);
+		UINT32 Owner:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Title:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Style:1 = FormatString("           (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Show:1 = FormatString("            (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Unused2:3 = FormatString("         (%s)",this.ToBitString);
+		UINT32 WndRects:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Visbility:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 WndSize:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 WndOffset:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 VisOffset:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 IconBig:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 ClientAreaOffset:1 = FormatString("(%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 WndClientDelta:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 ClienAreaSize:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 RPContent:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 RootParent:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Unused3:5 = FormatString("         (%s)",this.ToBitString);
+		UINT32 Window:1 = FormatString("          (%s) %s, This flag MUST be set",this.ToBitString,this ? "Window Order" : "Not Window Order");
+		UINT32 Unused4:3 = FormatString("         (%s)",this.ToBitString);
+		UINT32 New:1 = FormatString("             (%s) %s",this.ToBitString,this ? "New" : "Not New");
+		UINT32 Deleted:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Deleted" : "Not Deleted");
+		UINT32 Icon:1 = FormatString("            (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 CachedIcon:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+	};
+	UINT32 WindowId;
+	switch 
+	{
+		case FieldsPresentFlags.Icon:
+			[Local.OrderType = "Window Icon"]
+			_struct WindowIcon
+			{
+				RDPERPTsIconInfo IconInfo;
+			}
+		case FieldsPresentFlags.CachedIcon:
+			[Local.OrderType = "Cached Icon"]
+			_struct CachedIcon
+			{
+				RDPERPTsCachedIconInfo CachedIconInfo;
+			}
+		case FieldsPresentFlags.Deleted:
+			[Local.OrderType = "Deleted Window"]
+			_struct Deleted{};
+		default:
+			[Local.OrderType = "New or Existing Window"]
+			_struct NewOrExistingWindow
+			{
+				switch 
+				{
+					case FieldsPresentFlags.Owner: 
+						UINT32 OwnerWindowId;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Style: 
+						UINT32 Style;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Style: 
+						UINT32 ExtendedStyle;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Show: 
+						UINT8 ShowState = RDPERPTsWindowOrderWindowShowStateTable(this);
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Title:
+						RDPERPTsUnicodeString TitleInfo;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.ClientAreaOffset: 
+						UINT32 ClientOffsetX;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.ClientAreaOffset: 
+						UINT32 ClientOffsetY;
+						
+				}
+				switch 
+				{
+					case FieldsPresentFlags.ClienAreaSize: 
+						struct
+						{
+							UINT32 ClientAreaWidth;
+							UINT32 ClientAreaHeight;
+						}
+				}
+				switch 
+				{
+					case FieldsPresentFlags.RPContent: 
+						UINT32 RPContent = RDPERPRDPERPTsWindowOrderWindowRPContent(this);
+				}
+				switch 
+				{
+					case FieldsPresentFlags.RootParent: 
+						UINT32 RootParentHandle;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndOffset: 
+						UINT32 WindowOffsetX;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndOffset: 
+						UINT32 WindowOffsetY;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndClientDelta: 
+						UINT32 WindowClientDeltaX;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndClientDelta: 
+						UINT32 WindowClientDeltaY;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndSize: 
+						UINT32 WindowWidth;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndSize: 
+						UINT32 WindowHeight;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.WndRects: 
+						struct WindowRects
+						{
+							UINT16 NumWindowRects;
+							RDPBCGRTsRectangle16 WindowRects[NumWindowRects];
+						}
+				}
+				switch 
+				{
+					case FieldsPresentFlags.VisOffset: 
+						UINT32 VisibleOffsetX;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.VisOffset: 
+						UINT32 VisibleOffsetY;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Visbility: 
+						struct VisibilityRects
+						{
+							UINT16 NumVisibilityRects;
+							RDPBCGRTsRectangle16 VisibilityRects[NumVisibilityRects];
+						}		
+				}
+			}
+	}
+}
+
+Table RDPERPRDPERPTsWindowOrderWindowRPContent(value)
+{
+	switch(value)
+	{
+		case 1: "The window is used by a render plug-in to do client-side rendering";
+		case 0: "The window is not used by a render plug-in to do client-side rendering";
+	}
+}
+
+Table RDPERPTsWindowOrderNotifyVersionTable(code)
+{
+	switch (code)
+	{
+		case 0: "Windows 95 notification icons behavior";
+		case 3: "Windows 2000 notification icons behavior";
+		case 4: "Windows Vista behavior";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+Table RDPERPTsWindowOrderNotifyIconTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "Informational";
+		case 2: "Warning";
+		case 3: "Error";
+		default: FormatString("Undefined Value(%d)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsNotifyIconInfoTip = FormatString("Title = %s", Title.ToString)
+{
+	UINT32 Timeout;
+	UINT32 InfoFlags = this ? "" : "No icon should be shown"
+	{
+		UINT32 IconType:4 = FormatString(" (%s) %s", this.ToBitString, RDPERPTsWindowOrderNotifyIconTypeTable(this));
+		UINT32 NoSound:1 = FormatString("  (%s) %s", this.ToBitString, this ? "No Sound" : "Play Sound");
+		UINT32 LargeIcon:1 = FormatString("(%s) %s", this.ToBitString, this ? "Large Icon" : "Small Icon");
+		UINT32 Unused:26 = FormatString("   (%s)", this.ToBitString);
+	};
+	RDPERPTsUnicodeString InfoTipText;
+	RDPERPTsUnicodeString Title;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsWindowOrderNotify = Local.OrderType
+{
+	UINT32 FieldsPresentFlags
+	{
+		UINT32 Tip:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 InfoTip:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 State:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Version:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Unused1:21 = FormatString("   (%s)",this.ToBitString);
+		UINT32 Notify:1 = FormatString("    (%s) %s, This flag MUST be set",this.ToBitString,this ? "Notify Order" : "Not Notify Order");
+		UINT32 Unused2:2 = FormatString("   (%s)",this.ToBitString);
+		UINT32 New:1 = FormatString("       (%s) %s",this.ToBitString,this ? "New" : "Not New");
+		UINT32 Deleted:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Deleted" : "Not Deleted");
+		UINT32 Icon:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 CachedIcon:1 = FormatString("(%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+	};
+	UINT32 WindowId;
+	UINT32 NotifyIconId;
+	switch 
+	{
+		case FieldsPresentFlags.Deleted:
+			[Local.OrderType = "Deleted Notification Icon"]
+			_struct Deleted{};
+		default:
+			[Local.OrderType = "New or Existing Notification Icons"]
+			_struct NewOrExistingNotificationIcons
+			{
+				switch 
+				{
+					case FieldsPresentFlags.Version: 
+						UINT32 Version = RDPERPTsWindowOrderNotifyVersionTable(this);
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Tip: 
+						RDPERPTsUnicodeString ToolTip;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.InfoTip: 
+						RDPERPTsNotifyIconInfoTip InfoTip;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.State: 
+						UINT32 State = this ? "Hidden" : "Undefined";
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Icon: 
+						RDPERPTsIconInfo Icon;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.CachedIcon: 
+						RDPERPTsCachedIconInfo CachedIcon;
+				}
+			}
+	}
+}
+		
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsDeskTopOrderHeader = Local.OrderType
+{
+	UINT32 FieldsPresentFlags
+	{
+		UINT32 None:1 = FormatString("        (%s) %s",this.ToBitString,this ? "None order will be sent" : "Order will be sent");
+		UINT32 Hooked:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Hooked" : "Not Hooked");
+		UINT32 ArcCompleted:1 = FormatString("(%s) %s",this.ToBitString,this ? "ArcCompleted" : "Not ArcCompleted");
+		UINT32 ArcBegan:1 = FormatString("    (%s) %s",this.ToBitString,this ? "ArcBegan" : "Not ArcBegan");
+		UINT32 Zorder:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 ActiveWnd:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Present" : "Not Present");
+		UINT32 Unused1:20 = FormatString("     (%s)",this.ToBitString);
+		UINT32 Desktop:1 = FormatString("     (%s) %s, This flag MUST be set",this.ToBitString,this ? "Desktop Order" : "Not Desktop Order");
+		UINT32 Unused2:5 = FormatString("     (%s)",this.ToBitString);
+	}
+	switch 
+	{
+		case FieldsPresentFlags.None:
+			[Local.OrderType = "Non-Monitored Desktop"]
+			_struct None{};
+		default:
+			[Local.OrderType = "Actively Monitored Desktop"]
+			_struct ActivelyMonitoredDesktop
+			{
+				switch 
+				{
+					case FieldsPresentFlags.ActiveWnd: 
+						UINT32 ActiveWindowId;
+				}
+				switch 
+				{
+					case FieldsPresentFlags.Zorder: 
+						_struct WindowIds
+						{
+							UINT8 NumWindowIds;
+							UINT32 WindowIds[NumWindowIds];
+						}
+				}
+			}
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsWindowOrderHeader
+{
+	UINT16 OrderSize;
+	switch (UINT32(FrameData, FrameOffset) & 0x0F000000)
+	{
+		case 0x01000000:
+			RDPERPTsWindowOrderWindow RDPERPTsWindowOrderWindow;
+		case 0x02000000:
+			RDPERPTsWindowOrderNotify RDPERPTsWindowOrderNotify;
+		case 0x04000000:
+			RDPERPTsDeskTopOrderHeader RDPERPTsDeskTopOrderHeader;
+		default:
+			BLOB(OrderSize - 3) UnkownWindowOrder;
+	}
+	
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPERPTsWindowOrder
+{
+	RDPERPTsWindowOrderHeader WindowOrderHeader;
+}

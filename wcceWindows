@@ -1,0 +1,1193 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Client Certificate Enrollment Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WCCE]: Windows Client Certificate Enrollment Protocol Specification (18.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 5/19/2009
+//#                          Minor, 4/16/2010
+//#
+//####
+
+Protocol WCCE = FormatString( "%s %s%s%s%s%s", 
+	Property.WCCEMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.WCCESummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.WCCESummary : "" )
+{
+	[Property.WCCESummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{D99E6E70-FC88-11D0-B498-00A0C90312F3}":
+			[Property.WCCEMethodName = "ICertRequestD:" + WCCEICertRequestDMethodNameTable( Property.MSRPCOpnum )]
+			_Struct ICertRequestD
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Request
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Flags=%u Authority=%s RequestId=%u Attributes=%s", Flags, Authority.ToString, RequestId, RequestAttributes.ToString )]
+												Struct
+												{
+													WCCEFlags           Flags;
+													NdrWIDESTRINGPtr Authority;
+													Align4 Pad;
+													UINT32              RequestId;
+													NdrWIDESTRINGPtr    RequestAttributes;
+													NdrAlign Pading;
+													WCCECerttransBlob(WCCECertReqTransBlob,0)   RequestBlob;    
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "RequestId=%u Disposition=%u ReturnValue=%s", RequestId, Disposition, ReturnValue.ToString )]
+												Struct
+												{
+													UINT32                          RequestId;
+													UINT32                          Disposition;
+													WCCECerttransBlob(WCCECmsCertTransBlob,0)            CertChain;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEX509CertTransBlob,0)           EncodedCert;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEStringCertTransBlob,0) DispositionMessage;
+													Align4 Pad;
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct GetCACert
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Fchain=%u Authority=%s", Fchain, Authority.ToString )]
+												Struct
+												{
+													[Conversation.WCCEFChain$[Property.MSRPCCallId]]
+													UINT32          FChain = FormatString( "0x%08X %s", this, WCCEFChainTable( this ) );
+													NdrWIDESTRINGPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													Switch( Conversation.WCCEFChain$[Property.MSRPCCallId] )
+													{
+														Case 0x66696C65: //GETCERT_FILEVERSION
+														Case 0x6E616D65: //GETCERT_CANAME 
+														Case 0x70617265: //GETCERT_PARENTCONFIG 
+														Case 0x706F6C69: //GETCERT_POLICYVERSION 
+														Case 0x70726F64: //GETCERT_PRODUCTVERSION 
+														Case 0x73616E69: //GETCERT_SANITIZEDCANAME 
+														Case 0x73686172: //GETCERT_SHAREDFOLDER 
+															WCCECerttransBlob(WCCEStringCertTransBlob,0) StringBlob;
+
+														Case 0x696E666F: //GETCERT_CAINFO 
+															WCCECerttransBlob(WCCECAInfoCertTransBlob,0) CAInfoBlob;
+															
+														Case 0x6363726C: //GETCERT_CURRENTCRL 
+															WCCECerttransBlob(WCCEX509CRLCertTransBlob,0) CRLBlob;
+
+														Case 0x00000000: //GETCERT_CASIGCERT 
+														Case 0x00000001: //GETCERT_CAXCHGCERT 
+															WCCECerttransBlob(WCCEX509CertTransBlob,0) X509CertBlob;
+															
+														Case 0x74797065: //GETCERT_CATYPE 
+															WCCECerttransBlob(WCCEUint32CertTransBlob,0) UINTBlob;
+															
+														Default:
+															Switch( Conversation.WCCEFChain$[Property.MSRPCCallId] & 0xFFFF0000 )
+															{
+																Case 0x6578: //GETCERT_EXITVERSIONBYINDEX 
+																	WCCECerttransBlob(WCCEStringCertTransBlob,0) StringBlob;
+
+																Case 0x636C: //GETCERT_CRLBYINDEX 
+																	WCCECerttransBlob(WCCEX509CRLCertTransBlob,0) CRLBlob;
+
+																Case 0x6374: //GETCERT_CACERTBYINDEX 
+																	WCCECerttransBlob(WCCEX509CertTransBlob,0) X509CertBlob;
+																	
+																Case 0x736C: //GETCERT_CRLSTATEBYINDEX 
+																Case 0x7374: //GETCERT_CACERTSTATEBYINDEX 
+																	WCCECerttransBlob(WCCEByteCertTransBlob,0) ByteArrayBlob;
+																default:
+																	WCCECertTransBlob(WCCECertTransBlob,0) EmptyBlob;
+															}
+													}
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													[ReturnValue = UINT32(FrameData, Offset)] HRESULT  ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct Ping
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WCCE", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WCCE", "Unknown ICertRequestD method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{5422FD3A-D4B8-4CEF-A12E-E87D4CA22E90}":
+			[Property.WCCEMethodName = "ICertRequestD2:" + WCCEICertRequestD2MethodNameTable( Property.MSRPCOpnum )]
+			_Struct ICertRequestD2
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Request
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Flags=%u Authority=%s RequestId=%u Attributes=%s", Flags, Authority.ToString, RequestId, RequestAttributes.ToString )]
+												Struct
+												{
+													WCCEFlags           Flags;
+													NdrWIDESTRINGPtr Authority;
+													Align4 Pad;
+													UINT32              RequestId;
+													NdrWIDESTRINGPtr    RequestAttributes;
+													WCCECerttransBlob(WCCECertReqTransBlob,0)   RequestBlob;    
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "RequestId=%u Disposition=%u ReturnValue=%s", RequestId, Disposition, ReturnValue.ToString )]
+												Struct
+												{
+													UINT32                          RequestId;
+													UINT32                          Disposition;
+													WCCECerttransBlob(WCCECmsCertTransBlob,0)            CertChain;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEX509CertTransBlob,0)           EncodedCert;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEStringCertTransBlob,0) DispositionMessage;
+													Align4 Pad;
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct GetCACert
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Fchain=%u Authority=%s", Fchain, Authority.ToString )]
+												Struct
+												{
+													[Conversation.WCCEFChain$[Property.MSRPCCallId]]
+													UINT32          FChain = FormatString( "0x%08X %s", this, WCCEFChainTable( this ) );
+													NdrWIDESTRINGPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													Switch( Conversation.WCCEFChain$[Property.MSRPCCallId] )
+													{
+														Case 0x66696C65: //GETCERT_FILEVERSION
+														Case 0x6E616D65: //GETCERT_CANAME 
+														Case 0x70617265: //GETCERT_PARENTCONFIG 
+														Case 0x706F6C69: //GETCERT_POLICYVERSION 
+														Case 0x70726F64: //GETCERT_PRODUCTVERSION 
+														Case 0x73616E69: //GETCERT_SANITIZEDCANAME 
+														Case 0x73686172: //GETCERT_SHAREDFOLDER 
+															WCCECerttransBlob(WCCEStringCertTransBlob,0) StringBlob;
+
+														Case 0x696E666F: //GETCERT_CAINFO 
+															WCCECerttransBlob(WCCECAInfoCertTransBlob,0) CAInfoBlob;
+															
+														Case 0x6363726C: //GETCERT_CURRENTCRL 
+															WCCECerttransBlob(WCCEX509CRLCertTransBlob,0) CRLBlob;
+
+														Case 0x00000000: //GETCERT_CASIGCERT 
+														Case 0x00000001: //GETCERT_CAXCHGCERT 
+															WCCECerttransBlob(WCCEX509CertTransBlob,0) X509CertBlob;
+															
+														Case 0x74797065: //GETCERT_CATYPE 
+															WCCECerttransBlob(WCCEUint32CertTransBlob,0) UINTBlob;
+															
+														Default:
+															Switch( Conversation.WCCEFChain$[Property.MSRPCCallId] & 0xFFFF0000 )
+															{
+																Case 0x6578: //GETCERT_EXITVERSIONBYINDEX 
+																	WCCECerttransBlob(WCCEStringCertTransBlob,0) StringBlob;
+
+																Case 0x636C: //GETCERT_CRLBYINDEX 
+																	WCCECerttransBlob(WCCEX509CRLCertTransBlob,0) CRLBlob;
+
+																Case 0x6374: //GETCERT_CACERTBYINDEX 
+																	WCCECerttransBlob(WCCEX509CertTransBlob,0) X509CertBlob;
+																	
+																Case 0x736C: //GETCERT_CRLSTATEBYINDEX 
+																Case 0x7374: //GETCERT_CACERTSTATEBYINDEX 
+																	WCCECerttransBlob(WCCEByteCertTransBlob,0) ByteArrayBlob;
+																default:
+																	WCCECertTransBlob(WCCECertTransBlob,0) EmptyBlob;
+															}
+													}
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													[ReturnValue = UINT32(FrameData, Offset)] HRESULT  ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct Ping
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+						
+					Case 6:
+						_Struct Request2
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s Flags=%u SerialNumber=%s RequestId=%u Attributes=%s", Authority.ToString, Flags, SerialNumber.ToString, RequestId, RequestAttributes.ToString )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority;
+													Align4     Pad1;
+													WCCEFlags           Flags;
+													NdrWIDESTRINGPtr SerialNumber;
+													Align4 Pad2;
+													UINT32              RequestId;
+													NdrWIDESTRINGPtr RequestAttributes;
+													NdrAlign Pad3;
+													WCCECerttransBlob(WCCECertReqTransBlob,0)   RequestBlob; 
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "RequestId=%u Disposition=%u ReturnValue=%s", RequestId, Disposition, ReturnValue.ToString )]
+												Struct
+												{
+													UINT32                          RequestId;
+													UINT32                          Disposition;
+													WCCECerttransBlob(WCCECmsCertTransBlob,0)             FullResponse;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEX509CertTransBlob,0)           EncodedCert;
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													WCCECerttransBlob(WCCEStringCertTransBlob,0)         DispositionMessage;	
+													Align4 Pad;
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct GetCAProperty
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s PropID=%d PropIndex=%d PropType=%d", Authority.ToString, PropID, PropIndex, PropType )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority;
+													Align4			Pad;
+													[Conversation.WCCEPropId$[Property.MSRPCCallId]] 
+													INT32           PropID = FormatString( "0x%X %s", this, WCCEPropIDTable (this) );
+													INT32           PropIndex;
+													[Conversation.WCCEPropType$[Property.MSRPCCallId]]
+													INT32           PropType = FormatString( "0x%X %s", this, WCCEPropTypeTable (this) );
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													Switch( Conversation.WCCEPropType$[Property.MSRPCCallId] )
+													{
+														Case 0x00000004: //PROPTYPE_STRING 
+															WCCECerttransBlob(WCCEStringCertTransBlob,0) StringBlob;
+															
+														Default:
+															Switch( Conversation.WCCEPropId$[Property.MSRPCCallId] )
+															{
+																Case 0x0000000A: //CR_PROP_CATYPE
+																Case 0x0000000B: //CR_PROP_CASIGCERTCOUNT
+																Case 0x0000000E: //CR_PROP_CAXCHGCERTCOUNT
+																Case 0x00000003: //CR_PROP_EXITCOUNT
+																Case 0x00000015: //CR_PROP_CAPROPIDMAX
+																Case 0x00000018: //CR_PROP_KRACERTUSEDCOUNT
+																Case 0x0000001C: //CR_PROP_ADVANCEDSERVER
+																	WCCECerttransBlob(WCCECAInfoCertTransBlob,0) CAInfoBlob;
+
+																Case 0x00000013: //CR_PROP_CACERTSTATE
+																Case 0x00000014: //CR_PROP_CRLSTATE
+																Case 0x0000001B: //CR_PROP_KRACERTSTATE
+																Case 0x0000001E: //CR_PROP_BASECRLPUBLISHSTATUS
+																Case 0x0000001F: //CR_PROP_DELTACRLPUBLISHSTATUS
+																Case 0x00000022: //CR_PROP_CACERTSTATUSCODE
+																Case 0x00000025: //CR_PROP_CAFORWARDCROSSCERTSTATE
+																Case 0x00000026: //CR_PROP_CABACKWARDCROSSCERTSTATE
+																	WCCECerttransBlob(WCCEByteCertTransBlob,0) ByteArrayBlob;
+
+																Case 0x0000000C: //CR_PROP_CASIGCERT
+																Case 0x0000000F: //CR_PROP_CAXCHGCERT
+																Case 0x0000001A: //CR_PROP_KRACERT
+																Case 0x00000023: //CR_PROP_CAFORWARDCROSSCERT
+																Case 0x00000024: //CR_PROP_CABACKWARDCROSSCERT
+																	WCCECerttransBlob(WCCEX509CertTransBlob,0) X509CertBlob;
+
+																Case 0x00000011: //CR_PROP_BASECRL
+																Case 0x00000012: //CR_PROP_DELTACRL
+																	WCCECerttransBlob(WCCEX509CRLCertTransBlob,0) X509CRLBlob;
+
+																Case 0x0000000D: //CR_PROP_CASIGCERTCHAIN
+																Case 0x00000010: //CR_PROP_CAXCHGCERTCHAIN
+																Case 0x00000020: //CR_PROP_CASIGCERTCRLCHAIN
+																Case 0x00000021: //CR_PROP_CAXCHGCERTCRLCHAIN
+																	WCCECerttransBlob(WCCECmsCertTransBlob,0)  CMSBlob;
+																Default:
+																	WCCECerttransBlob(WCCECertReqTransBlob,0) CertTransBlob;
+															}
+													}
+													Switch {
+														Case CurrentProtocolOffset % 4 > 0 && FrameLength - Offset > 0: ALIGN4 Padding;
+													}
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct GetCAPropertyInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority; 
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "PcProperty=%d ReturnValue=%s", CProperty, ReturnValue.ToString )]
+												Struct
+												{
+													INT32                                   CProperty;
+													NdrAlign Pad1;
+													WCCECerttransBlob(WCCEPropCertTransBlob, CProperty )      PropertyInfo;
+													Align4 Pad2;
+													[ReturnValue = UINT32( Framedata, Offset )] HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct Ping2
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "Authority=%s", Authority.ToString )]
+												Struct
+												{
+													NdrWIDESTRINGPtr Authority;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WCCESummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													[ReturnValue = UINT32( FrameData, Offset )] HRESULT  ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WCCE", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WCCE", "Unknown ICertRequestD2 method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+	}
+}
+
+Table WCCERequestEncodingFlags( REFlag )
+{
+	Switch( REFlag )
+	{
+		Case 0x00: "CrInBase64Header [Request header is base64 encoded]";
+		Case 0x01: "CrInBase64 [Request is base64 encoded]";
+		Case 0x02: "CrInBinary [Request is in binary form]";
+		Case 0xFF: "CrInEncodeAny [Request encoding could be any of the above]";
+		Default  : "Unknown Flag";
+	}
+}
+
+Table WCCERequestFormatFlags( RFFlag )
+{
+	Switch( RFFlag )
+	{
+		Case 0x00: "CrInFormatAny [Request format is not defined]";
+		Case 0x01: "CrInPkcs10 [Request format is a PKCS10 request structure]";
+		Case 0x02: "CrInKeygen [Request format is a Netscape KeyGen request structure]";
+		Case 0x03: "CrInPkcs7 [Request format is a PKCS7 request renewal structure]";
+		Case 0x04: "CrInCmc [Request format is a Certificate Management Messages over CMS (CMC) request structure]";
+		Case 0xFF: "CrInFormatMask [Mask value indicating the request format flags]";
+		Default  : "Unknown Flag";
+	}
+}
+
+Table WCCEDispositionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "CrDispIncomplete [Request processing is incomplete]";
+		Case 0x00000001: "CrDispError [An error occurred while processing the request]";
+		Case 0x00000002: "CrDispDenied [The request was denied]";
+		Case 0x00000003: "CrDispIssued [The requested certificate was issued]";
+		Case 0x00000004: "CrDispIssuedOutOfBand [The requested certificate was issued out of band, via a DCOM channel hook]";
+		Case 0x00000005: "CrDispUnderSubmission [The request was previously submitted]";
+		Case 0x00000006: "CrDispRevoked [The requested certificate was revoked]";
+		Default		   : "Unknown Disposition";
+	}
+}
+
+Table WCCEPropIDTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "CR_PROP_FILEVERSION - A string that MUST contain the CA version information.";
+		Case 0x00000002: "CR_PROP_PRODUCTVERSION - A string that MUST contain the build number of the CA.";
+		Case 0x00000003: "CR_PROP_EXITCOUNT - MUST be the number of Exit Modules registered on the CA.";
+		Case 0x00000004: "CR_PROP_EXITDESCRIPTION - A string that MUST contain the name of the Exit Module identified by the propIndex parameter.";
+		Case 0x00000005: "CR_PROP_POLICYDESCRIPTION - A string that MUST contain the description of the Policy Module registered on the CA.";
+		Case 0x00000006: "CR_PROP_CANAME - A string that MUST contain the common name (CN) [RFC3280] of a certification authority (CA).";
+		Case 0x00000007: "CR_PROP_SANITIZEDCANAME - A string that MUST contain the sanitized name of the CA.";
+		Case 0x00000008: "CR_PROP_SHAREDFOLDER - A string that MUST contain the Uniform Naming Convention (UNC) path of a folder that contains the CA information and signature certificates.";
+		Case 0x00000009: "CR_PROP_PARENTCA - A string that MUST contain the name of the parent certification authority (CA) to the current CA.";
+		Case 0x0000000A: "CR_PROP_CATYPE - MUST be a CAINFO structure that MUST contain the certification authority type.";
+		Case 0x0000000B: "CR_PROP_CASIGCERTCOUNT - MUST be the number of signing certificates on the CA.";
+		Case 0x0000000C: "CR_PROP_CASIGCERT - MUST be a binary Object that contains a signing certificates identified by the propIndex parameter.";
+		Case 0x0000000D: "CR_PROP_CASIGCERTCHAIN - MUST be a binary Object that contains the certificate chain for a signing certificates identified by the propIndex parameter.";
+		Case 0x0000000E: "CR_PROP_CAXCHGCERTCOUNT - MUST be the number of exchange certificates on the CA.";
+		Case 0x0000000F: "CR_PROP_CAXCHGCERT - MUST be a binary Object that contains a key exchange certificate identified by the propIndex parameter.";
+		Case 0x00000010: "CR_PROP_CAXCHGCERTCHAIN - MUST be a binary Object that contains the certificate chain for a key exchange certificate identified by the propIndex parameter.";
+		Case 0x00000011: "CR_PROP_BASECRL - MUST be a CRL, for a CA signing certificates identified by propIndex parameter.";
+		Case 0x00000012: "CR_PROP_DELTACRL - MUST be a delta CRL, for a CA signing certificates identified by propIndex parameter.";
+		Case 0x00000013: "CR_PROP_CACERTSTATE - MUST be a byte array that contains the disposition status of all CA signing certificates.";
+		Case 0x00000014: "CR_PROP_CRLSTATE - MUST be a byte array containing the disposition status for all of the CA's CRLs.";
+		Case 0x00000015: "CR_PROP_CAPROPIDMAX - MUST be the maximum property identifier supported by the CA.";
+		Case 0x00000016: "CR_PROP_DNSNAME - MUST be the fully qualified DNS name of the computer on which the CA is installed.";
+		Case 0x00000017: "CR_PROP_ROLESEPARATIONENABLED - Indicates whether administrative role separation has been enabled on the CA.";
+		Case 0x00000018: "CR_PROP_KRACERTUSEDCOUNT - MUST be the minimum number of KRAs to use when archiving a private key.";
+		Case 0x00000019: "CR_PROP_KRACERTCOUNT - MUST be the maximum number of KRA certificates available on the certification authority.";
+		Case 0x0000001A: "CR_PROP_KRACERT - A KRA certificate identified by the propIndex parameter.";
+		Case 0x0000001B: "CR_PROP_KRACERTSTATE - MUST be a byte array that contains the disposition status of the KRA certificates registered with the CA.";
+		Case 0x0000001C: "CR_PROP_ADVANCEDSERVER - MUST identifywhether the CA operating system is an advanced server platform.";
+		Case 0x0000001D: "CR_PROP_TEMPLATES - MUST be a collection of name and Object Identifier (OID) pairs that identify the templates supported by a CA.";
+		Case 0x0000001E: "CR_PROP_BASECRLPUBLISHSTATUS - MUST be the publishing status of a signing certificates base CRL identified by the propIndex parameter.";
+		Case 0x0000001F: "CR_PROP_DELTACRLPUBLISHSTATUS - MUST be the publishing status of a signing certificates delta CRL identified by the propIndex parameter.";
+		Case 0x00000020: "CR_PROP_CASIGCERTCRLCHAIN - MUST be a binary Object that contains the certificate chain for a signing certificates and the CRLs for the certificates in the chain identified by the propIndex parameter.";
+		Case 0x00000021: "CR_PROP_CAXCHGCERTCRLCHAIN - MUST be a binary Object for a chain containing CRLs for exchange certificate identified by the propIndex parameter.";
+		Case 0x00000022: "CR_PROP_CACERTSTATUSCODE - MUST be an HRESULT that identifies the result of certificate validation [RFC3280] by the CA for the CA signing certificates identified by the propIndex parameter.";
+		Case 0x00000023: "CR_PROP_CAFORWARDCROSSCERT - MUST be a forward cross certificate, by index, from a Root CA. For more information on cross certificates, see [MS-CROSSCERT].";
+		Case 0x00000024: "CR_PROP_CABACKWARDCROSSCERT - MUST be a backward cross certificate, by index, from a Root CA. For more information on cross certificates, see [MS-CROSSCERT].";
+		Case 0x00000025: "CR_PROP_CAFORWARDCROSSCERTSTATE - MUST be a byte array that identifies the disposition status of all backward cross certificates for a certification authority (CA).";
+		Case 0x00000026: "CR_PROP_CABACKWARDCROSSCERTSTATE - MUST be a byte array that identifies the disposition status of all forward cross certificates for a certification authority (CA).";
+		Case 0x00000027: "CR_PROP_CACERTVERSION - MUST be an indexed 32-bit integer that contains the version number of a CA signing certificates.";
+		Case 0x00000028: "CR_PROP_SANITIZEDCASHORTNAME - The property MUST return the sanitized, shortened name of the certification authority (CA).";
+		Case 0x00000029: "CR_PROP_CERTCDPURLS - MUST be a NULL terminated Unicode string of the format \"String1\\nString2\\n\", where each string (separated by '\n') MUST represent a URI to be part of Certificate Distribution Point extension, as defined in [RFC3280] section 4.2.1.14.";
+		Case 0x0000002A: "CR_PROP_CERTAIAURLS - MUST be a NULL terminated Unicode string of the format \"String1\\nString2\\n\", where each string (separated by '\n') MUST represent a URI to be part of Authority Information Access extension, as defined in [RFC3280] section 4.2.2.1";
+		Case 0x0000002B: "CR_PROP_CERTAIAOCSPRLS - MUST be a NULL terminated Unicode string of the format \"String1\\nString2\\n\", where each string (separated by '\n') MUST represent the OCSP URLs configured on the CA, as defined in [RFC3280] section 4.2.2.1";
+		Default 	   : "Unknown property ID";
+	}
+}
+
+Table WCCEPropIDNameTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "CR_PROP_FILEVERSION";
+		Case 0x00000002: "CR_PROP_PRODUCTVERSION";
+		Case 0x00000003: "CR_PROP_EXITCOUNT";
+		Case 0x00000004: "CR_PROP_EXITDESCRIPTION";
+		Case 0x00000005: "CR_PROP_POLICYDESCRIPTION";
+		Case 0x00000006: "CR_PROP_CANAME";
+		Case 0x00000007: "CR_PROP_SANITIZEDCANAME";
+		Case 0x00000008: "CR_PROP_SHAREDFOLDER";
+		Case 0x00000009: "CR_PROP_PARENTCA";
+		Case 0x0000000A: "CR_PROP_CATYPE";
+		Case 0x0000000B: "CR_PROP_CASIGCERTCOUNT";
+		Case 0x0000000C: "CR_PROP_CASIGCERT";
+		Case 0x0000000D: "CR_PROP_CASIGCERTCHAIN";
+		Case 0x0000000E: "CR_PROP_CAXCHGCERTCOUNT";
+		Case 0x0000000F: "CR_PROP_CAXCHGCERT";
+		Case 0x00000010: "CR_PROP_CAXCHGCERTCHAIN";
+		Case 0x00000011: "CR_PROP_BASECRL";
+		Case 0x00000012: "CR_PROP_DELTACRL";
+		Case 0x00000013: "CR_PROP_CACERTSTATE";
+		Case 0x00000014: "CR_PROP_CRLSTATE";
+		Case 0x00000015: "CR_PROP_CAPROPIDMAX";
+		Case 0x00000016: "CR_PROP_DNSNAME";
+		Case 0x00000017: "CR_PROP_ROLESEPARATIONENABLED";
+		Case 0x00000018: "CR_PROP_KRACERTUSEDCOUNT";
+		Case 0x00000019: "CR_PROP_KRACERTCOUNT";
+		Case 0x0000001A: "CR_PROP_KRACERT";
+		Case 0x0000001B: "CR_PROP_KRACERTSTATE";
+		Case 0x0000001C: "CR_PROP_ADVANCEDSERVER";
+		Case 0x0000001D: "CR_PROP_TEMPLATES";
+		Case 0x0000001E: "CR_PROP_BASECRLPUBLISHSTATUS";
+		Case 0x0000001F: "CR_PROP_DELTACRLPUBLISHSTATUS";
+		Case 0x00000020: "CR_PROP_CASIGCERTCRLCHAIN";
+		Case 0x00000021: "CR_PROP_CAXCHGCERTCRLCHAIN";
+		Case 0x00000022: "CR_PROP_CACERTSTATUSCODE";
+		Case 0x00000023: "CR_PROP_CAFORWARDCROSSCERT";
+		Case 0x00000024: "CR_PROP_CABACKWARDCROSSCERT";
+		Case 0x00000025: "CR_PROP_CAFORWARDCROSSCERTSTATE";
+		Case 0x00000026: "CR_PROP_CABACKWARDCROSSCERTSTATE";
+		Case 0x00000027: "CR_PROP_CACERTVERSION";
+		Case 0x00000028: "CR_PROP_SANITIZEDCASHORTNAME";
+		Case 0x00000029: "CR_PROP_CERTCDPURLS";
+		Case 0x0000002A: "CR_PROP_CERTAIAURLS";
+		Case 0x0000002B: "CR_PROP_CERTAIAOCSPRLS";
+		Default 	   : "Unknown property ID";
+	}
+}
+
+Table WCCEPropTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROPTYPE_LONG - Property type is a signed long integer";
+		Case 0x00000003: "PROPTYPE_BINARY - Property type is binary data";
+		Case 0x00000004: "PROPTYPE_STRING - Property type is a string";
+		Default  	   : "Unknown property type";
+	}
+}
+
+Table WCCEPropTypeNameTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROPTYPE_LONG";
+		Case 0x00000003: "PROPTYPE_BINARY";
+		Case 0x00000004: "PROPTYPE_STRING";
+		Default  	   : "Unknown property type";
+	}
+}
+
+Table WCCECATypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "EnumEnterpriseRootCA [Enterprise root CA]";
+		Case 0x00000001: "EnumEnterpriseSubCA [Enterprise sub CA]";
+		Case 0x00000003: "EnumStandaloneRootCA [Standalone root CA]";
+		Case 0x00000004: "EnumStandaloneSubCA [Standalone sub CA]";
+		Case 0x00000005: "EnumUnknownCA [Unknown CA type]";
+	}
+}
+
+Table WCCEFChainByIndexTable( Value )
+{
+	Switch( Value & 0xFFFF0000 )
+	{
+		Case 0x636C: "GETCERT_CRLBYINDEX - The request is for the CRL at the specified index.";
+		Case 0x6374: "GETCERT_CACERTBYINDEX - The request is for the CA certificate at the specified index.";
+		Case 0x6578: "GETCERT_EXITVERSIONBYINDEX - The request is for the Exit Module version at the specified index.";
+		Case 0x736C: "GETCERT_CRLSTATEBYINDEX - The request is for the CRL state at the specified index.";
+		Case 0x7374: "GETCERT_CACERTSTATEBYINDEX - The request is for the CA certificate state at the specified index.";
+	}
+}
+
+Table WCCEFChainByIndexNameTable( Value )
+{
+	Switch( Value & 0xFFFF0000 )
+	{
+		Case 0x636C: "GETCERT_CRLBYINDEX";
+		Case 0x6374: "GETCERT_CACERTBYINDEX";
+		Case 0x6578: "GETCERT_EXITVERSIONBYINDEX";
+		Case 0x736C: "GETCERT_CRLSTATEBYINDEX";
+		Case 0x7374: "GETCERT_CACERTSTATEBYINDEX";
+	}
+}
+
+Table WCCEFChainTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "GETCERT_CASIGCERT - The request is for a CA signing certificates.";
+		Case 0x00000001: "GETCERT_CAXCHGCERT - The request is for a CA Exchange certificate.";
+		Case 0x6363726C: "GETCERT_CURRENTCRL - The request is for the current CRL for the latest CA signing certificates.";
+		Case 0x66696C65: "GETCERT_FILEVERSION - The request is for a string value containing the version number of the CA implementation.";
+		Case 0x696E666F: "GETCERT_CAINFO - The request is for a specific CA informational block";
+		Case 0x6E616D65: "GETCERT_CANAME - The request is for the CA name. The CA name is a Unicode string that contains the common name (CN) of the certification authority (CA).";
+		Case 0x70617265: "GETCERT_PARENTCONFIG - The request is for the name of the parent certification authority (CA) to the current CA.";
+		Case 0x706F6C69: "GETCERT_POLICYVERSION - The request is for version information regarding the policy information present at the CA.";
+		Case 0x70726F64: "GETCERT_PRODUCTVERSION - The request is for a string value containing the product version (build number) of CA.";
+		Case 0x73616E69: "GETCERT_SANITIZEDCANAME - The request is for the CA sanitized name.";
+		Case 0x73686172: "GETCERT_SHAREDFOLDER - The request is for a common shared folder location. The shared folder is a Uniform Naming Convention (UNC) path name.";
+		Case 0x74797065: "GETCERT_CATYPE - The request is for the CA type.";
+		Default:
+			WCCEFChainByIndexTable( Value );
+	}
+}
+
+Table WCCEFChainNameTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "GETCERT_CASIGCERT";
+		Case 0x00000001: "GETCERT_CAXCHGCERT";
+		Case 0x6363726C: "GETCERT_CURRENTCRL";
+		Case 0x66696C65: "GETCERT_FILEVERSION";
+		Case 0x696E666F: "GETCERT_CAINFO";
+		Case 0x6E616D65: "GETCERT_CANAME";
+		Case 0x70617265: "GETCERT_PARENTCONFIG";
+		Case 0x706F6C69: "GETCERT_POLICYVERSION";
+		Case 0x70726F64: "GETCERT_PRODUCTVERSION";
+		Case 0x73616E69: "GETCERT_SANITIZEDCANAME";
+		Case 0x73686172: "GETCERT_SHAREDFOLDER";
+		Case 0x74797065: "GETCERT_CATYPE";
+		Default:
+			WCCEFChainByIndexNameTable( Value );
+	}
+}
+
+Struct WCCEFlags
+{
+	switch( ByteOrder )
+	{
+		Case BigEndian:
+			_struct BEICPFlags
+			{
+				UINT8		padding1;
+				UINT8		ResponseType = FormatString( "%s", this.ToString )
+				{
+					UINT8 Bit07:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit06:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit05:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit04:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit03:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit02:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit01:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit00:1 = "(" + this.ToBitString + ")";
+				};
+				[Property.WCCERequestType]
+				UINT8   RequestType = WCCERequestFormatFlags(this);
+				UINT8		padding2;
+			};
+		default:
+			_struct LEICPFlags
+			{
+				UINT8		padding2;
+				[Property.WCCERequestType]
+				UINT8       RequestType = WCCERequestFormatFlags(this);
+				UINT8		ResponseType = FormatString( "%s", this.ToString )
+				{
+					UINT8 Bit00:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit01:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit02:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit03:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit04:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit05:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit06:1 = "(" + this.ToBitString + ")";
+					UINT8 Bit07:1 = "(" + this.ToBitString + ")";
+				};
+				UINT8		padding1;
+			};
+	}
+}
+
+Struct CAInfo = FormatString( "Block Size: %d, CA Type: %s", Blocksize, CAType.ToString )
+{
+	UINT32  Blocksize;
+	INT32   CAType = WCCECATypeTable (this);
+	UINT32  CASignatureCerts;
+	UINT32  CAExchangeCerts;
+	UINT32  ExitModules;
+	INT32   PropIdMax;
+	INT32   RoleSeparationEnabled;
+	UINT32  KRACertUserCount;
+	UINT32  KRACertCount;
+	UINT32  AdvancedServer;
+}
+
+Struct CATransProp = FormatString( "PropID=%u, NameOffset=0x%X, PropType=%s", 
+	PropId, DisplayNameOffset + WCCEDataOffset, WCCEPropTypeNameTable( PropType ) )
+{
+	[DataFieldByteOrder = LittleEndian]
+	INT32    PropId;
+	INT8     PropType = WCCEPropTypeTable (this);
+	INT8     Reserved;
+	[DataFieldByteOrder = LittleEndian]
+	INT16    PropFlags;
+	[DataFieldByteOrder = LittleEndian]
+	INT32    DisplayNameOffset;
+}
+
+Struct WCCEString = String
+{
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString   String;
+	Align4          Padding;
+}
+
+// AsnBer Encoding Object By OID
+// 1.3.6.1.4.1.311.13.2.2
+struct WCCEEnrollmentCspProvider
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger keySpec;
+	AsnBerBmpString cspName;
+	AsnBerBitString signature;
+}
+
+// 1.3.6.1.4.1.311.13.2.3
+struct WCCEOsVersion
+{
+	switch ( UINT8( Framedata, Offset ) & 0x1F )
+	{
+		case 0x12: AsnBerNumericString NumericString;
+		case 0x13: AsnBerPrintableString PrintableString;
+		case 0x14: AsnBerTeletexString TeletexString;
+		case 0x15: AsnBerVideoTextString VideotexString;
+		case 0x16: AsnBerIa5String IA5String;
+		case 0x19: AsnBerGraphicString GraphicString;
+		case 0x1A: AsnBerVisibleString VisibleString;
+		case 0x1B: AsnBerGeneralString GeneralString;
+		case 0x1C: AsnBerUniversalString UniversalString;
+		case 0x1E: AsnBerBmpString BmpString;
+	}
+}
+
+// 1.3.6.1.4.1.311.13.1
+struct WCCERenewalCertificate
+{
+	//#? TODO: X660 Certificate
+	AsnBerOctetString UnknownExtension;
+}
+
+// 1.3.6.1.4.1.311.21.20
+struct WCCERequestClientInfo
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger ClientId;
+	AsnBerUtf8String MachineName;
+	AsnBerUtf8String UserName;
+	AsnBerUtf8String ProcessName;
+}
+
+// 1.3.6.1.4.1.311.21.13
+struct WCCEArchivedKeyAttr
+{
+	CmsContentInfo CMS;
+}
+
+// 1.3.6.1.4.1.311.21.21
+struct WCCEEncryptedKeyHash
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerOctetString HashedValue;
+}
+
+// 1.3.6.1.4.1.311.13.2.1
+struct WCCEEnrollmentNameValuePair
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerBmpString Name;
+	AsnBerBmpString Value;
+}
+
+// 1.3.6.1.4.1.311.2.1.14
+struct WCCEX509Extensions = "X509Extensions"
+{
+	X509Extensions X509Extensions;
+}
+
+
+struct WCCECerttransBlob(Type,Count)
+{
+	UINT32 cb;
+	NdrPtrToConformant PBPointer;
+	switch(Type)
+	{
+	case WCCECertReqTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: 
+				Switch( Property.WCCERequestType )
+				{
+					Case 0x01: CertificationRequest Pkcs10Blob;
+					Case 0x02: SignedPublicKeyAndChallenge KeygenBlob;
+					Case 0x04: CmsContentInfo   CmcBlob;
+					Default  : 
+					struct
+					{
+						CmsContentInfo CMS;
+					};
+				}
+		}
+		
+	case WCCEPropCertTransBlob:
+		Switch
+		{
+			Case PBPointer.ReferentID > 0:
+				Struct
+				{
+					[WCCEDataOffset = FrameOffset]
+					CATransProp Array[ Count ];
+					WCCEString  DisplayStrings[ Count ];
+				}
+		}
+	
+	case WCCECmsCertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: CmsContentInfo CmsBlob;
+		}
+		
+	case WCCEX509CertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: X509Certificate X509Blob;
+		}
+		
+	case WCCEX509CRLCertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: X509CertificateList CRLBlob;
+		}
+		
+	case WCCEByteCertTransBlob:
+		Blob( cb )	Blob;
+		
+	case WCCEUint32CertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentId > 0:
+				Struct 
+				{
+					NdrConformant Size;
+					UINT32	Value;
+				}
+		}
+		
+	case WCCEStringCertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: 
+				[DataFieldByteOrder = LittleEndian]
+				UnicodeString StringBlob;
+		}
+	
+	case WCCECAInfoCertTransBlob:
+		Switch 
+		{
+			Case PBPointer.ReferentID > 0: CAInfo CAInfoBlob;
+		}
+	default:
+		switch
+		{
+			case PBPointer.ReferentID > 0:
+				Blob(PBPointer.Maxcount) pb;
+		}
+	}
+}
+
+Table WCCEGetCAPropertyPropTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROPTYPE_LONG - The property type is a signed long integer or a byte array.";
+		Case 0x00000003: "PROPTYPE_BINARY - The property type is binary data.";
+		Case 0x00000004: "PROPTYPE_STRING - The property type is a string.";
+		Default: "Unknown";
+	}
+}
+
+Table WCCEICertRequestDMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "Request";
+		Case 4: "GetCACert";
+		Case 5: "Ping";
+		Default: "unknown";
+	}
+}
+
+Table WCCEICertRequestD2MethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "ICertRequestD2_Opnum3DummyMethod";
+		Case 4: "ICertRequestD2_Opnum4DummyMethod";
+		Case 5: "ICertRequestD2_Opnum5DummyMethod";
+		Case 6: "Request2";
+		Case 7: "GetCAProperty";
+		Case 8: "GetCAPropertyInfo";
+		Case 9: "Ping2";
+		Default: "unknown";
+	}
+}
+

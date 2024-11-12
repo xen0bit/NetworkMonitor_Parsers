@@ -1,0 +1,130 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  AppleTalk Address Resolution Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1742
+//#                          http://www.protocols.com/pbook/appletalk.htm#AARP
+//#                          http://searchnetworking.techtarget.com/searchNetworking/Downloads/039777CH.PDF
+//#                          [Page90  Chapter 3 The Networker's Guide to AppleTalk,IPX and NetBIOS]
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+//[DefaultTimeOut = ARPConversationTimeout]
+
+Protocol AARP = AARPDescriptionTable(Function, AARPSrcHardAddress, AARPSrcAddress, AARPDstHardAddress, AARPDestAddress)
+{
+	UINT16 HardwareType = HardwareTypeTable( this );
+	UINT16 ProtocolType = ProtocolTable( this );
+	UINT8 HardwareAddressLen;
+	UINT8 ProtocolAddressLen;
+	UINT16 Function = FormatString("%s, %d(%#x)", AARPFunctionTable( this ), this, this);
+	
+	switch(HardwareAddressLen)
+	{
+		case  6:
+			[AARPSrcHardAddress = this.toString]
+			AARPHardwareAddress SourceHardwareAddress;
+		default:
+			[AARPSrcHardAddress = this.toString]
+			AsciiString(HardwareAddressLen) InvalidSourceHardwareAddress;
+	};
+	switch
+	{
+		case Function == 3 && ProtocolAddressLen == 4:
+			[AARPSrcAddress = this.toString, SenderProtocolAddress]
+			AppleTalkAddress TentativeAppleTalkAddress;
+		case Function != 3 && ProtocolAddressLen == 4:
+			[AARPSrcAddress = this.toString, SenderProtocolAddress]
+			AppleTalkAddress SourceAppleTalkAddress;
+		default:
+			[AARPSrcAddress = this.toString, SenderProtocolAddress]
+			AsciiString(ProtocolAddressLen) InvalidSourceAppleTalkAddress;
+	};
+	
+	switch
+	{
+		case Function == 2 && HardwareAddressLen == 6:
+			[AARPDstHardAddress = this.toString]
+			AARPHardwareAddress DestinationHardwareAddress;
+		case Function != 2 && HardwareAddressLen == 6:
+			[AARPDstHardAddress = this.toString]
+			AARPHardwareAddress UnusedMBZ;
+		default:
+			[AARPDstHardAddress = this.toString]
+			AsciiString(HardwareAddressLen) InvalidDestinationHardwareAddress;
+	};
+//	[Post.BuildConversation(
+//							Property.SenderProtocolAddress < Property.TargetProtocolAddress ?
+//							MakeByteArray(Property.SenderProtocolAddress, Property.TargetProtocolAddress) :
+//							MakeByteArray(Property.TargetProtocolAddress, Property.SenderProtocolAddress)
+//							),
+//		Post.Conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d", AARPSrcAddress, AARPDestAddress,ConvID)
+//	]
+	switch
+	{
+		case Function == 1 && ProtocolAddressLen == 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AppleTalkAddress DesiredAppleTalkAddress;
+		case Function == 2 && ProtocolAddressLen == 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AppleTalkAddress DestinationAppleTalkAddress;
+		case Function == 3 && ProtocolAddressLen == 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AppleTalkAddress TentativeAppleTalkAddress;
+		case Function == 1 && ProtocolAddressLen != 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AsciiString(ProtocolAddressLen) InvalidDesiredAppleTalkAddress;
+		case Function == 2 && ProtocolAddressLen != 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AsciiString(ProtocolAddressLen) InvalidDestinationAppleTalkAddress;
+		case Function == 3 && ProtocolAddressLen != 4:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AsciiString(ProtocolAddressLen) InvalidTentativeAppleTalkAddress;
+		default:
+			[AARPDestAddress = this.toString, TargetProtocolAddress]
+			AsciiString(ProtocolAddressLen) InvalidAppleTalkAddress;
+	};
+
+}
+UnsignedNumber AARPHardwareAddress
+{
+	size = 6,
+	DisplayFormat = FormatString("%02X-%02X-%02X-%02X-%02X-%02X",this[5],this[4],this[3],this[2],this[1],this[0])
+}
+
+//http://searchnetworking.techtarget.com/searchNetworking/Downloads/039777CH.PDF
+//[Page88  AppleTalk Node Addressing]
+UnsignedNumber AppleTalkAddress
+{
+	size = 4,
+	DisplayFormat = FormatString("%02X%02X.%02X",this[2],this[1],this[0])
+}
+
+Table AARPFunctionTable( value )
+{
+	switch( value )
+	{
+		case  1:"Request";
+		case  2:"Response";
+		case  3:"Probe";
+		default:"Unhandled Func";
+	}
+}
+
+Table AARPDescriptionTable(func, SrcHardAddress, SrcAddress, DstHardAddress, DstAddress)
+{
+	switch(func)
+	{
+		case  1:"Request, " + SrcAddress + " asks for " + DstAddress;
+		case  2:"Response, " + SrcAddress + " at " + SrcHardAddress;
+		case  3:"Probe, " + "Does " + DstAddress + " Exist?";
+		default:"Unknown AARP";
+	}
+}
+
+

@@ -1,0 +1,1433 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Kerberos Network Authentication Service v5
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 4120 (1510) Kerberos v5
+//#                          RFC 3961 Encryption & Checksums
+//#                          RFC 4556 Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/11/2010
+//#
+//####
+
+const KrbAsReqType = 10;
+const KrbAsRepType = 11;
+const KrbTgsReqType = 12;
+const KrbTgsRepType = 13;
+const KrbApReqType = 14;
+const KrbApRepType = 15;
+
+[DataTypeByteOrder = BigEndian, Property.KerberosSummary = ""]
+[Post.Property.AuthSummary = Property.KerberosSummary]
+Protocol KerberosV5 = FormatString("%s", Property.KerberosSummary)
+{
+	Switch {
+		Case KerberosOnTCP: 
+		KerberosLength Length;
+	}
+
+	Switch(UINT8(FrameData,Offset))
+	{
+		Case 0x61: KrbTicket Ticket;
+		Case 0x6a: KrbAsReq AsReq;
+		Case 0x6b: KrbAsRep AsRep;
+		Case 0x6c: KrbTgsReq TgsReq;
+		Case 0x6d: KrbTgsRep TgsRep;
+		Case 0x6e: KrbApReq ApReq;
+		Case 0x6f: KrbApRep ApRep;
+		Case 0x74: KrbSafe Safe;
+		Case 0x75: KrbPriv Priv;
+		Case 0x76: KrbCred Cred;
+		Case 0x7e: KrbError KrbError;
+	}
+}  
+
+Table KrbPADataTypeTable( PaDataType )
+{
+	Switch( PaDataType )
+    {
+		Case 1: FormatString("PA-TGS-REQ (%d)", PaDataType);
+		Case 2: FormatString("PA-ENC-TIMESTAMP (%d)", PaDataType);
+		Case 3: FormatString("PA-PW-SALT (%d)", PaDataType);
+		Case 4: FormatString("[reserved] (%d)", PaDataType);
+		Case 5: FormatString("PA-ENC-UNIX-TIME (%d)", PaDataType);
+		Case 6: FormatString("PA-SANDIA-SECUREID (%d)", PaDataType);
+		Case 7: FormatString("PS-SESAME (%d)", PaDataType);
+		Case 8: FormatString("PA-OSF-DCE (%d)", PaDataType);
+		case 9: FormatString("PA-CYBERSAFE-SECUREID (%d)", PaDataType);
+		Case 10: FormatString("PA-AFS3-SALT (%d)", PaDataType);
+		Case 11: FormatString("PA-ETYPE-INFO (%d)", PaDataType);
+		Case 12: FormatString("PA-SAM-CHALLENGE (%d)", PaDataType);
+		Case 13: FormatString("PA-SAM-RESPONSE (%d)", PaDataType);
+		Case 14: FormatString("PA-PK-AS-REQ_OLD (%d)", PaDataType);
+		Case 15: FormatString("PA-PK-AS-REP_OLD/ PA_PK_AS_REQ_WINDOWS_OLD/ PA_PK_AS_REP_WINDOWS_OLD (%d)",  PaDataType);
+		Case 16: FormatString("PA-PK-AS-REQ (%d)", PaDataType);
+		Case 17: FormatString("PA-PK-AS-REP (%d)", PaDataType);
+		Case 19: FormatString("PA-ETYPE-INFO2 (%d)", PaDataType);
+		Case 20: FormatString("PA-USE-SPECIFIED-KVNO (%d)", PaDataType);
+		Case 21: FormatString("PA-SAM-REDIRECT (%d)", PaDataType);
+		Case 22: FormatString("PA-GET-FROM-TYPED-DATA/TD-PADATA (%d)", PaDataType);
+		Case 23: FormatString("PA-SAM-ETYPE-INFO (%d)", PaDataType);
+		Case 24: FormatString("PA-ALT-PRINC (%d)", PaDataType);
+		Case 30: FormatString("PA-SAM-CHALLENGE2 (%d)", PaDataType);
+		Case 31: FormatString("PA-SAM-RESPONSE2 (%d)", PaDataType);
+		Case 41: FormatString("PA-EXTRA-TGT (%d)", PaDataType);
+		Case 101: FormatString("TD-PKINIT-CMS-CERTIFICATES (%d)", PaDataType);
+		Case 102: FormatString("TD-KRB-PRINCIPAL (%d)", PaDataType);
+		Case 103: FormatString("TD-KRB-REALM (%d)", PaDataType);
+		Case 104: FormatString("TD-TRUSTED-CERTIFIERS (%d)", PaDataType);
+		//update by kevin
+		//Case 105: FormatString("TD-CERTIFICATE-INDEX (%d)", PaDataType);
+		Case 105: FormatString("TD-INVALID-CERTIFIERS (%d)", PaDataType);
+		Case 106: FormatString("TD-APP-DEFINED-ERROR (%d)", PaDataType);
+		Case 107: FormatString("TD-REQ-NONCE (%d)", PaDataType);
+		Case 108: FormatString("TD-REQ-SEQ (%d)", PaDataType);
+		Case 109: FormatString("TD-DH-PARAMETERS (%d)", PaDataType);
+		Case 128: FormatString("PA-PAC-REQUEST (%d)", PaDataType);
+		Case 129: FormatString("PA-FOR-USER (%d)", PaDataType);
+		Case 130: FormatString("PA_S4U_X509_USER (%d)", PaDataType);
+		Case 132: FormatString("KRB5_PADATA_AS_CHECKSUM (%d)", PaDataType);
+		// update according to MS-KILE
+		Case 165: FormatString("PA-SUPPORTED-ENCTYPES (%d)", PaDataType);
+		Default: FormatString("%s (%d)","Unknown PADATA Type", PaDataType);
+	}
+}
+
+Table KrbAddrTypeTable( AddrType )
+{
+	Switch( AddrType )
+    {
+		Case 2: FormatString("IPv4 address (%d)", AddrType);
+		Case 3: FormatString("Directional address (%d)", AddrType);
+		Case 5: FormatString("ChaosNet address (%d)", AddrType);
+		Case 6: FormatString("XNS address (%d)", AddrType);
+		Case 7: FormatString("ISO address (%d)", AddrType);
+		Case 12: FormatString("DECnet Phase IV address (%d)", AddrType);
+		Case 16: FormatString("AppleTalk DDP address (%d)", AddrType);
+		Case 20: FormatString("Netbios address (%d)", AddrType);
+		Case 24: FormatString("IPv6 address (%d)", AddrType);
+		Default: FormatString("%s (%d)","Unknown Address Type", AddrType);
+	}
+}
+
+Table KrbAdTypeTable( AdType )
+{
+	Switch( AdType )
+    {
+		Case 1: FormatString("AD-IF-RELEVANT (%d)", AdType);
+		Case 2: FormatString("AD-INTENDED-FOR-SERVER (%d)", AdType);
+		Case 3: FormatString("AD-INTENDED-FOR-APPLICATION-CLASS (%d)", AdType);
+		Case 4: FormatString("AD-KDC-ISSUED (%d)", AdType);
+		Case 5: FormatString("AD-AND-OR (%d)", AdType);
+		Case 6: FormatString("AD-MANDATORY-TICKET-EXTENSIONS (%d)", AdType);
+		Case 7: FormatString("AD-IN-TICKET-EXTENSIONS (%d)", AdType);
+		Case 8: FormatString("AD-MANDATORY-FOR-KDC (%d)", AdType);
+		Case 9: FormatString("AD-INITIAL-VERIFIED-CAS (%d)", AdType);
+		Case 64: FormatString("OSF-DCE (%d)", AdType);
+		Case 65: FormatString("SESAME (%d)", AdType);
+		Case 66: FormatString("AD-OSF-DCE-PKI-CERTID (%d)", AdType);
+		Case 128: FormatString("AD-WIND2K-PAC (%d)", AdType);
+		Case 129: FormatString("AD-ETYPE-NEGOTIATION (%d)", AdType);
+		Default: FormatString("%s (%d)","Unknown Authorization Data Type", AdType);
+	}
+}
+
+Table KrbMessageTable( Application )
+{
+	Switch ( Application )
+    {
+		// PDU
+		Case 1: FormatString("Ticket (%d)", Application);
+		// non-PDU
+		Case 2: FormatString("Authenticator (%d)", Application);
+		Case 3: FormatString("EncTicketPart (%d)", Application);
+		// PDU
+		Case 10: FormatString("KRB_AS_REQ (%d)", Application);
+		Case 11: FormatString("KRB_AS_REP (%d)", Application);
+		Case 12: FormatString("KRB_TGS_REQ (%d)", Application);
+		Case 13: FormatString("KRB_TGS_REP (%d)", Application);
+		Case 14: FormatString("KRB_AP_REQ (%d)", Application);
+		Case 15: FormatString("KRB_AP_REP (%d)", Application);
+		Case 16: FormatString("RESERVED16 (%d)", Application);
+		Case 17: FormatString("RESERVED17 (%d)", Application);
+		Case 20: FormatString("KRB_SAFE (%d)", Application);
+		Case 21: FormatString("KRB_PRIV (%d)", Application);
+		Case 22: FormatString("KRB_CRED (%d)", Application);
+		// non-PDU
+		Case 25: FormatString("EncASRepPart (%d)", Application);
+		Case 26: FormatString("EncTGSRepPart (%d)", Application);
+		Case 27: FormatString("EncAPRepPart (%d)", Application);
+		Case 28: FormatString("EncKrbPrivPart (%d)", Application);
+		Case 29: FormatString("EncKrbCredPart (%d)", Application);
+		// PDU
+		Case 30: FormatString("KRB_ERROR (%d)", Application);
+		Default: FormatString("%s (%d)","unused", Application);
+	}
+}
+
+Table KrbNameTypeTable( NameType )
+{
+	Switch( NameType )
+    {
+		Case 0: FormatString("NT-UNKNOWN (%d)", NameType);
+		Case 1: FormatString("NT-PRINCIPAL (%d)", NameType);
+		Case 2: FormatString("NT-SRV-INST (%d)", NameType);
+		Case 3: FormatString("NT-SRV-HST (%d)", NameType);
+		Case 4: FormatString("NT-SRV-XHST (%d)", NameType);
+		Case 5: FormatString("NT-UID (%d)", NameType);
+		Case 6: FormatString("NT-X500-PRINCIPAL (%d)", NameType);
+		Case 7: FormatString("NT-SMTP-NAME (%d)", NameType);
+		Case 10: FormatString("NT-ENTERPRISE (%d)", NameType);
+		Default: FormatString("%s (%d)","Unknown Name Type", NameType);
+	}
+}
+
+Table KrbErrorCodeTable( ErrorCode )
+{
+	Switch( ErrorCode )
+    {
+		Case 0: FormatString("KDC_ERR_NONE (%d)", ErrorCode);
+		Case 1: FormatString("KDC_ERR_NAME_EXP (%d)", ErrorCode);
+		Case 2: FormatString("KDC_ERR_SERVICE_EXP (%d)", ErrorCode);
+		Case 3: FormatString("KDC_ERR_BAD_PVNO (%d)", ErrorCode);
+		Case 4: FormatString("KDC_ERR_C_OLD_MAST_KVNO (%d)", ErrorCode);
+		Case 5: FormatString("KDC_ERR_S_OLD_MAST_KVNO (%d)", ErrorCode);
+		Case 6: FormatString("KDC_ERR_C_PRINCIPAL_UNKNOWN (%d)", ErrorCode);
+		Case 7: FormatString("KDC_ERR_S_PRINCIPAL_UNKNOWN (%d)", ErrorCode);
+		Case 8: FormatString("KDC_ERR_PRINCIPAL_NOT_UNIQUE (%d)", ErrorCode);
+		Case 9: FormatString("KDC_ERR_NULL_KEY (%d)", ErrorCode);
+		Case 10: FormatString("KDC_ERR_CANNOT_POSTDATE (%d)", ErrorCode);
+		Case 11: FormatString("KDC_ERR_NEVER_VALID (%d)", ErrorCode);
+		Case 12: FormatString("KDC_ERR_POLICY (%d)", ErrorCode);
+		Case 13: FormatString("KDC_ERR_BADOPTION (%d)", ErrorCode);
+		Case 14: FormatString("KDC_ERR_ETYPE_NOSUPP (%d)", ErrorCode);
+		Case 15: FormatString("KDC_ERR_SUMTYPE_NOSUPP (%d)", ErrorCode);
+		Case 16: FormatString("KDC_ERR_PADATA_TYPE_NOSUPP (%d)", ErrorCode);
+		Case 17: FormatString("KDC_ERR_TRTYPE_NOSUPP (%d)", ErrorCode);
+		Case 18: FormatString("KDC_ERR_CLIENT_REVOKED (%d)", ErrorCode);
+		Case 19: FormatString("KDC_ERR_SERVICE_REVOKED (%d)", ErrorCode);
+		Case 20: FormatString("KDC_ERR_TGT_REVOKED (%d)", ErrorCode);
+		Case 21: FormatString("KDC_ERR_CLIENT_NOTYET (%d)", ErrorCode);
+		Case 22: FormatString("KDC_ERR_SERVICED_NOTYET (%d)", ErrorCode);
+		Case 23: FormatString("KDC_ERR_KEY_EXPIRED (%d)", ErrorCode);
+		Case 24: FormatString("KDC_ERR_PREAUTH_FAILED (%d)", ErrorCode);
+		Case 25: FormatString("KDC_ERR_PREAUTH_REQUIRED (%d)", ErrorCode);
+		Case 26: FormatString("KDC_ERR_SERVER_NOMATCH (%d)", ErrorCode);
+		Case 27: FormatString("KDC_ERR_MUST_USE_USER2USER (%d)", ErrorCode);
+		Case 28: FormatString("KDC_ERR_PATH_NOT_ACCEPTED (%d)", ErrorCode);
+		Case 29: FormatString("KDC_ERR_SVC_UNAVAILABLE (%d)", ErrorCode);
+		Case 31: FormatString("KRB_AP_ERR_BAD_INTEGRITY (%d)", ErrorCode);
+		Case 32: FormatString("KRB_AP_ERR_TKT_EXPIRED (%d)", ErrorCode);
+		Case 33: FormatString("KRB_AP_ERR_TKE_NYV (%d)", ErrorCode);
+		Case 34: FormatString("KRB_AP_ERR_REPEAT (%d)", ErrorCode);
+		Case 35: FormatString("KRB_AP_ERR_NOT_US (%d)", ErrorCode);
+		Case 36: FormatString("KRB_AP_ERR_BADMATCH (%d)", ErrorCode);
+		Case 37: FormatString("KRB_AP_ERR_SKEW (%d)", ErrorCode);
+		Case 38: FormatString("KRB_AP_ERR_BADADDR (%d)", ErrorCode);
+		Case 39: FormatString("KRB_AP_ERR_BADVERSION (%d)", ErrorCode);
+		Case 40: FormatString("KRB_AP_ERR_MSG_TYPE (%d)", ErrorCode);
+		Case 41: FormatString("KRB_AP_ERR_MODIFIED (%d)", ErrorCode);
+		Case 42: FormatString("KRB_AP_ERR_BADORDER (%d)", ErrorCode);
+		Case 44: FormatString("KRB_AP_ERR_BADKEYBER (%d)", ErrorCode);
+		Case 45: FormatString("KRB_AP_ERR_NOKEY (%d)", ErrorCode);
+		Case 46: FormatString("KRB_AP_ERR_MUT_FAIL (%d)", ErrorCode);
+		Case 47: FormatString("KRB_AP_ERR_BADDIRECTION (%d)", ErrorCode);
+		Case 48: FormatString("KRB_AP_ERR_METHOD (%d)", ErrorCode);
+		Case 49: FormatString("KRB_AP_ERR_BADSEQ (%d)", ErrorCode);
+		Case 50: FormatString("KRB_AP_ERR_INAPP_CKSUM (%d)", ErrorCode);
+		Case 51: FormatString("KRB_AP_PATH_NOT_ACCEPTED (%d)", ErrorCode);
+		Case 52: FormatString("KRB_ERR_RESPONSE_TOO_BIG (%d)", ErrorCode);
+		Case 60: FormatString("KRB_ERR_GENERIC (%d)", ErrorCode);
+		Case 61: FormatString("KRB_ERR_FIELD_TOOLONG (%d)", ErrorCode);
+		Case 62: FormatString("KDC_ERROR_CLIENT_NOT_TRUSTED (%d)", ErrorCode);
+		Case 63: FormatString("KDC_ERROR_KDC_NOT_TRUSTED (%d)", ErrorCode);
+		Case 64: FormatString("KDC_ERROR_INVALID_SIG (%d)", ErrorCode);
+		// RFC 4120
+		Case 65: FormatString("KDC_ERR_KEY_TOO_WEAK (%d)", ErrorCode);
+		// MCPP Docs
+		//case 65: FormatString("KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED (%d)", ErrorCode);
+		Case 66: FormatString("KDC_ERR_CERTIFICATE_MISMATCH (%d)", ErrorCode);
+		Case 67: FormatString("KRB_AP_ERR_NO_TGT (%d)", ErrorCode);
+		Case 68: FormatString("KDC_ERR_WRONG_REALM (%d)", ErrorCode);
+		Case 69: FormatString("KRB_AP_ERR_USER_TO_USER_REQUIRED (%d)", ErrorCode);
+		Case 70: FormatString("KDC_ERR_CANT_VERIFY_CERTIFICATE (%d)", ErrorCode);
+		Case 71: FormatString("KDC_ERR_INVALID_CERTIFICATE (%d)", ErrorCode);
+		Case 72: FormatString("KDC_ERR_REVOKED_CERTIFICATE (%d)", ErrorCode);
+		Case 73: FormatString("KDC_ERR_REVOCATION_STATUS_UNKNOWN (%d)", ErrorCode);
+		Case 74: FormatString("KDC_ERR_REVOCATION_STATUS_UNAVAILABLE (%d)", ErrorCode);
+		Case 75: FormatString("KDC_ERR_CLIENT_NAME_MISMATCH (%d)", ErrorCode);
+		// RFC 4120
+		Case 76: FormatString("KDC_ERR_KDC_NAME_MISMATCH (%d)", ErrorCode);
+		// RFC 4556
+		Case 77: FormatString("KDC_ERR_INCONSISTENT_KEY_PURPOSE (%d)", ErrorCode);
+		Case 78: FormatString("KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED (%d)", ErrorCode);
+		Case 79: FormatString("KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (%d)", ErrorCode);
+		Case 80: FormatString("KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED (%d)", ErrorCode);
+		Case 81: FormatString("KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED (%d)", ErrorCode);
+		// MCPP Docs
+		//case 76: FormatString("KDC_ERR_INCONSISTENT_KEY_PURPOSE (%d)", ErrorCode);
+		Default: FormatString("%s (%d)","Unknown Error Code", ErrorCode);
+	}
+}
+
+// Encryption types taken from RFC 3961
+Table KrbETypeTable( eType )
+{
+	Switch( eType )
+    {
+		Case 1: FormatString("des-cbc-crc (%d)", eType);
+		Case 2: FormatString("des-cbc-md4 (%d)", eType);
+		Case 3: FormatString("des-cbc-md5 (%d)", eType);
+		Case 4: FormatString("[reserved] (%d)", eType);
+		Case 5: FormatString("des3-cbc-md5 (%d)", eType);
+		Case 6: FormatString("[reserved] (%d)", eType);
+		Case 7: FormatString("des3-cbc-sha1 (%d)", eType);
+		//  9 through f in both RFC 3961 and MCPP
+		Case 9: FormatString("dsaWithSHA1-CmsOID (%d)", eType);
+		Case 10: FormatString("md5WithRSAEncryption-CmsOID (%d)", eType);
+		Case 11: FormatString("sha1WithRSAEncryption-CmsOID (%d)", eType);
+		Case 12: FormatString("rc2CBC-EnvOID (%d)", eType);
+		Case 13: FormatString("rsaEncryption-EnvOID (%d)", eType);
+		Case 14: FormatString("rsaES-OAEP-ENV-OID (%d)", eType);
+
+		Case 15: FormatString("des-ede3-cbc-Env-OID (%d)", eType);
+		Case 16: FormatString("des3-cbc-sha1-kd (%d)", eType);
+		Case 17: FormatString("aes128-cts-hmac-sha1-96 (%d)", eType);
+		Case 18: FormatString("aes256-cts-hmac-sha1-96 (%d)", eType);
+		Case 0x17: FormatString("rc4-hmac (%d)", eType);
+		Case 0x18: FormatString("rc4-hmac-exp (%d)", eType);
+		Case 0x41: FormatString("subkey-keymaterial (%d)", eType);
+		
+		// Microsoft Types
+		Case 128: FormatString("old rc4 md4 (%d)", eType);
+		Case 129: FormatString("old rc4 plain (%d)", eType);
+		Case 130: FormatString("old rc4 LM (%d)", eType);
+		Case 131: FormatString("old rc4 sha (%d)", eType);
+		Case 132: FormatString("old_des_plain (%d)", eType);
+		Case 0xffffff80: "rc4 md4 (-128)";
+		Case 0xffffff7f: "rc4 plain2 (-129)";
+		Case 0xffffff7e: "rc4 lm (-130)";
+		Case 0xffffff7d: "rc4 sha (-131)";
+		Case 0xffffff7c: "des plain (-132)";
+		Case 0xffffff7b: "rc4 hmac old (-133)";
+		Case 0xffffff7a: "rc4 plain old (-134)";
+		Case 0xffffff79: "rc4 hmac old exp (-135)";
+		Case 0xffffff78: "rc4 plain old exp (-136)";
+		Case 0xffffff74: "rc4 plain (-140)";
+		Case 0xffffff73: "rc4 plain exp (-141)";
+		Default: FormatString("%s (0x%x)","Unknown Encryption Type", etype);
+	}
+}
+
+// Checksum types taken from RFC 3961
+Table KrbCksumTypeTable( CksumType )
+{
+	Switch( CksumType )
+    {
+		Case 0x01: FormatString("CRC32 (0x%x)", CksumType);
+		Case 0x02: FormatString("rsa-md4 (0x%x)", CksumType);
+		Case 0x03: FormatString("rsa-md4-des (0x%x)", CksumType);
+		Case 0x04: FormatString("des-mac (0x%x)", CksumType);
+		Case 0x05: FormatString("des-mac-k (0x%x)", CksumType);
+		Case 0x06: FormatString("rsa-md4-des-k (0x%x)", CksumType);
+		Case 0x07: FormatString("rsa-md5 (0x%x)", CksumType);
+		Case 0x08: FormatString("rsa-md5-des (0x%x)", CksumType);
+		Case 0x09: FormatString("rsa-md5-des3 (0x%x)", CksumType);
+		Case 0x0a: FormatString("sha1 (unkeyed) (0x%x)", CksumType);
+		Case 0x0c: FormatString("hmac-sha1-des3-kd (0x%x)", CksumType);
+		Case 0x0d: FormatString("hmac-sha1-des3 (0x%x)", CksumType);
+		Case 0x0e: FormatString("sha1 (unkeyed) (0x%x)", CksumType);
+		Case 0x0f: FormatString("hmac-sha1-96-aes128 (0x%x)", CksumType);
+		Case 0x10: FormatString("hmac-sha1-96-aes256 (0x%x)", CksumType);
+		Case 0x8003: FormatString("[reserved] (0x%x)", CksumType);
+		Default: FormatString("%s (%d)","Unknown Checksum Type", CksumType);
+	}
+}
+
+
+Struct DHRepInfo
+{
+	AsnBerInfo SequenceHeader;
+	[Property.DHRepInfoSequenceEnd = FrameOffset + Property.LengthValue]
+	AsnBerInfo Tag0;
+	CmsContentInfo dhSignedData;
+	switch
+	{
+		case Uint8(FrameData,FrameOffset) == 0xA1 && Property.DHRepInfoSequenceEnd > FrameOffset:
+			Struct
+			{
+				AsnBerInfo Tag1;
+				DHNonce serverDHNonce;
+			}
+	}
+}
+
+Struct KDCDHKeyInfo
+{
+	AsnBerInfo SequenceHeader;
+	[Property.KDCDHKeyInfoSequenceEnd = FrameOffset + Property.LengthValue]
+	AsnBerInfo Tag0;
+	AsnBerBitString SubjectPublicKey;
+	AsnBerInfo Tag1;
+	AsnBerInteger Nonce;
+	switch
+	{
+		case UINT8(FrameData,FrameOffset) == 0xA2 && Property.KDCDHKeyInfoSequenceEnd > FrameOffset:
+			Struct
+			{
+				AsnBerInfo Tag2;
+				KerberosTime dhKeyExpiration;
+			}
+	}
+}
+
+Struct ReplyKeyPack
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbEncryptionKey ReplyKey;
+	AsnBerInfo Tag1;
+	switch(Property.PkAsReqOld)
+	{
+		case False: KrbChecksum asChecksum;
+		case True : AsnBerInteger Nonce;
+	}
+	
+	
+}
+
+Struct DHNonce
+{
+	AsnBerOctetString Nonce;
+}
+
+Struct AuthPack
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	switch(Property.PkAsReqOld)
+	{
+		case False:
+			struct
+			{
+				PKAuthenticator Authenticator;
+			}
+		case True:
+			struct
+			{
+				PKAuthenticatorOld Authenticator;
+			}
+	}
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0xA1:
+			struct
+			{
+				AsnBerInfo Tag1;
+				X509SubjectPublicKeyInfo clientPublicValue;
+			}
+	}
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0xA2:
+			struct
+			{
+				AsnBerInfo Tag2;
+				AsnBerInfo SequenceOfHeader;
+				[AuthPackSequenceEnd = FrameOffset + Property.LengthValue]
+				while[offset < AuthPackSequenceEnd]
+				{
+					X509AlgorithmIdentifier supportedCMSTypes;
+				}
+			}
+	}
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0xA3:
+			struct
+			{
+				AsnBerInfo Tag3;
+				DHNonce clientDHNonce;
+			}
+	}
+	
+}
+
+Struct PKAuthenticator
+{
+	AsnBerInfo SequenceHeader;
+	[Property.PKAuthenticatorSequenceEnd = FrameOffset + Property.LengthValue]
+	AsnBerInfo Tag0;
+	AsnBerInteger Cusec;
+	AsnBerInfo Tag1;
+	KerberosTime Ctime;
+	AsnBerInfo Tag2;
+	AsnBerInteger Nonce;
+	switch
+	{
+		case UINT8(FrameData,FrameOffset) == 0xa3 && Property.PKAuthenticatorSequenceEnd > FrameOffset:
+			Struct
+			{
+				AsnBerInfo Tag3;
+				AsnBerOctetString PaChecksum;
+			}
+	}
+}
+
+Struct PKAuthenticatorOld
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbPrincipalName KdcName;
+	AsnBerInfo Tag1;
+	KrbRealm KdcRealm;
+	AsnBerInfo Tag2;
+	AsnBerInteger Cusec;
+	AsnBerInfo Tag3;
+	KerberosTime Ctime;
+	AsnBerInfo Tag4;
+	AsnBerInteger Nonce;
+}
+
+Struct ExternalPrincipalIdentifier
+{
+	AsnBerInfo SequenceHeader;
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0x80: 
+			Struct
+			{
+				AsnBerInfo Tag0;
+				X509DistinguishedName subjectName;
+			}
+	}
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0x81: 
+			Struct
+			{
+				AsnBerInfo Tag1;
+				CmsIssuerAndSerialNumber issuerAndSerialNumber;
+			}
+	}
+	switch(UINT8(FrameData,FrameOffset))
+	{
+		case 0x82: 
+			Struct
+			{
+				AsnBerInfo Tag2;
+				X509SubjectKeyIdentifier subjectKeyIdentifier;
+			}
+	}
+}
+
+Struct TDTrustedCertifiers
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	[Property.TDTrustedCertifiersSequenceEnd = FrameOffset + Property.LengthValue]
+	while TDTrustedCertifiers[ FrameOffset < Property.TDTrustedCertifiersSequenceEnd ] 
+	{
+		ExternalPrincipalIdentifier TDTrustedCertifiers;	
+	}
+}
+
+Struct TDInvalidCertificates
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	[Property.TDInvalidCertificatesSequenceEnd = FrameOffset + Property.LengthValue]
+	while TDInvalidCertificates[ FrameOffset < Property.TDInvalidCertificatesSequenceEnd ] 
+	{
+		ExternalPrincipalIdentifier TDInvalidCertificates;	
+	}
+}
+
+Struct TDDHParameters
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	[Property.AlgorithmIdentifierSequenceEnd = FrameOffset + Property.LengthValue]
+	while AlgorithmIdentifier[ FrameOffset < Property.AlgorithmIdentifierSequenceEnd ] 
+	{
+		X509AlgorithmIdentifier AlgorithmIdentifier;	
+	}
+}
+
+Struct ADInitialVerifiedCAS
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	[Property.ADInitialVerifiedCASSequenceEnd = FrameOffset + Property.LengthValue]
+	while ADInitialVerifiedCAS[ FrameOffset < Property.ADInitialVerifiedCASSequenceEnd ] 
+	{
+		ExternalPrincipalIdentifier ADInitialVerifiedCAS;	
+	}
+}
+
+Struct KRB5PrincipalName
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbRealm Realm;
+	AsnBerInfo Tag1;
+	KrbPrincipalName PrincipalName;
+}
+
+/** end Larry's PKINIT **/
+Struct KrbINT32 = FormatString("%d", property.AsnIntValue) {
+	AsnBerInteger Value;
+}
+
+Struct KrbETypeSequence
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbETypeSequenceEnd = Offset + Property.LengthValue]
+	While Ints[(Offset < Property.KrbETypeSequenceEnd)] {
+		AsnBerInteger EType = KrbETypeTable( property.AsnIntValue );
+	}
+}
+
+Struct KrbUINT32 = FormatString("%u (0x%X)", property.AsnIntValue, property.AsnIntValue) {
+	AsnBerInteger Value;
+}
+
+Struct KrbMicroseconds = Microseconds.toString {
+	AsnBerInteger Microseconds;
+}
+
+Struct KerberosString = String.toString {
+	AsnBerGeneralString String;
+}
+
+Struct KrbRealm = Realm.toString {
+	KerberosString Realm;
+}
+
+Struct KrbPrincipalName = Property.KrbPrincipalNameString
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger NameType = KrbNameTypeTable( property.AsnIntValue );
+	AsnBerInfo Tag1;
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbPrncplNameSequenceEnd =  Offset + Property.LengthValue, Property.KrbPrincipalParts = 0, Property.KrbPrincipalNameString = ""]
+	While String[Offset < Property.KrbPrncplNameSequenceEnd] {
+		[Property.KrbPrincipalParts = Property.KrbPrincipalParts + 1]
+		[Property.KrbPrincipalNameString = Property.KrbPrincipalParts == 1 ? NameString.toString : Property.KrbPrincipalNameString + "/" + NameString.toString]
+		KerberosString NameString;
+	}
+}
+
+Struct KerberosTime = Time.toString {
+	AsnBerGeneralizedTime Time;
+}
+
+Struct KrbHostAddress = Address.toString
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 AddrType = KrbAddrTypeTable( property.AsnIntValue );
+	AsnBerInfo Tag1;
+	AsnBerOctetString Address;
+}
+
+Struct KrbHostAddresses
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbHstAddrsSequenceEnd = Offset + Property.LengthValue]
+	While addresses[(Offset < Property.KrbHstAddrsSequenceEnd)] {
+		KrbHostAddress Address;
+	}
+}
+
+[DataTypeByteOrder = BigEndian]
+Struct KrbPaData = KrbPADataTypeTable(Property.PADataType) {
+	AsnBerInfo  SequenceHeader;
+	AsnBerInfo Tag1;
+	[Post.Property.PADataType = property.AsnIntValue]
+	AsnBerInteger PaDataType = KrbPADataTypeTable( property.AsnIntValue );
+	AsnBerInfo Tag2;
+	// Check for empty padata fields
+	Switch( UINT8(FrameData, Offset + 1 ))
+    {
+		Case 0: AsnBerOctetString EmptyPadataValue;
+		Default: 
+		Switch( Property.PADataType )
+        {
+			Case 1: Struct {
+				AsnBerInfo OctetStringHeader;
+				KrbApReq KrbApReq;
+			}
+			Case 2: Struct {
+				AsnBerInfo OctetStringHeader;
+				KrbPaEncTimestamp KrbEncTimestamp; 
+			}
+			Case 3: Struct {
+				AsnBerInfo OctetStringHeader;
+				KrbPaPwSalt PaPwSalt;
+			}
+			Case 9: Struct {
+				AsnBerInfo OctetStringHeader;
+				ADInitialVerifiedCAS InitialVerifiedCAS;
+			}
+			Case 11: Struct {
+				AsnBerInfo OctetStringHeader;
+				KrbETypeInfo PaEtypeInfo;
+			}
+			Case 14: Struct {
+				AsnBerInfo OctetStringHeader;
+				[Property.PkAsReqOld = True]
+				PKCAPaPkAsReq PkAsReqOld;
+				//AsnBerOctetString PkAsReq;
+			}
+			Case 15: Struct {
+				AsnBerInfo OctetStringHeader;
+				[Property.PkAsReqOld = True,Property.PkAsReqOld = True ]
+				Switch (Property.KrbMsgType)
+				{
+					case 10: PKCAPaPkAsReq PkAsReqOld;
+					default: PKCAPaPkAsRep PkAsRepOld;
+				}
+			}
+			Case 16: Struct {
+				AsnBerInfo OctetStringHeader;
+				[Property.PkAsReqOld = False]
+				PKCAPaPkAsReq PkAsReq;
+				//AsnBerOctetString PkAsReq;
+			}
+			Case 17: Struct {
+				AsnBerInfo OctetStringHeader;
+				[Property.PkAsReqOld = False]
+				PKCAPaPkAsRep PkAsRepRep;
+				//AsnBerOctetString PkAsRep;
+			}
+			Case 19: Struct {
+				AsnBerInfo OctetStringHeader;
+				KrbETypeInfo2 PaEtypeInfo2;
+			}
+			Case 104: Struct {
+				AsnBerInfo OctetStringHeader;
+				TDTrustedCertifiers TrustedCertifiers;
+			}
+			Case 105: Struct {
+				AsnBerInfo OctetStringHeader;
+				TDInvalidCertificates InvalidCertificates;
+			}
+			Case 109: Struct {
+				AsnBerInfo OctetStringHeader;
+				TDDHParameters DHParameters;
+			}
+			Case 128: Struct {
+				AsnBerInfo OctetStringHeader;
+				KILEKrbPaPacRequest PaPacRequest;
+			}
+			Case 129: Struct {
+				AsnBerInfo OctetStringHeader;
+				SFUKrbPaForUser PaForUser;
+			}
+			Case 130: Struct {
+				AsnBerInfo OctetStringHeader;
+				Switch( Property.KrbMsgType ) {
+					Case 10:
+						X509Certificate X509Certificate;
+					Default:
+						SFUKrbPaS4uX509User PaS4uX509User;
+				}
+			}
+			Case 165: Struct {
+				AsnBerInfo OctetStringHeader;
+				KILESupportedEncryptionTypesBitFlags SupportedEncryptionTypesBitFlag;
+			}
+			Default:
+				AsnBerOctetString PadataValue;
+		}
+	}
+}
+
+[DataTypeByteOrder = BigEndian]
+Struct KrbPadataSequence
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbPadataSequenceEnd = Offset + Property.LengthValue]
+	While PaData[(Offset < Property.KrbPadataSequenceEnd)] {
+		KrbPaData PaData;
+    }
+}
+
+Struct KrbEncryptedData
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 EType = KrbETypeTable( property.AsnIntValue );
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xa1 ): 
+		Struct
+        {
+			AsnBerInfo Tag1;
+			AsnBerInteger KvNo;
+		}
+	}
+	AsnBerInfo Tag2;
+	AsnBerOctetString Cipher;
+}
+
+Struct KrbEncryptionKey = FormatString("%s - %s", KeyType.toString, KeyValue.toString)
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 KeyType = KrbETypeTable( property.AsnIntValue );
+	AsnBerInfo Tag1;
+	AsnBerOctetString KeyValue;
+}
+
+Struct KrbChecksum = FormatString("%s - %s", CksumType.toString, Checksum.toString)
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 CksumType = KrbCksumTypeTable( property.AsnIntValue );
+	AsnBerInfo Tag1;
+	AsnBerOctetString Checksum;
+}
+
+Struct KrbTicket = FormatString("Realm: %s, Sname: %s", Property.KrbRealmSummary, Property.KrbSnameSummary)
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger TktVno;
+	AsnBerInfo Tag1;
+	KrbRealm Realm;
+	[Property.KrbRealmSummary = Realm.toString]
+	[Property.KerberosSummary = Property.KrbMsgType == KrbAsRepType ? Property.KerberosSummary + "Ticket[Realm: " + Property.KrbRealmSummary : Property.KerberosSummary]
+	[Property.KerberosSummary = Property.KrbApReqTicketInfo ? Property.KerberosSummary + "Ticket[Realm: " + Property.KrbRealmSummary : Property.KerberosSummary]
+	AsnBerInfo Tag2;
+	KrbPrincipalName Sname;
+	[Property.KrbSnameSummary = Property.KrbPrincipalNameString]
+	[Property.KerberosSummary = Property.KrbMsgType == KrbAsRepType ? Property.KerberosSummary + ", Sname: " + Property.KrbSnameSummary + "] " : Property.KerberosSummary]
+	[Property.KerberosSummary = Property.KrbApReqTicketInfo ? Property.KerberosSummary + ", Sname: " + Property.KrbSnameSummary + "] " : Property.KerberosSummary]
+	[Property.KrbApReqTicketInfo = 0]
+	AsnBerInfo Tag3;
+	KrbEncryptedData EncPart;
+}
+
+Struct KrbTicketSequence
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbTicketSequenceEnd = Offset + Property.LengthValue]
+	While addresses[(Offset < Property.KrbTicketSequenceEnd)] {
+		KrbTicket Ticket;
+	}
+}
+
+// Encrypted part of ticket
+// struct Krb_EncTicketPart {}
+// encoded Transited field
+// struct KrbTransitedEncoding {}
+
+// APPLICATION 10
+[DataTypeByteOrder = BigEndian]
+[Property.KerberosSummary = Property.KerberosSummary + "AS Request "]
+Struct KrbAsReq = "Kerberos AS Request"
+{
+	AsnBerInfo ApplicationTag;
+	KrbKdcReq KdcReq;
+}
+
+// APPLICATION 12
+[DataTypeByteOrder = BigEndian]
+[Property.KerberosSummary = Property.KerberosSummary + "TGS Request "]
+Struct KrbTgsReq = "Kerberos TGS Request"
+{
+	AsnBerInfo ApplicationTag; 
+	KrbKdcReq KdcReq;
+}
+
+Struct KrbKdcReq = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag1;
+	AsnBerInteger Pvno;
+	AsnBerInfo Tag2;
+	[post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xa3):
+		Struct
+        {
+			AsnBerInfo Tag3;
+			KrbPadataSequence PaData;
+		}
+	}
+	AsnBerInfo Tag4;
+	KrbKdcReqBody ReqBody;
+}
+
+Struct KrbKdcReqBody
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbKdcOptions KdcOptions;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA1):
+		Struct
+        {
+			AsnBerInfo Tag1;
+			[Property.AsReqCnameFlag = 1]
+			KrbPrincipalName Cname;
+		}
+	}
+	[Property.KerberosSummary = Property.AsReqCnameFlag ? Property.KerberosSummary + "Cname: " + Property.KrbPrincipalNameString + " " : Property.KerberosSummary]
+	AsnBerInfo Tag2;
+	[Property.KerberosSummary = Property.KerberosSummary + "Realm: " + Realm.toString + " "]
+	KrbRealm Realm;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA3):
+		Struct
+        {
+			AsnBerInfo Tag3;
+			[Property.AsTgsReqSnameFlag = 1]
+			KrbPrincipalName Sname;
+		}
+	}
+	Switch {
+		Case (UINT8(FrameData, Offset) == 0xA4):
+		Struct
+        {
+			AsnBerInfo Tag4;
+			KerberosTime From;
+		}
+	}
+	[Property.KerberosSummary = Property.AsTgsReqSnameFlag ? Property.KerberosSummary + "Sname: " + Property.KrbPrincipalNameString + " " : Property.KerberosSummary]
+	AsnBerInfo Tag5;
+	KerberosTime Till;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA6):
+		Struct
+        {
+			AsnBerInfo Tag6;
+			KerberosTime Rtime;
+		}
+	}
+	AsnBerInfo Tag7;
+	KrbUINT32 Nonce;
+	AsnBerInfo Tag8;
+	KrbETypeSequence Etype;
+	Switch {
+		Case (UINT8(FrameData, Offset) == 0xA9):
+		Struct
+        {
+			AsnBerInfo Tag9;
+			KrbHostAddresses Addresses;
+		}
+	}
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xAA):
+		Struct
+        {
+			AsnBerInfo TagA;
+			KrbEncryptedData EncAuthorizationData;
+		}
+	}
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xAB):
+		Struct
+        {
+			AsnBerInfo TagB;
+			KrbTicketSequence AdditionalTickets;
+		}
+	}
+}
+
+Struct KrbKdcOptions = KrbFlags.toString
+{
+	AsnBerInfo KerberosFlagsHeader;
+	Switch
+    {
+		Case Property.LengthValue > 4:
+		UINT8 Padding[Property.LengthValue - 4];
+	}
+
+	/* FIXME:  Use a table to display this properly */
+	UINT32 KrbFlags = FormatString("0x%X", this)
+    {
+         UINT32 Reserved:1 = FormatString("             (%s)", this.ToBitString);
+         UINT32 Forwardable:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Ticket to be issued is to have its FORWARDABLE flag set" : "Ticket to be issued is not to have its FORWARDABLE flag set");
+         UINT32 Forwarded:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Indicates that this is a request for forwarding" : "This is not a request for forwarding");
+         UINT32 Proxiable:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Ticket to be issued is to have its PROXIABLE flag set" : "Ticket to be issued is not to have its PROXIABLE flag set");
+         UINT32 Proxy:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Indicates that this is a request for a proxy" : "This is not a request for a proxy");
+         UINT32 AllowPostDate:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Ticket to be issued is to have its MAY_POSTDATE flag set" : "Ticket to be issued is not to have its MAY_POSTDATE flag set");
+         UINT32 PostDated:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Indicates that this is a request for a postdated ticket" : "This is not a request for a postdated ticket");
+         UINT32 Unused7:1 = FormatString("              (%s)", this.ToBitString);
+         UINT32 Renewable:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Ticket to be issued is to have its RENEWABLE flag set" : "Ticket to be issued is not to have its RENEWABLE flag set");
+         UINT32 Unused9:1 = FormatString("              (%s)", this.ToBitString);
+         UINT32 Unused10:1 = FormatString("             (%s)", this.ToBitString);
+         UINT32 OptHardwareAuth:1 = FormatString("      (%s)", this.ToBitString);
+         UINT32 Unused12:1 = FormatString("             (%s)", this.ToBitString);
+         UINT32 Unused13:1 = FormatString("             (%s)", this.ToBitString);
+         UINT32 CnameInAddlTkt:1 = FormatString("       (%s) %s", this.ToBitString, this ? "This is a request for S4U2proxy functionality" : "This is not a request for S4U2proxy functionality");
+         UINT32 Canonicalize:1 = FormatString("         (%s)", this.ToBitString);
+         UINT32 Unused16:10 = FormatString("             (%s)", this.ToBitString);
+         UINT32 DisableTransitedCheck:1 = FormatString("(%s) %s", this.ToBitString, this ? "Checking of the transited field is disabled" : "Checking of the transited field is enabled");
+         UINT32 RenewableOk:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Indicates that the renewable ticket is acceptable if a ticket with the requested life cannot be provided" : "Renewable ticket is not acceptable");
+         UINT32 EncTktInSkey:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Indicates that the ticket for the end server is to be encrypted in the session key from the additional TGT provided" : "Ticket for the end server is to be encrypted in the session key");
+         UINT32 Unused29:1 = FormatString("             (%s)", this.ToBitString);
+         UINT32 Renew:1 = FormatString("                (%s) %s", this.ToBitString, this ? "Present request is for a renewal" : "Present request is not for a renewal");
+         UINT32 Validate:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Request is to validate a postdated ticket" : "Request is not to validate a postdated ticket");
+	};
+}
+
+// APPLICATION 11
+[DataTypeByteOrder = BigEndian]
+[Property.KerberosSummary = Property.KerberosSummary + "AS Response "]
+Struct KrbAsRep = "Kerberos AS Response"
+{
+	AsnBerInfo ApplicationTag;
+	KrbKdcRep KdcRep;
+}
+
+// APPLICATION 13
+[DataTypeByteOrder = BigEndian]
+[Property.KerberosSummary = Property.KerberosSummary + "TGS Response "]
+Struct KrbTgsRep = "Kerberos TGS Response"
+{
+	AsnBerInfo ApplicationTag;
+	KrbKdcRep KdcRep;
+}
+
+Struct KrbKdcRep = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[Post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA2):
+		Struct
+        {
+			AsnBerInfo Tag2;
+			KrbPadataSequence Padata;
+		}
+	}
+	AsnBerInfo Tag3;
+	KrbRealm Crealm;
+	AsnBerInfo Tag4;
+	KrbPrincipalName Cname;
+	AsnBerInfo Tag5;
+	[Property.KerberosSummary = Property.KrbMsgType == KrbTgsRepType ? Property.KerberosSummary + "Cname: " + Property.KrbPrincipalNameString + " " : Property.KerberosSummary]
+	KrbTicket Ticket;
+	AsnBerInfo Tag6;
+	KrbEncryptedData EncPart;
+}
+
+/** These 3 are always transmitted encrypted
+// APPLICATION 25
+struct KrbEncASRepPart { }
+// APPLICATION 26
+struct KrbEncTGSRepPart { }
+struct KrbEncKdcRepPart { }
+struct KrbLastReq { }
+*/
+
+// APPLICATION 14
+[DataTypeByteOrder = BigEndian]
+Struct KrbApReq = KrbMessageTable( Property.KrbMsgType1 )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[post.Property.KrbMsgType1 = property.AsnIntValue]
+	[post.Property.KrbApReqTicketInfo = Property.KrbMsgType == KrbTgsReqType ? 0 : 1]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KrbApReqTicketInfo ?  Property.KerberosSummary + "AP Request " : Property.KerberosSummary]
+	AsnBerInfo Tag2;
+	KrbAPOptions ApOptions;
+	AsnBerInfo Tag3;
+	KrbTicket Ticket;
+	AsnBerInfo Tag4;
+	KrbEncryptedData Authenticator;
+}
+
+Struct KrbAPOptions
+{
+	AsnBerInfo KerberosFlagsHeader;
+	// Take this out until fix comes back
+	Switch {
+		Case Property.LengthValue > 4:
+		UINT8 Padding[Property.LengthValue - 4];
+	}
+	UINT32 KrbFlags = FormatString("0x%X", this)
+    {
+		UINT32 Reserved:1 = FormatString("      (%s)", this.ToBitString);
+		UINT32 UseSessionKey:1 = FormatString(" (%s)", this.ToBitString);
+		UINT32 MutualRequired:1 = FormatString("(%s)", this.ToBitString);
+		UINT32 Unused:29 = FormatString("        (%s)", this.ToBitString);
+	};
+}
+
+// APPLICATION 2
+// struct Authenticator {}
+
+// APPLICATION 15
+[DataTypeByteOrder = BigEndian]
+Struct KrbApRep = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary =  Property.KrbMsgType == KrbApRepType ?  Property.KerberosSummary + "AP Response " : Property.KerberosSummary]
+	AsnBerInfo Tag2;
+	KrbEncryptedData AuthorizationData;
+}
+
+// APPLICATION 27
+// struct EncAPRepPart
+
+// APPLICATION 20
+[DataTypeByteOrder = BigEndian]
+Struct KrbSafe = KrbMessageTable( property.AsnIntValue )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KerberosSummary + "KRB_SAFE "]
+	AsnBerInfo Tag2;
+	KrbSafeBody SafeBody;
+	AsnBerInfo Tag3;
+	KrbChecksum Cksum;
+}
+
+Struct KrbSafeBody = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerOctetString UserData;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA1):
+		Struct
+        {
+			AsnBerInfo Tag1;
+			KerberosTime Timestamp;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA2):
+		Struct
+        {
+			AsnBerInfo Tag2;
+			KrbMicroseconds Usec;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA3):
+		Struct
+        {
+			AsnBerInfo Tag3;
+			KrbUINT32 SeqNumber;
+		}
+	}
+	AsnBerInfo Tag4;
+	KrbHostAddress SAddress;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA5):
+		Struct
+        {
+			AsnBerInfo Tag5;
+			KrbHostAddress RAddress;
+		}
+	}
+}
+
+// APPLICATION 21
+[DataTypeByteOrder = BigEndian]
+Struct KrbPriv = KrbMessageTable( property.AsnIntValue )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KerberosSummary + "KRB_PRIV "]
+	AsnBerInfo Tag3;
+	KrbEncryptedData EncPart;
+}
+
+
+// APPLICATION 28
+// struct EncKrbPrivPart {}
+
+
+// APPLICATION 22
+[DataTypeByteOrder = BigEndian]
+Struct KrbCred = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KerberosSummary + "KRB_CRED "]
+	AsnBerInfo Tag2;
+	KrbTicketSequence Tickets;
+	AsnBerInfo Tag3;
+	KrbEncryptedData EncPart;
+}
+
+// APPLICATION 29
+// struct EncKrbCredPart {}
+// struct KrbCredInfo {}
+
+
+
+// APPLICATION 30
+[DataTypeByteOrder = BigEndian]
+Struct KrbError = KrbMessageTable( Property.KrbMsgType )
+{
+	AsnBerInfo ApplicationTag;
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	AsnBerInteger PvNo;
+	AsnBerInfo Tag1;
+	[Post.Property.KrbMsgType = property.AsnIntValue]
+	AsnBerInteger MsgType = KrbMessageTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KerberosSummary + "KRB_ERROR "]
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA2):
+		Struct {
+			AsnBerInfo Tag2;
+			KerberosTime Ctime;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA3): 
+		Struct
+        {
+			AsnBerInfo Tag3;
+			KrbMicroseconds CuSec;
+		}
+	}
+	AsnBerInfo Tag4;
+	KerberosTime Stime;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA5): 
+		Struct
+        {
+			AsnBerInfo Tag5;
+			KrbMicroseconds SuSec;
+		}
+	}
+	AsnBerInfo Tag6;
+	[Post.Property.KrbError = property.AsnIntValue]
+	KrbINT32 ErrorCode = KrbErrorCodeTable( property.AsnIntValue );
+	[Property.KerberosSummary = Property.KerberosSummary + " - " + KrbErrorCodeTable( property.AsnIntValue )]
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA7): 
+		Struct
+        {
+			AsnBerInfo Tag7;
+			KrbRealm Crealm;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xA8): 
+		Struct
+        {
+			AsnBerInfo Tag8;
+			KrbPrincipalName Cname;
+		}
+	}
+	AsnBerInfo Tag9;
+	KrbRealm Realm;
+	AsnBerInfo TagA;
+	KrbPrincipalName Sname;
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xAB): 
+		Struct
+        {
+			AsnBerInfo TagB;
+			KerberosString EText;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xAC): 
+		Struct
+        {
+			AsnBerInfo TagC;
+			Struct EData
+            {
+				Switch ( Property.KrbError )
+                {
+					Case 24:
+					Case 25:
+                    Struct
+                    {
+						AsnBerInfo OctetStringHeader;
+						KrbMethodData MethodData;
+					}
+
+					Default: AsnBerOctetString EData;
+				}
+			}
+		}
+	}
+}
+
+Struct KrbMethodData
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbMtdDataSequenceEnd = Offset + Property.LengthValue]
+	While Padatas[(Offset < Property.KrbMtdDataSequenceEnd)] {
+		KrbPaData Padata;
+	}
+}
+// TYPED-DATA {}
+
+// preauth stuff
+
+Struct KrbPaEncTimestamp = "Encrypted Timestamp Pre-authentication" {
+	KrbEncryptedData PaEncTsEnc;
+}
+
+// struct PA-ENC-TS-ENC {}
+
+Struct KrbPaPwSalt {
+	UINT8 Salt[ Property.LengthValue ];
+}
+
+Struct KrbETypeInfoEntry = FormatString("EType: %s, Salt: %s", Etype.ToString, Salt.ToString)
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 Etype = KrbETypeTable( property.AsnIntValue );
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xa1):
+		Struct
+        {
+			AsnBerInfo Tag1;
+			AsnBerOctetString Salt;
+		}
+	}
+}
+
+Struct KrbETypeInfo
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbEtiSequenceEnd = Offset + Property.LengthValue]
+	While Entries[(Offset < Property.KrbEtiSequenceEnd)] {
+		KrbETypeInfoEntry EtypeInfoEntry;
+	}
+}
+
+Struct KrbETypeInfo2Entry
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo Tag0;
+	KrbINT32 Etype = KrbETypeTable( property.AsnIntValue );
+	Switch
+    {
+		Case (UINT8(FrameData,Offset) == 0xa1):
+		Struct
+        {
+			AsnBerInfo Tag1;
+			KerberosString Salt;
+		}
+	}
+
+	Switch
+    {
+		Case (UINT8(FrameData, Offset) == 0xa2):
+		Struct
+        {
+			AsnBerInfo Tag2;
+			AsnBerOctetString S2kParams;
+		}
+	}
+}
+
+Struct KrbETypeInfo2
+{
+	AsnBerInfo SequenceOfHeader;
+	[Property.KrbEti2SequenceEnd = Offset + Property.LengthValue]
+	While entries[(Offset < Property.KrbEti2SequenceEnd)] {
+		KrbETypeInfo2Entry EtypeInfo2Entry;
+	}
+}
+
+// AdIfRelevant {}
+// AdKdcIssued {}
+// AdAndOr {}
+// AdManadatoryForKdc {}
+
+[DataTypeByteOrder = BigEndian]
+Struct KerberosLength  = FormatString("Length = %d", this.Length) 
+{
+    UINT32 Reserved:1 = FormatString("(%s) Must be Zero (%d)", this.ToBitString, this == 0 ? "Valid":"Invalid");
+    UINT32 Length:31 = FormatString(" (%s) (%d)", this.ToBitString, this);
+}
+
+ 
+
+[DataTypeByteOrder = BigEndian, Property.KerberosSummary = ""]
+[Post.Property.AuthSummary = Property.KerberosSummary]
+Struct KerberosV5_struct = FormatString("%s", Property.KerberosSummary)
+{
+	Switch(UINT8(FrameData,Offset))
+	{
+		Case 0x61: KrbTicket Ticket;
+		Case 0x6a: KrbAsReq AsReq;
+		Case 0x6b: KrbAsRep AsRep;
+		Case 0x6c: KrbTgsReq TgsReq;
+		Case 0x6d: KrbTgsRep TgsRep;
+		Case 0x6e: KrbApReq ApReq;
+		Case 0x6f: KrbApRep ApRep;
+		Case 0x74: KrbSafe Safe;
+		Case 0x75: KrbPriv Priv;
+		Case 0x76: KrbCred Cred;
+		Case 0x7e: KrbError KrbError;
+	}
+}   

@@ -1,0 +1,1075 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  DFS Replication Helper Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DFSRH]: DFS Replication Helper Protocol Specification (9.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 10/28/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol DFSRH = FormatString( "%s %s%s%s%s%s %s", 
+	Property.DFSRHMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.DFSRHSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.DFSRHSummary : "" ,
+	ReturnValue)
+{
+	[Property.DFSRHSummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{E65E8028-83E8-491B-9AF7-AAF6BD51A0CE}":
+			[Property.DFSRHMethodName = "iserverhealthreport:" + DFSRHiserverhealthreportMethodNameTable( Property.MSRPCOpnum )]
+			_Struct iserverhealthreport
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X", Flags )]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportXML;
+													Align4	Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 4:
+						_Struct GetCompressedReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X",Flags)]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "UncompressedReportSize=0x%X", UncompressedReportSize )]
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportCompressed;
+													Align4	Pad;
+													INT32 UncompressedReportSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 5:
+						_Struct GetRawReportEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													OLEAUTPSAFEARRAY ReportOptions;
+
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY Report;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 6:
+						_Struct GetReferenceVersionVectors
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 8:
+						_Struct GetReferenceBacklogCount
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY FlatMemberVersionVectors;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY BacklogCounts;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						struct NotUsedOnWire
+							{
+								switch (property.MSRPCPType)
+								{
+									Case 0x00:// REQUEST
+									[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									struct Request 
+									{
+										ReportParserWarning("DFSRH", "Invalid dfsrh method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+									
+									Case 0x02:// RESPONSE
+									[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									struct Response
+									{
+										ReportParserWarning("DFSRH", "Invalid dfsrh method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								}
+							}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "DFSRH", "Unknown iserverhealthreport method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+		Case "{4BB8AB1D-9EF9-4100-8EB6-DD4B4E418B72}":
+			[Property.DFSRHMethodName = "iadproxy:" + DFSRHiadproxyMethodNameTable( Property.MSRPCOpnum )]
+			_Struct iadproxy
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct CreateObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+													BSTR VerifyNameDomainControllerName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 4:
+						_Struct DeleteObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 5:
+						_Struct ModifyObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "DFSRH", "Unknown iadproxy method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+		Case "{C4B0C7D9-ABE0-4733-A1E1-9FDEDF260C7A}":
+			[Property.DFSRHMethodName = "iadproxy2::" + DFSRHiadproxy2MethodNameTable( Property.MSRPCOpnum )]
+			_Struct iadproxy2
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct CreateObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+													BSTR VerifyNameDomainControllerName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 4:
+						_Struct DeleteObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 5:
+						_Struct ModifyObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+						
+					Case 6:
+						_Struct CreateObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+													BSTR VerifyNameDomainControllerName;
+													BSTR NetworkNameResourceName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 7:
+						_Struct DeleteObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													BSTR NetworkNameResourceName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 8:
+						_Struct ModifyObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR DomainControllerName;
+													BSTR DistinguishedName;
+													OLEAUTPSAFEARRAY Attributes;
+													BSTR NetworkNameResourceName;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "DFSRH", "Unknown iadproxy2 method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+		Case "{20D15747-6C48-4254-A358-65039FD8C63C}":
+			[Property.DFSRHMethodName = "IServerHealthReport2::" + DFSRHIServerHealthReport2MethodNameTable( Property.MSRPCOpnum )]
+			_Struct IServerHealthReport2
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X", Flags )]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportXML;
+													Align4	Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 4:
+						_Struct GetCompressedReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X",Flags)]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "UncompressedReportSize=0x%X", UncompressedReportSize )]
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportCompressed;
+													Align4	Pad;
+													INT32 UncompressedReportSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 5:
+						_Struct GetRawReportEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													OLEAUTPSAFEARRAY ReportOptions;
+
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY Report;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 6:
+						_Struct GetReferenceVersionVectors
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 8:
+						_Struct GetReferenceBacklogCount
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY FlatMemberVersionVectors;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY BacklogCounts;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					Case 9:
+						_Struct GetReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X", Flags )]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													BSTR ServerName;
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportXML;
+													Align4	Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+						
+					Case 10:
+						_Struct GetCompressedReport
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "Flags = 0x%X",Flags)]
+												Struct
+												{
+													MSRPCGuid ReplicationGroupGuid;
+													BSTR ReferenceMember; 
+													BSTR ServerName;
+													OLEAUTPSAFEARRAY ReferenceVersionVectors;
+													Align4	Pad;
+													DFSRHReportingFlags Flags;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[DFSRHSummary = FormatString( "UncompressedReportSize=0x%X", UncompressedReportSize )]
+												Struct
+												{
+													OLEAUTPSAFEARRAY MemberVersionVectors;
+													BSTR ReportCompressed;
+													Align4	Pad;
+													INT32 UncompressedReportSize;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 7:
+						struct NotUsedOnWire
+							{
+								switch (property.MSRPCPType)
+								{
+									Case 0x00:// REQUEST
+									[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									struct Request 
+									{
+										ReportParserWarning("DFSRH", "Invalid dfsrh method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+									
+									Case 0x02:// RESPONSE
+									[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									struct Response
+									{
+										ReportParserWarning("DFSRH", "Invalid dfsrh method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								}
+							}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "DFSRH", "Unknown iadproxy2 method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+	}
+}
+
+//
+//	[MS-DFSRH] DfsrReportingFlags
+//	Alignment: 4
+// 
+Struct DFSRHReportingFlags = FormatString("0x%08X %s", Flags,DFSRHReportingFlagsTable(Flags))
+{
+
+	UINT32 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case littleEndian:
+			Struct 
+			{
+				UINT32 NONE:1 = FormatString("          (%s) %s", this.ToBitString, this ? "REPORTING_FLAGS_NONE - the server MUST NOT return any optional information" : "NOT REPORTING_FLAGS_NONE");
+				UINT32 BACKLOG:1 = FormatString("       (%s) %s", this.ToBitString, this ? "REPORTING_FLAGS_BACKLOG - the server MUST return the count of backlogged transactions" : "NOT REPORTING_FLAGS_BACKLOG");
+				UINT32 FILES:1 = FormatString("         (%s) %s", this.ToBitString, this ? "EPORTING_FLAGS_FILES - the server MUST return the information about the count and cumulative size of files in the replicated folders" : "NOT EPORTING_FLAGS_FILES");
+				UINT32 Reserved:29 = FormatString("      (%s)", this.ToBitString);
+			}
+			Default:
+			Struct BigEndian
+			{
+				UINT32 Reserved:29 = FormatString("      (%s)", this.ToBitString);
+				UINT32 FILES:1 = FormatString("         (%s) %s", this.ToBitString, this ? "EPORTING_FLAGS_FILES - the server MUST return the information about the count and cumulative size of files in the replicated folders" : "NOT EPORTING_FLAGS_FILES");
+				UINT32 BACKLOG:1 = FormatString("       (%s) %s", this.ToBitString, this ? "REPORTING_FLAGS_BACKLOG - the server MUST return the count of backlogged transactions" : "NOT REPORTING_FLAGS_BACKLOG");
+				UINT32 NONE:1 = FormatString("          (%s) %s", this.ToBitString, this ? "REPORTING_FLAGS_NONE - the server MUST NOT return any optional information" : "NOT REPORTING_FLAGS_NONE");
+			}
+		}
+	} 
+}
+
+Table DFSRHiserverhealthreportMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "GetReport";
+		Case 4: "GetCompressedReport";
+		Case 5: "GetRawReportEx";
+		Case 6: "GetReferenceVersionVectors";
+		Case 7: "NotUsedOnWire";
+		Case 8: "GetReferenceBacklogCount";
+		Default: "unknown";
+	}
+}
+
+Table DFSRHIServerHealthReport2MethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 9: "GetReport";
+		Case 10: "GetCompressedReport";
+		Default: "Iserverhealthreport::" + DFSRHiserverhealthreportMethodNameTable( Opnum );
+	}
+}
+
+Table DFSRHiadproxyMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "CreateObject";
+		Case 4: "DeleteObject";
+		Case 5: "ModifyObject";
+		Default: "unknown";
+	}
+}
+
+Table DFSRHiadproxy2MethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 6: "CreateObject";
+		Case 7: "DeleteObject";
+		Case 8: "ModifyObject";
+		Default: "Iadproxy::" + DFSRHiadproxyMethodNameTable( Opnum );
+	}
+}
+
+Table DFSRHReportingFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "REPORTING_FLAGS_NONE - the server MUST NOT return any optional information.";
+		Case 1: "REPORTING_FLAGS_BACKLOG - the server MUST return the count of backlogged transactions.";
+		Case 2: "EPORTING_FLAGS_FILES - the server MUST return the information about the count and cumulative size of files in the replicated folders.";
+		Default: "Unkown Value";
+	}
+}

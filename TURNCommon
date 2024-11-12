@@ -1,0 +1,398 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Traversal Using Relay NAT (TURN)/Session Traversal Utilities for (NAT) (STUN)
+//#
+//#  Details:                
+//#
+//#  Public References:      draft-rosenberg-midcom-turn-08
+//#                          RFC3489, draft-ietf-behave-rfc3489bis-15
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 12/6/2009
+//#
+//####
+
+Protocol TURN = FormatString("%s%s%s",
+		TurnProtTypeTable(Conversation.TurnProtType),
+		TcpHeader ? TURNTcpTypeTable(TcpHeader.Type) + ", " : "",
+		Property.TURNMsgType
+		)
+{
+	switch (UINT16(Framedata,FrameOffset))
+	{
+		case 0x200:
+		case 0x300:
+			TURNTcpHeader TcpHeader;
+	}
+	[Conversation.TurnProtType = Conversation.TurnProtType]
+	switch
+	{
+		case TcpHeader.Type == 0x0003:
+			Blob(TcpHeader.Length) EndtoEndData;
+		default:
+			struct
+			{
+				[Property.TURNMsgType = TURNMsgTypeTable(this.MessageType)]
+				TURNMessageHeader MessageHeader;
+				while [ FrameOffset < FrameLength ]
+				{
+					Switch(UINT16(FrameData,FrameOffset))
+					{
+						case 0x0001:
+							STUNMappedAddress MappedAddress;
+						case 0x0002:
+							STUNResponseAddress ResponseAddress;
+						case 0x0003:
+							STUNChangedRequest ChangedRequest;
+						case 0x0004:
+							STUNSourceAddress SourceAddress;
+						case 0x0005:
+							STUNChangedAddress ChangedAddress;
+						case 0x0006:
+							STUNUserName UserName;
+						case 0x0007:
+							STUNPassword Password;
+						case 0x0008:
+							STUNMessageIntegrity MessageIntegrity;
+						case 0x0009:
+							STUNErrorCode ErrorCode;
+						case 0x000A:
+							STUNUnknownAttributes UnknownAttributes;
+						case 0x000B:
+							STUNReflectedFrom ReflectedFrom;
+						case 0x000D:
+							TURNLifetime Lifetime;
+						case 0x000E:
+							TURNAlternateServer AlternateServer;
+						case 0x000F:
+							TURNMagicCookie MagicCookie;
+						case 0x0010:
+							TURNBandwidth Bandwidth;
+						case 0x0011:
+							TURNDestinationAddress DestinationAddress;
+						case 0x0012:
+							TURNRemoteAddress RemoteAddress;
+						case 0x0013:
+							TURNData Data;
+						case 0x0014:
+							TURNNonce Nonce;
+						case 0x0015:
+							TURNRealm Realm;
+						case 0x0021:
+							STUNXORONLY XORONLY;
+						case 0x8020:
+							STUNXORMappedAddress XORMappedAddress;
+						case 0x8022:
+							STUNServer Server;
+						default:
+							TURNUndefineAttribute UndefineAttribute;
+					}
+				}
+			}
+	}
+}
+Table TURNTcpTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0002:"Control message";
+		case 0x0003:"End-to-End data";
+		default:"Unknown Type";
+	}
+} 
+
+Table TurnMsgTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "STUN:Binding Request";
+		case 0x0101: "STUN:Binding Response";
+		case 0x0111: "STUN:Binding Error Response";
+		case 0x0002: "Shared Secret Request";
+		case 0x0102: "Shared Secret Response";
+		case 0x0112: "Shared Secret Error Response";
+		case 0x0003: "TURN:Allocate Request";
+		case 0x0103: "TURN:Allocate Response";
+		case 0x0113: "TURN:Allocate Error Response";
+		case 0x0004: "TURN:Send Request";
+		case 0x0104: "TURN:Send Response";
+		case 0x0114: "TURN:Send Error Response";
+		case 0x0115: "TURN:Data Indication Message";
+		case 0x0006: "TURN:Set Active Destination Request";
+		case 0x0106: "TURN:Set Active Destination Response";
+		case 0x0116: "TURN:Set Active Destination Error Response";
+		case 0x0200: "Framed Control Packet";
+		case 0x0300: "Framed Data Packet";
+		case 0x0009: "TURN:Federation Tunnel Request";
+		case 0x0109: "TURN:Federation Tunnel Response";
+		case 0x0017: "TURN:Federation Tunnel Data";
+	}
+}
+
+Table TURNAttributeTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "Mapped Address";
+		case 0x0002: "Response Address";
+		case 0x0003: "Change Request";
+		case 0x0004: "Source Address";
+		case 0x0005: "Changed Address";
+		case 0x0006: "Username";
+		case 0x0007: "Password";
+		case 0x0008: "Message Integrity";
+		case 0x0009: "Error Code";
+		case 0x000A: "Unknown Attributes";
+		case 0x000B: "Reflected From";
+		case 0x000D: "Lifetime";
+		case 0x000E: "Alternate Server";
+		case 0x000F: "Magic Cookie";
+		case 0x0010: "Bandwidth";
+		case 0x0011: "Destination Address";
+		case 0x0012: "Remote Address";
+		case 0x0013: "Data";
+		case 0x0014: "Nonce";
+		case 0x0015: "Realm";
+		case 0x0021: "XOR Only";
+		case 0x8020: "XOR Mapped Address";
+		case 0x8022: "Server";
+		default:"Unknown Attribute Type";
+	}
+}
+
+Table TurnProtTypeTable(value)
+{
+	switch
+	{
+		case value >= 0x04: "ICE 2.0, ";
+		case value >= 0x02 && value < 0x04: "ICE, ";
+		case value >= 0x01 && value < 0x02: "MS-TURN, ";
+		default: "";
+	}
+}
+
+
+struct TURNTcpHeader = FormatString("%s, Length = %d",TURNTcpTypeTable(Type),Length) 
+{
+	UINT8 Type = TURNTcpTypeTable(this);
+	UINT8 Reserved;
+	UINT16 Length;
+}
+
+struct TURNMessageHeader = FormatString("%s, TransactionID = %d",TurnMsgTypeTable(MessageType),TransactionID) 
+{
+	UINT16 MessageType = TurnMsgTypeTable(this);
+	UINT16 MessageLength;
+	Blob(16) TransactionID;
+}
+
+struct TURNLifetime = FormatString("%d",Lifetime)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT32 Lifetime;
+}
+
+struct TURNAlternateServer = FormatString("%s:%d",IPV4Address.ToString,Port)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address;
+}
+
+struct TURNMagicCookie = FormatString("%s",MagicCookie)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT32 MagicCookie;
+}
+
+struct TURNBandwidth = FormatString("%d",Bandwidth)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT32 Bandwidth;
+}
+
+struct TURNDestinationAddress = FormatString("%s:%d",IPV4Address.ToString,Port)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address;
+}
+
+struct TURNRemoteAddress = FormatString("%s:%d",IPV4Address.ToString,Port)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address;
+}
+
+struct TURNData
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) Data;
+}
+
+struct TURNNonce = FormatString("%s",Nonce)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) Nonce;
+}
+
+struct TURNRealm = FormatString("%s",Realm)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) Realm;
+}
+
+struct STUNMappedAddress = FormatString("%s:%d ",IPV4Address.ToString,Port)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address;
+}
+
+struct STUNUserName = FormatString("%s",TURNAttributeTypeTable(AttributeType))
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) UserName;
+}
+
+struct STUNPassword = FormatString("%s",TURNAttributeTypeTable(AttributeType))
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) Password;
+}
+
+struct STUNMessageIntegrity = FormatString("HMACSHA1Hash = %s",HMACSHA1Hash)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(20) HMACSHA1Hash;
+}
+
+struct STUNErrorCode = FormatString("Number = %d, %s ",Number, ReasonPhrase)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT32 Reserved:21;
+	UINT32 Class:3;
+	UINT32 Number:8;
+	Asciistring(AttributeLength-4) ReasonPhrase;
+}
+
+struct STUNUnknownAttributes
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	[local.count = AttributeLength]
+	while [local.count > 0]
+	{
+		[local.count = local.count - 2]
+		UINT16 AttributeType;
+	}
+}
+
+struct STUNXORMappedAddress = FormatString("%s:%d ",IPV4XAddress.ToString,XPort)
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 XPort;
+	IPV4Address IPV4XAddress;
+}
+
+struct STUNResponseAddress
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address; 
+}
+
+struct STUNChangedRequest
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	INT32 ChangedRequest
+	{
+		INT32 Reserved1:29 = FormatString("(%s) %s", this.ToBitString,this );
+		INT32 changeIP:1 = FormatString("  (%s) %s", this.ToBitString, this ? "It requests the server to send the Binding Response with a different IP address than the one the Binding Request was received on."
+																													: "It isn't request the server to send the Binding Response with a different IP address than the one the Binding Request was received on.");
+		INT32 changeport:1 = FormatString("(%s) %s", this.ToBitString, this ? "It requests the server to send the Binding Response with a different port than the one the Binding Request was received on."
+																														: "It isn't request the server to send the Binding Response with a different port than the one the Binding Request was received on.");
+		INT32 Reserved2:1 = FormatString(" (%s) %s", this.ToBitString,this );
+	}
+}
+
+struct STUNSourceAddress
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address; 
+}
+
+struct STUNChangedAddress
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address; 
+}
+
+struct STUNReflectedFrom
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	UINT8 Reserved;
+	UINT8 Family = AddressFamilyTable(this);
+	UINT16 Port;
+	IPV4Address IPV4Address;
+}
+
+struct STUNXORONLY
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+}
+
+struct STUNServer
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) ServerInfo;
+}
+
+struct TURNUndefineAttribute
+{
+	UINT16 AttributeType = TURNAttributeTypeTable(this);
+	UINT16 AttributeLength;
+	Blob(AttributeLength) UndefineAttributesInfo;
+}

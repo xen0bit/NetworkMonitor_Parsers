@@ -1,0 +1,637 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RPC over HTTP Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-RPCH]: Remote Procedure Call over HTTP Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RPCHTTP = Property.PacketType
+{
+	switch 
+	{
+		case Conversation.HTTP.RPCHTTPConnectionCookie:
+			[BuildConversation(Conversation.HTTP.RPCHTTPConnectionCookie)]
+			_struct BuildConv{};
+	}
+	
+	switch
+	{
+ 		case UINT8( Framedata, Offset + 2 ) == 0x14:
+ 			RTSPacket RTSPacket = PacketType;
+ 		case AsciiString (frameData,frameoffset,13) == "ncacn_http/1." :
+ 			[PacketType = "Establish In/Out Proxy - SRV_LEGACY"]
+ 			AsciiString LegacyServerResponse;
+ 		case UINT8( Framedata, Offset )     == 0x05     &&  // RPC Protocol Version = 5, Connection-oriented RPC
+			( UINT8( Framedata, Offset + 1 ) == 0        ||
+			UINT8( Framedata, Offset + 1 ) == 1 )      &&  // RPC minor version
+			( FrameLength - FrameOffset    >= 16)      &&  // RPC connection-oriented header length
+			( UINT8( Framedata, Offset + 2 ) == 0        ||  // RPC ptype, connection-oriented packet types
+			UINT8( Framedata, Offset + 2 ) == 2        ||
+			UINT8( Framedata, Offset + 2 ) == 3        ||
+			( UINT8( Framedata, Offset + 2 ) >= 11       &&
+			UINT8( Framedata, Offset + 2 ) <= 19))     &&
+			( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+			UINT8( Framedata, Offset + 5 ) < 4         &&  // RPC floating point data representation, drep octet1
+			UINT8( Framedata, Offset + 6 ) == 0        &&  // RPC data representation drep octet2 & 3 m.b.z.
+			UINT8( Framedata, Offset + 7 ) == 0:
+				MSRPC MSRPC;
+ 		default:
+ 			[PacketType = "Continued Payload"]
+ 			BLOB(FrameLength - FrameOffset) Continuation;
+	}
+}
+
+UnsignedNumber CookieValue
+{
+	size = 16,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+								this[15],this[14],this[13],this[12],this[11],this[10],this[9],this[8],this[7],this[6],
+								this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+	ByteOrder = BigEndian
+}
+
+table ForwardDestination (value)
+{
+	switch (value)
+	{
+		case 0x00000000 : "Destination is the client.";
+		case 0x00000001 : "Destination is the inbound proxy server.";
+		case 0x00000002 : "Destination is the server.";
+		case 0x00000003	: "Destination is the outbound proxy server.";
+	}
+}
+
+table AddressTypeTable (value)
+{
+	switch (value)
+	{
+		case 0 : "IP v4 Address";
+		case 1 : "IP v6 Address";
+	}
+}
+
+struct TunnelSettingsCommand (Flags, NumberofSettingCommands)
+{
+	switch
+	{
+		//Connection Establishment
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0006 :
+			[PacketType = "Establish Inbound Proxy - CL_CONNECT_IBP"]
+			CLCONNECTIBP CLCONNECTIBP;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0004 :
+			[PacketType = "Establish Outbound Proxy - CL_CONNECT_OBP"]
+			CLCONNECTOBP CLCONNECTOBP;
+		case Flags == 0x0008 && NumberofSettingCommands == 0x0007 :
+			[PacketType = "Establish Inbound Proxy - IBP_NOTIFY_SVR"]
+			IBPNOTIFYSVR IBPNOTIFYSVR;
+		case Flags == 0x0010 && NumberofSettingCommands == 0x0005 :
+			[PacketType = "Establish Outbound Proxy - OBP_NOTIFY_SRV"]
+			OBPNOTIFYSRV OBPNOTIFYSRV;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x02 && (FrameNumber <= conversation.ConnEst || !conversation.ConnEst):
+			[PacketType = "Establish Outbound Proxy - OBP_NOTIFY_CL"]
+			OBPNOTIFYCL OBPNOTIFYCL;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0002 :
+			[PacketType = "Establish Inbound Proxy - SRV_CONFIRM_IBP", conversation.ConnEst = FrameNumber, conversation.ibp = true]
+			SRVCONFIRMIBP SRVCONFIRMIBP;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0003 :
+			[PacketType = "Establish Outbound Proxy - SRV_CONFIRM_OBP", conversation.obp = true]
+			SRVCONFIRMOBP SRVCONFIRMOBP;
+		//Open New Outbound Channel
+		case Flags == 0x0004 && NumberofSettingCommands == 0x0005 :
+			[PacketType = "Open New/Refresh Outbound Channel - CL_CONFIRM"]
+			CLCONFIRM CLCONFIRM;
+		case Flags == 0x0014 && NumberofSettingCommands == 0x0007 :
+			[PacketType = "Open New Outbound Channel - N_OBP_CONFIRM", conversation.obp = true]
+			NOBPCONFIRM NOBPCONFIRM;
+		case Flags == 0x0010 && NumberofSettingCommands == 0x0002 :
+			[PacketType = "Open New/Refresh Outbound Channel - CL_NOTIFY_IBP"]
+			CLNOTIFYIBP CLNOTIFYIBP;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x0A :
+			[PacketType = "Open New/Refresh Outbound Channel - SRV_NOTIFY_ALL"]
+			SRVNOTIFYALL SRVNOTIFYALL;
+		case Flags == 0x0010 && NumberofSettingCommands == 0x0003 :
+			[PacketType = "Notify Inbound and Old Outbound Proxy Servers - SRV_SEND_BUFFERS"]
+			SRVSENDBUFFERS SRVSENDBUFFERS;
+		case Flags == 0x0004 && NumberofSettingCommands == 0x0001 :
+			[PacketType = "Open New/Refresh Outbound Channel - SRV_START_N_OBP"]
+			SRVSTARTNOBP SRVSTARTNOBP;
+		//Open New Inbound Channel
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x03 && conversation.oibpconfirm$[TCPNextSeqnumber] :
+			[PacketType = "Open New/Refresh Inbound Channel - CL_SEND_DATA"]
+			CLSENDDATA CLSENDDATA;
+		case Flags == 0x000C && NumberofSettingCommands == 0x0006 :
+			[PacketType = "Open New Inbound Channel - N_IBP_NOTIFY_SRV", conversation.ibp = true]
+			NIBPNOTIFYSRV NIBPNOTIFYSRV;
+		//case Flags == 0x0004 && NumberofSettingCommands == 0x0004 : [PacketType = "Open New Inbound Channel - CL_START_N_IBP"]CLSTARTNIBP CLSTARTNIBP;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x07 :
+			[PacketType = "Open New Inbound Channel - O_IBP_CONFIRM", conversation.oibpconfirm$[TCPSeqnumber] = 1]
+			OIBPCONFIRM OIBPCONFIRM;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x00 :
+			[PacketType = "Open New Inbound Channel - SRV_INFORM_N_IBP", conversation.ibp = true]
+			SRVINFORMNIBP SRVINFORMNIBP;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0004 :
+			[PacketType ="Open New Inbound Channel - SRV_MOVE_REQUESTS"]
+			SRVMOVEREQUESTS SRVMOVEREQUESTS;
+		//Refresh Inbound Channel
+		//case Flags == 0x0004 && NumberofSettingCommands == 0x0004 : [PacketType ="Refresh Inbound Channel - CL_CLOSE_IBP"]CLCLOSEIBP CLCLOSEIBP;
+		//case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x03 && conversation.ibp : [PacketType = "Refresh Inbound Channel - IBP_REFRESH"]IBPREFRESH IBPREFRESH;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x0D :
+			[PacketType = "Refresh Inbound Channel - SRV_NOTIFY_OBP"]
+			SRVNOTIFYOBP SRVNOTIFYOBP;
+		//Refresh Outbound Channel
+		case Flags == 0x0001 :
+			[PacketType = "CONNECTION_PING"]
+			CONNECTIONPING (NumberofSettingCommands) CONNECTIONPING;
+		//case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x03 && conversation.obp : [PacketType = "Refresh Outbound Channel - OBP_REFRESH"]OBPREFRESH OBPREFRESH;
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0002 && UINT8( Framedata, Offset ) == 0x0D :
+			[PacketType = "Refresh Outbound Channel - SRV_ACKNOWLEDGE"]
+			SRVACKNOWLEDGE SRVACKNOWLEDGE;
+		//Client Keep Alive Ping
+		case Flags == 0x0002 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x05 :
+			[PacketType = "Client Keep Alive Ping - CL_KEEPALIVE_PING"]
+			CLKEEPALIVEPING CLKEEPALIVEPING;
+		//Traffic Sent Ping
+		case Flags == 0x0002 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x0E :
+			[PacketType = "Traffic Sent Ping - OBP_TRAFFIC_PING"]
+			OBPTRAFFICPING OBPTRAFFICPING;
+		case Flags == 0x0002 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x01 :
+			[PacketType = "Flow Control Acknowledgement"]
+			FLOWCONTROLACK FLOWCONTROLACK;
+		case Flags == 0x0002 && NumberofSettingCommands == 0x0002 :
+			[PacketType = "Flow Control Acknowledgement with Destination"]
+			FLOWCONTROLACKWITHDESTINATION FLOWCONTROLACKWITHDESTINATION;
+		case Flags == 0x0020 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x0A :
+			[PacketType = "Server Nofity EOF"]
+			SRVNOTIFYEOF SRVNOTIFYEOF;
+		/*case Flags == 0x0040 :
+			[PacketType = "Echo Response"]
+			ECHORESPONSE ECHORESPONSE;*/
+		case Flags == 0x0004 && NumberofSettingCommands == 0x0004 :
+			_struct DiffCloseStart
+			{
+				switch
+				{
+					case global.ConnCookie$[CookieValue (FrameData, FrameOffset+12)] == true &&
+						global.InChannelCookie$[CookieValue (FrameData, FrameOffset+32)] == true :
+							[PacketType = "Refresh Inbound Channel - CL_CLOSE_IBP"]
+							CLCLOSEIBP CLCLOSEIBP;
+					default:
+						[PacketType = "Open New Inbound Channel - CL_START_N_IBP"]
+						CLSTARTNIBP CLSTARTNIBP;
+				}
+			}
+		case Flags == 0x0000 && NumberofSettingCommands == 0x0001 && UINT8( Framedata, Offset ) == 0x03 :
+			_struct DiffIBPOBP
+			{
+				switch
+				{
+					case global.NewChannelCookie$[CookieValue (FrameData, FrameOffset+4)] == true :
+						[PacketType = "Refresh Outbound Channel - OBP_REFRESH"]
+						OBPREFRESH OBPREFRESH;
+					case global.clcloseibpnewchannelcookie$[CookieValue (FrameData, FrameOffset+4)] == true :
+						[PacketType = "Refresh Inbound Channel - IBP_REFRESH"]
+						IBPREFRESH IBPREFRESH;
+					default :
+						[PacketType = "Open New/Refresh Inbound Channel - CL_SEND_DATA"]
+						CLSENDDATA CLSENDDATA;
+				}
+			}
+
+		default : TSCommand UnknownPacket;
+	}
+}
+
+table CommandTypeTable (value)
+{
+	switch (value)
+	{
+		case 0x00000000 : "tsctReceiveWindowSize - A ReceiveWindowSize command is being issued.";
+		case 0x00000001 : "tsctFlowControlAck - A FlowControlAck command is being issued.";
+		case 0x00000002 : "tsctConnectionTimeout - A ConnectionTimeout command is being issued.";
+		case 0x00000003 : "tsctCookie - A Cookie command is being issued.";
+		case 0x00000004 : "tsctChannelLifetime - A ChannelLifetime command is being issued.";
+		case 0x00000005 : "tsctClientKeepalive - A ClientKeepalive command is being issued.";
+		case 0x00000006 : "tsctVersion - A Version command is being issued.";
+		case 0x00000007 : "tsctEmpty - An Empty command is being issued.";
+		case 0x00000008 : "tsctPadding - A Padding command is being issued.";
+		case 0x00000009 : "tsctNANCE - Signifies a negative acknowledgment (NACK) for the new channel.";
+		case 0x0000000A : "tsctANCE - Acknowledges the new channel..";
+		case 0x0000000B : "tsctClientAddress - A ClientAddress command is being issued.";
+		case 0x0000000C : "tsctAssociationGroupId - An AssociationGroupId command is being issued.";
+		case 0x0000000D : "tsctDestination - A Destination command is being issued.";
+		case 0x0000000E : "tsctPingTrafficSentNotify - A PingTrafficSentNotify command is being issued.";
+	}
+}
+
+struct TSCommand = TSCommandValue
+{
+	UINT32 CommandType = CommandTypeTable (this);
+	switch (CommandType)
+	{
+		case 0x00000000 :
+			[TSCommandValue= FormatString("%d bytes", this)]
+			UINT32 ReceiveWindowBufferSize;
+		case 0x00000001 :
+			struct FlowControlAck
+			{
+				UINT32 BytesReceived;
+				UINT32 AvailableWindow;
+				[TSCommandValue=FormatString ("Received: %d bytes, Available: %d bytes, Channel Cookie: %s", BytesReceived, AvailableWindow, this.ToString)]
+				CookieValue ChannelCookie;
+			};
+		case 0x00000002 :
+			[TSCommandValue=FormatString ("%d seconds", this)]
+			UINT32 ConnectionTimeout;
+		case 0x00000003 :
+			[TSCommandValue=FormatString ("%s", this.ToString),ConnectionCookieValue]
+			CookieValue ConnectionCookie;
+		case 0x00000004 :
+			[TSCommandValue=FormatString ("%d bytes",this)]
+			UINT32 ChannelLifetime;
+		case 0x00000005 :
+			[TSCommandValue=FormatString ("%d milliseconds", this)]
+			UINT32 ClientKeepAlive;
+		case 0x00000006 :
+			[TSCommandValue=FormatString ("%d", this)]
+			UINT32 Version;
+		case 0x00000007 :
+			_struct {};
+		case 0x00000008 :
+			[TSCommandValue=FormatString ("%d", this)]
+			UINT32 ConformanceCount;
+		case 0x00000009 :
+			_struct {};
+		case 0x0000000A :
+			_struct {};
+		case 0x0000000B :
+			struct ChannelSettingClientAddress = TSCommandValue
+			{
+				UINT32 AddressType = AddressTypeTable(this);
+				switch (AddressType)
+				{
+					case 0 :
+						_struct sockaddr_in
+						{
+							INT16 SinFamily;
+							UINT16 SinPort;
+							[DataFieldByteOrder = BigEndian, TSCommandValue=this.ToString]
+							IPv4Address SinAddr;
+							UINT64 SinZero;
+						}
+
+					case 1 :
+						_struct sockaddr_in6
+						{
+							INT16 SinFamily;
+							UINT16 SinPort;
+							UINT32 Sin6Flowinfo;
+							[DataFieldByteOrder = BigEndian, TSCommandValue=this.ToString]
+							IPv6Address Sin6Addr;
+							UINT32 Sin6ScopeId;
+						}
+				}
+			};
+		case 0x0000000C :
+			[TSCommandValue=this.ToString]
+			CookieValue AssociationGroupID;
+		case 0x0000000D :
+			[TSCommandValue=this.ToString]
+			UINT32 ForwardDestination = ForwardDestination(this);
+		case 0x0000000E :
+			[TSCommandValue=FormatString("%d",this)]
+			UINT32 PingTrafficSentNotify;
+	}
+}
+
+//Connection Establishment
+
+
+
+//Connection Establishement Structs
+struct CLCONNECTIBP
+{
+	TSCommand Version;
+	[post.global.ConnCookie$[ConnectionCookieValue]=true]
+	[Post.Conversation.HTTP.RPCHTTPConnectionCookie = ConnectionCookieValue]
+	[BuildConversation(Conversation.HTTP.RPCHTTPConnectionCookie)]
+	TSCommand ConnectionCookie;
+	[post.global.InChannelCookie$[ConnectionCookieValue]=true]
+	TSCommand InboundChannelConnectionCookie;
+	TSCommand ChannelLifetime;
+	TSCommand ClientKeepAlive;
+	TSCommand AssociationGroupID;
+}
+
+struct CLCONNECTOBP
+{
+	TSCommand Version;
+	[Post.Conversation.HTTP.RPCHTTPConnectionCookie = ConnectionCookieValue]
+	[BuildConversation(Conversation.HTTP.RPCHTTPConnectionCookie)]
+	TSCommand ConnectionCookie;
+	TSCommand OutboundChannelConnectionCookie;
+	TSCommand ReceiveWindowSize;
+}
+
+struct IBPNOTIFYSVR
+{
+	TSCommand Version;
+	[Post.Conversation.HTTP.RPCHTTPConnectionCookie = ConnectionCookieValue]
+	TSCommand ConnectionCookie;
+	TSCommand InboundChannelConnectionCookie;
+	TSCommand ReceiveWindowSize;
+	TSCommand ConnectionTimeout;
+	TSCommand AssociationGroupID;
+	TSCommand ClientAddress;
+}
+
+struct OBPNOTIFYSRV
+{
+	TSCommand Version;
+	[Post.Conversation.HTTP.RPCHTTPConnectionCookie = ConnectionCookieValue]
+	TSCommand ConnectionCookie;
+	TSCommand OutboundChannelConnectionCookie;
+	TSCommand ChannelLifetime;
+	TSCommand ReceiveWindowSize;
+}
+
+struct OBPNOTIFYCL
+{
+	TSCommand ConnectionTimeout;
+}
+
+struct SRVCONFIRMIBP
+{
+	TSCommand ReceiveWindowSize;
+	TSCommand Version;
+}
+
+struct SRVCONFIRMOBP
+{
+	TSCommand Version;
+	TSCommand ReceiveWindowSize;
+	TSCommand ConnectionTimeout;
+}
+
+//Open New Outbound Channel Structs
+struct CLCONFIRM
+{
+	TSCommand Version;
+	TSCommand ConnectionCookie;
+	TSCommand OutboundChannelConnectionCookie;
+	[post.global.NewChannelCookie$[ConnectionCookieValue]=true]
+	TSCommand NewChannelCookie;
+	TSCommand ReceiveWindowSize;
+}
+
+struct NOBPCONFIRM
+{
+	TSCommand Version;
+	TSCommand ConnectionCookie;
+	TSCommand OutboundChannelConnectionCookie;
+	TSCommand NewChannelCookie;
+	TSCommand ChannelLifetime;
+	TSCommand ReceiveWindowSize;
+	TSCommand ConnectionTimeout;
+}
+
+struct CLNOTIFYIBP
+{
+	TSCommand NextPacketDestination;
+	TSCommand NewChannelCookie;
+}
+
+struct SRVNOTIFYALL
+{
+	TSCommand ANCE;
+}
+
+struct SRVSENDBUFFERS
+{
+	TSCommand NextPacketDestination;
+	TSCommand Version;
+	TSCommand ConnectionTimeout;
+}
+
+struct SRVSTARTNOBP
+{
+	TSCommand NextPacketDestination;
+}
+
+//Open New Inbound Channel Structs
+struct CLSENDDATA
+{
+	TSCommand NewChannelConnectionCookie;
+}
+
+struct CLSTARTNIBP
+{
+	TSCommand Version;
+	TSCommand ConnectionCookie;
+	TSCommand InboundChannelConnectionCookie;
+	TSCommand NewChannelCookie;
+}
+
+struct NIBPNOTIFYSRV
+{
+	TSCommand Version;
+	TSCommand ConnectionCookie;
+	TSCommand OldChannelCookie;
+	TSCommand NewChannelCookie;
+	TSCommand ReceiveWindowSize;
+	TSCommand ConnectionTimeout;
+}
+
+struct OIBPCONFIRM
+{
+	TSCommand Empty;
+}
+
+struct SRVINFORMNIBP
+{
+	TSCommand ReceiveWindowSize;
+}
+
+struct SRVMOVEREQUESTS
+{
+	TSCommand NextPacketDestination;
+	TSCommand Version;
+	TSCommand ReceiveWindowSize;
+	TSCommand ConnectionTimeout;
+}
+
+//Refresh Inbound Channel Structs
+struct CLCLOSEIBP
+{
+	TSCommand Version;
+	TSCommand ConnectionCookie;
+	TSCommand InboundChannelConnectionCookie;
+	[post.global.clcloseibpnewchannelcookie$[ConnectionCookieValue]=true]
+	TSCommand NewChannelConnectionCookie;
+}
+
+struct IBPREFRESH
+{
+	TSCommand NewChannelCookie;
+}
+
+struct SRVNOTIFYOBP
+{
+	TSCommand NextPacketDestination;
+}
+
+//Refresh Outbound Channel Structs
+struct CONNECTIONPING (NumberofSettingCommands)
+{
+	switch
+	{
+		case NumberofSettingCommands == 0x0000 :
+			_struct {};
+		case NumberofSettingCommands == 0x0001 :
+			BLOB(4) Padding;
+		default :
+			BLOB (FrameLength - FrameOffset) UnknownData;
+	}
+}
+
+struct OBPREFRESH
+{
+	TSCommand NewChannelCookie;
+}
+
+struct SRVACKNOWLEDGE
+{
+	TSCommand NextPacketDestination;
+	TSCommand ANCE;
+}
+
+//Client Keep Live Ping
+struct CLKEEPALIVEPING
+{
+	TSCommand ClientKeepAlive;
+}
+
+//Traffic Sent Ping
+struct OBPTRAFFICPING
+{
+	TSCommand PingTrafficSentNotify;
+}
+
+struct FLOWCONTROLACKWITHDESTINATION
+{
+	TSCommand NextPacketDestination;
+	TSCommand FlowControlAck;
+}
+
+struct FLOWCONTROLACK
+{
+	TSCommand FlowControlAck;
+}
+
+struct SRVNOTIFYEOF
+{
+	TSCommand Ance;
+}
+
+struct RTSHeaderpackeddrep = UINT32( FrameData, Offset )
+{
+	[MSRPCPackedDrep, MSRPCByteOrder = this & 0x10 ? LittleEndian : BigEndian]
+	UINT8 octet0 =	FormatString("0x%02X - %s Integer, %s Character representation", this,
+								this & 0x10 ? "Little-endian" : "Big-endian",
+								this & 0x01 ? "EBCDIC" : "ASCII");
+	[MSRPCfloattype = this]
+	UINT8 octet1 =	FormatString("0x%02X - ", this) +
+					MSRPCFloatingPointRepresentation( this ) +
+					" Floating Point representation";
+	UINT8 octet2 =	FormatString("0x%02X - Reserved", this);
+	UINT8 octet3 =	FormatString("0x%02X - Reserved", this);
+}
+
+struct RTSHeader
+{
+	UINT8 RpcVers;
+	UINT8 RpcVersMinor;
+//	[post.PacketType = ptype == 0X20]
+	UINT8 PType = FormatString ("RTS Packet (%#x)",this);
+	UINT8 PfcFlags = this ? (this & 0x01 ? "FIRST_FRAG " : "")
+						 		+ (this & 0x02 ? "LAST_FRAG " : "")
+						 		+ (this & 0x04 ? "PENDING_CANCEL " : "")
+						 		+ (this & 0x10 ? "CONC_MPX " : "")
+						 		+ (this & 0x20 ? "DID_NOT_EXECUTE " : "")
+						 		+ (this & 0x40 ? "MAYBE " : "")
+						 		+ (this & 0x80 ? "OBJECT_UUID" : "")
+						 : "Initial Value"
+	{
+		UINT8 PFC_FIRST_FRAG:1 = FormatString("     (%s) %s",this.ToBitString ,
+					    this ? "SET, Is first fragment" : "NOT set, Is NOT first fragment" );
+		UINT8 PFC_LAST_FRAG:1 =  FormatString("      (%s) %s",this.ToBitString ,
+					    this ? "SET, Is last fragment" : "NOT set,  SET, Is NOT last fragment" );
+		UINT8 PFC_PENDING_CANCEL:1 = FormatString(" (%s) %s",this.ToBitString,
+					    this ? "SET, Cancel was pending at sender" : "NOT set, Cancel was NOT pending at sender" );
+		UINT8 PFC_RESERVED_1:1 = FormatString("     (%s)",this.ToBitString);
+		UINT8 PFC_CONC_MPX:1 =  FormatString("       (%s) %s",this.ToBitString,
+					    this ? "SET, Supports concurrent multiplexing of a single connection."
+					   		  : "NOT set, Does NOT support concurrent multiplexing of a single connection." );
+		UINT8 PFC_DID_NOT_EXECUTE:1 = FormatString("(%s) %s",this.ToBitString, 
+					   ( PType != 0x03 ? "N/A;" : ( this ? "SET, Guaranteed call was executed." : "NOT set, Guaranteed call was NOT executed." ) ) + " Only meaningful on `fault' packet.");
+		UINT8 PFC_MAYBE:1 = FormatString("          (%s) %s",this.ToBitString ,
+					    this ? "SET, `maybe' call semantics requested"
+					   		  : "NOT set, `maybe' call semantics NOT requested" );
+		UINT8 PFC_OBJECT_UUID:1 = FormatString("    (%s) %s",this.ToBitString,
+					    this ? "SET, A non-nil object UUID was specified in the handle, and is present in the optional object field."
+					   		  : "NOT set, The object field is omitted." );
+	};
+	RTSHeaderpackeddrep	drep;
+	UINT16 fraglength;
+	UINT16 authlength;
+	UINT32 callid;
+}
+
+struct RTSPacket
+{
+	RTSHeader RTSHeader = FormatString("Version= %d.%d",rpcvers,rpcversminor);
+
+	UINT16 Flags = this ?
+						(this & 0x0001 ? "PING " : "")
+							+ (this & 0x0002 ? "OTHER_CMD " : "")
+							+ (this & 0x0004 ? "RECYCLE_CHANNEL " : "")
+							+ (this & 0x0008 ? "IN_CHANNEL " : "")
+							+ (this & 0x0010 ? "OUT_CHANNEL " : "")
+							+ (this & 0x0020 ? "EOF " : "")
+							+ (this & 0x0040 ? "ECH " : "")
+						: "None - No flag is required for this packet "
+	{
+		UINT8 RTS_FLAG_PING:1 = FormatString("           (%s) %s",this.ToBitString,
+					   " RTS_FLAG_PING - Proves that the recipient is still responding, and can also be used to flush the pipeline by the other party.");
+		UINT8 RTS_FLAG_OTHER_CMD:1 = FormatString("      (%s) %s",this.ToBitString,
+					   " RTS_FLAG_OTHER_CMD - Indicates that the packet contains a stateless command");
+		UINT8 RTS_FLAG_RECYCLE_CHANNEL:1 = FormatString("(%s) %s",this.ToBitString ,
+					   " RTS_FLAG_RECYCLE_CHANNEL - Streamlines processing of some RTS packets associated with refreshing or creating a new channel.");
+		UINT8 RTS_FLAG_IN_CHANNEL:1 = FormatString("     (%s) %s",this.ToBitString,
+					   " RTS_FLAG_IN_CHANNEL - Streamlines processing of some RTS packets associated with new inbound channel communications.");
+		UINT8 RTS_FLAG_OUT_CHANNEL:1 = FormatString("    (%s) %s",this.ToBitString ,
+					   " RTS_FLAG_OUT_CHANNEL - Streamlines processing of some RTS packets associated with new outbound channel communications.");
+		UINT8 RTS_FLAG_EOF:1 = FormatString("            (%s) %s",this.ToBitString ,
+					   " RTS_FLAG_EOF - Indicates that this is the last packet on a channel. Not all streams, however, use this to indicate a last packet.");
+		UINT8 RTS_FLAG_ECHO:1 = FormatString("           (%s) %s",this.ToBitString ,
+					   " RTS_FLAG_ECHO - Signifies that this packet is an echo request during authentication and proxy discovery. The RPC proxy replies with a packet.");
+		UINT8 reserved:1 = FormatString("                (%s)",this.ToBitString);
+	};
+	UINT16 NumberofSettingCommands;
+	switch
+	{
+		case Flags == 0x0040 && NumberofSettingCommands == 0: 
+			[PacketType = "Echo Repsonse MessageBody"] _struct EchoResponseMessageBody {};
+		default: 
+			TunnelSettingsCommand (Flags, NumberofSettingCommands) TunnelSettingsCommand;
+	}
+}
+

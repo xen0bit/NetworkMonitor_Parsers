@@ -1,0 +1,1922 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Workstation Service Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WKST]: Workstation Service Remote Protocol Specification
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 5/31/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol WKST = FormatString( "%s %s%s%s%s%s", 
+	Property.WKSTMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.WKSTSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.WKSTSummary : "" )
+{
+	[Property.WKSTSummary = ""]
+	[Property.WKSTMethodName = WKSTMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct NetrWkstaGetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad;
+										UINT32 Level = WKSTNetrWkstaGetInfoLevelTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										[Property.Levelflag = 0]
+										WKSTWkstaInfo WkstaInfo;
+										switch(Property.Levelflag)
+										{
+											case 1:
+											Blob(FrameLength - FrameOffset - 4) UnknowWkstaInfo;
+											default:
+											Align4 pad;	
+										}
+										Align4 pad2;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct NetrWkstaSetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s Level=%u ErrorParameter=%s", ServerName.ToString, Level, ErrorParameter.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad;
+										UINT32 Level = WKSTNetrWkstaSetInfoLevelTable(this);
+										[Property.Levelflag = 0]
+										WKSTWkstaInfo WkstaInfo;
+										switch(Property.Levelflag)
+										{
+											case 1:
+											Blob(FrameLength - FrameOffset) UnknowWkstaInfo;
+											default:
+											UINT32Ptr ErrorParameter;
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ErrorParameter=%s ReturnValue=%u", ErrorParameter.ToString, ReturnValue )]
+									Struct
+									{
+										UINT32Ptr ErrorParameter;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct NetrWkstaUserEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s PreferredMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferredMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Padding;
+										WKSTWkstaUserEnumStruct UserInfo;
+										switch(Property.Levelflag)
+										{
+											case 1:
+												Blob(FrameLength -FrameOffset) UnknowWkstaUserEnum;
+											default:
+												struct
+												{
+													Align4 pad;
+													UINT32 PreferredMaximumLength;
+													UINT32Ptr ResumeHandle;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "TotalEntries=%u ResumeHandle=%s ReturnValue=%u", TotalEntries, ResumeHandle.ToString, ReturnValue )]
+									Struct
+									{
+										WKSTWkstaUserEnumStruct UserInfo;
+										switch(Property.Levelflag)
+										{
+											case 1:
+												Blob(FrameLength -FrameOffset - 4) UnknowWkstaUserEnum;
+											default:
+												struct
+												{
+													Align4 Pad;
+													UINT32 TotalEntries;
+													UINT32Ptr ResumeHandle;
+												}
+										}
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct NetrWkstaTransportEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s PreferredMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferredMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Pad1;
+										WKSTWkstaTransportEnumStruct TransportInfo;
+										Align4 pad2;
+										UINT32 PreferredMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "TotalEntries=%u ResumeHandle=%s ReturnValue=%u", TotalEntries, ResumeHandle.ToString, ReturnValue )]
+									Struct
+									{
+										WKSTWkstaTransportEnumStruct TransportInfo = WKSTNetrWkstaTransportEnumTransportInfoTable(this);
+										Align4 pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct NetrWkstaTransportAdd
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s Level=%u ErrorParameter=%s", ServerName.ToString, Level, ErrorParameter.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level ;
+										WKSTWkstaTransportInfo0 TransportInfo;
+										WKSTWkstaTransportInfo0Data Data;
+										Align4 pad2;
+										[WKSTTransportInfo = FormatString( "%s %s", TransportInfo.ToString, Data.ToString )]
+										UINT32Ptr ErrorParameter;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ErrorParameter=%s ReturnValue=%u", ErrorParameter.ToString, ReturnValue )]
+									Struct
+									{
+										UINT32Ptr ErrorParameter;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct NetrWkstaTransportDel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s TransportName=%s ForceLevel=%u", ServerName.ToString, TransportName.ToString, ForceLevel )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr TransportName;
+										Align4 Pad;
+										UINT32 ForceLevel;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct NetrWorkstationStatisticsGet
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s ServiceName=%s Level=%u Options=%u", ServerName.ToString, ServiceName.ToString, Level, Options )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr ServiceName;
+										Align4 Pad;
+										UINT32 Level;
+										UINT32 Options = WKSTNetrWorkstationStatisticsGetOptionsTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										WKSTLPStatWorkstation0 Buffer;				
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct NetrGetJoinInformation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s NameBuffer=%s", ServerName.ToString, NameBuffer.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr NameBuffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "NameBuffer=%s ReturnValue=%u", NameBuffer.ToString, ReturnValue )]
+									Struct
+									{
+										NdrWideStringPtr NameBuffer;
+										WKSTNetSetupJoinStatus BufferType = FormatString( "%d, ", this.enum.value ) + WKSTNetrGetJoinInformationBufferType( this.enum.value );
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 22:
+			_Struct NetrJoinDomain2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s DomainName=%s MachineAccountOU=%s AccountName=%s Options=%u", ServerName.ToString, DomainName.ToString, MachineAccountOU.ToString, AccountName.ToString, Options )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString DomainName;
+										NdrWideStringPtr MachineAccountOU;
+										NdrWideStringPtr AccountName;
+										WKSTPJoinPrEncryptedUserPassword Password;
+										Align4 pad;
+										WKSTJoinDomainOptions Options = WKSTNetrJoinDomain2OptionsTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct NetrUnjoinDomain2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s AccountName=%s Options=%u", ServerName.ToString, AccountName.ToString, Options )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr AccountName;
+										WKSTPJoinPrEncryptedUserPassword Password;
+										Align4 pad;
+										UINT32 Options = WKSTNetrUnjoinDomain2OptionsTable(this)
+										{
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+												Struct
+												{
+													UINT32 Reserved:2 = FormatString("          (%s)", this.ToBitString);
+													UINT32 NetsetupAcctDelete:1 = FormatString("(%s) %s", this.ToBitString, this ? "Disables the account when the unjoin operation occurs." : "Does NOT disable the account when the unjoin operation occurs.");
+													UINT32 Unused:29 = FormatString("            (%s)", this.ToBitString);
+												}
+
+												Case BigEndian:
+												Struct
+												{
+													UINT32 Unused:29 = FormatString("            (%s)", this.ToBitString);
+													UINT32 NetsetupAcctDelete:1 = FormatString("(%s) %s", this.ToBitString, this ? "Disables the account when the unjoin operation occurs." : "Does NOT disable the account when the unjoin operation occurs.");
+													UINT32 Reserved:2 = FormatString("          (%s)", this.ToBitString);
+												}
+											}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct NetrRenameMachineInDomain2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s MachineName=%s AccountName=%s Options=%u", ServerName.ToString, MachineName.ToString, AccountName.ToString, Options )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr MachineName;
+										NdrWideStringPtr AccountName;
+										WKSTPJoinPrEncryptedUserPassword Password;
+										Align4 pad;
+										UINT32 Options = WKSTNetrRenameMachineInDomain2OptionsTable(this)
+										{
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+												Struct
+												{
+													UINT32 Reserved:1 = FormatString("          (%s)", this.ToBitString);
+													UINT32 NetsetupAcctCreate:1 = FormatString("(%s) %s", this.ToBitString, this ? "Creates the account on the domain." : "Does NOT create the account on the domain.");
+													UINT32 Unused:30 = FormatString("            (%s)", this.ToBitString);
+												}
+
+												Case BigEndian:
+												Struct
+												{
+													UINT32 Unused:30 = FormatString("            (%s)", this.ToBitString);
+													UINT32 NetsetupAcctCreate:1 = FormatString("(%s) %s", this.ToBitString, this ? "Creates the account on the domain." : "Does NOT create the account on the domain.");
+													UINT32 Reserved:1 = FormatString("          (%s)", this.ToBitString);
+												}
+											}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct NetrValidateName2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s NameToValidate=%s AccountName=%s", ServerName.ToString, NameToValidate.ToString, AccountName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NameToValidate;
+										NdrWideStringPtr AccountName;
+										WKSTPJoinPrEncryptedUserPassword Password;
+										WKSTNetSetupNameType NameType = FormatString( "%d, ", this.enum.value ) + WKSTNetrValidateName2NameType( this.enum.value );
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct NetrGetJoinableOUs2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s DomainName=%s AccountName=%s OUCount=%u", ServerName.ToString, DomainName.ToString, AccountName.ToString, OUCount )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString DomainName;
+										NdrWideStringPtr AccountName;
+										WKSTPJoinPrEncryptedUserPassword Password;
+										UINT32 OUCount;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "OUCount=%u ReturnValue=%u", OUCount, ReturnValue )]
+									Struct
+									{
+										UINT32 OUCount;
+										WKSTPOUString OUs;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct NetrAddAlternateComputerName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s AlternateName=%s DomainAccount=%s Reserved=%s", ServerName.ToString, AlternateName.ToString, DomainAccount.ToString, Reserved.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr AlternateName;
+										NdrWideStringPtr DomainAccount;
+										WKSTPJoinPrEncryptedUserPassword EncryptedPassword;				
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct NetrRemoveAlternateComputerName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s AlternateName=%s DomainAccount=%s Reserved=%s", ServerName.ToString, AlternateName.ToString, DomainAccount.ToString, Reserved.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr AlternateName;
+										NdrWideStringPtr DomainAccount;
+										WKSTPJoinPrEncryptedUserPassword EncryptedPassword;						
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 29:
+			_Struct NetrSetPrimaryComputerName
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s PrimaryName=%s DomainAccount=%s Reserved=%s", ServerName.ToString, PrimaryName.ToString, DomainAccount.ToString, Reserved.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr PrimaryName;
+										NdrWideStringPtr DomainAccount;
+										WKSTPJoinPrEncryptedUserPassword EncryptedPassword;						
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct NetrEnumerateComputerNames
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ServerName=%s Reserved=%s", ServerName.ToString, Reserved.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										WKSTNetComputerNameType NameType;
+										Align4 Pad;
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[WKSTSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										WKSTPNetComputerNameArray ComputerNameArray;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+		Case 4:
+		Case 8:
+		Case 9:
+		Case 10:
+		Case 11:
+		Case 12:
+		Case 14:
+		Case 15:
+		Case 16:
+		Case 17:
+		Case 18:
+		Case 19:
+		Case 21:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[WKSTSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("WKST", "Invalid WKST method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[WKSTSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("WKST", "Invalid WKST method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("WKST", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "WKST", "Unknown WKST method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+table WKSTNetrWkstaGetInfoLevel( value )
+{
+	switch(value)
+	{
+		case 100: "Return information about the workstation environment, including platform-specific information, the name of the domain and the local computer, and information concerning the operating system.";
+		case 101: "In addition to level 100 information, return the path to the LANMAN directory.";
+		case 102: "In addition to level 101 information, return the number of users logged on to the local computer.";
+		case 502: "Indicate the structure used for configuration of the network redirector.";
+		default:  "unknown";
+	}
+}
+
+table WKSTNetrWkstaSetInfoLevel( value )
+{
+	switch(value)
+	{
+		case  502: "PARMNUM_ALL - Information specific to Windows NT workstation service; requires administrator or domain operator privileges.";
+		case 1010: "WKSTA_CHARWAIT_PARMNUM - Information specific to Windows NT workstation or LM 2.0 and above.";
+		case 1011: "WKSTA_CHARTIME_PARMNUM - Information specific to Windows NT workstation or LM 2.0 and above.";
+		case 1012: "WKSTA_CHARCOUNT_PARMNUM - Information specific to Windows NT workstation or LM 2.0 and above.";
+		case 1013: "WKSTA_KEEPCONN_PARMNUM - Information level supported only on Windows NT; the setting has no effect on LM 2.0 and above.";
+		case 1018: "WKSTA_SESSTIMEOUT_PARMNUM - Information level supported only on Windows NT; the setting has no effect on LM 2.0 and above.";
+		case 1023: "WKSTA_SIZCHARBUF_PARMNUM - Information level supported only on Windows NT; the setting has no effect on LM 2.0 and above.";
+		case 1033: "WKSTA_MAXTHREADS_PARMNUM - Information level supported only on Windows NT; the setting has no effect on LM 2.0 and above.";
+		case 1041: "WKSTA_LOCKQUOTA_PARMNUM - Information level supported only on Windows NT.";
+		case 1042: "WKSTA_LOCKINCREMENT_PARMNUM - Information level supported only on Windows NT.";
+		case 1043: "WKSTA_LOCKMAXIMUM_PARMNUM - Information level supported only on Windows NT.";
+		case 1044: "WKSTA_PIPEINCREMENT_PARMNUM - Information level supported only on Windows NT.";
+		case 1045: "WKSTA_PIPEMAXIMUM_PARMNUM - Information level supported only on Windows NT.";
+		case 1046: "WKSTA_DORMANTFILELIMIT_PARMNUM - Information level supported only on Windows NT.";
+		case 1047: "WKSTA_CACHEFILETIMEOUT_PARMNUM - Information level supported only on Windows NT.";
+		case 1048: "WKSTA_USEOPPORTUNISTICLOCKING_PARMNUM - Information level supported only on Windows NT.";
+		case 1049: "WKSTA_USEUNLOCKBEHIND_PARMNUM - Information level supported only on Windows NT.";
+		case 1050: "WKSTA_USECLOSEBEHIND_PARMNUM - Information level supported only on Windows NT.";
+		case 1051: "WKSTA_BUFFERNAMEDPIPES_PARMNUM - Information level supported only on Windows NT.";
+		case 1052: "WKSTA_USELOCKANDREADANDUNLOCK_PARMNUM - Information level supported only on Windows NT.";
+		case 1053: "WKSTA_UTILIZENTCACHING_PARMNUM - Information level supported only on Windows NT.";
+		case 1054: "WKSTA_USERAWREAD_PARMNUM - Information level supported only on Windows NT.";
+		case 1055: "WKSTA_USERAWWRITE_PARMNUM - Information level supported only on Windows NT.";
+		case 1056: "WKSTA_USEWRITERAWWITHDATA_PARMNUM - Information level supported only on Windows NT.";
+		case 1057: "WKSTA_USEENCRYPTION_PARMNUM - Information level supported only on Windows NT.";
+		case 1058: "WKSTA_BUFFILESWITHDENYWRITE_PARMNUM - Information level supported only on Windows NT.";
+		case 1059: "WKSTA_BUFFERREADONLYFILES_PARMNUM - Information level supported only on Windows NT.";
+		case 1060: "WKSTA_FORCECORECREATEMODE_PARMNUM - Information level supported only on Windows NT.";
+		case 1061: "WKSTA_USE512BYTESMAXTRANSFER_PARMNUM - Information level supported only on Windows NT.";
+		case 1062: "WKSTA_READAHEADTHRUPUT_PARMNUM - Information level supported only on Windows NT.";
+		default:   "unknown";
+	}
+}
+
+table WKSTNetrWkstaUserGetInfoLevel( value )
+{
+	switch(value)
+	{
+		case    0: "Returns the name of the user currently logged on to the workstation.";
+		case    1: "Returns information about the workstation, including the name of the current user and the domains the workstation accessed.";
+		case 1101: "Returns a list of the domains the workstation accessed.";
+		default:   "unknown";
+	}
+}
+
+table WKSTNetrWkstaUserSetInfoLevel( value )
+{
+	switch(value)
+	{
+		case    1: "Specifies information about the workstation, including the name of the current user, the current domain, and the domains accessed by the workstation.";
+		case 1101: "Specifies a list of domains browsed by the workstation. The domain names are separated by spaces.";
+		default:   "unknown";
+	}
+}
+
+table WKSTNetrWkstaTransportAddLevel( value )
+{
+	switch(value)
+	{
+		case 0: "Specifies the workstation transport protocol structure WKSTA_TRANSPORT_INFO_0.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrWkstaTransportDelForceLevel( value )
+{
+	switch(value)
+	{
+		case 0: "USE_NOFORCE - Fail the disconnection if open files exist on the connection.";
+		case 1: "USE_FORCE - Fail the disconnection if open files exist on the connection. This value is overwritten by the method as USE_NOFORCE.";
+		case 2: "USE_LOTS_OF_FORCE - Close any open files and delete the connection.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrUseAddLevel( value )
+{
+	switch(value)
+	{
+		case 1: "Specifies information about a connection between a local device and a shared resource, including connection status and type.";
+		case 2: "Specifies information about a connection between a local device and a shared resource, including the connection status and type, a user name, and a domain name.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrUseGetInfoLevel( value )
+{
+	switch( value )
+	{
+		case 0: "Specifies a local device name and the share name of a remote resource.";
+		case 1: "Specifies information about the connection between a local device and a shared resource, including connection status and type.";
+		case 2: "Specifies information about the connection between a local device and a shared resource, including the connection status, connection type, user name, and domain name.";
+		case 3: "This level is identical to level 2, except that a ui3_flags member is added to the structure.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrUseDelForceLevel( value )
+{
+	switch( value )
+	{
+		case 0: "USE_NOFORCE - Fail the disconnection if open files exist on the connection.";
+		case 1: "USE_FORCE - Fail the disconnection if open files exist on the connection. This value is overwritten by the method as USE_NOFORCE.";
+		case 2: "USE_LOTS_OF_FORCE - Close any open files and delete the connection.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrValidateNameNameType( value )
+{
+	switch( value )
+	{
+		case 0: "NetSetupUnknown - This is the first value in the enumeration and is set to 0.";
+		case 1: "NetSetupMachine - Verify that the NetBIOS computer name is valid and is not in use.";
+		case 2: "NetSetupWorkgroup - Verify that the workgroup name is valid.";
+		case 3: "NetSetupDomain Verify - that the domain name exists and that it is a domain.";
+		case 4: "NetSetupNonExistentDomain - Verify that the domain name is not in use.";
+		case 5: "NetSetupDnsMachine Verify - that the Domain Name System (DNS) computer name is valid.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrGetJoinInformationBufferType( value )
+{
+	switch( value )
+	{
+		case 0: "NetSetupUnknownStatus - Status is unknown.";
+		case 1: "NetSetupUnjoined - Computer is not joined to a domain or workgroup.";
+		case 2: "NetSetupWorkgroupName - Computer is joined to a workgroup.";
+		case 3: "NetSetupDomainName - Computer is joined to a domain.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetrValidateName2NameType( value )
+{
+	switch( value )
+	{
+		case 0: "NetSetupUnknown - This is the first value in the enumeration and is set to 0.";
+		case 1: "NetSetupMachine - Verify that the NetBIOS computer name is valid and is not in use.";
+		case 2: "NetSetupWorkgroup - Verify that the workgroup name is valid and is not in use.";
+		case 3: "NetSetupDomain - Verify that the domain name exists and that it is a registered domain.";
+		case 4: "NetSetupNonExistentDomain - Verify that the domain name is valid and is not in use.";
+		case 5: "NetSetupDnsMachine - Windows 2000 and later:  Verify that the Domain Name System (DNS) computer name is valid.";
+		default: "unknown";
+	}
+}
+
+table WKSTNetComputerNameTypeTable( value )
+{
+	switch(value)
+	{
+		case 0: "NetPrimaryComputerName";
+		case 1: "NetAlternateComputerNames";
+		case 2: "NetAllComputerNames";
+		case 3: "NetComputerNameTypeMax";
+		default: "unknown";
+	}
+}
+
+table WKSTNetSetupJoinStatusTable( value )
+{
+	switch(value)
+	{
+		case 0: "NetSetupUnknownStatus";
+		case 1: "NetSetupUnjoined";
+		case 2: "NetSetupWorkgroupName";
+		case 3: "NetSetupDomainName";
+		default: "unknown";
+	}
+}
+
+Table WKSTUseInfoStatusTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "USE_OK - The connection is valid.";
+		Case 1: "USE_PAUSED - Paused by local workstation.";
+		Case 2: "USE_DISCONN - Disconnected.";
+		Case 3: "USE_NETERR - A network error occurred.";
+		Case 4: "USE_CONN - The connection is being made.";
+		Case 5: "USE_RECONN - Reconnecting.";
+		default: "unknown";
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//
+//  structures
+//
+struct WKSTWkstaInfo
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	UINT32 Level;
+	switch( Level )
+	{
+		case 100: WKSTPWkstaInfo100 WkstaInfo100;
+		case 101: WKSTPWkstaInfo101 WkstaInfo101;
+		case 102: WKSTPWkstaInfo102 WkstaInfo102;
+		case 502: WKSTPWkstaInfo502 WkstaInfo502;
+		case 1013: WKSTPWkstaInfo1013 WkstaInfo1013;
+		case 1018: WKSTPWkstaInfo1018 WkstaInfo1018;
+		case 1046: WKSTPWkstaInfo1046 WkstaInfo1046;
+		default:
+		[Property.Levelflag = 1]
+		ReportParserError( ParserErrorProtocolClassWindows, "WKST", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_100
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo100
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo100 Info100;
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_INFO_101
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo101
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo101 Info101;
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_INFO_102
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo102
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo102 Info102;
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_INFO_502
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo502
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo502 Info502;
+	}
+}
+
+
+//
+// [MS-WKST]:LPWKSTA_INFO_1013
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo1013
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo1013 Info1013;
+	}
+}
+
+
+//
+// [MS-WKST]:LPWKSTA_INFO_1018
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo1018
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo1018 Info1018;
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_INFO_1046
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaInfo1046
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTWkstaInfo1046 Info1046;
+	}
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_100
+// Alignment:NdrAlign
+//
+struct WKSTWkstaInfo100
+{	
+	UINT32 Wki100PlatformId = WKSTWki100PlatformIdTable(this);
+	NdrPtr PWki100Computername;
+	NdrPtr PWki100Langroup;
+	UINT32 Wki100VerMajor;
+	UINT32 Wki100VerMinor;
+	switch
+	{
+		case PWki100Computername.ReferentID != 0: NdrWideString wki100Computername;
+	}
+	switch
+	{
+		case PWki100Langroup.ReferentID != 0: NdrWideString wki100Langroup;
+	}
+}
+//
+// [MS-WKST]:WKSTA_INFO_101
+// Alignment:NdrAlign
+//
+struct WKSTWkstaInfo101
+{	
+	UINT32 Wki101PlatformId = WKSTWki100PlatformIdTable(this);
+	NdrPtr PWki101Computername;
+	NdrPtr PWki101Langroup;
+	UINT32 Wki101VerMajor;
+	UINT32 Wki101VerMinor;
+	NdrPtr PWki101Lanroot;
+	switch
+	{
+		case PWki101Computername.ReferentID != 0: NdrWideString wki101Computername;
+	}
+	switch
+	{
+		case PWki101Langroup.ReferentID != 0: NdrWideString wki101Langroup;
+	}
+	switch
+	{
+		case PWki101Lanroot.ReferentID != 0: NdrWideString wki101Lanroot;
+	}
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_102
+// Alignment:NdrAlign
+//
+struct WKSTWkstaInfo102
+{
+	UINT32 Wki102PlatformId = WKSTWki100PlatformIdTable(this);
+	NdrPtr PWki102Computername;
+	NdrPtr PWki102Langroup;
+	UINT32 Wki102VerMajor;
+	UINT32 Wki102VerMinor;
+	NdrPtr PWki102Lanroot;
+	UINT32 Wki102LoggedOnUsers;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	switch
+	{
+		case PWki102Computername.ReferentID != 0: NdrWideString wki102Computername;
+	}
+	switch
+	{
+		case PWki102Langroup.ReferentID != 0: NdrWideString wki102Langroup;
+	}
+	switch
+	{
+		case PWki102Lanroot.ReferentID != 0: NdrWideString wki102Lanroot;
+	}
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_502
+// Alignment:Align4
+//
+struct WKSTWkstaInfo502
+{
+	UINT32 Wki502CharWait;
+	UINT32 Wki502CollectionTime;
+	UINT32 Wki502MaximumCollectionCount;
+	UINT32 Wki502KeepConn;
+	UINT32 Wki502MaxCmds;
+	UINT32 Wki502SessTimeout;
+	UINT32 Wki502SizCharBuf;
+	UINT32 Wki502MaxThreads;
+	UINT32 Wki502LockQuota;
+	UINT32 Wki502LockIncrement;
+	UINT32 Wki502LockMaximum;
+	UINT32 Wki502PipeIncrement;
+	UINT32 Wki502PipeMaximum;
+	UINT32 Wki502CacheFileTimeout;
+	UINT32 Wki502DormantFileLimit;
+	UINT32 Wki502ReadAheadThroughput;
+	UINT32 Wki502NumMailslotBuffers;
+	UINT32 Wki502NumSrvAnnounceBuffers;
+	UINT32 Wki502MaxIllegalDatagramEvents;
+	UINT32 Wki502IllegalDatagramEventResetFrequency;
+	INT32 Wki502LogElectionPackets;
+	INT32 Wki502UseOpportunisticLocking;
+	INT32 Wki502UseUnlockBehind;
+	INT32 Wki502UseCloseBehind;
+	INT32 Wki502BufNamedPipes;
+	INT32 Wki502UseLockReadUnlock;
+	INT32 Wki502UtilizeNtCaching;
+	INT32 Wki502UseRawRead;
+	INT32 Wki502UseRawWrite;
+	INT32 Wki502UseWriteRawData;
+	INT32 Wki502UseEncryption;
+	INT32 Wki502BufFilesDenyWrite;
+	INT32 Wki502BufReadOnlyFiles;
+	INT32 Wki502ForceCoreCreateMode;
+	INT32 Wki502Use512ByteMaxTransfer;		
+}
+
+
+
+//
+// [MS-WKST]:WKSTA_INFO_1013
+// Alignment:Align4
+//
+struct WKSTWkstaInfo1013
+{
+	UINT32 Wki1013KeepConn;
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_1018
+// Alignment:Align4
+//
+struct WKSTWkstaInfo1018
+{
+	UINT32 Wki1018SessTimeout;
+}
+
+//
+// [MS-WKST]:WKSTA_INFO_1046
+// Alignment:Align4
+//
+struct WKSTWkstaInfo1046
+{
+	UINT32 Wki1046DormantFileLimit;
+}
+
+
+//
+// [MS-WKST]:LPWKSTA_USER_ENUM_STRUCT
+// Alignment:NdrAlign
+//
+struct WKSTWkstaUserEnumStruct
+{	
+	UINT32 Level;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	[Property.Levelflag = 0]
+	WkstaUserEnumUnion WkStaUserInfo;
+}
+
+struct WkstaUserEnumUnion 
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 Level;
+	switch( Level )
+	{
+		case 0: WKSTPWkstaUserInfo0Container Level0;
+		case 1: WKSTPWkstaUserInfo1Container Level1;
+		default:
+		[Property.Levelflag = 1]
+		ReportParserWarning("WKST", "ERROR_INVALID_LEVEL:" + Level) ProtocolWarning;
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_USER_INFO_0_CONTAINER
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaUserInfo0Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0 : WKSTWkstaUserInfo0Container Level0;
+	}
+}
+
+struct WKSTWkstaUserInfo0Container
+{
+	UINT32 EntriesRead;
+	WKSTWkstaUserInfo0Ptr Buffer;
+}
+
+struct WKSTWkstaUserInfo0Ptr
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0:
+			struct 
+			{
+				NdrConformant Size;
+				NdrPtr pWkui0Username[Size.MaxCount];
+				[local.Count = Size.MaxCount]
+				while[local.Count > 0]
+				{
+					[local.count = local.count - 1]
+					switch
+					{
+						case pWkui0Username[local.count].ReferentID > 0: 
+							NdrWideString Wkui0Username;
+					}
+				}
+			}
+	}
+}
+
+//
+// [MS-WKST]:LPWKSTA_USER_INFO_1_CONTAINER
+// Alignment:NdrAlign
+//
+struct WKSTPWkstaUserInfo1Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0 : WKSTWkstaUserInfo1Container Level1;
+	}
+}
+
+struct WKSTWkstaUserInfo1Container
+{	
+	UINT32 EntriesRead;
+	PWkstaUserInfo1 Buffer;
+}
+
+struct PWkstaUserInfo1
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0:
+			struct
+			{
+				UINT32 Count;
+				WKSTWkstaUserInfo1 Buffer[count];
+				WKSTWkstaUserInfo1Data Data[count];
+			}
+	}
+}
+
+struct WKSTWkstaUserInfo1
+{
+	NdrPtr Wkui1Username;
+	NdrPtr Wkui1LogonDomain;
+	NdrPtr Wkui1OthDomains;
+	NdrPtr Wkui1LogonServer;
+}
+
+struct WKSTWkstaUserInfo1Data 
+{
+	[WKSTUserName = Wkui1Username.ToString]
+	NdrWideString Wkui1Username;
+	NdrWideString Wkui1LogonDomain;
+	NdrWideString Wkui1OthDomains;
+	NdrWideString Wkui1LogonServer;
+}
+
+//
+// [MS-WKST]:LPWKSTA_TRANSPORT_ENUM_STRUCT
+// Alignment:NdrAlign
+//
+struct WKSTWkstaTransportEnumStruct
+{
+	UINT32 Level;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	WKSTWkstaTransportEnumUnion WkstaTransportInfo;
+}
+
+struct WKSTWkstaTransportEnumUnion
+{
+	UINT32 Level;
+	switch( Level )
+	{
+		case 0: WKSTPWkstaTransportInfo0Container WkstaTransportInfo;
+	}
+}
+
+struct WKSTPWkstaTransportInfo0Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: 
+			WKSTWkstaTransportInfo0Container WkstaTransportInfo0Container;
+	}
+}
+
+//
+// [MS-WKST]:WKSTA_TRANSPORT_INFO_0_CONTAINER Reference
+// Alignment:NdrAlign
+//
+struct WKSTWkstaTransportInfo0Container
+{
+	[WKSTEntries]
+	UINT32 EntriesRead;
+	struct
+	{
+		NdrPtr Pointer;
+		switch
+		{
+			case Pointer.ReferentID != 0: 
+				struct
+				{
+					UINT32 Count;
+					WKSTWkstaTransportInfo0 Info0[count];
+					WKSTWkstaTransportInfo0Data Data[count];
+				}
+		}
+	}
+}
+
+//
+//[MS-WKST]:WKSTA_TRANSPORT_INFO_0 
+//Alignment:NdrAlign
+//
+struct WKSTWkstaTransportInfo0 = FormatString( "QOS=0x%X VCS=0x%X ish=%s", Wkti0QualityOfService, Wkti0NumberOfVcs, Wkti0WanIsh.ToString )
+{
+	NdrAlign pad1;
+	UINT32 Wkti0QualityOfService;
+	UINT32 Wkti0NumberOfVcs;
+	NdrPtr Wkti0TransportName;
+	NdrPtr Wkti0TransportAddress;
+	INT32 Wkti0WanIsh;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad2;
+	}
+}
+
+struct WKSTWkstaTransportInfo0Data = FormatString( "Name=%s Address=%s", Wkti0TransportName.ToString, Wkti0TransportAddress.ToString )
+{
+	NdrWideString Wkti0TransportName;
+	NdrWideString Wkti0TransportAddress;
+}
+
+
+//
+//[MS-WKST]:JOINPR_ENCRYPTED_USER_PASSWORD
+//Alignment:NdrAlign
+//
+struct WKSTPJoinPrEncryptedUserPassword
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: BLOB(8 + 256 * 2 + 4) Password;
+	}
+}
+
+//
+//[MS-WKST]:PNET_COMPUTER_NAME_ARRAY
+//Alignment:NdrAlign
+//
+struct WKSTPNetComputerNameArray = ComputerNameArrayDescription
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTNetComputerNameArray ComputerNameArray;
+	}
+}
+
+//
+//[MS-WKST]:NET_COMPUTER_NAME_ARRAY
+//Alignment:NdrAlign
+//
+struct WKSTNetComputerNameArray = ComputerNameArrayDescription
+{	
+	[ComputerNameArrayDescription = FormatString( "Entry count is %d", EntryCount )]
+	UINT32 EntryCount;
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0: 
+			struct
+			{
+				UINT32 Count;
+				WKSTUnicodeStringHeader Headers[count];
+				NdrWideString ComputerName[count];
+			}
+	}
+}
+
+Struct WKSTUnicodeStringHeader = FormatString( "%s", ptr.ToString )
+{
+	NdrAlign pad;
+	UINT16 Length;
+	UINT16 MaximumLength;
+	NdrPtr Ptr;
+}
+
+//
+//[MS-WKST]:LPSTAT_WORKSTATION_0
+//Alignment:Align8
+//
+struct WKSTLPStatWorkstation0
+{
+	NdrPtr Pointer;
+	Align8 Pad;
+	switch
+	{
+		case Pointer.ReferentID != 0: WKSTStatWorkstation0 StatWorkstation0;
+	}
+}
+
+//
+//[MS-WKST]:STAT_WORKSTATION_0
+//Alignment:Align8
+//
+struct WKSTStatWorkstation0
+{
+	UINT64 StatisticsStartTime;
+	UINT64 BytesReceived;
+	UINT64 SmbsReceived;
+	UINT64 PagingReadBytesRequested;
+	UINT64 NonPagingReadBytesRequested;
+	UINT64 CacheReadBytesRequested;
+	UINT64 NetworkReadBytesRequested;
+	UINT64 BytesTransmitted;
+	UINT64 SmbsTransmitted;
+	UINT64 PagingWriteBytesRequested;
+	UINT64 NonPagingWriteBytesRequested;
+	UINT64 CacheWriteBytesRequested;
+	UINT64 NetworkWriteBytesRequested;
+	UINT32 InitiallyFailedOperations;
+	UINT32 FailedCompletionOperations;
+	UINT32 ReadOperations;
+	UINT32 RandomReadOperations;
+	UINT32 ReadSmbs;
+	UINT32 LargeReadSmbs;
+	UINT32 SmallReadSmbs;
+	UINT32 WriteOperations;
+	UINT32 RandomWriteOperations;
+	UINT32 WriteSmbs;
+	UINT32 LargeWriteSmbs;
+	UINT32 SmallWriteSmbs;
+	UINT32 RawReadsDenied;
+	UINT32 RawWritesDenied;
+	UINT32 NetworkErrors;
+	UINT32 Sessions;
+	UINT32 FailedSessions;
+	UINT32 Reconnects;
+	UINT32 CoreConnects;
+	UINT32 Lanman20Connects;
+	UINT32 Lanman21Connects;
+	UINT32 LanmanNtConnects;
+	UINT32 ServerDisconnects;
+	UINT32 HungSessions;
+	UINT32 UseCount;
+	UINT32 FailedUseCount;
+	UINT32 CurrentCommands;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+}
+
+struct WKSTPOUString
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0 :
+			struct
+			{
+				NdrConformant Count;
+				NdrPtr	OUsPtr[ Count.MaxCount ] ;
+				[ Local.LoopCount = 0 ]
+				While[ Local.LoopCount < Count.MaxCount ]
+				{
+					[ Local.LoopCount = Local.LoopCount + 1 ]
+					Switch
+					{
+						Case OUsPtr[ Local.LoopCount - 1 ].ReferentID > 0:
+							NdrWideString	OUs;
+					}
+				}
+			}
+	}
+}
+
+Struct WKSTJoinDomainOptions = FormatString( "0x%08X: ", this )
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+		Struct
+		{
+			UINT32 NetsetupJoinDomain:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Joins the computer to a domain. The default action is to join the computer to a workgroup." : "Does NOT join the computer to a domain. The default action is to join the computer to a workgroup.");
+			UINT32 NetsetupAcctCreate:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Does NOT create the account on the domain." : "Creates the account on the domain.");
+			UINT32 Reserved:2 = FormatString("                  (%s)", this.ToBitString);
+			UINT32 NetsetupWin9XUpgrade:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Join operation is occurring as part of an upgrade from Windows 95, 98, or Millennium Edition to Windows NT, 2000, or XP." : "Join operation is NOT occurring as part of an upgrade from Windows 95, 98, or Millennium Edition to Windows NT, 2000, or XP.");
+			UINT32 NetsetupDomainJoinIfJoined:1 = FormatString("(%s) %s", this.ToBitString, this ? "Allows a join to a new domain even if the computer is already joined to a domain." : "Does NOT allow a join to a new domain even if the computer is already joined to a domain.");
+			UINT32 NetsetupJoinUnsecure:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Performs an unsecured join. Used only in conjunction with the NetsetupMachinePwdPassed flag." : "Does NOT perform an unsecured join. Used only in conjunction with the NetsetupMachinePwdPassed flag.");
+			UINT32 NetsetupMachinePwdPassed:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Windows XP:  Indicates that the Password parameter specifies a local computer account password rather than a user password." : "Windows XP:  Indicates that the Password parameter does NOT specify a local computer account password rather than a user password.");
+			UINT32 NetsetupDeferSpnSet:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Windows XP: Indicates that the service principal name (SPN) and the DnsHostName properties on the computer should be updated during a subsequent call to the NetrRenameMachineInDomain2 method." : "Windows XP: does NOT Indicate that the service principal name (SPN) and the DnsHostName properties on the computer should be updated during a subsequent call to the NetrRenameMachineInDomain2 method.");
+			UINT32 Unused:23 = FormatString("                    (%s)", this.ToBitString);
+		}
+
+		Case BigEndian:
+		Struct
+		{
+			UINT32 Unused:23 = FormatString("                    (%s)", this.ToBitString);
+			UINT32 NetsetupDeferSpnSet:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Windows XP: Indicates that the service principal name (SPN) and the DnsHostName properties on the computer should be updated during a subsequent call to the NetrRenameMachineInDomain2 method." : "Windows XP: does NOT Indicate that the service principal name (SPN) and the DnsHostName properties on the computer should be updated during a subsequent call to the NetrRenameMachineInDomain2 method.");
+			UINT32 NetsetupMachinePwdPassed:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Windows XP:  Indicates that the Password parameter specifies a local computer account password rather than a user password." : "Windows XP:  Indicates that the Password parameter does NOT specify a local computer account password rather than a user password.");
+			UINT32 NetsetupJoinUnsecure:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Performs an unsecured join. Used only in conjunction with the NetsetupMachinePwdPassed flag." : "Does NOT perform an unsecured join. Used only in conjunction with the NetsetupMachinePwdPassed flag.");
+			UINT32 NetsetupDomainJoinIfJoined:1 = FormatString("(%s) %s", this.ToBitString, this ? "Allows a join to a new domain even if the computer is already joined to a domain." : "Does NOT allow a join to a new domain even if the computer is already joined to a domain.");
+			UINT32 NetsetupWin9XUpgrade:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Join operation is occurring as part of an upgrade from Windows 95, 98, or Millennium Edition to Windows NT, 2000, or XP." : "Join operation is NOT occurring as part of an upgrade from Windows 95, 98, or Millennium Edition to Windows NT, 2000, or XP.");
+			UINT32 Reserved:2 = FormatString("                  (%s)", this.ToBitString);
+			UINT32 NetsetupAcctCreate:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Does NOT create the account on the domain." : "Creates the account on the domain.");
+			UINT32 NetsetupJoinDomain:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Joins the computer to a domain. The default action is to join the computer to a workgroup." : "Does NOT join the computer to a domain. The default action is to join the computer to a workgroup.");
+		}
+	}
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//
+//  Data Types
+//
+
+struct WKSTNetSetupNameType
+{
+	NdrEnum Enum;
+}
+
+struct WKSTNetComputerNameType = WKSTNetComputerNameTypeTable( enum.value )
+{
+	NdrEnum Enum;
+}
+
+struct WKSTNetSetupJoinStatus = WKSTNetSetupJoinStatusTable( enum.value )
+{
+	NdrEnum Enum;
+}
+
+Table WKSTMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "NetrWkstaGetInfo";
+		Case 1: "NetrWkstaSetInfo";
+		Case 2: "NetrWkstaUserEnum";
+		Case 3: "Opnum3NotUsedOnWire";
+		Case 4: "Opnum4NotUsedOnWire";
+		Case 5: "NetrWkstaTransportEnum";
+		Case 6: "NetrWkstaTransportAdd";
+		Case 7: "NetrWkstaTransportDel";
+		Case 8: "Opnum8NotUsedOnWire";
+		Case 9: "Opnum9NotUsedOnWire";
+		Case 10: "Opnum10NotUsedOnWire";
+		Case 11: "Opnum11NotUsedOnWire";
+		Case 12: "Opnum12NotUsedOnWire";
+		Case 13: "NetrWorkstationStatisticsGet";
+		Case 14: "Opnum14NotUsedOnWire";
+		Case 15: "Opnum15NotUsedOnWire";
+		Case 16: "Opnum16NotUsedOnWire";
+		Case 17: "Opnum17NotUsedOnWire";
+		Case 18: "Opnum18NotUsedOnWire";
+		Case 19: "Opnum19NotUsedOnWire";
+		Case 20: "NetrGetJoinInformation";
+		Case 21: "Opnum21NotUsedOnWire";
+		Case 22: "NetrJoinDomain2";
+		Case 23: "NetrUnjoinDomain2";
+		Case 24: "NetrRenameMachineInDomain2";
+		Case 25: "NetrValidateName2";
+		Case 26: "NetrGetJoinableOUs2";
+		Case 27: "NetrAddAlternateComputerName";
+		Case 28: "NetrRemoveAlternateComputerName";
+		Case 29: "NetrSetPrimaryComputerName";
+		Case 30: "NetrEnumerateComputerNames";
+		Default: "unknown";
+	}
+}
+
+Table WKSTNetrWkstaGetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000064: "V1 - Information to be returned is of type WKSTA_INFO_100 structure (the decimal value is 100).";
+		Case 0x00000065: "V2 - Information to be returned is of type WKSTA_INFO_101 structure (the decimal value is 101).";
+		Case 0x00000066: "V3 - Information to be returned is of type WKSTA_INFO_102 structure (the decimal value is 102).";
+		Case 0x000001F6: "V4 - Information to be returned is of type WKSTA_INFO_502 structure (the decimal value is 502).";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTNetrWkstaSetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x000001F6: "V1 - The WkstaInfo parameter points to a WKSTA_INFO_502 structure that contains information about the computer environment (the decimal value is 502).";
+		Case 0x000003F5: "V2 - The WkstaInfo parameter points to a WKSTA_INFO_1013 structure (the decimal value is 1013).";
+		Case 0x000003FA: "V3 - The WkstaInfo parameter points to a WKSTA_INFO_1018 structure (the decimal value is 1018).";
+		Case 0x00000416: "V4 - The WkstaInfo parameter points to a WKSTA_INFO_1046 structure (the decimal value is 1046).";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTWki100PlatformIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000012C: "DOS. Decimal value 300.";
+		Case 0x00000190: "OS2. Decimal value 400.";
+		Case 0x000001F4: "Windows. Decimal value 500.";
+		Case 0x00000258: "OSF. Decimal value 600.";
+		Case 0x000002BC: "VMS. Decimal value 700.";
+		Default: "Unknown";
+	}
+}
+
+
+Table WKSTNetrWkstaTransportEnumTransportInfoTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTNetrWorkstationStatisticsGetOptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTNetrJoinDomain2OptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "NETSETUP_JOIN_DOMAIN - Joins the computer to a domain. The default action is to join the computer to a workgroup.";
+		Case 0x00000002: "NETSETUP_ACCT_CREATE - Creates the account on the domain. The name is the persisted abstract state computer-name (see section ) unless this behavior is altered by another option such as NETSETUP_JOIN_WITH_NEW_NAME.";
+		Case 0x00000010: "NETSETUP_WIN9X_UPGRADE - Join operation is occurring as part of an upgrade from windows_me, windows_98, or windows_95 to windows_xp, windows_2000, or windows_nt.";
+		Case 0x00000020: "NETSETUP_DOMAIN_JOIN_IF_JOINED - Allows a join to a new domain even if the computer is already joined to a domain.";
+		Case 0x00000040: "NETSETUP_JOIN_UNSECURE - Performs an unsecured join. MUST be used only in conjunction with the NETSETUP_MACHINE_PWD_PASSED flag.";
+		Case 0x00000080: "NETSETUP_MACHINE_PWD_PASSED - Indicates that the Password parameter SHOULD windows_xp, windows_server_2003, windows_vista, and windows_server_2008windows_server_2008, windows_7, and windows_server_7 implement this. specify the password for the machine joining the domain.This flag is valid only for unsecured joins, which MUST be indicated by setting the NETSETUP_JOIN_UNSECURE flag. If this flag is set, the value of Password determines the value stored for the computer password during the join process.";
+		Case 0x00000100: "NETSETUP_DEFER_SPN_SET - Indicates that the service principal name (SPN) and the DnsHostName properties on the computer SHOULD NOT windows_xp, windows_server_2003, windows_vista, and windows_server_2008windows_server_2008, windows_7, and windows_server_7 implementations do not update the DnsHostName and Service Principal Name (SPN) properties on the computer during message processing when NETSETUP_DEFER_SPN_SET is specified. The values are updated in a subsequent call to NetrRenameMachineInDomain2. be updated at this time, but instead SHOULD windows_xp, windows_server_2003, windows_vista, and windows_server_2008windows_server_2008, windows_7, and windows_server_7 implementations do not update the DnsHostName and Service Principal Name (SPN) properties on the computer during message processing when NETSETUP_DEFER_SPN_SET is specified. The values are updated in a subsequent call to NetrRenameMachineInDomain2. be updated during a subsequent call to NetrRenameMachineInDomain2.";
+		Case 0x00000200: "NETSETUP_JOIN_DC_ACCOUNT - Indicates that the join SHOULD windows_vista and windows_server_2008, windows_server_2008, windows_7, and windows_server_7 implementations continue message processing of a domain join when the domain-object already exists and that object is a domain controller account and NETSETUP_JOIN_DC_ACCOUNT is specified. be allowed if an existing account exists and it is a domain controller account. windows_vista and windows_server_2008, windows_server_2008, windows_7, and windows_server_7 implementations support NETSETUP_JOIN_DC_ACCOUNT. Clients on windows_vista and windows_server_2008, windows_server_2008, windows_7, and windows_server_7 pass NETSETUP_JOIN_DC_ACCOUNT, which servers on windows_nt, windows_2000, windows_xp, and windows_server_2003 ignore. Clients on windows_vista and windows_server_2008, windows_server_2008, windows_7, and windows_server_7, when setting this flag, always locate a domain controller of longhorn_server version or higher. The location mechanism is specified in [MS-ADTS] section , and the flag description for DS_FULL_SECRET_DOMAIN_6_FLAG is specified in [MS-ADTS] section . The use of DS_FULL_SECRET_DOMAIN_6_FLAG ensures the location of a domain controller on windows_server_2008 and windows_server_7.";
+		Case 0x00000400: "NETSETUP_JOIN_WITH_NEW_NAME - Indicates that the join SHOULD windows_vista and windows_server_2008, windows_server_2008, windows_7, and windows_server_7 implementations always use the most recently set computer name during a domain join when NETSETUP_JOIN_WITH_NEW_NAME is specified. In the windows implementation of a computer rename, a computer must be restarted before a new name can be used. This flag allows the new name to be used for a join before a restart. For example, processing a NetrRenameMachineInDomain2 message would change the persisted abstract state computer-name (section ), but the change would not be effective until after a machine restart. Specifying this flag would cause the join operation to use the new computer-name when joining the domain.occur using the new computer name.";
+		Case 0x00040000: "NETSETUP_INSTALL_INVOCATION - Indicates that the protocol method was invoked during installation of windows.";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTNetrUnjoinDomain2OptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000004: "NETSETUP_ACCT_DELETE - Disables the account when the unjoin operation occurs.";
+		Case 0x10000000: "NETSETUP_IGNORE_UNSUPPORTED_FLAGS - windows_server_2003 and windows_server_2008, windows_server_2008, and windows_server_7: The server ignores undefined flags. This option is present to allow for the addition of new optional values in the future.";
+		Default: "Unknown";
+	}
+}
+
+Table WKSTNetrRenameMachineInDomain2OptionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000002: "NETSETUP_ACCT_CREATE - Renames the computer account in the domain. If this flag is not set, the computer account name is changed locally but no changes are made to the computer account object in the domain.";
+		Case 0x00001000: "NETSETUP_DNS_NAME_CHANGES_ONLY - Limits any updates to DNS-based names only.";
+		Default: "Unknown";
+	}
+}
+

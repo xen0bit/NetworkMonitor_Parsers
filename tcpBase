@@ -1,0 +1,1130 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Transmission Control Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 793, 1644, 2385, 3168, 3540
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 4/28/2010
+//#
+//####
+
+const TCPKeepAliveMask = 0x0001;
+const TCPKeepAliveAckMask = 0x0002;
+const TCPRetransmitMask = 0x0004;
+const TCPSynRetransmitMask = 0x0008;
+const TCPDupAckMask = 0x0010;
+const TCPRequestFastRetransmitMask = 0x0020;
+const TCPNotLostSegmentMask = 0x0040;
+const TCPContinuationMask = 0x0080;
+const TCPUnSequenceMask = 0x0100;
+const TCPSegLostAfterPushMask = 0x0200;
+const TCPStateMask = 0xF000;
+
+[DefaultTimeOut = TCPConversationTimeout]
+[Property.TCPDescription = TCP.ToString]
+Protocol TCP = FormatString("%s%s%s%s%s%s%sFlags=%s, SrcPort=%s, DstPort=%s, PayloadLen=%u, Seq=%s, Ack=%u, Win=%s",
+							Property.TCPKeepAlive ? "[Keep alive]" : "",
+							Property.TCPKeepAliveACK ? "[Keep alive ack]" : "",
+							Property.TCPLostSegment ? "[Segment Lost]" : "", 
+							Property.TCPSynRetransmit ? FormatString("[SynReTransmit #%u]", Local.TCPSeqTransmitFrameID) : "",
+							Property.TCPRetransmit ? FormatString("[ReTransmit #%u]", Local.TCPSeqTransmitFrameID)
+								: Property.TCPRequestFastRetransmit ? 
+									FormatString("[Request Fast-Retransmit %s]", 
+										Conversation.TCPFrameIDBySeqTable$[MakeByteArray(0 - Property.TcpDirection, Property.TCPAckNumber, 0)] < FrameNumber ? 
+											FormatString("#%u", Conversation.TCPFrameIDBySeqTable$[MakeByteArray(0 - Property.TcpDirection, Property.TCPAckNumber, 0)]) : 
+											FormatString("from Seq%u", Property.TCPAckNumber))
+								: Property.TCPDupAck ? FormatString("[Dup Ack #%u]",Local.TCPSeqTransmitFrameID): "",
+							Property.TCPContinuation ? FormatString("[Continuation to #%u]", Local.TCPContinuedFrameID) : "",
+							Property.TCPCheckSumStatus == "Bad" ? " [Bad CheckSum]" : "",
+							Flags.ToString,
+							PortNameTable(SrcPort),
+							PortNameTable(DstPort),
+							Property.TCPPayloadLength,
+							Property.TCPSequenceRange,
+							AcknowledgementNumber,
+							Window.Tostring
+							)
+{
+	[Pair = Port, Property.SourcePort, Global.TcpFrameCount = Global.TcpFrameCount + 1]
+	UINT16 SrcPort = PortNameTable(this);
+	[Pair = Port, Property.DestinationPort]
+	UINT16 DstPort = PortNameTable(this);
+	[Property.TCPSeqNumber]
+	UINT32 SequenceNumber;
+	[Property.TCPAckNumber]
+	UINT32 AcknowledgementNumber;
+	UINT8 DataOffset
+	{
+		[Property.TCPDataOffset = this*4]
+		UINT8 DataOffset:4 = FormatString("(%s) %d bytes", this.ToBitString, this*4);
+		UINT8 Reserved:3 = FormatString("  (%s)", this.ToBitString);
+		UINT8 NS:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Nonce Sum significant" 
+                                                                    : "Nonce Sum not significant");
+	};
+	
+	[
+		Local.CurrentTCPConnectionState = Conversation.TCPConnectionStateMVS$[
+						Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+							(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+								Property.SourcePort < Property.DestinationPort
+							) ?
+						MakeByteArray(Property.SourcePort, Property.DestinationPort) :
+						MakeByteArray(Property.DestinationPort, Property.SourcePort)
+						],
+		Local.CurrentTCPConnectionState = GetTcpStateFromTable(Local.CurrentTCPConnectionState, Flags),
+		Post.Conversation.TCPConnectionStateMVS$[
+						Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+							(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+								Property.SourcePort < Property.DestinationPort
+							) ?
+						MakeByteArray(Property.SourcePort, Property.DestinationPort) :
+						MakeByteArray(Property.DestinationPort, Property.SourcePort)
+						] = Local.CurrentTCPConnectionState,
+		Post.BuildConversationWithProcess(
+						Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+							(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+								Property.SourcePort < Property.DestinationPort
+							) ?
+						MakeByteArray(Property.SourcePort, Property.DestinationPort) :
+						MakeByteArray(Property.DestinationPort, Property.SourcePort),
+						Local.CurrentTCPConnectionState),
+		Post.Conversation.ConversationDescription = Conversation.TCP.ConversationDescription.IsValueNone() ? 
+							FormatString("(%d - %d) ConvID = %d", SrcPort, DstPort, ConvID) : Conversation.TCP.ConversationDescription ,
+		Post.Property.TCPFlags = Flags.ToString,
+		Post.Conversation.ProcessName = GetProcessName(),
+		Post.Conversation.ProcessId = GetProcessId()
+	]
+	TCPFlags Flags
+	{
+		UINT8 CWR:1    = FormatString("   (%s) %s", this.ToBitString, this ? "CWR significant" 
+                                                                        : "CWR not significant");
+		UINT8 ECE:1    = FormatString("   (%s) %s", this.ToBitString, this ? "ECN-Echo significant" 
+                                                                        : "ECN-Echo not significant");
+		UINT8 Urgent:1 = FormatString("(%s) %s", this.ToBitString, this ? "Urgent Data" 
+                                                                        : "Not Urgent Data");
+		UINT8 Ack:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Acknowledgement field significant" 
+                                                                        : "Acknowledgement field not significant");
+		UINT8 Push:1   = FormatString("  (%s) %s", this.ToBitString, this ? "Push Function" 
+                                                                        : "No Push Function");
+		UINT8 Reset:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Reset" : "No Reset");
+		UINT8 Syn:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Synchronize sequence numbers" 
+                                                                        : "Not Synchronize sequence numbers");
+		[Property.TcpFlagFin]
+		UINT8 Fin:1    = FormatString("   (%s) %s", this.ToBitString, this ? "End of data" 
+                                                                        : "Not End of data");
+	};
+
+	//TCPKeyProperties
+	[
+		Property.TCPPayloadLength = (property.IPTruncated == True && property.IPNextProtocol == 0x06) ? property.IPPayloadLength - Property.TCPDataOffset : frameLength - ProtocolOffset - Property.TCPDataOffset ,
+		Property.TCPNextSeqNumber = Property.TCPSeqNumber + Property.TCPPayloadLength,
+		Property.TCPNextSeqNumber = Flags.Syn ?  Property.TCPNextSeqNumber + 1 : Property.TCPNextSeqNumber,
+		Property.TCPNextSeqNumber = Flags.Fin ?  Property.TCPNextSeqNumber + 1 : Property.TCPNextSeqNumber,
+		Property.TCPSequenceRange = Property.TCPPayloadLength > 0 ? FormatString("%u - %u", Property.TCPSeqNumber, Property.TCPNextSeqNumber) : FormatString("%u", Property.TCPSeqNumber),
+		Property.TcpDirection = (Property.SourceNetworkAddress>Property.DestinationNetworkAddress)?1:(Property.SourceNetworkAddress<Property.DestinationNetworkAddress)?-1:(Property.SourcePort>Property.DestinationPort)?1:(Property.SourcePort<Property.DestinationPort)?-1:0 /* direction */
+	]
+	//TCPKeyProperties short format
+	[
+		Conversation.TCPMinSeqNumber$[Property.NetworkDirection] = (IsValueNone(Conversation.TCPMinSeqNumber$[Property.NetworkDirection]) || (Property.TCPSeqNumber < Conversation.TCPMinSeqNumber$[Property.NetworkDirection])) ? Property.TCPSeqNumber : Conversation.TCPMinSeqNumber$[Property.NetworkDirection],
+		Conversation.TCPMinAckNumber$[Property.NetworkDirection] = ((IsValueNone(Conversation.TCPMinAckNumber$[Property.NetworkDirection]) || (Property.TCPAckNumber < Conversation.TCPMinAckNumber$[Property.NetworkDirection])) && Flags.Ack) ? Property.TCPAckNumber : Conversation.TCPMinAckNumber$[Property.NetworkDirection],
+		Conversation.TCPMinNumber$[Property.NetworkDirection] = Conversation.TCPMinSeqNumber$[Property.NetworkDirection] < Conversation.TCPMinAckNumber$[Property.NetworkDirection == 2 ? 1 : (Property.NetworkDirection == 1 ? 2 : Property.NetworkDirection)] ?
+			Conversation.TCPMinSeqNumber$[Property.NetworkDirection] : Conversation.TCPMinAckNumber$[Property.NetworkDirection == 2 ? 1 : (Property.NetworkDirection == 1 ? 2 : Property.NetworkDirection)],
+		Property.TCPShortSeqNumber = Property.TCPSeqNumber - Conversation.TCPMinNumber$[Property.NetworkDirection],
+		Property.TCPShortAckNumber = Flags.Ack ? (Property.TCPAckNumber - Conversation.TCPMinNumber$[Property.NetworkDirection == 2 ? 1 : (Property.NetworkDirection == 1 ? 2 : Property.NetworkDirection)]) : Property.TCPAckNumber,
+	
+		Property.TCPShortNextSeqNumber = Property.TCPShortSeqNumber + Property.TCPPayloadLength,
+		Property.TCPShortNextSeqNumber = Flags.Syn ?  Property.TCPShortNextSeqNumber + 1 : Property.TCPShortNextSeqNumber,
+		Property.TCPShortNextSeqNumber = Flags.Fin ?  Property.TCPShortNextSeqNumber + 1 : Property.TCPShortNextSeqNumber,
+		Property.TCPShortSequenceRange = Property.TCPPayloadLength > 0 ? FormatString("%u - %u", Property.TCPShortSeqNumber, Property.TCPShortNextSeqNumber) : FormatString("%u", Property.TCPShortSeqNumber),
+	]
+	struct{};
+	
+	switch 
+	{
+		case (ConvID && 1) != 0 
+					&& ( (IsValueNone(Property.IPv4FragmentMoreFrag) && IsValueNone(Property.IPv6FragmentMoreFrag)) 
+						|| Property.IPv4FragmentMoreFrag == 0 || HighestReassembledProtocol == "IPv4" 
+						|| Property.IPv6FragmentMoreFrag == 0 || HighestReassembledProtocol == "IPv6"):
+			//TCPConversationProperties
+			struct
+			{
+				//FrameFlagsInitialize
+				[
+					// Conversation.TCPFrameFlagsMVS$/Property.TCPFrameFlags stores the character of a frame, 
+					// e.g. keep alive, retransmit etc.
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = 0, 
+					
+					// Conversation.TCPMaxSeqNumber$/Local.TCPMaxSeqNumber stores max sequence ever seen in each direction.
+					Conversation.TCPMaxSeqNumber$[Property.TcpDirection] = Conversation.TCPMaxSeqNumber$[Property.TcpDirection] ? Conversation.TCPMaxSeqNumber$[Property.TcpDirection] : 0, 
+					Local.TCPMaxSeqNumber = Conversation.TCPMaxSeqNumber$[Property.TcpDirection], 
+					
+					// Conversation.TCPFrameIDBySeqTable$ stores: 
+					// The mapping of sequence number and the frame number in which is transmitted the first time for normal frames.
+					// The mapping of ack number and the frame number in which is transmitted the first time for pure ack.
+					Conversation.TCPFrameIDBySeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, TCPPayloadLength == 0 ? Property.TCPAckNumber : 0)]
+							= Conversation.TCPFrameIDBySeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, Property.TCPSeqNumber == Property.TCPNextSeqNumber ? Property.TCPAckNumber : 0)]
+								? Conversation.TCPFrameIDBySeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, Property.TCPSeqNumber == Property.TCPNextSeqNumber ? Property.TCPAckNumber : 0)] 
+								: ( FrameNumber + 1 ), 
+								
+					// Local.TCPSeqTransmitFrameID stores the frame number in which the current sequence/ack number is transmitted the first time.
+					Local.TCPSeqTransmitFrameID = Conversation.TCPFrameIDBySeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, Property.TCPSeqNumber == Property.TCPNextSeqNumber ? Property.TCPAckNumber : 0)], 
+					
+					// Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] stores next sequence number of previous frame in the same direction.
+					// Here we initialize it to sequence for the first frame in each direction.
+					Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] = Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] ? Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] : Property.TCPSeqNumber
+				]
+				struct{};
+				
+				// RFC 1122 4.2.3.6
+				// An implementation SHOULD send a keep-alive segment with no
+				// data; however, it MAY be configurable to send a keep-alive
+				// segment containing one garbage octet, for compatibility with
+				// erroneous TCP implementations.
+				// Such a segment generally contains SEG.SEQ = SND.NXT-1
+				// and may or may not contain one garbage octet of data.
+				//TCPKeepAliveFlag
+				[
+					// Payload length is 1 or 0, and the sequence number is MaxSeq - 1.
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = ((!Flags.Fin) && (!Flags.Syn) && Local.CurrentTCPConnectionState == Connected && (( (Property.TCPSeqNumber == Local.TCPMaxSeqNumber - 1) && (Property.TCPPayloadLength <= 1) ) || (!Local.TCPMaxSeqNumber) && (Property.TCPPayloadLength == 1) ) ) ? 
+													(TCPKeepAliveMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+					Property.TCPKeepAlive = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPKeepAliveMask) ? true : Property.TCPKeepAlive
+				]
+				struct{};
+				
+				switch 
+				{
+					// Conversation.TCPKeepAliveMinFrameNum$ stores the frame number of keep alive frames.
+					case Property.TCPKeepAlive:
+						//TCPKeepAliveAckFlagSet
+						[Conversation.TCPKeepAliveMinFrameNum$[MakeByteArray(Property.TcpDirection, Property.TCPNextSeqNumber, Property.TCPAckNumber)] = FrameNumber]
+						struct{};
+				}
+				
+				//TCPKeepAliveAckFlag
+				[
+					// A pure ack, and frame number is greater than keep alive frame.
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = Flags.Ack && Property.TCPPayloadLength == 0 && Conversation.TCPKeepAliveMinFrameNum$[MakeByteArray(0 - Property.TcpDirection, Property.TCPAckNumber, Property.TCPSeqNumber)] < FrameNumber ?
+													(TCPKeepAliveAckMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+					Property.TCPKeepAliveAck = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPKeepAliveAckMask ) ? true : Property.TCPKeepAliveAck
+				]
+				struct{};
+				
+				//TCPMaxSeqNumberProp
+				[
+					// Update Conversation.TCPMaxSeqNumber$ if current sequence number is greater than stored.
+					Conversation.TCPMaxSeqNumber$[Property.TcpDirection] = Property.TCPNextSeqNumber > Conversation.TCPMaxSeqNumber$[Property.TcpDirection] ? Property.TCPNextSeqNumber : Conversation.TCPMaxSeqNumber$[Property.TcpDirection]
+				]
+				struct{};
+				
+				// TCP ReTransmit packet may have different Ack number/Next seq Number, but the Seq Number is the same one
+				// TCP DupAck must have the same Ack/Seq number with the original one, the TcpFlags must be Ack (0x10)
+				//TCPRetransmitProp
+				[
+					// This sequence is transferred in a previous frame.
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = (!Property.TCPKeepAlive && Local.TCPSeqTransmitFrameID < ( FrameNumber + 1 ) && Property.TCPSeqNumber < Property.TCPNextSeqNumber) && !Flags.Syn ? 
+									 				(TCPRetransmitMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+					
+					// Retransmit and sync
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = (!Property.TCPKeepAlive && Local.TCPSeqTransmitFrameID < ( FrameNumber + 1 ) && Property.TCPSeqNumber < Property.TCPNextSeqNumber) && Flags.Syn ? 
+													(TCPSynRetransmitMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+					
+					// retransmit and pure ack
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = (!Property.TCPKeepAliveACK && Local.TCPSeqTransmitFrameID < ( FrameNumber + 1 ) && Property.TCPSeqNumber == Property.TCPNextSeqNumber && Flags == 0x10) ?
+													(TCPDupAckMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+					
+					Property.TCPRetransmit = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPRetransmitMask) ? true : Property.TCPRetransmit, 
+					Property.TCPSynRetransmit = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPSynRetransmitMask) ? true : Property.TCPSynRetransmit, 
+					Property.TCPDupAck = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPDupAckMask) ? true : Property.TCPDupAck, 
+				]
+				struct {};
+				
+				switch 
+				{
+					// Calculate dupe ack count.
+					case Property.TCPDupAck:
+						//TCPReTransmitCountSet
+						[
+							Local.TCPReTransmitCount = Conversation.TCPReTransmitCountTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, Property.TCPSeqNumber == Property.TCPNextSeqNumber ? Property.TCPAckNumber : 0)], 
+							Local.TCPReTransmitCount = Local.TCPReTransmitCount + 1, 
+							Conversation.TCPReTransmitCountTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber, Property.TCPSeqNumber == Property.TCPNextSeqNumber ? Property.TCPAckNumber : 0)]
+							= Local.TCPReTransmitCount
+						]
+						// More than 3 DupAcks will be treated as Fast-Transmits request
+						//TCPRequestFastRetransmitProp
+						[
+							Conversation.TCPFrameFlagsMVS$[FrameNumber] = Property.TCPDupAck && Local.TCPReTransmitCount >= 3 ? 
+															(TCPRequestFastRetransmitMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+							Property.TCPRequestFastRetransmit = (Conversation.TCPFrameFlagsMVS$[FrameNumber] & TCPRequestFastRetransmitMask) ? true : Property.TCPRequestFastRetransmit
+						]
+						struct{};
+				}
+				
+				struct
+				{
+					switch 
+					{
+						// If the sequence number is not continual, store the mapping of frame number and next sequence number for previous frame in the same direction.
+						case Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] != Property.TCPSeqNumber && !Property.TCPKeepAlive && !Flags.Syn:
+							// Assume the Un-Sequenced (out of order) frames are continuation frames.
+							// If we don't set them as Continuation, TCP reassembly for Un-Sequenced frames will fail.
+							[Conversation.TCPFrameFlagsMVS$[FrameNumber] = (TCPContinuationMask | Conversation.TCPFrameFlagsMVS$[FrameNumber])]
+							[Conversation.TCPFrameFlagsMVS$[FrameNumber] = (TCPUnSequenceMask | Conversation.TCPFrameFlagsMVS$[FrameNumber])]
+							//TCPLostSegmentLostOrUnseqFrames
+							[Conversation.TCPFrameIDByNextSeqTable$[Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection]] = Conversation.TCPCurrentFrameNumber$[Property.TcpDirection]]
+							struct{};
+							
+						// For normal frames, we are sure the previous frame is not lost, so we set TCPNotLostSegment flag.
+						default:
+							//TCPLostSegmentNormalFrames
+							[Conversation.TCPFrameFlagsMVS$[FrameNumber] = TCPNotLostSegmentMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]]
+							struct{};
+					}
+					
+					switch 
+					{
+						// If the sequence number is less than the max ever transmitted, also store the mapping of frame number and next sequence number for current frame.
+						case Local.TCPMaxSeqNumber > Property.TCPSeqNumber && !Property.TCPKeepAlive:
+							//TCPLostSegmentReTransmitOrUnseqFrames
+							[Conversation.TCPFrameIDByNextSeqTable$[Property.TCPNextSeqNumber] = FrameNumber]
+							struct{};
+					}
+					
+					//TCPLostSegmentProp
+					[
+						// TCPNotLostSegment is not set, and sequence is never used as next sequence.
+						Property.TCPLostSegment = 
+							(property.IPTruncated == true && property.IPNextProtocol == 0x32 && Property.EspNextProtocol == 0x06)? false : (
+									(!Property.TCPRetransmit 
+										&& !(TCPNotLostSegmentMask & Conversation.TCPFrameFlagsMVS$[FrameNumber]) 
+										&& !(Conversation.TCPFrameIDByNextSeqTable$[Property.TCPSeqNumber] > 0)) ? true : Property.TCPLostSegment) , 
+						Conversation.TCPCurrentFrameNumber$[Property.TcpDirection] = FrameNumber, 
+						Conversation.TCPCurrentNextSeqNumber$[Property.TcpDirection] = Property.TCPNextSeqNumber
+					]
+					struct{};
+					
+					// The same Ack number, and Push/Fin/Urgent indicate the last fragmentation
+					//#? dev note 2006-7-13
+					//#? Actually, Push is not an indication of last fragmentation!!!
+					switch 
+					{
+						// A frame is not last if previous frame is not syn, push etc.
+						case !(Flags.Syn || Flags.Push || Flags.Fin || Flags.Urgent || Property.TCPKeepAlive || (Property.TCPPayloadLength == 0 && Flags == 0x10)):
+							//TCPContinuationLastSegment
+							[Conversation.TCPIsLastByNextSeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPNextSeqNumber)] = false]
+							struct{};
+					}
+					
+					//Property.TCPBiggestReTransNextSeqNumberPro record the current largest next sequence number in the frames which have same sequence numbers
+					[
+						Conversation.TCPBiggestReTransNextSeqNumberFrame$[FrameNumber] = Conversation.TCPBiggestReTransNextSeqNumber$[Property.TCPSeqNumber],
+						Property.TCPBiggestReTransNextSeqNumberPro = IsValueNone(Conversation.TCPBiggestReTransNextSeqNumberFrame$[FrameNumber]) || Conversation.TCPBiggestReTransNextSeqNumberFrame$[FrameNumber] < Property.TCPNextSeqNumber ? 
+								Property.TCPNextSeqNumber : Conversation.TCPBiggestReTransNextSeqNumberFrame$[FrameNumber],
+						Conversation.TCPBiggestReTransNextSeqNumber$[Property.TCPSeqNumber] = Property.TCPBiggestReTransNextSeqNumberPro
+					]
+					
+					//TCPContinuationProp
+					[
+						Property.TCPContinuation = !Property.TCPKeepAlive && (Conversation.TCPIsLastByNextSeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber)] == false) && (Property.TCPPayloadLength > 0),
+						Conversation.TCPFrameFlagsMVS$[FrameNumber] = Property.TCPContinuation ?
+								(TCPContinuationMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber], 
+						Local.TCPContinuedFrameID = Conversation.TcpContinueFrameIDByNextSeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPSeqNumber)],
+						Conversation.TcpContinueFrameIDByNextSeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPNextSeqNumber)]
+								=	// Do not change the continued frame number if it is a pure ack or keep-alive, or retransmit.
+									(Property.TCPKeepAlive || Flags.Ack && Property.TCPPayloadLength == 0 || Property.TCPSynRetransmit || (Property.TCPRetransmit && Property.TCPNextSeqNumber < Property.TCPBiggestReTransNextSeqNumberPro)) ? 
+										Conversation.TcpContinueFrameIDByNextSeqTable$[MakeByteArray(Property.TcpDirection, Property.TCPNextSeqNumber)] : 
+										(Property.TCPContinuation ? Local.TCPContinuedFrameID: ( FrameNumber + 1 ))
+					]
+					
+					//Set IsFirst flag of TCP Segmentlost frame which just continue to a push frame to true 
+					[
+						Conversation.TCPFrameFlagsMVS$[FrameNumber] = Conversation.TCPPushFrame$[Property.NetworkDirection] &&  Property.TCPLostSegment? 
+								(TCPSegLostAfterPushMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]) : Conversation.TCPFrameFlagsMVS$[FrameNumber],
+						Conversation.TCPPushFrame$[Property.NetworkDirection] = Flags.Push
+					]
+					struct{};
+				}
+				
+				// Retransmit frames, set TCPNotLostSegmentMask and do not set TCPContinuationMask, TCPUnSequenceMask
+				switch 
+				{
+					case Property.TCPRetransmit || Property.TCPSynRetransmit || Property.TCPDupAck:
+						[Conversation.TCPFrameFlagsMVS$[FrameNumber] = TCPNotLostSegmentMask | Conversation.TCPFrameFlagsMVS$[FrameNumber]]
+						[Conversation.TCPFrameFlagsMVS$[FrameNumber] = (~(TCPContinuationMask | TCPUnSequenceMask)) & Conversation.TCPFrameFlagsMVS$[FrameNumber]]
+						struct {};
+				}
+				
+				//TCPStateProp
+				[
+					Conversation.TCPFrameFlagsMVS$[FrameNumber] = (Local.CurrentTCPConnectionState << 12) | Conversation.TCPFrameFlagsMVS$[FrameNumber],
+					Property.TCPState = TcpConnectionStateTable((TCPStateMask & Conversation.TCPFrameFlagsMVS$[FrameNumber])>>12 )
+				]
+				struct{};
+			}
+	}
+	
+	[
+		Property.TCPFrameFlags = TCPFrameFlagsTable(Conversation.TCPFrameFlagsMVS$[FrameNumber]),
+		Conversation.ScaleFactor$[Property.SourceNetworkAddress] = Flags.Syn ? 0 : Conversation.ScaleFactor$[Property.SourceNetworkAddress], 
+		Property.WindowSize = (Conversation.ScaleFactor$[Property.SourceNetworkAddress] > 0) && (!Flags.Syn || Flags.Ack)? 
+								UINT16(FrameData, FrameOffset)  << Conversation.ScaleFactor$[Property.SourceNetworkAddress] : UINT16(FrameData, FrameOffset),
+		Property.TCPWindowSize= FormatString("%d", Property.WindowSize)
+	]
+	UINT16 Window = FormatString("%d%s", this, 
+								 Conversation.ScaleFactor$[Property.SourceNetworkAddress] >= 0 ? 
+								 ( Flags.Syn && Flags.Ack? 
+									FormatString(" ( %s ) = %d",Conversation.IsWindowsScaleNegotiated, Property.WindowSize)
+									:	( Flags.Syn && !Flags.Ack ? 
+											FormatString(" ( %s ) = %d",Conversation.WindowsScaleNegotiating, Property.WindowSize)
+											: FormatString(" (scale factor %s) = %d", Conversation.ScaleFactor$[Property.SourceNetworkAddress], Property.WindowSize)))
+								 : "");
+	[
+		Property.TCPCheckSumStatus = FormatString("%s",
+			(property.IPTruncated || Global.Ipconfig.LocalIpv4Address == Property.SourceNetworkAddress || Global.Ipconfig.LocalIpv6Address == Property.SourceNetworkAddress) ? "Disregarded" :
+			(ValidateTCPCheckSum(FrameData,
+								ProtocolOffSet,
+								frameLength - ProtocolOffset, 
+								Property.DestinationNetworkAddress,
+								Property.SourceNetworkAddress )
+			?"Good": "Bad"))
+	]
+	UINT16 Checksum = FormatString("0x%X, %s", this, Property.TCPCheckSumStatus);
+	UINT16 UrgentPointer;
+	switch
+	{
+		case Flags.Syn && Flags.Ack:
+			[Conversation.IsWindowsScaleNegotiated = "Scale factor not supported"]
+			struct{};
+	}
+	[
+		Conversation.ClientShiftCount = Flags.Syn && (!Flags.Ack) ? -1 : Conversation.ClientShiftCount, 
+		Conversation.ServerShiftCount = Flags.Syn && (!Flags.Ack) ? -1 : Conversation.ServerShiftCount, 
+		Post.Conversation.ScaleFactor$[Property.SourceNetworkAddress] = (Flags.Syn && Flags.Ack && (Conversation.ClientShiftCount != -1) && (Conversation.ServerShiftCount != -1)) ? Conversation.ServerShiftCount : Conversation.ScaleFactor$[Property.SourceNetworkAddress], 
+		Post.Conversation.ScaleFactor$[Property.DestinationNetworkAddress] = (Flags.Syn && Flags.Ack && (Conversation.ClientShiftCount != -1) && (Conversation.ServerShiftCount != -1)) ? Conversation.ClientShiftCount : Conversation.ScaleFactor$[Property.DestinationNetworkAddress]
+	]
+	switch
+	{
+		case CurrentProtocolOffset < Property.TCPDataOffset:
+			struct TCPOptions
+			{
+				while Option[ CurrentProtocolOffset < Property.TCPDataOffset]
+				{
+					switch (UINT8( Framedata, Offset ))
+					{
+						//RFC 793
+						case 0x00:
+							struct EndofOptionList
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								BLOB(Property.TCPDataOffset - CurrentProtocolOffset) TCPOptionPadding;
+							};
+						//RFC 793
+						case 0x01:
+							struct NoOption
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+							};
+						//RFC 793
+						case 0x02:
+							struct MaxSegmentSize = FormatString("%d", MaxSegmentSize)
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  OptionLength;
+								UINT16 MaxSegmentSize;
+							};
+						//RFC 1323
+						case 0x03:
+							struct WindowsScaleFactor = FormatString("ShiftCount: %d", ShiftCount)
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								[
+									Conversation.ClientShiftCount = Flags.Ack ? Conversation.ClientShiftCount : ShiftCount, 
+									Conversation.ServerShiftCount = Flags.Ack ? ShiftCount : Conversation.ServerShiftCount,
+									Flags.Ack ? Conversation.IsWindowsScaleNegotiated = FormatString("Negotiated scale factor %s", ShiftCount) 
+												: Conversation.WindowsScaleNegotiating = FormatString("Negotiating scale factor %s", ShiftCount)
+								]
+								UINT8 ShiftCount;
+							}
+						//RFC 1323
+						case 0x04:
+							struct SACKPermitted
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 OptionLength;
+							};
+						//RFC 1323, 2018, 2883
+						case 0x05:
+							struct SACK
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								struct Blocks [(Length-2)/8] = FormatString("%d~%d", LeftEdge, RightEdge)
+								{
+									UINT32 LeftEdge;
+									UINT32 RightEdge;
+								};
+							};
+						//RFC 1072
+						case 0x06:
+							struct Echo
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 Info;
+							};
+						//RFC 1072
+						case 0x07:
+							struct EchoReply
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 Info;
+							};
+						//RFC 1323 page 13
+						case 0x08:
+							struct TimeStamp
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 TimestampValue;
+								UINT32 TimestampEchoReply ;
+							};
+						//RFC 1693
+						case 0x09:
+							struct PatrialOrderConnectionPermitted
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+							};
+						//RFC 1693
+						case 0x0A:
+							struct PatrialOrderServiceProfile
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								UINT8 Flag
+								{
+									UINT8 StartFlag:1 = FormatString("(%s) %s", this.ToBitString, this ?"Start":"Not start");
+									UINT8 EndFlag:1 = FormatString("  (%s) %s", this.ToBitString, this ? "End" : "Not End");
+									UINT8 Filler:6 = FormatString("   (%s)", this.ToBitString);
+								};
+							};
+						//RFC 1644 page 18
+						case 0x0B:
+							struct ConnectionCount = FormatString("%d", ConnectionCount)
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 ConnectionCount;
+							};
+						//RFC 1644 page 18
+						case 0x0C:
+							struct ConnectionCountMew = FormatString("%d", ConnectionCount)
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 ConnectionCount;
+							};
+						//RFC 1644 page 18
+						case 0x0D:
+							struct ConnectionCountEcho = FormatString("%d", ConnectionCount)
+							{
+								UINT8  type = TCPOptionTypeTable(this);
+								UINT8  Length;
+								UINT32 ConnectionCount;
+							};
+						//RFC 1146
+						case 0x0E:
+							struct AlternateChecksumRequest = TCPChecksumTable(this.Checksum)
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								UINT8 Checksum = TCPChecksumTable(this);
+							};
+						//RFC 1146
+						case 0x0F:
+							struct AlternateChecksumData
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								BLOB(Length-2) ChecksumData;
+							};
+						//RFC 2385 page 3
+						case 0x13:
+							struct MD5Sig
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								BLOB(16) MD5Digest;
+							};
+						default:
+							struct UNHANDLEDTCPOption
+							{
+								UINT8 type = TCPOptionTypeTable(this);
+								UINT8 Length;
+								BLOB(Length-2) Data;
+							};
+						};
+				}
+			}
+	}
+	//
+	// Property.TCPPayload would be useful to provide a way for folks to search TCP payloads
+	// Sample filter: Property.TCPPayload.contains("Microsoft.com")
+	//
+	[
+		Property.TCPPayload = AsciiString(FrameData, FrameOffset, Property.TCPPayloadLength),
+		Property.TCPIsFirst = property.IPTruncated ? 1 : 
+			(	((TCPContinuationMask & Conversation.TCPFrameFlagsMVS$[FrameNumber]) == 0) 
+				|| !((TCPSegLostAfterPushMask & Conversation.TCPFrameFlagsMVS$[FrameNumber]) == 0)	),
+		Property.TCPIsLast = property.IPTruncated ? 1 : (Flags.Push || Flags.Fin || Flags.Urgent || Property.TCPKeepAlive || Property.TCPRetransmit),
+		DataFieldFrameLength = frameOffset + Property.TCPPayloadLength,
+		PayloadStart(
+					Property.NetworkDirection, /*direction */
+					0, /* id */
+					Property.TCPSeqNumber, /* sequence token */
+					Property.TCPNextSeqNumber, /* next sequence token */
+					0, /* total payload length */
+					Property.TCPIsFirst, /* is first */
+					Property.TCPIsLast, /* is last */
+					RssmblyIndStartBit+RssmblyIndEndBit+RssmblySequenceBit,  // Has start, end indication and uses sequence
+					/* Properties... */
+					0x0000,
+					Property.SourcePort,
+					0x0000,
+					Property.DestinationPort,
+					//Collect Sequence Range For Reassembled TCP frames
+					0x0000,
+					Property.TCPSeqNumber,
+					0x0008,
+					Property.TCPNextSeqNumber,
+					0x0008,
+					Flags
+					)
+	]
+	
+	//Set Property.CompleteFrame to true for all the complete tcp frames
+	[Property.CompleteFrame = Property.TCPIsFirst && Property.TCPIsLast]
+	
+	Switch
+	{
+		case FrameLength > FrameOffset && Property.TCPRetransmit:
+			Blob(FrameLength - FrameOffset) RetransmitPayload;
+		case Property.TCPPayloadLength == 1 && Property.TCPKeepAlive:
+			UINT8 KeepAliveGarbageOctet;
+		case Property.TCPPayloadLength > 0 && Property.TCPContinuation:
+			BLOB(Property.TCPPayloadLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.TCPPayloadLength) TcpContinuationData;
+		case Property.TCPPayloadLength > 0:
+			struct 
+			{
+				//
+				// Who comes next
+				//
+				[Property.SslRcdByte = UINT8(FrameData, FrameOffset)]
+				[Property.SslProtoWord = UINT16(FrameData, FrameOffset + ((0x80 == Property.SslRcdByte)? 3: 1))]
+				[Property.SocketIndex = (Property.SourceNetworkAddress < Property.DestinationNetworkAddress)
+							  ? MakeByteArray(Property.SourceNetworkAddress,Property.SourcePort,Property.DestinationNetworkAddress,Property.DestinationPort)
+							  : MakeByteArray(Property.DestinationNetworkAddress,Property.DestinationPort,Property.SourceNetworkAddress,Property.SourcePort)]
+				TCPPayload(Property.SourcePort, Property.DestinationPort) TCPPayload;
+			}
+	}
+}
+
+struct TCPPayload(SrcPort, DstPort) = FormatString("SourcePort = %d, DestinationPort = %d", SrcPort, DstPort)
+{
+	[Local.TCPPort.AddToProperty(SrcPort, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	 Local.TCPPort.AddToProperty(DstPort, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),]
+	 switch
+	{
+		case (Global.SocketProxy.ProxyProtocol$[Property.SocketIndex] == "WSP") && !WSP:
+			[Property.WspOnTcp=TRUE]
+			WSP WSP;
+		default:
+			switch(Local.TCPPort)
+			{
+				case   20:
+				case   21:
+					FTP Ftp;
+				case   23:
+					TELNET Telnet;
+				case   25:
+					SMTP Smtp;
+				case   53:
+					DNSOverTCP DnsOverTcp;
+				case  111:
+				case  844:
+				case  846:
+				case 2049:
+					SunRPCOverTCP SunRpcOverTcp;
+				case  161:
+				case  162:
+					SNMP Snmp;
+				case   79:
+					Finger Finger;
+				case 5357: //DPWS traffic can occur over HTTP on port 5357
+					_struct DPWSOverHttp
+					{
+						switch(AsciiString(FrameData, FrameOffset, 4))
+						{
+							case "GET ":
+							case "PUT ":
+							case "HEAD":
+							case "POST":
+							case "HTTP":
+								[Conversation.IsHttp = TRUE]
+								HTTP Http;
+							default:
+								switch
+								{
+									case Conversation.IsHttp:
+										HTTP Http;
+									default:
+									BLOB(Property.TCPPayloadLength) TCPPayloadData;
+								}
+						}
+					}
+				case   80:
+				case 8080:
+					HTTP Http;   
+				case   88:
+					[Property.KerberosOnTCP = TRUE]
+					KerberosV5 Kerberos;
+				case  110:
+					POP3 Pop3;
+				case  143:
+					IMAP Imap;
+				case  119:
+					NNTP Nntp;
+				case  135:
+					MSRPC Msrpc;
+				case  137:
+					[Property.NbtNsOnTCP = TRUE]
+					NbtNs Nbtns;
+				case  139:
+					[Property.NbtSsOnTCP = TRUE]
+					NbtSs Nbtss;
+				case  445:
+					SMBOverTCP SMBOverTCP;
+				// standard SSL
+				case  443:
+				// LDAP over SSL
+				case  636:
+				// Active Directory Global Catalog Over SSL
+				case 3269:
+					[
+						Property.IsLDAPOverSSL = Local.TCPPort == 636 ? TRUE : FALSE,
+						Property.IsLDAPGlobalCatalogOverSSL = Local.TCPPort == 3269 ? TRUE : FALSE
+					]
+					switch
+					{
+						case (UINT16(FrameData, FrameOffset) == 0x0200)
+							&& TurnMsgTypeTable(UINT16(FrameData, FrameOffset+4))
+							&& ((Framelength - FrameOffset - 4) == UINT16(FrameData, FrameOffset + 2))
+							&& ((FrameLength - FrameOffset - 4 - 20) == UINT16(FrameData, FrameOffset + 6)):
+						case (UINT16(FrameData, FrameOffset) == 0x0300)
+							&& (UINT16(FrameData, FrameOffset + 2) == FrameLength - FrameOffset - 4):
+							TURN Turn;
+						case (Conversation.SSLConversation && FrameNumber > Conversation.SSLStartFrame) || 
+							 IsSslRecordTable(Property.SslRcdByte, Property.SslProtoWord):
+							[Conversation.SSLConversation = true]
+							[Conversation.SSLStartFrame = IsValueNone(Conversation.SSLStartFrame) ? FrameNumber : Conversation.SSLStartFrame]
+							SSLVersionSelector TLSSSLData;
+						default:
+							BLOB(FrameLength-FrameOffset)	UnknownData;
+					} 
+				// standard LDAP
+				case  389:
+					LDAP Ldap;
+				// Active Directory Global Catalog
+				case 3268:
+					[Property.LDAPGlobalCatalog = TRUE]
+					LDAP MSFTGC;
+				case  515:
+					LPR Lpr;
+				case  554:
+					RTSP Rtsp;
+				case 1002:
+					LDAP ILS;
+				case 3389:	// RDP TDI 9195,RA novice uses dynamic ports in the ephemeral port range.
+					RDP RDP;
+				case 1503:	// Netmeeting
+				case 1720:	// H225
+					switch
+					{
+						case INT16(FrameData, offset) == 0x0300 &&
+							 Property.TCPPayloadLength > 4: 
+							ISOTs ISOTs;
+						default:
+							_struct ContinuedISOTs
+							{
+								ISOTs ISOTs;
+								//BLOB(Property.TCPPayloadLength) TCPPayloadData;
+							}
+					}
+				case 1723:
+					switch (UINT32(FrameData, FrameOffset + 4))
+					{
+						case 0x1A2B3C4D: // PPTP MagicCookie
+							PPTP  Pptp;
+						default:
+							BLOB(FrameLength - FrameOffset) PPTPPayload;
+					}
+				// Self registered
+				//case 1745:
+				//	RWS RWS;
+				case 1755:
+					[Property.MMSOnTCP = TRUE]
+					MMS MMS;
+				case 1801:
+					[Property.MQQBPort = 1801, Property.MQQBOnTcp = TRUE]
+					MQQB MQQB;
+				case 3260:
+					iSCSI iScsi;
+				case 3372:  //Rfc 2371 
+					TIPP Tipp;
+				case 3478:
+				 switch
+					{
+						case (UINT16(FrameData, FrameOffset) == 0x0200)
+							&& TurnMsgTypeTable(UINT16(FrameData, FrameOffset+4))
+							&& ((Framelength - FrameOffset - 4) == UINT16(FrameData, FrameOffset + 2))
+							&& ((FrameLength - FrameOffset - 4 - 20) == UINT16(FrameData, FrameOffset + 6)):
+						case (UINT16(FrameData, FrameOffset) == 0x0300)
+							&& (UINT16(FrameData, FrameOffset + 2) == FrameLength - FrameOffset - 4):
+							TURN Turn;
+						default:
+						Blob(Framelength - FrameOffset) TurnForwardData;
+					}
+				case 5060:
+					SIP SIP;
+				case 1433:
+					while [FrameOffset + 8 <= FrameLength]
+					{
+						switch
+						{
+							case UINT8( Framedata, Offset ) == 0x53:
+								SMP Smp;
+							default:
+								TDS Tds;
+						}
+					}
+				case 7007:
+					MSBD MSBD;
+				case 42424:	
+					ASPNET Aspnet;
+				default:
+					switch
+					{
+						case (Conversation.SSLConversation && FrameNumber > Conversation.SSLStartFrame) || 
+							 IsSslRecordTable(Property.SslRcdByte, Property.SslProtoWord):
+							[Conversation.SSLConversation = true]
+							[Conversation.SSLStartFrame = IsValueNone(Conversation.SSLStartFrame) ? FrameNumber : Conversation.SSLStartFrame]
+								SSLVersionSelector TLSSSLData;
+						case UINT24(FrameData, FrameOffset) == 0x050014:
+							RPCHTTP Rpchttp;
+						default:
+							switch
+							{
+								case Conversation.TCPIsNNS:
+								case 
+									(( UINT8( Framedata, Offset ) == 0x14 ||
+									   UINT8( Framedata, Offset ) == 0x15 ||
+									   UINT8( Framedata, Offset )== 0x16 ) &&
+									 (UINT16(FrameData, Offset + 1) == 0x0100) &&
+									 ( UINT16( FrameData, Offset + 3 ) + 5 >= Property.TCPPayloadLength )):
+										[Conversation.TCPIsNNS = TRUE]
+										NNS NNS;
+								//RPC over HTTP
+								case AsciiString (frameData,frameoffset,13) == "ncacn_http/1.":
+									_struct RPCHttpLegacyServerResponse
+									{
+										RPCHTTP Rpchttp;
+									}
+								//MSRPC
+								case
+									UINT8( Framedata, Offset ) == 0x05 &&          // RPC Protocol Version = 5, Connection-oriented RPC
+									( UINT8( Framedata, Offset + 1 ) == 0 || UINT8( Framedata, Offset + 1 ) == 1 ) && // RPC minor version
+									( FrameLength - frameOffset >= 16 ) &&       // RPC connection-oriented header length
+									( UINT8( Framedata, Offset + 2 ) == 0 ||       // RPC ptype, connection-oriented packet types
+										UINT8( Framedata, Offset + 2 ) == 2 ||
+										UINT8( Framedata, Offset + 2 ) == 3 ||
+										( UINT8( Framedata, Offset + 2 ) >= 11 &&
+											UINT8( Framedata, Offset + 2 ) <= 19
+										)
+									) &&
+									( UINT8( Framedata, Offset + 4 ) & 0xEE ) == 0 &&  // RPC integer and character data representation, drep octet0
+									UINT8( Framedata, Offset + 5 ) < 4 &&          // RPC floating point data representation, drep octet1
+									UINT8( Framedata, Offset + 6 ) == 0 &&         // RPC data representation drep octet2 & 3 m.b.z.
+									UINT8( Framedata, Offset + 7 ) == 0 :
+									While [ FrameLength - Offset > 0 ]
+									{
+										MSRPC MSRPC;
+									}
+										
+								case Local.TCPPort == 1801:
+									[Property.MQQBPort = 1801, Property.MQQBOnTcp = TRUE]
+									MQQB MQQB;
+								
+								case Conversation.dotnettcpchannel && FrameNumber > Conversation.dotnetframetcpchannel:
+									_struct DotNetRTC
+									{
+										dotNetRemotingTcpChannel dotNetRemotingTcpChannel;
+									}
+								
+								case AsciiString( FrameData, Offset, 4 ) == ".NET":
+									[conversation.dotnettcpchannel = TRUE, Conversation.dotnetframetcpchannel = FrameNumber ]
+									dotNetRemotingTcpChannel dotNetRemotingTcpChannel;
+								
+								case AsciiString( FrameData, Offset, 7 ) == "Ntlmssp":
+									NLMP NLMP;
+								
+								case AsciiString( FrameData, Offset + 20, 4 ) == "play":
+									DirectPlay4 DirectPlay4;
+								
+								case Global.H245Port$[MakeByteArray(Property.SourceNetworkAddress, Property.SourcePort)]:
+								case Global.H245Port$[MakeByteArray(Property.DestinationNetworkAddress, Property.DestinationPort)]:
+									ISOTs ISOTs;
+								case global.RpcMappedPort$[Property.SourcePort] == true:
+								case global.RpcMappedPort$[Property.DestinationPort]	== true:
+									SunRPCOverTCP SunRPCOverTCP;	
+
+								case conversation.IsHttp:
+									_struct 
+									{
+						 			 HTTP Http;
+									}
+								default:
+									// SIP, see RFC3261 8.1.1.7 Via
+									switch (AsciiStringTerm(FrameData,FrameOffset," "))
+									{
+										case "ACK": //RFC 3261
+										case "BYE": //RFC 3261
+										case "CANCEL": //RFC 3261
+										case "INFO": //RFC 2976
+										case "INVITE": //RFC 3261
+										case "MESSAGE": //RFC 3428
+										case "NOTIFY": //RFC 3265
+										case "OPTIONS": //RFC 3261
+										case "PRACK": //RFC 3262
+										case "PUBLISH": //RFC 3903
+										case "REFER": //RFC 3515
+										case "REGISTER": //RFC 3261
+										case "SUBSCRIBE": //RFC 3265
+										case "UPDATE": //RFC 3311
+										case "SERVICE":
+										case "SIP/2.0": //Sip Response
+												SIP SIP;
+
+										case "GET":
+										case "PUT":
+										case "HEAD":
+										case "POST":
+										case "HTTP/1.1":
+											[conversation.IsHTTP = TRUE]
+											HTTP Http;
+										default:
+										switch
+										{
+											// Check for TURN Header over TCP
+											case (UINT16(FrameData, FrameOffset) == 0x0200)
+												&& TurnMsgTypeTable(UINT16(FrameData, FrameOffset+4))
+												&& ((Framelength - FrameOffset - 4) == UINT16(FrameData, FrameOffset + 2))
+												&& ((FrameLength - FrameOffset - 4 - 20) == UINT16(FrameData, FrameOffset + 6)):
+											case (UINT16(FrameData, FrameOffset) == 0x0300)
+												&& (UINT16(FrameData, FrameOffset + 2) == FrameLength - FrameOffset - 4):
+												TURN Turn;
+											default:
+												BLOB(Property.TCPPayloadLength > (FrameLength - FrameOffset) ? (FrameLength - FrameOffset) : Property.TCPPayloadLength) TCPPayloadData;
+										}
+									}
+							}
+					}
+			}
+	}
+	
+	//
+	// Consume data left, for reassembly
+	//
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength - FrameOffset) UnhandledTCPData;
+	}
+}
+
+UnsignedNumber TCPFlags
+{
+	size = 1,
+	DisplayFormat = FormatString("%s%s%s%s%s%s%s%s",
+								(this & 0x80) ? "C": ".",
+								(this & 0x40) ? "E": ".",
+								(this & 0x20) ? "U": ".",
+								(this & 0x10) ? "A": ".",
+								(this & 0x08) ? "P": ".",
+								(this & 0x04) ? "R": ".",
+								(this & 0x02) ? "S": ".",
+								(this & 0x01) ? "F": "."
+								)
+}
+
+Table IsSslRecordTable( RcdByte, VersionWord )
+{
+	switch(RcdByte)
+	{
+		case 0x14:						//Cipher Change Spec
+		case 0x15:						//Encrypted Alert
+		case 0x16:						//HandShake
+		case 0x17: 						//SSL Application Data
+			//SSL Version
+			(0x0200 == VersionWord ||   //SSL 2.0
+			 0x0300 == VersionWord ||   //SSL 3.0
+			 0x0301 == VersionWord ||   //SSL 3.1 (TLS 1.0)
+			 0x0302 == VersionWord ||   //TLS 1.1
+			 0x0303 == VersionWord      //TLS 1.2
+			)? TRUE: FALSE;
+		default:
+			(0x80 <= RcdByte &&			//SSLv2 record
+			//SSL Version 
+			(0x0200 == VersionWord ||   //SSL 2.0
+			 0x0300 == VersionWord ||   //SSL 3.0
+			 0x0301 == VersionWord ||   //SSL 3.1 (TLS 1.0)
+			 0x0302 == VersionWord ||   //TLS 1.1
+			 0x0303 == VersionWord      //TLS 1.2
+			))? TRUE: FALSE;
+	}
+}
+Table TCPOptionTypeTable(type)
+{
+	switch(type)
+	{
+		case  0:FormatString("End of option list. %d(%#x)", type, type);
+		case  1:FormatString("No operation. %d(%#x)", type, type);
+		case  2:FormatString("Maximum Segment Size. %d(%#x)", type, type);
+		case  3:FormatString("Window scale factor. %d(%#x)", type, type);
+		case  4:FormatString("SACK permitted. %d(%#x)", type, type);
+		case  5:FormatString("SACK. %d(%#x)", type, type);
+		case  6:FormatString("Echo. %d(%#x)", type, type);
+		case  7:FormatString("Echo reply. %d(%#x)", type, type);
+		case  8:FormatString("Timestamp. %d(%#x)", type, type);
+		case  9:FormatString("Partial Order Connection Permitted. %d(%#x)", type, type);
+		case 10:FormatString("Partial Order Service Profile. %d(%#x)", type, type);
+		case 11:FormatString("CC, Connection Count. %d(%#x)", type, type);
+		case 12:FormatString("CC.NEW %d(%#x)", type, type);
+		case 13:FormatString("CC.ECHO %d(%#x)", type, type);
+		case 14:FormatString("TCP Alternate Checksum Request. %d(%#x)", type, type);
+		case 15:FormatString("TCP Alternate Checksum Data. %d(%#x)", type, type);
+		case 16:FormatString("Skeeter. %d(%#x)", type, type);
+		case 17:FormatString("Bubba. %d(%#x)", type, type);
+		case 18:FormatString("Trailer Checksum Option. %d(%#x)", type, type);
+		case 19:FormatString("MD5 signature. %d(%#x)", type, type);
+		case 20:FormatString("SCPS Capabilities. %d(%#x)", type, type);
+		case 21:FormatString("Selective Negative Acknowledgements. %d(%#x)", type, type);
+		case 22:FormatString("Record Boundaries. %d(%#x)", type, type);
+		case 23:FormatString("Corruption experienced. %d(%#x)", type, type);
+		case 24:FormatString("SNAP. %d(%#x)", type, type);
+		case 26:FormatString("TCP Compression Filter. %d(%#x)", type, type);
+		default:FormatString("UNHANDLED TCP Option type. %d(%#x)", type, type);
+	}
+}
+
+Table TCPChecksumTable(value)
+{
+	switch (value)
+	{
+		case 0x0:FormatString("TCP checksum (%#x)",value);
+		case 0x1:FormatString("8-bit Fletcher's algorithm (%#x)",value);
+		case 0x2:FormatString("16-bit Fletcher's algorithm (%#x)",value);
+		case 0x3:FormatString("Redundant Checksum Avoidance (%#x)",value);
+		default :FormatString("Undefined, Value= (%#x)",value);
+	}
+}
+
+Table TcpConnectionStateTable
+{
+	switch(value)
+	{
+		case UnknownState:
+			"Unknown State";
+		case HalfConnected:
+			"Half Connected";
+		case Connected:
+			"Connected";
+		case FinWait1:
+			"FinWait1";
+		case FinWait2:
+			"FinWait2";
+		case Disconnected:
+			"Disconnected";
+		default:
+			"Error State";
+	}
+}
+
+//
+// TCP state machine
+//
+Table GetTcpStateFromTable(State, Flags)
+{
+	switch
+	{
+		// Syn packect no ack.
+		case Flags == 0x02: HalfConnected;
+		
+		// Syn and ack
+		case (State == HalfConnected) && (Flags & 0x12) == 0x12: Connected;
+		
+		// Reset
+		case (Flags & 0x04) == 0x04: Disconnected;
+		
+		// First Fin packet
+		case (State == Connected) && (Flags & 0x01) == 0x01: FinWait1;
+		
+		// Second Fin packet
+		case (State == FinWait1) && (Flags & 0x01) == 0x01: FinWait2;
+		
+		// Ack to Second Fin
+		case (State == FinWait2) && (Flags == 0x10): Disconnected;
+		
+		// In other cases, plus the state is valid, no state changed
+		case State > 0 && (State & 0x04) != 0x04 : State;
+
+		// Otherwise, we set the state as Connected
+		default: Connected;
+	}
+}
+
+
+// U - UnSequenced
+// C - Continuation
+// L - Segment Lost
+// F - Fast Retransmit Request
+// D - Duplicated Ack
+// S - Syn Retransmit
+// R - Retransmit
+// A - Keep Alive Ack
+// K - Keep Alive
+Table TCPFrameFlagsTable(flags)
+{
+	switch
+	{
+		default:
+			FormatString("%s,%s%s%s%s%s%s%s%s%s",
+				TcpConnectionStateTable((TCPStateMask & flags)>>12),
+				TCPUnSequenceMask & flags ? "U":".",
+				TCPContinuationMask & flags ? "C":".",
+				TCPNotLostSegmentMask & flags ? ".":"L",
+				TCPRequestFastRetransmitMask & flags ? "F":".",
+				TCPDupAckMask & flags ? "D":".",
+				TCPSynRetransmitMask & flags ? "S":".",
+				TCPRetransmitMask & flags ? "R":".",
+				TCPKeepAliveAckMask & flags ? "A":".",
+				TCPKeepAliveMask & flags ? "K":"."
+			);
+	}
+}
+
+

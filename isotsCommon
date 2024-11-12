@@ -1,0 +1,205 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  ISO Transport service Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1006
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+[DataTypeByteOrder = BigEndian]
+Protocol TPKT = FormatString("version: %d, Length: %d", version, PacketLength)
+{
+    UINT8 version; // 03
+    UINT8 Reserved; // 00
+    UINT16 PacketLength;
+	[conversation.TCP.IsTPKTUnCompleted$[Property.NetworkDirection] = (FrameLength - FrameOffset < PacketLength - 4) ? true : false]
+	[Local.TPKTEndOffset = FrameOffset + PacketLength - 4]
+    [DataFieldFrameLength = Local.TPKTEndOffset]
+	switch 
+	{
+		case SourcePort == 3389 || DestinationPort == 3389:
+		case SourcePort == 1503 || DestinationPort == 1503:
+		case TSGURDPPayload:
+			X224 X224;
+		case Global.H245Port$[MakeByteArray(SourceNetworkAddress, SourcePort)] ||
+			Global.H245Port$[MakeByteArray(DestinationNetworkAddress, DestinationPort)]:
+			H245 H245;
+		case SourcePort == 1720 || DestinationPort == 1720:
+			Q931 Q931Header;
+		default:
+			Blob(PacketLength - 4) TPDU;
+	}
+	switch
+	{
+		case FrameOffset+1 < Local.TPKTEndOffset && FrameOffset+1 < FrameLength:
+			struct
+			{
+				Blob(Local.TPKTEndOffset < FrameLength ? Local.TPKTEndOffset - FrameOffset : FrameLength - FrameOffset) UnparsedData;
+			}
+	}
+};
+
+[DataTypeByteOrder = BigEndian]
+Protocol ISOTS = ISOTsContinuation ? "Continuation data" : FormatString("TPKTCount = %u", Property.ISOTsTPKTCount)
+{
+	[Property.ISOTsNullValue = Property.ISOTsNullValue]
+	switch
+	{
+		case !conversation.ISOTs.ID:
+			[BuildConversationWithParent]
+			_struct _Buildconversation{};
+	}
+	[
+		Conversation.ConversationDescription = 
+			Conversation.ISOTs.ConversationDescription ? Conversation.ISOTs.ConversationDescription : 
+			(
+				(Property.SourcePort && Property.DestinationPort ? FormatString("(%u - %u) ", Property.SourcePort, Property.DestinationPort) : "") +
+				(FormatString("ConvID = %d", ConvID))
+			)
+	]
+	
+	switch 
+	{
+		case !HighestReassembledProtocol || HighestReassembledProtocol != "ISOTS":	// If already reassembled on this layer, do not need to do it again
+			[
+				Local.CurrentFrameOffset = FrameOffset,
+				property.IsMoreThanOneTPKT = (UINT16(FrameData, FrameOffset) == 0x0300 && ((FrameLength - FrameOffset) > UINT16(FrameData, FrameOffset + 2))) ? true : false,
+				Post.Property.ISOTsIsFirst = Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] == true,
+				Post.Property.ISOTsIsLast = Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpNextSeqNumber)] == true,
+				Post.Property.ISOTsIsLast = HighestReassembledProtocol == "ISOTS" ? (Property.IsTPKTCompleted ? true : Property.ISOTsIsLast): Property.ISOTsIsLast,
+				Post.Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpNextSeqNumber)] = Conversation.ISOTsEndSeqVar$[Property.NetworkDirection],
+				Conversation.TPKTNoLengthPerFrameTable$[FrameNumber] = Conversation.TPKTNoLength$[Property.NetworkDirection] ? true : false
+			]
+			[MaxLoopCount = 100]
+			while [FrameLength > Local.CurrentFrameOffset]
+			{
+				switch
+				{
+					case UINT16(FrameData, Local.CurrentFrameOffset) == 0x0300 && FrameLength - Local.CurrentFrameOffset > 3:
+						[conversation.TPKTNoLength$[Property.NetworkDirection] = false]
+						[Conversation.ISOTsEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset + UINT16(FrameData, Local.CurrentFrameOffset + 2)]
+						[Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset)] = true]
+						[Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset + UINT16(FrameData, Local.CurrentFrameOffset + 2))] = true]
+						[Property.IsTPKTCompleted = FrameLength - Local.CurrentFrameOffset >= UINT16(FrameData, Local.CurrentFrameOffset + 2) ? True : False]
+						[Local.CurrentFrameOffset = Local.CurrentFrameOffset + UINT16(FrameData, Local.CurrentFrameOffset + 2)]
+						struct {} ;
+					case (UINT16(FrameData, Local.CurrentFrameOffset) == 0x0300 && FrameLength - Local.CurrentFrameOffset < 4):
+						[conversation.TPKTNoLength$[Property.NetworkDirection] = true]
+						[conversation.TCP.IsTPKTUnCompleted$[Property.NetworkDirection] = true]
+						//Recording the part of length when the length field in TPKT is divided into two fragments
+						[conversation.TPKTLengthOfConsumedLen = FrameLength - Local.CurrentFrameOffset > 3 ? Property.ISOTsNullValue : FrameLength - Local.CurrentFrameOffset - 2]
+						[conversation.TPKTPartLength = (FrameLength - Local.CurrentFrameOffset == 3) ? UINT8(FrameData, Local.CurrentFrameOffset + 2) : Property.ISOTsNullValue]
+						[Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset)] = true]
+						[Conversation.ISOTsEndSeqVar$[Property.NetworkDirection] = Property.ISOTsNullValue]
+						[Local.CurrentFrameOffset = FrameLength]
+						struct {};
+					case Conversation.TPKTNoLengthPerFrameTable$[FrameNumber]:
+						//Using the part of length recorded in previous fragment and part of length in this fragment to calculate the length of packet
+						[conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber] = conversation.TPKTLengthOfConsumedLen]
+						[conversation.TPKTPartLengthMVS$[FrameNumber] = conversation.TPKTPartLength]
+						[Property.TPKTCompleteLen = (conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber] == 0) ? UINT16(FrameData, FrameOffset) : 
+						((conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber] == 1) ? (conversation.TPKTPartLengthMVS$[FrameNumber] * 256 + UINT8(FrameData, FrameOffset)) : Property.TPKTCompleteLen)]
+						[Conversation.ISOTsEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset + Property.TPKTCompleteLen - 2 - conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber]]
+						[Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] = Conversation.ISOTsEndSeqVar$[Property.NetworkDirection]]
+						[Conversation.ISOTsIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber + Local.CurrentFrameOffset - ProtocolOffset + Property.TPKTCompleteLen - 2 - conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber])] = true]
+						[Local.CurrentFrameOffset = Local.CurrentFrameOffset + Property.TPKTCompleteLen - 2 - conversation.TPKTLengthOfConsumedLenMVS$[FrameNumber]]
+						struct {}
+					default:
+						[property.ISOTsContinuation = true]
+						switch
+						{
+							case IsValueNone(Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] ) && Property.TCPLostSegment:
+								struct
+								{
+									ISOTsLookForProtocolStartPlace LookForProtocolStartPlace;
+									[Local.CurrentFrameOffset = Local.CurrentFrameOffset + (FrameOffset + Property.ISOTsLookforOffset == FrameLength - 1 ? FrameLength - FrameOffset : Property.ISOTsLookforOffset)]
+									struct {}
+								}
+							default:
+								[Local.ContinuationDataLen = Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] - Property.TcpSeqNumber]
+								[Local.ContinuationDataLen = (Local.ContinuationDataLen > FrameLength - Local.CurrentFrameOffset) ? (FrameLength - Local.CurrentFrameOffset) : Local.ContinuationDataLen]
+								[Local.CurrentFrameOffset = Local.CurrentFrameOffset + Local.ContinuationDataLen]
+								struct {} ;
+						}
+				}
+			}
+	}
+	
+	[
+		Post.PayloadStart(
+		            NetworkDirection, /* direction */
+		            0, /* id */
+		            0, /* sequence token */
+		            0, /* next sequence token */
+		            0, /* total payload length */
+		            ISOTsIsFirst, /* is first */
+		            ISOTsIsLast, /* is last */
+		            RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+					)
+	]
+	//Looking for start place of next TPKT packet when segment lost and give up when could not find it in 3 frames
+	[Post.Conversation.ISOTsMissFramesNumber$[FrameNumber] = Conversation.ISOTsMissFrames$[Property.NetworkDirection]]
+	[Post.conversation.TCP.IsTPKTUnCompleted$[Property.NetworkDirection] = Conversation.ISOTsMissFramesNumber$[FrameNumber] > 3 ? False : conversation.TCP.IsTPKTUnCompleted$[Property.NetworkDirection]]
+	[Post.Conversation.ISOTsMissFrames$[Property.NetworkDirection] = Conversation.ISOTsMissFramesNumber$[FrameNumber] > 3 ? 0 : Conversation.ISOTsMissFrames$[Property.NetworkDirection]]
+	while [FrameLength > FrameOffset]
+	{
+		switch
+		{
+			case UINT16(FrameData, FrameOffset) == 0x0300:
+				[Conversation.ISOTsMissFrames$[Property.NetworkDirection] = 0]
+				[property.ISOTsContinuation = false, Property.ISOTsTPKTCount = Property.ISOTsTPKTCount + 1]
+				TPKT TPKT;
+			case Conversation.TPKTNoLengthPerFrameTable$[FrameNumber]:
+				[Conversation.ISOTsMissFrames$[Property.NetworkDirection] = 0]
+				[Local.ContinuationDataLen = Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] - Property.TcpSeqNumber]
+				[Local.ContinuationDataLen = (Local.ContinuationDataLen > FrameLength - FrameOffset) ? (FrameLength - FrameOffset) : Local.ContinuationDataLen]
+				Blob(Local.ContinuationDataLen) ContinuationPayloadWithCalLength;
+			default:
+				[property.ISOTsContinuation = true]
+				switch
+				{
+					case IsValueNone(Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] ) && Property.TCPLostSegment:
+					case HighestReassembledProtocol == "ISOTS" && !(UINT16(FrameData, FrameOffset) == 0x0300):
+						struct
+						{
+							ISOTsLookForProtocolStartPlace LookForProtocolStartPlace;
+							ReportParserWarning("ISOTs", "Segment Lost, it may cause the uncorrectly parse of the Data.") ParserWarning;
+							[Conversation.ISOTsMissFrames$[Property.NetworkDirection] = !PayloadHeader ? Conversation.ISOTsMissFrames$[Property.NetworkDirection] + 1 : Conversation.ISOTsMissFrames$[Property.NetworkDirection]]
+							Blob(FrameOffset + Property.ISOTsLookforOffset == FrameLength - 1 ? FrameLength - FrameOffset : Property.ISOTsLookforOffset) SegLostContinuationData;
+						}
+					default:
+						switch
+						{
+							case IsValueNone(Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] ):
+								Blob(FrameLength - FrameOffset) ContinuationData;
+							default:
+								[Local.ContinuationDataLen = Conversation.ISOTsEndSeqTable$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] - Property.TcpSeqNumber]
+								[Local.ContinuationDataLen = (Local.ContinuationDataLen > FrameLength - FrameOffset) ? (FrameLength - FrameOffset) : Local.ContinuationDataLen]
+								Blob(Local.ContinuationDataLen) ContinuationPayload;
+						}
+				}
+		}
+	}
+}
+
+//Looking for the start place of next TPKT packet when segment lost or could not get the length of the TPKT payload
+Struct ISOTsLookForProtocolStartPlace = "Segment Lost, Looking for the start place of a new TPKT packet"
+{
+	[Property.ISOTsLookforOffset = 0]
+	[MaxLoopCount = Framelength]
+	while[(!(UINT16(FrameData, FrameOffset + Property.ISOTsLookforOffset) == 0x0300) || (!(UINT8(FrameData, FrameOffset + Property.ISOTsLookforOffset + 5) == 0xD0) 
+					&& !(UINT8(FrameData, FrameOffset + Property.ISOTsLookforOffset + 5) == 0xE0) && !(UINT8(FrameData, FrameOffset + Property.ISOTsLookforOffset + 5) == 0xF0)
+					&& !(UINT8(FrameData, FrameOffset + Property.ISOTsLookforOffset + 5) == 0x70) && !(UINT8(FrameData, FrameOffset + Property.ISOTsLookforOffset + 5) == 0x80)))
+					&& FrameOffset + Property.ISOTsLookforOffset < FrameLength - 1]
+	{
+		[Property.ISOTsLookforOffset = Property.ISOTsLookforOffset + 1]
+		struct {}
+	}
+}
+

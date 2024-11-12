@@ -1,0 +1,525 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Procedure Call Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1050, 1057, 1831
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 1/28/2010
+//#
+//####
+
+const SunRPCOverTCPIsFirstMask = 0x01;
+const SunRPCOverTCPIsLastMask = 0x02;
+
+[DefaultTimeOut = RPCConversationTimeout]
+Protocol SunRPC = FormatString("%s%s", SunRPCMsgTypeTable(MessageType), RPCMessageStatus ? ", " + RPCMessageStatus:"")
+{
+	[
+		BuildConversationWithParent (TransactionID ),
+		Post.Conversation.ConversationDescription = FormatString("(TransactID: %u) ConvID = %d", TransactionID, ConvID)
+	]
+	[property.SunRPCTransactionID]
+	UINT32 TransactionID;
+	[SunRPCMessageType]
+	UINT32 MessageType = SunRPCMsgTypeTable(this);
+	switch( MessageType )
+	{
+		case 0: //Service Call
+			[
+				post.RPCMessageStatus = FormatString("Program = %s, Procedure = %s",
+					SunRPCKnownProgramsTable(this.ProgramNumber),
+					SunRPCProcedureNumberTable(SourcePort, DestinationPort, this.ProgramVersion, this.ProcedureNumber,this.ProgramNumber))
+			]
+			_struct ServiceCall
+			{
+				UINT32 RPCVersionNumber;
+				[conversation.ProgramNumberOfTransaction$[property.SunRPCTransactionID]]
+				UINT32 ProgramNumber = Formatstring("%s, %u(0x%08X)",SunRPCKnownProgramsTable(this), this, this);
+				[conversation.ProgramVersion]
+				UINT32 ProgramVersion;
+				[conversation.ProcedureNumber]
+				UINT32 ProcedureNumber = SunRPCProcedureNumberTable(SourcePort, DestinationPort, ProgramVersion, this, ProgramNumber);
+				SunRPCAuthenticationCredentials Credential;
+				SunRPCAuthenticationVerfication Verfication;
+			};
+
+		case 1: //Service Reply
+			[
+				post.RPCMessageStatus = FormatString("Status = %s, Detail = %s",
+					SunRPCReplyStatusTable(property.SunRPCReplyStatus), property.SunRPCReplyStatusDetail)
+			]
+			_struct ServiceReply
+			{
+				[SunRPCReplyStatus]
+				UINT32 ReplyStatus = SunRPCReplyStatusTable(this);
+				switch( ReplyStatus )
+				{
+					case 0: //Message accepted
+						_struct MessageAccepted
+						{
+							SunRPCAuthenticationVerfication Verfication;
+							[ SunRPCReplyStatusDetail = this.ToString ]
+							UINT32 AcceptState = SunRPCAcceptStateTable(this);
+							switch( AcceptState )
+							{
+								case 2: INT64 ProgramMismatch = FormatString("Program VersionMin is %d , Program VersionMax is %d",
+																			ProgramVersionMin,ProgramVersionMax
+																			)
+									{
+										UINT32 ProgramVersionMin;
+										UINT32 ProgramVersionMax;
+									};
+							}
+						};
+						
+					case 1: //Message denied
+						_struct MessageDenied
+						{
+							[ SunRPCReplyStatusDetail = this.ToString ]
+							UINT32 RejectStatus = SunRPCRejectStatusTable(this);
+							switch( RejectStatus )
+							{
+								case 0:
+									INT64 RPCMismatch = FormatString("RPC VersionMin is %d , RPC VersionMax is %d",
+																	 RPCVersionMin,
+																	 RPCVersionMax
+																	)
+									{
+										UINT32 RPCVersionMin;
+										UINT32 RPCVersionMax;
+									};
+								case 1:
+									UINT32  ErrotAuth = SunRPCAuthErrorTable(this);
+							}
+						};
+				}
+			};
+	}
+	
+	switch
+	{
+		case conversation.ProgramNumberOfTransaction$[property.SunRPCTransactionID] == 100000 && conversation.ProgramVersion == 2:
+			Portmap Portmap;
+		case conversation.ProgramNumberOfTransaction$[property.SunRPCTransactionID] == 100000 && (conversation.ProgramVersion == 3 || conversation.ProgramVersion == 4):
+			SunRpcBind SunRpcBind;
+		case SourcePort == 2049 || DestinationPort == 2049:
+			NFS Nfs;
+		case conversation.ProgramNumberOfTransaction$[TransactionID] == 351455:// && ((SourcePort >= 844 && SourcePort <= 847) || (DestinationPort >= 844 && DestinationPort <= 847)):
+			UNM Unm;
+		default:
+			BLOB(FrameLength - FrameOffset) UnknownData;
+	}
+	switch
+	{
+		case FrameOffset < FrameLength:
+			struct
+			{
+				//SunRPC clients and servers may optionally append extra data to the end of a RPC Call or Reply, so using parser warning instead to avoid report parser error in this case
+				ReportParserWarning("SunRPC", "Unknown data or extra appended data out of the protocol spec." ) SunRPCParserWarning;
+				BLOB(FrameLength - FrameOffset) UnknownData;
+			}
+	}
+}
+
+Protocol SunRPCOverTCP = (property.Summary == 1) ? "SunRPCOverTCP Blob" : "Continuation Blob"
+{
+	[local.WORD1 = UINT16(FrameData, FrameOffset)]
+	[local.WORD2 = UINT16(FrameData, FrameOffset + 2)]
+	
+	//there might be more RPCOverTCPHeader
+	[ 
+	  local.Count = 1,
+	  local.NextRPCOverTCPHeaderOffset = FrameOffset,
+	  MaxLoopCount = 50
+	]
+	while [ (local.WORD1 & 0x7FFF) == 0x0000 && local.WORD2 < (FrameLength - local.NextRPCOverTCPHeaderOffset - 4) ]
+	{
+		[
+		  local.Count = local.Count + 1,
+		  local.NextRPCOverTCPHeaderOffset = local.WORD2 + local.NextRPCOverTCPHeaderOffset + 4,
+		  local.WORD1 = UINT16(FrameData, local.NextRPCOverTCPHeaderOffset),
+		  local.WORD2 = UINT16(FrameData, local.NextRPCOverTCPHeaderOffset + 2)
+		]
+		struct {};
+	}
+	
+	switch
+	{
+		case (local.WORD1 & 0x7FFF) == 0x0000 && local.WORD2 >= (FrameLength - local.NextRPCOverTCPHeaderOffset - 4):
+			[ 
+              MaxLoopCount = local.Count,
+			  property.Summary = 1
+            ]
+			while [FrameOffset < FrameLength]
+			{
+				SunRPCOverTCPHeader Header;
+				[DataFieldFrameLength = Header.FragmentHeader.FragmentLength + FrameOffset]
+				SunRPC SunRPC; 
+			}
+		default:
+			BLOB(FrameLength - FrameOffset) RPCContinueBlob;
+	}
+}
+
+Table SunRPCAuthGSSProcedureTable(value)
+{
+	switch(value)
+	{
+		case  0:"RPCSEC_GSS_DATA";
+		case  1:"RPCSEC_GSS_INIT";
+		case  2:"RPCSEC_GSS_CONTINUE_INIT";
+		case  3:"RPCSEC_GSS_DESTROY";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCAuthGSSServiceTable(value)
+{
+	switch(value)
+	{
+		case  1:"rpcsec_gss_svc_none";
+		case  2:"rpcsec_gss_svc_integrity";
+		case  3:"rpcsec_gss_svc_privacy";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCMsgTypeTable(value)
+{
+	switch( value )
+	{
+		case  0:"Call";
+		case  1:"Reply";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCReplyStatusTable(value)
+{
+	switch( value )
+	{
+		case  0:"Message accepted";
+		case  1:"Message denied";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCKnownProgramsTable(value)
+{
+	switch( value )
+	{
+		case 100000:"portmapper";
+		case 100003:"nfs";
+		case 351455:"mapsvc";
+		case 100005:"mountd";
+		case 100021:"nlockmgr";
+		case 100024:"status";
+		default    :FormatString("%d",value);
+	}
+}
+
+Table SunRPCAuthenticationTypeTable(value)
+{
+	switch( value )
+	{
+		case  0:"No Identity Authentication";
+		case  1:"Unix Authentication";
+		case  2:"INT16 Authentication";
+		case  3:"DES Authenication";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCRejectStatusTable(value)
+{
+	switch( value )
+	{
+		case  0:"RPC versions don't match";
+		case  1:"Security error - authentication failed";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCAcceptStateTable(value)
+{
+	switch( value )
+	{
+		case  0:"Call succeeded";
+		case  1:"Server program not available";
+		case  2:"Server version mismatch";
+		case  3:"Server procedure not available";
+		case  4:"Arguments invalid.";
+		case  5:"System error";
+		default:FormatString("%d",value);
+	}
+}
+
+Table SunRPCAuthErrorTable(value)
+{
+	switch( value )
+	{
+		case  1:"Bad credentials (seal broken)";
+		case  2:"Credentials rejected (must retry)";
+		case  3:"Bad verifier (seal broken)";
+		case  4:"Verifier expired or replayed";
+		case  5:"Rejected for security reasons";
+		default:FormatString("%d",value);
+	}
+}
+
+struct SunRPCData = Content
+{
+	UINT32 Length;
+	AsciiString(Length) Content;
+	switch
+	{
+		case Length%4:
+			AsciiString(4 - Length%4) FillBytes = "opaque data";
+	}
+}
+
+struct SunRPCAdditionalGIDs
+{
+	UINT32 GIDCount;
+	UINT32 GID[GIDCount];
+}
+
+//RFC 1050, page 11
+struct SunRPCAuthUNIXCredential = MachineName.ToString
+{
+	UINT32 StampID;
+	RPCFileName MachineName;
+	UINT32 UID;
+	UINT32 GID;
+	SunRPCAdditionalGIDs GIDs;
+}
+
+//RFC 1050, page 15
+struct SunRPCAuthDESCredential = FormatString("Name kind is %s",AdcNameKind.ToString)
+{
+	UINT32 AdcNameKind = this ? ( this == 1 ? "Nick Name":FormatString("%d",this)):"Full Name";
+	switch
+	{
+		case AdcNameKind  == 0:
+			struct FullName = AuthDesNetname.ToString
+			{
+				RPCFileName AuthDesNetname;
+				INT64 AuthConvKey = FormatString("ValueHigh is %d,ValueLow is %d",ValueHigh,ValueLow)
+				{
+					UINT32 ValueHigh;
+					UINT32 ValueLow;
+				};
+				UINT32 AuthDesWindow;
+			};
+		case AdcNameKind == 1:
+			UINT32 NickName;
+	}
+}
+
+struct SunRPCAuthGSSCredential = FormatString("version is %d , %s , %s",GSSVersion,GSSProcedure.ToString,GSSService)
+{
+	UINT32 GSSVersion;
+	UINT32 GSSProcedure = SunRPCAuthGSSProcedureTable(this);
+	UINT32 GSSSequenceNumber;
+	UINT32 GSSService = SunRPCAuthGSSServiceTable(this);
+	SunRPCData GSSContext;
+}
+
+struct SunRPCAuthGSSAPICredential = FormatString("version is %d",GSSAPIVersion)
+{
+	UINT32 GSSAPIVersion;
+	UINT32 GSSAPIMessage;
+	SunRPCData GSSAPIHandle;
+}
+
+struct SunRPCAuthGSSToken
+{
+	UINT32 TokenLength;
+	AsciiString(TokenLength) opaquedata;
+	switch
+	{
+		case TokenLength % 4:
+			AsciiString(4 - TokenLength % 4) FillBytes;
+	}
+}
+
+// this struct may be incomplete; continue to review it.
+struct SunRPCAuthenticationCredentials = Flavor.ToString
+{
+	UINT32 Flavor = SunRPCAuthenticationTypeTable(this);
+	[AuthCredEndOffset = offset + ( this%4 ? this + 4 - this % 4 : this) + 4]
+	UINT32 AuthDataLength;
+	switch(Flavor)
+	{
+		case      1:SunRpcAuthUNIXCredential AuthUNIX;
+		case      3:SunRpcAuthDESCredential AuthDES;
+		case      6:SunRpcAuthGSSCredential AuthGSS;
+		case 300001:SunRpcAuthGSSAPICredential AuthGSSAPI;
+		default:
+			switch
+			{
+				case AuthDataLength > 0:
+					AsciiString(AuthDataLength%4 ? AuthDataLength + 4 - AuthDataLength%4
+												 : AuthDatalength) Authenticationdata;
+			}
+	}
+	switch
+	{
+		case offset < Property.AuthCredEndOffset:
+			AsciiString(Property.AuthCredEndOffset - offset) PaddingData;
+	}
+}
+
+Table NFSCallTable(version,value)
+{
+	switch
+	{
+		case  version == 2 && value ==  0:"Do Nothing";
+		case  version == 2 && value ==  1:"Get File Attributes";
+		case  version == 2 && value ==  2:"Set File Attributes";
+		case  version == 2 && value ==  3:"Get Filesystem Root";
+		case  version == 2 && value ==  4:"Look Up File Name";
+		case  version == 2 && value ==  5:"Read From Symbolic Link";
+		case  version == 2 && value ==  6:"Read From File";
+		case  version == 2 && value ==  7:"Write To Cache";
+		case  version == 2 && value ==  8:"Write To File";
+		case  version == 2 && value ==  9:"Create File";
+		case  version == 2 && value == 10:"Remove File";
+		case  version == 2 && value == 11:"Rename File";
+		case  version == 2 && value == 12:"Create Link To File";
+		case  version == 2 && value == 13:"Create Symbolic Link";
+		case  version == 2 && value == 14:"Create Directory";
+		case  version == 2 && value == 15:"Remove Directory";
+		case  version == 2 && value == 16:"Read From Directory";
+		case  version == 2 && value == 17:"Get Filesystem Attributes";
+		case  version == 3 && value ==  0:"Do nothing";
+		case  version == 3 && value ==  1:"Get file attributes";
+		case  version == 3 && value ==  2:"Set file attributes";
+		case  version == 3 && value ==  3:"Look up file name";
+		case  version == 3 && value ==  4:"Check access permission";
+		case  version == 3 && value ==  5:"Read from symbolic link";
+		case  version == 3 && value ==  6:"Read from file";
+		case  version == 3 && value ==  7:"Write to file";
+		case  version == 3 && value ==  8:"Create a file";
+		case  version == 3 && value ==  9:"Create a directory";
+		case  version == 3 && value == 10:"Create a symbolic link";
+		case  version == 3 && value == 11:"Create a special device";
+		case  version == 3 && value == 12:"Remove a File";
+		case  version == 3 && value == 13:"Remove a Directory";
+		case  version == 3 && value == 14:"Rename a File or Directory";
+		case  version == 3 && value == 15:"Create Link to an object";
+		case  version == 3 && value == 16:"Read From Directory";
+		case  version == 3 && value == 17:"Extended read from directory";
+		case  version == 3 && value == 18:"Get dynamic file system information";
+		case  version == 3 && value == 19:"Get static file system Information";
+		case  version == 3 && value == 20:"Retrieve POSIX information";
+		case  version == 3 && value == 21:"Commit cached data on a server to stable storage";
+		case  version == 4 && value ==  0:"NULL - No Operation";
+		case  version == 4 && value ==  1:"Compound Operations";
+		default                          :"Unknown Call Type";
+	}
+}
+
+Table UNMCallTable(value)
+{
+	switch (value)
+	{
+		case 0:  "MAPPROC_NULL";
+		case 1:  "GETWINDOWSCREDSFROMUNIXUSERNAME_PROC";
+		case 2:  "GETUNIXCREDSFROMNTUSERNAME_PROC";
+		case 3:  "AUTHUSINGUNIXCREDS_PROC";
+		case 4:  "DUMPALLMAPS_PROC";
+		case 5:  "GETCURRENTVERSIONTOKEN_PROC";
+		case 6:  "DUMPALLMAPSEX_PROC";
+		case 7:  "GETWINDOWSGROUPFROMUNIXGROUPNAME_PROC";
+		case 8:  "GETUNIXCREDSFROMNTGROUPNAME_PROC";
+		case 9:  "GETUNIXCREDSFROMNTUSERSID_PROC";
+		case 10: "DUMPALLMAPSW_PROC";
+		case 11: "DUMPALLMAPSEXW_PROC";
+		case 12: "GETWINDOWSUSERFROMUNIXUSERNAMEW_PROC";
+		case 13: "GETUNIXCREDSFROMNTUSERNAMEW_PROC";
+		case 14: "AUTHUSINGUNIXCREDSW_PROC";
+		case 15: "GETWINDOWSGROUPFROMUNIXGROUPNAMEW_PROC";
+		case 16: "GETUNIXCREDSFROMNTGROUPNAMEW_PROC";
+		case 17: "GETUNIXCREDSFROMNTUSERSIDW_PROC";
+		default: "Unknown Call Type";
+	}
+}
+
+Table SunRPCProcedureNumberTable(SrcPort, DstPort, Version, ProcedureNumber, ProgramNumber)
+{
+	switch
+	{
+		case SrcPort == 2049 || DstPort == 2049: NFSCallTable(Version, ProcedureNumber);
+		case ProgramNumber == 351455:
+			UNMCallTable(ProcedureNumber);
+		default: FormatString("%u", ProcedureNumber);
+	}
+}
+
+
+
+struct SunRPCAuthenticationVerfication
+{
+	UINT32 Flavor = SunRPCAuthenticationTypeTable(this);
+	[AuthVerEndOffset = offset + ( this%4 ? this + 4 - this % 4 : this) + 4]
+	UINT32 AuthDataLength;
+	switch(Flavor)
+	{
+		case  1: 
+			SunRpcAuthUNIXCredential AuthUNIX;
+		case  3: 
+			switch(property.SunRPCMessageType)
+			{
+				case 0:
+					_struct ServiceCall
+					{
+						INT64 AuthDESTimeStamp
+						{
+							UINT32 ValueHigh;
+							UINT32 ValueLow;
+						};
+						UINT32 AuthDESWindowVerifier;
+					};
+				case 1:
+					_struct ServiceReply
+					{
+						INT64 AuthDESTimeStamp
+						{
+							UINT32 ValueHigh;
+							UINT32 ValueLow;
+						};
+						UINT32 NickName;
+					};
+			}
+		case  6: 
+			SunRpcAuthGSSToken GSSToken;
+		default: 
+			switch
+			{
+				case AuthDataLength > 0:
+					AsciiString(AuthDataLength%4 ? AuthDataLength + 4 - AuthDataLength%4 : AuthDatalength) Authenticationdata;
+			}
+	}
+	switch
+	{
+		case offset < Property.AuthVerEndOffset:
+			AsciiString(Property.AuthVerEndOffset - offset) PaddingData;
+	}
+}
+
+
+struct SunRPCOverTCPHeader
+{
+	
+	UINT32 FragmentHeader = FormatString("%s, %u bytes", this.LastFragment?"Last Fragment":"More Fragments follows", this.FragmentLength)
+	{
+		UINT32 LastFragment:1  = FormatString("  (%s) %s", this.ToBitString, this?"This is the Last Fragment":"More Fragments follows");
+		
+		UINT32 FragmentLength:31 = FormatString("(%s) %u bytes", this.ToBitString, this);
+	};
+}

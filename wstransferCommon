@@ -1,0 +1,186 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Web Services Transfer (WS-Transfer)
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.w3.org/Submission/WS-Transfer/
+//#
+//#  Comments:               Microsoft implementation is encrypted
+//#
+//#  Revision Class and Date:Major, 12/9/2009
+//#                          Minor, 1/11/2010
+//#
+//####
+
+[Property.SoapBodySummary = "WS-Transfer Payload"]
+[RegisterBefore(SoapBody.DefaultSoapBody, WSTransfer, WSTransferSoapActionTable(Property.SOAPAction))]
+Protocol WSTransfer = Property.WSTransferSummary
+{
+	Switch(Property.SOAPAction)
+	{
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse":
+			[Property.WSTransferSummary = this.ToString]
+			WSTransferExchangeMetadata Metadata;
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/PutResponse":
+			[Property.WSTransferSummary = this.ToString]
+			WSTransferPut Put;
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/CreateResponse":
+			[Property.WSTransferSummary = this.ToString]
+			WSTransferCreate Create;
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/DeleteResponse":
+			[Property.WSTransferSummary = this.ToString]
+			WSTransferDelete Delete;
+		Default:
+			[Property.WSTransferSummary = "The other Message"]
+			While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+			{
+				XmlElement(true) AnyNode;
+			}
+	}
+}
+
+table WSTransferSoapActionTable(value)
+{
+	switch(value)
+	{
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/PutResponse":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/DeleteResponse":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/transfer/CreateResponse":true;
+		default : false;
+	}
+}
+
+struct WSTransferExchangeMetadata = FormatString("%s Message", Property.WSTransferGetSummary)
+{
+	[Post.Local.SoapBody_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.SoapBody_IsEmpty:
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Metadata"): 
+							[Property.WSTransferGetSummary = "Metadata Request"]
+							WSMetadataExchangeMetadata WSMetadataExchangeMetadata;
+						Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), ":Fault"):
+							[Property.WSTransferGetSummary = "Fault Metadata Response"]
+							SoapFaultElement FaultResourceCreatedElement;
+						Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+							[Property.WSTransferGetSummary = "Encrypted Metadata Data"]
+							XMLENCEncryptedData EncryptedData;
+						Default:
+							[Property.WSTransferGetSummary = "ExchangeMetadata"]
+							While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								XmlElement(true) AnyNode;
+							}
+					}
+				}
+				XmlTag("Body") ETag;
+			}
+	}
+}
+
+struct WSTransferCreate = FormatString("%s Message", Property.WSTransferCreateSummary)
+{
+	[Post.Local.WSTransferCreate_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.WSTransferCreate_IsEmpty:
+			struct
+			{
+				Switch
+				{
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Fault"):
+						[Property.WSTransferCreateSummary = "Fault Create Response"]
+						SoapFaultElement FaultResourceCreatedElement;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+						[Property.WSTransferCreateSummary = "Encrypted Create Data"]
+						XMLENCEncryptedData EncryptedData;
+					Default:
+						[Property.WSTransferCreateSummary = "Create"]
+						While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) AnyNode;
+						}
+				}
+				
+				XmlTag("Body") ETag;
+			}
+	}
+}
+
+struct WSTransferDelete = FormatString("%s Message", Property.WSTransferDeleteSummary)
+{
+	[Post.Local.WSTransferDelete_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.WSTransferDelete_IsEmpty:
+			struct
+			{
+				Switch
+				{
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Fault"):
+						[Property.WSTransferDeleteSummary = "Fault Delete Response"]
+						SoapFaultElement FaultResourceDeleteElement;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+						[Property.WSTransferDeleteSummary = "Encrypted Delete Data"]
+						XMLENCEncryptedData EncryptedData;
+					Default:
+						[Property.WSTransferDeleteSummary = "Delete"]
+						While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) AnyNode;
+						}
+				}
+				
+				XmlTag("Body") ETag;
+			}
+	}
+}
+
+struct WSTransferPut = FormatString("%s Message", Property.WSTransferPutSummary)
+{
+	[Post.Local.WSTransferPut_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.WSTransferPut_IsEmpty:
+			struct
+			{
+				Switch
+				{
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), ":Fault"):
+						[Property.WSTransferPutSummary = "Fault Put Response"]
+						SoapFaultElement FaultResourcePutElement;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+						[Property.WSTransferPutSummary = "Encrypted Put Data"]
+						XMLENCEncryptedData EncryptedData;
+					Default:
+						[Property.WSTransferPutSummary = "Put"]
+						While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) AnyNode;
+						}
+				}
+				
+				XmlTag("Body") ETag;
+			}
+	}
+}

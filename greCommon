@@ -1,0 +1,235 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Generic Routing Encapsulation Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1701, 2784, 2890, 2637
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol GRE = FormatString("Protocol = %s, Flags = %s %s %s",
+							GREProtocolTable(NextProtocol),
+							flags.ToString,
+							GREVersion == 1 ? ", Length = " + Property.GRELength : "",
+							GREVersion == 1 ? ", CallID = " + Property.GRECallID : ""
+							)
+{
+	GREFlags flags
+	{
+		switch
+		{
+			case (UINT16(frameData, offset) & 0x7FFF) == 0:
+				_struct GREFlagVersion0
+				{
+					[Post.GRERFC2784 = 1, GREChecksumExist]
+					UINT16 C:1 = FormatString("       (%s) %s", this.ToBitString,
+											 		this ? "Checksum Present" : "Checksum Absent");
+					UINT16 Reserved:12 = FormatString("(%s)", this.ToBitString);
+					[GREVersion]
+					UINT16 Version:3 = FormatString(" (%s) %d", this.ToBitString, this);
+				};
+			default:
+				_struct GREFlagVersion0AndVersion1
+				{
+					[GREChecksumExist]
+					UINT16 C:1 = FormatString("            (%s) %s", this.ToBitString,
+													this ? "Checksum Present" : "Checksum Absent");
+					[GREOffsetExist]
+					UINT16 R:1 = FormatString("            (%s) %s", this.ToBitString,
+													this ? "Offset Present":"Offset Absent");
+					[GREKeyExist]
+					UINT16 K:1 = FormatString("            (%s) %s", this.ToBitString,
+													this ? "Key Present":"Key Absent");
+					[GRESeqExist]
+					UINT16 S:1 = FormatString("            (%s) %s", this.ToBitString,
+													this ? "Sequence Number Present":"Sequence Number Absent");
+					[GRESSRExist]
+					UINT16 ssr:1 = FormatString("          (%s) %s", this.ToBitString,
+													this ? "Strict Source Route Present":"Strict Source Route Absent");
+					UINT16 Recur:3 = FormatString("        (%s) %s", this.ToBitString, "Recursion Control");
+					[GREAckExist]
+					UINT16 A:1 = FormatString("            (%s) %s", this.ToBitString,
+													this ? "Acknowledgment sequence number Present ":"Acknowledgment sequence number Absent");
+					UINT16 ReservedFlags:4 = FormatString("(%s)", this.ToBitString);
+					[GREVersion]
+					UINT16 Version:3 = FormatString("      (%s) %d", this.ToBitString, this);
+				};
+		}; //switch
+	};
+
+	UINT16 NextProtocol = GREProtocolTable(this);
+	
+	switch(GREVersion)
+	{
+		case 0:
+			switch
+			{
+				case GREChecksumExist == 1 || GREOffsetExist == 1: UINT16 Checksum;
+			}
+		case 1:
+			[GRELength]
+			UINT16 PayloadLength;
+	};
+
+	switch(GREVersion)
+	{
+		case 0:
+			switch
+				{
+					case GRERFC2784 == 1 && GREChecksumExist == 1: UINT16 Reserved;
+					case GREChecksumExist == 1 || GREOffsetExist == 1: UINT16 GREOffset;
+				}
+		case 1:
+			[GRECallID]
+			UINT16 CallID;
+	};
+
+	switch(GREVersion)
+	{
+		case 0:
+			switch
+				{
+					case GREKeyExist == 1: UINT32 Key;
+				}
+		case 1:
+			 switch
+			{
+				case GRESeqExist == 1: UINT32 SequenceNumber;
+			}
+	};
+
+	switch(GREVersion)
+	{
+		case 0:
+			switch
+				{
+					case GRESeqExist == 1: UINT32 SequenceNumber;
+				}
+		case 1:
+			switch
+				{
+					case GREAckExist == 1: UINT32 AcknowledgmentNumber;
+				}
+	};
+
+	switch(GREVersion)
+	{
+		case 0:
+			switch
+				{
+					case GRESSRExist == 1:
+						_struct GRERoutingInfos
+						{
+							while option[ frameLength - offset >= 4 &&
+										  //SRELength > 0
+										  UINT8( Framedata, Offset + 3 ) > 0x00
+										]
+							{
+								SourceRouteEntryPacket SRE;
+							};
+						
+							switch
+							{
+								case frameLength - offset >= 4 &&
+									UINT16(frameData, offset) == 0x0000 &&
+									UINT8( Framedata, Offset + 3 ) == 0x00: SourceRouteEntryPacket SRENull;
+							};
+						};
+				}
+	};
+
+	//rfc 1701 page 6
+	switch(NextProtocol)
+	{
+		case 0x0001:ICMP Icmp;
+		case 0x0006:TCP Tcp;
+		case 0x0011:UDP Udp;
+		case 0x0032:ESP Esp;
+		case 0x0033:AH Ah;
+
+		case 0x0004:SNA Sna;
+		case 0x0600:XNS Xns;
+		case 0x0800:IPv4 Ipv4;
+		case 0x0806:ARP Arp;
+		case 0x0808:ARP FrameRelayArp;
+		case 0x8137:IPX Ipx;
+		case 0x86DD:IPv6 Ipv6;
+		case 0x880B:
+			switch
+			{
+				case Property.GRELength > 0: PPP Ppp;
+			};
+	};
+}
+Table GREProtocolTable(value)
+{
+	switch(value)
+	{
+		case 0x0000:"Reserved";
+		case 0x0001:"ICMP";
+		case 0x0004:"SNA";
+		case 0x0006:"TCP";
+		case 0x0011:"UDP";
+		case 0x0032:"ESP";
+		case 0x0033:"AH";
+		case 0x00FE:"OSI network layer";
+		case 0x0200:"PUP";
+		case 0x0600:"XNS";
+		case 0x0800:"IPv4";
+		case 0x0804:"Chaos";
+		case 0x0806:"ARP";
+		case 0x0808:"Frame Relay ARP";
+		case 0x0BAD:"VINES";
+		case 0x0BAE:"VINES Echo";
+		case 0x0BAF:"VINES Loopback";
+		case 0x6003:"DECnet (Phase IV)";
+		case 0x6558:"Transparent Ethernet Bridging";
+		case 0x6559:"Raw Frame Relay";
+		case 0x8019:"Apollo Domain";
+		case 0x809B:"Ethertalk (Appletalk)";
+		case 0x8137:"Novell IPX";
+		case 0x86DD:"IPv6";
+		case 0x876B:"TCP/IP compression";
+		case 0x876C:"IP Autonomous Systems";
+		case 0x876D:"Secure Data";
+		case 0x880B:"PPP";
+		case 0xFFFF:"Reserved";
+		default    :FormatString("0x%04x",value);
+	}
+}
+
+UnsignedNumber GREFlags
+{
+	size = 2,
+	DisplayFormat = FormatString("%s%s%s%s%s...%s....... Version %d",
+								 (this & 0x8000) ? "C" : ".",
+								 (this & 0x4000) ? "R" : ".",
+								 (this & 0x2000) ? "K" : ".",
+								 (this & 0x1000) ? "S" : ".",
+								 (this & 0x0800) ? "s" : ".",
+								 (this & 0x0080) ? "A" : ".",
+								 (this & 0x0003)
+								)
+}
+
+//Source Route Entry Packet
+struct SourceRouteEntryPacket
+{
+	UINT16 AddressFamily;
+	UINT8 SREOffset;
+	UINT8 SRELength;
+	switch
+	{
+		//rfc1702 page 2
+		case AddressFamily == 0x0800 && SRELength > 0: IPv4Address IPSourceRoute[SRELength/4];
+		case AddressFamily == 0xfffe && SRELength > 0: UINT16 AutonomousSystemNumber[SRELength/2];
+		case SRELength > 0:  AsciiString(SRELength) RoutingInformation;
+	}
+}
+
+

@@ -1,0 +1,302 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Dynamic Host Configuration Protocol (DHCP) Extensions
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3004, 2132, 4702
+//#  Microsoft References:   [MS-DHCPE]: Dynamic Host Configuration Protocol (DHCP) Extensions (6.5)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/10/2009
+//#                          Minor, 2/22/2010
+//#
+//####
+
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsHostName, 12)]
+[RegisterBefore(DHCPV6.Option.OptionData, DHCPV6EUserClass, 15)]
+[RegisterBefore(DHCPV6.Option.OptionData, DHCPV6EVendorClass, 16)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsVendorSpecificInformation, 43)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsVendorClassIdentifier, 60)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsUserClassInformation, 77)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsFullyQualifiedDomainName, 81)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsClasslessStaticRoute, 249)]
+[RegisterBefore(DHCP.Generaloption, DHCPEOptionsContinueOption, 250)]
+
+struct DHCPE
+{
+	switch(UINT8(FrameData,offset))
+	{
+		case  12: DHCPOptionsName HostName;
+		case  43: DHCPEOptionsVendorSpecInfor VendorSpecificInformation;
+		case  60: DHCPEOptionsVendorClassIdentifier VendorClassIdentifier;
+		case  77: DHCPEOptionsUserClassInfor UserClassInformation;
+		case  81: DHCPEOptionsFQDN FullyQualifiedDomainName;
+		case 249: DHCPEClasslessStaticRoute ClasslessStaticRoute;
+		case 250: DHCPEContinueOption ContinueOption;
+	}
+	switch(UINT16(FrameData,offset))
+	{
+		case  15: DHCPV6UserClassOption UserClass;
+		case  16: DHCPV6VendorClassOption VendorClass;
+	}
+}
+
+//RFC 2132 section 8.4
+struct DHCPEOptionsVendorSpecInfor = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 VendorSpecificLength = FormatString("%d UINT8(s)", this);
+
+	[DataFieldFrameLength = FrameOffset + VendorSpecificLength]
+	while Option[ offset - Property.BeginOffset < VendorSpecificLength ]
+	{
+		DHCPEVendorSpecificExtension VendorSpecificExtension;
+	}
+}
+
+struct DHCPEVendorSpecificExtension = DHCPEVendorSpecificExtensionCodeTable(Code, Conversation.DHCPEVendorClassIdentifier) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPEVendorSpecificExtensionCodeTable(this, Conversation.DHCPEVendorClassIdentifier), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	switch (Conversation.DHCPEVendorClassIdentifier)
+	{
+		case "MSFT 98":
+		case "MSFT 5.0":
+			switch (code)
+			{
+				case 0x01:
+					UINT32 DisableNetBIOS = FormatString("%s, %d(0x%02X)", DHCPEMicrosoftDisableNetBIOSOptionTable(this), this, this);
+				case 0x02:
+					UINT32  ReleaseDHCPLeaseonShutdown= FormatString("%s, %d(0x%02X)", DHCPEMicrosoftReleaseDHCPLeaseonShutdownOptionTable(this), this, this);
+				case 0x03:
+					UINT32  DefaultRouterMetricBase= FormatString("%s, %d(0x%02X)", DHCPEMicrosoftDefaultRouterMetricBaseTable(this) , this, this);
+				case 0x5E:
+					Struct RogueDetectionRequestOption{}
+				case 0x5F:
+					Struct RogueDetectionReplyOption
+					{
+						AsciiString(Length) VendorspecificOptionData;
+					}
+				// MS-DHCPN NAP-SoH
+				case 0xDC:
+					switch
+					{
+						case Length == 0: struct IsNAPEnabled = "Is NAP enabled?"{};
+						case Length == 1: BLOB(1) NAPEnabled = "NAP is enabled";
+						case Length < 12: AsciiString(Length) SOHString;
+						default: [DataFieldFrameLength = FrameOffset + Length]SOH SOH;
+					}
+				// MS-DHCPN NAP-Mask
+				case 0xDD:
+					IPv4Address SubnetMask;
+				// MS-DHCPN NAP-CoID
+				case 0xDE:
+					BLOB(Length) CoID;
+				// MS-DHCPN NAP-IPv6
+				case 0xDF:
+					IPv6Address RemediationServerAddress[Length / 16];
+				default:
+					switch 
+					{
+						case Length > 0:
+							AsciiString(Length) MicrosoftExtensionValue;
+					}
+			}
+		default:
+			switch (code)
+			{
+				// MS-DHCPN NAP-SoH
+				case 0xDC:
+					switch
+					{
+						case Length == 0: struct IsNAPEnabled = "Is NAP enabled?"{};
+						case Length == 1: BLOB(1) NAPEnabled = "NAP is enabled";
+						case Length < 12: AsciiString(Length) SOHString;
+						default: [DataFieldFrameLength = FrameOffset + Length]SOH SOH;
+					}
+				// MS-DHCPN NAP-Mask
+				case 0xDD:
+					IPv4Address SubnetMask;
+				// MS-DHCPN NAP-CoID
+				case 0xDE:
+					BLOB(Length) CoID;
+				// MS-DHCPN NAP-IPv6
+				case 0xDF:
+					IPv6Address RemediationServerAddress[Length / 16];
+				default:
+					Switch
+					{
+						case Length > 0:
+							AsciiString(Length) VendorspecificOptionValue;
+					} 
+			}
+	}
+}
+
+Table DHCPEMicrosoftDefaultRouterMetricBaseTable(code)
+{
+	switch(code)
+	{
+		case 0: "Automatically Calculated Metric Is Used";
+		case 10: "Greater than 200 Mb";
+		case 20: "Greater than 80 Mb, and less than or equal to 200 Mb";
+		case 25: "Greater than 20 Mb, and less than or equal to 80 Mb";
+		case 30: "Greater than 4 Mb, and less than or equal to 20 Mb";
+		case 40: "Greater than 500 kilobits (Kb), and less than or equal to 4 Mb";
+		case 50: "Less than or equal to 500 Kb";
+		default: "Undefined Value";
+	}
+}
+
+Table DHCPEVendorSpecificExtensionCodeTable(code, VendorClassIdentifier)
+{
+	switch(VendorClassIdentifier)
+	{
+		case "MSFT 98":
+		case "MSFT 5.0":
+			DHCPEMicrosoftVendorSpecificExtensionCodeTable(code);
+		default: "Unknown Vendor";
+	}
+}
+
+Table DHCPEMicrosoftVendorSpecificExtensionCodeTable(code)
+{
+	switch(code)
+	{
+		case 1: "Microsoft Disable NetBIOS Option";
+		case 2: "Microsoft Release DHCP Lease on Shutdown Option";
+		case 3: "Microsoft Default Router Metric Base Option";
+		case 94: "Rogue Detection Request Option";
+		case 95: "Rogue Detection Option";
+		case 220: "NAP-SoH";
+		case 221: "NAP-Mask";
+		case 222: "NAP-CoID";
+		case 223: "NAP-IPv6";
+		default: "Unknown Microsoft Extension";
+	}
+}
+
+Table DHCPEMicrosoftDisableNetBIOSOptionTable(code)
+{
+	switch(code)
+	{
+		case 0: "Enable";
+		case 1: "Ignored";
+		case 2: "Disable";
+		default: "Undefined Value";
+	}
+}
+
+Table DHCPEMicrosoftReleaseDHCPLeaseonShutdownOptionTable(code)
+{
+	switch(code)
+	{
+		case 0: "Disable";
+		case 1: "Enable";
+		default: "Existing behavior of client is unchanged";
+	}
+}
+
+struct DHCPEOptionsVendorClassIdentifier = VendorClassIdentifier + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	[Conversation.DHCPEVendorClassIdentifier]
+	AsciiString(Length) VendorClassIdentifier;
+}
+
+// rfc3004
+struct DHCPEOptionsUserClassInfor = Local.DHCPUserClassInfo + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	switch (Conversation.DHCPEVendorClassIdentifier)
+	{
+		case "MSFT 98":
+		case "MSFT 5.0":
+			struct MicrosoftDefinedUserClassesPacket
+			{
+				[Local.DHCPUserClassInfo]
+				AsciiString(Length) UserClass = DHCPEMicrosoftDefinedUserClassesTable(this);
+			}
+		default:
+			[Local.DHCPUserClassInfo]
+			AsciiString(Length) UserClassInfor;
+	}
+}
+
+Table DHCPEMicrosoftDefinedUserClassesTable(code)
+{
+	switch (code)
+	{
+		case "BOOTP": "Default BOOTP class";
+		case "RRAS.Microsoft": "Default Routing and Remote Access class";
+		case "NAP": "Default Network Access Protection class";
+		default: "Default user class";
+	}
+}
+
+// RFC 4702 section 2
+struct DHCPEOptionsFQDN = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Flag
+	{
+		UINT8 MBZ:4 = FormatString("(%s) %d",this.ToBitString,this);
+		UINT8 N:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "SHOULD perform the A RR (FQDN to address) DNS updates"
+									 : "SHOULD NOT perform the A RR (FQDN to address) DNS updates");	
+		UINT8 E:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "DNS-style binary encoding of the Domain Name field"
+									 : "ASCII encoding of the Domain Name field (deprecated)");
+		UINT8 O:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "the server has overridden the client's preference for the 'S' bit"
+									 : "the server has not overridden the client's preference for the 'S' bit");
+		UINT8 S:1 = FormatString ("(%s) %s",this.ToBitString,
+								this ? "SHOULD perform the A RR (FQDN to address) DNS updates"
+									 : "SHOULD NOT perform the A RR (FQDN to address) DNS updates");
+	};
+	UINT8 RCODE1;
+	UINT8 RCODE2;
+	switch
+	{
+		case Length > 3:
+			AsciiString(Length - 3) DomainName;
+	}
+}
+
+struct DHCPEClasslessStaticRoute = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		DHCPECSRDestRoute DestRoute;
+	}
+}
+
+struct DHCPECSRDestRoute = Router.ToString
+{
+	UINT8 Width = FormatString("%d %s", this,this > 32 ? "The width must not larger than 32" : "");
+	switch
+	{
+		case Width >  0 && Width <=  8:UINT8  Subnet1 = FormatString("%d.0.0.0",this);
+		case Width >  8 && Width <= 16:UINT16  Subnet2 = FormatString("%d.%d.0.0",this[1],this[0]);
+		case Width > 16 && Width <= 24:UINT24  Subnet3 = FormatString("%d.%d.%d.0",this[2],this[1],this[0]);
+		case Width > 24 && Width <= 32:UINT32  Subnet4 = FormatString("%d.%d.%d.%d",this[3],this[2],this[1],this[0]);
+	}
+	IPv4Address Router;
+}
+
+struct DHCPEContinueOption = DHCPOptionCodeTable(Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	AsciiString(Length) ContinueBlob;
+}

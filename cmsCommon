@@ -1,0 +1,632 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Cryptographic Message Syntax Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3852
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[DataTypeByteOrder=BigEndian]
+struct CmsContentInfo {
+	AsnBerInfo SequenceHeader;
+	CmsContentType ContentType;
+	AsnBerInfo Tag0;
+	AsnBerAnyByOid(property.AsnOid) Content;
+}
+
+struct CmsContentType = Oid.toString {
+	AsnBerObjectIdentifier Oid;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct CmsSignedData {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	CmsDigestAlgorithmIdentifiers DigestAlgorithms;
+	CmsEncapsulatedContentInfo EncapContentInfo;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			CmsCertificateSet Certificates;
+		}
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			CmsRevocationInfoChoices Crls;
+		}
+	}
+	CmsSignerInfos SignerInfos;
+}
+
+struct CmsDigestAlgorithmIdentifiers {
+	AsnBerInfo SetOfHeader;
+	[CmsDaISetEnd = Offset+LengthValue]
+	while Ids[Offset<CmsDaISetEnd] {
+		CmsDigestAlgorithmIdentifier DigAlgId;
+	}
+}
+
+struct CmsSignerInfos {
+	AsnBerInfo SetOfHeader;
+	[CmsSISetEnd = Offset+LengthValue]
+	while Infos[Offset<CmsSISetEnd] {
+		CmsSignerInfo Info;
+	}
+}
+
+struct CmsEncapsulatedContentInfo = FormatString("%s (%s)", 
+			EContentType.toString, CmsEContent) {
+	AsnBerInfo SequenceHeader;
+	CmsContentType EContentType;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			AsnBerInfo Tag0;
+			switch 
+			{
+				case Tag == 0:
+					_struct EContent
+					{
+						switch(UINT8(FrameData,FrameOffset))
+						{
+							case 0x04: 
+								AsnBerInfo OctetStringHeader;
+						}
+						[CmsEContent]
+						AsnBerAnyByOid(property.AsnOid) EContent;
+					}
+			}
+		}
+	}
+}
+
+struct CmsSignerInfo {
+	AsnBerInfo SequenceHeader;
+	[CmsSignerInfoSequenceEnd = FrameOffset + LengthValue]
+	CmsVersion Version;
+	CmsSignerIdentifier Sid;
+	CmsDigestAlgorithmIdentifier DigestAlgorithm;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			CmsSignedAttributes SignedAttrs;
+		}
+	}
+	CmsSignatureAlgorithmIdentifier SignatureAlgorithm;
+	CmsSignatureValue Signature;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1 && CmsSignerInfoSequenceEnd > FrameOffset):
+		struct {
+			CmsUnsignedAttributes UnsignedAttrs;
+		}
+	}
+}
+
+struct CmsSignerIdentifier {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CmsIssuerAndSerialNumber IssuerAndSerialNumber;
+		case 0x80: CmsSubjectKeyIdentifier SubjectKeyIdentifier;
+	}
+}
+
+struct CmsSignedAttributes {
+	AsnBerInfo SetOfHeader;
+	[CmsSaSetEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsSaSetEnd] {
+		CmsAttribute Attribute;
+	}
+}
+
+struct CmsUnsignedAttributes {
+	AsnBerInfo SetOfHeader;
+	[CmsUnsgnASetEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsUnsgnASetEnd] {
+		CmsAttribute Attribute;
+	}
+}
+
+struct CmsAttribute {
+	AsnBerInfo SequenceHeader;
+	AsnBerObjectIdentifier AttrType;
+	AsnBerInfo SetOfHeader;
+	[CmsAttrSetEnd = Offset+LengthValue]
+	while Values[Offset<CmsAttrSetEnd] {
+		CmsAttributeValue(property.AsnOid) AttrValue;
+	}
+}
+
+struct CmsAttributeValue(AttrId) {
+	AsnBerAnyByOid(AttrId) Any;
+}
+
+struct CmsSignatureValue = Value.toString {
+	AsnBerOctetString Value;
+}
+
+struct CmsEnvelopedData {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			CmsOriginatorInfo OriginatorInfo;
+		}
+	}
+	CmsRecipientInfos RecipientInfos;
+	CmsEncryptedContentInfo EncryptedContentInfo;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			CmsUnprotectedAttributes UnprotectedAttrs;
+		}
+	}
+}
+
+struct CmsOriginatorInfo {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			CmsCertificateSet Certs;
+		}
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			CmsRevocationInfoChoices Crls;
+		}
+	}
+}
+
+struct CmsRecipientInfos {
+	AsnBerInfo SetOfHeader;
+	[CmsRISetEnd = Offset+LengthValue]
+	while Infos[Offset<CmsRISetEnd] {
+		CmsRecipientInfo Info;
+	}
+}
+
+struct CmsEncryptedContentInfo {
+	AsnBerInfo SequenceHeader;
+	CmsContentType ContentType;
+	CmsContentEncryptionAlgorithmIdentifier ContentEncryptionAlgorithm;
+	switch {
+		case(UINT8(FrameData,Offset) == 0x80):
+		struct {
+			CmsEncryptedContent EncryptedContent;
+		}
+	}
+}
+
+struct CmsEncryptedContent = Content.toString {
+	AsnBerOctetString Content;
+}
+
+struct CmsUnprotectedAttributes {
+	AsnBerInfo SetOfHeader;
+	[CmsUnprASetEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsUnprASetEnd] {
+		CmsAttribute Attribute;
+	}
+}
+
+struct CmsRecipientInfo {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CmsKeyTransRecipientInfo Ktri;
+		case 0xa1: CmsKeyAgreeRecipientInfo Kari;
+		case 0xa2: CmsKekRecipientInfo Kekri;
+		case 0xa3: CmsPasswordRecipientInfo Pwri;
+		case 0xa4: CmsOtherRecipientInfo Ori;
+	}
+}
+
+struct CmsEncryptedKey = Key.toString {
+	AsnBerOctetString Key;
+}
+
+struct CmsKeyTransRecipientInfo {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	CmsRecipientIdentifier RId;
+	CmsKeyEncryptionAlgorithmIdentifier KeyEncryptionAlgorithm;
+	CmsEncryptedKey EncryptedKey;
+}
+
+struct CmsRecipientIdentifier {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CmsIssuerAndSerialNumber IssuerAndSerialNumber;
+		case 0xa0: CmsSubjectKeyIdentifier SubjectKeyIdentifier;
+	}
+}
+
+struct CmsKeyAgreeRecipientInfo {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	AsnBerInfo Tag0;
+	CmsOriginatorIdentifierORKey Originator;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			AsnBerInfo Tag1;
+			CmsUseRKeyingMaterial Ukm;
+		}
+	}
+	CmsKeyEncryptionAlgorithmIdentifier KeyEncryptionAlgorithm;
+	CmsRecipientEncryptedKeys RecipientEncryptedKeys;
+}
+
+struct CmsOriginatorIdentifierORKey {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CmsIssuerAndSerialNumber IssuerAndSerialNumber;
+		case 0xa0: CmsSubjectKeyIdentifier SubjectKeyIdentifier;
+		case 0xa1: CmsOriginatorPublicKey OriginatorKey;
+	}
+}
+
+struct CmsOriginatorPublicKey {
+	AsnBerInfo SequenceHeader;
+	X509AlgorithmIdentifier Algorithm;
+	AsnBerBitString PublicKey;
+}
+
+struct CmsRecipientEncryptedKeys {
+	AsnBerInfo SequenceOfHeader;
+	[CmsReKSequenceEnd = Offset+LengthValue]
+	while Keys[Offset<CmsReKSequenceEnd] {
+		CmsRecipientEncryptedKey Key;
+	}
+}
+
+struct CmsRecipientEncryptedKey {
+	AsnBerInfo SequenceHeader;
+	CmsKeyAgreeRecipientIdentifier RId;
+	CmsEncryptedKey EncryptedKey;
+}
+
+struct CmsKeyAgreeRecipientIdentifier {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: CmsIssuerAndSerialNumber IssuerAndSerialNumber;
+		case 0xa0: CmsRecipientKeyIdentifier RKeyId;
+	}
+}
+
+struct CmsRecipientKeyIdentifier = CmsRecipKeyId {
+	AsnBerInfo SequenceHeader;
+	[CmsRecipKeyId = SubjectKeyIdentifier.toString]
+	CmsSubjectKeyIdentifier SubjectKeyIdentifier;
+	switch {
+		case(UINT8(FrameData,Offset) == 24):
+		struct {
+			[CmsRecipKeyId = FormatString("%s, %s",
+				CmsRecipKeyId, Date.toString)]
+			AsnBerGeneralizedTime Date;
+		}
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0x30):
+		struct {
+			[CmsRecipKeyId = FormatString("%s, %s",
+				CmsRecipKeyId, Other.toString)]
+			CmsOtherKeyAttribute Other;
+		}
+	}
+}
+
+struct CmsSubjectKeyIdentifier = Id.toString {
+	AsnBerOctetString Id;
+}
+
+struct CmsKekRecipientInfo {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	CmsKekIdentifier KekId;
+	CmsKeyEncryptionAlgorithmIdentifier KeyEncryptionAlgorithm;
+	CmsEncryptedKey EncryptedKey;
+}
+
+struct CmsKekIdentifier = CmsKekId {
+	AsnBerInfo SequenceHeader;
+	[CmsKekId = KeyIdentifier.toString]
+	AsnBerOctetString KeyIdentifier;
+	switch {
+		case(UINT8(FrameData,Offset) == 24): 
+		struct {
+			[CmsKekId = FormatString("%s, %s", 
+				CmsKekId, Date.toString)]
+			AsnBerGeneralizedTime Date;
+		}
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0x30):
+		struct {
+			[CmsKekId = FormatString("%s, %s", 
+				CmsKekId, Other.toString)]
+			CmsOtherKeyAttribute Other;
+		}
+	}
+}
+
+struct CmsPasswordRecipientInfo {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	switch {
+		case(UINT8(FrameData,Offset) == 0x06):
+		struct {
+			CmsKeyDerivationAlgorithmIdentifier 
+				KeyDerivationAlgorithm;
+		}
+	}
+	CmsKeyEncryptionAlgorithmIdentifier KeyEncryptionAlgorithm;
+	CmsEncryptedKey EncryptedKey;
+}
+
+struct CmsOtherRecipientInfo {
+	AsnBerInfo SequenceHeader;
+	AsnBerObjectIdentifier OriType;
+	AsnBerAnyByOid(property.AsnOid) OriValue;
+}
+
+struct CmsDigestedData {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	CmsDigestAlgorithmIdentifier DigestAlgorithm;
+	CmsEncapsulatedContentInfo EncapContentInfo;
+	CmsDigest Digest;
+}
+
+struct CmsDigest = Digest.toString {
+	AsnBerOctetString Digest;
+}
+
+struct CmsEncryptedData {
+	AsnBerInfo SequenceHeader;
+	CmsVersion Version;
+	CmsEncryptedContentInfo EncryptedContentInfo;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			CmsUnprotectedAttributes UnprotectedAttrs;
+		}
+	}
+}
+
+struct CmsAuthenticatedData {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			CmsOriginatorInfo OriginatorInfo;
+		}
+	}
+	CmsRecipientInfos RecipientInfos;
+	CmsMessageAuthenticationCodeAlgorithm MacAlgorithm;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			CmsDigestAlgorithmIdentifier DigestAlgorithm;
+		}
+	}
+	CmsEncapsulatedContentInfo EncapContentInfo;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa2):
+		struct {
+			CmsAuthAttributes AuthAttrs;
+		}
+	}
+	CmsMessageAuthenticationCode Mac;
+	switch {
+		case(UINT8(FrameData,Offset) == 0xa3):
+		struct {
+			CmsUnAuthAttributes UnAuthAttrs;
+		}
+	}
+}
+
+struct CmsAuthAttributes {
+	AsnBerInfo SetOfHeader;
+	[CmsAaSetEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsAaSetEnd] {
+		CmsAttribute Attribute;
+	}
+}
+
+struct CmsUnAuthAttributes {
+	AsnBerInfo SetOfHeader;
+	[CmsUnAuthASetEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsUnAuthASetEnd] {
+		CmsAttribute Attribute;
+	}
+}
+
+struct CmsMessageAuthenticationCode = Mac.toString {
+	AsnBerOctetString Mac;
+}
+
+struct CmsDigestAlgorithmIdentifier = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsSignatureAlgorithmIdentifier = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsKeyEncryptionAlgorithmIdentifier = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsContentEncryptionAlgorithmIdentifier = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsMessageAuthenticationCodeAlgorithm = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsKeyDerivationAlgorithmIdentifier = Id.toString {
+	X509AlgorithmIdentifier Id;
+}
+
+struct CmsRevocationInfoChoices {
+	AsnBerInfo SetOfHeader;
+	[CmsRicSetEnd = Offset+LengthValue]
+	while Choices[Offset<CmsRicSetEnd] {
+		CmsRevocationInfoChoice Choice;
+	}
+}
+
+struct CmsRevocationInfoChoice {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: X509CertificateList Crl;
+		case 0xa1: CmsOtherRevocationInfoFormat Other;
+	}
+}
+
+struct CmsOtherRevocationInfoFormat {
+	AsnBerInfo SequenceHeader;
+	AsnBerObjectIdentifier OtherRevInfoFormat;
+	AsnBerAnyByOid(property.AsnOid) OtherRevInfo;
+}
+
+struct CmsCertificateChoices {
+	switch (UINT8(FrameData,Offset)) {
+		case 0x30: X509Certificate Certificate;
+		case 0xa1: CmsAttributeCertificateV1 V1AttrCert;
+		case 0xa2: CmsAttributeCertificateV2 V2AttrCert;
+		case 0xa3: CmsOtherCertificateFormat Other;
+	}
+}
+
+struct CmsAttributeCertificateV2 {
+	X509AttributeCertificate Cert;
+}
+
+struct CmsOtherCertificateFormat {
+	AsnBerObjectIdentifier OtherCertFormat;
+	AsnBerAnyByOid(property.AsnOid) OtherCert;
+}
+
+struct CmsCertificateSet {
+	AsnBerInfo SetOfHeader;
+	[CmsCertSetEnd = Offset+LengthValue]
+	while Certs[Offset<CmsCertSetEnd] {
+		CmsCertificateChoices Cert;
+	}
+}
+
+struct CmsIssuerAndSerialNumber {
+	AsnBerInfo SequenceHeader;
+	X509Name Issuer;
+	X509CertificateSerialNumber SerialNumber;
+}
+
+Table CmsVersionTable(Verno) {
+	switch(Verno) {
+		case 0: "v0 (0)";
+		case 1: "v1 (1)";
+		case 2: "v2 (2)";
+		case 3: "v3 (3)";
+		case 4: "v4 (4)";
+		case 5: "v5 (5)";
+		default: FormatString("Invalid Version Number (%d)", Verno);
+	}
+}
+
+struct CmsVersion = CmsVersionTable(CmsVerNo) {
+	[post.CmsVerNo = AsnIntValue]
+	AsnBerInteger Version = CmsVersionTable(AsnIntValue);
+}
+
+struct CmsUseRKeyingMaterial = Ukm.toString {
+	AsnBerOctetString Ukm;
+}
+
+struct CmsOtherKeyAttribute {
+	AsnBerInfo SequenceHeader;
+	AsnBerObjectIdentifier KeyAttrId;
+	AsnBerAnyByOid(property.AsnOid) KeyAttr;
+}
+
+// The Cms Attributes
+
+struct CmsMessageDigest = Digest.toString {
+	AsnBerOctetString Digest;
+}
+
+struct CmsSigningTime = Time.toString {
+	CmsTime Time;
+}
+
+struct CmsTime = CmsTime {
+	switch (UINT8(FrameData,Offset)) {
+		case 23: struct {
+			[CmsTime = UtcTime.toString]
+			AsnBerUtcTime UtcTime;
+		}
+		case 24: struct {
+			[CmsTime = GeneralTime.toString]
+			AsnBerGeneralizedTime GeneralTime;
+		}
+	}
+}
+
+struct CmsCounterSignature {
+	CmsSignerInfo Sig;
+}
+
+// Version 1 Attribute Certificate
+
+struct CmsAttributeCertificateV1 {
+	AsnBerInfo SequenceHeader;
+	CmsAttributeCertificateInfoV1 AcInfo;
+	X509AlgorithmIdentifier SignatureAlgorithm;
+	AsnBerBitString Signature;
+}
+
+struct CmsAttributeCertificateInfoV1 {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case(UINT8(FrameData,Offset) == 0x02):
+		struct {
+			CmsAttCertVersionV1 Version;
+		}
+	}
+	switch (UINT8(FrameData,Offset)) {
+		case 0xa0: X509IssuerSerial BaseCertificateId;
+		case 0xa1: X509GeneralNames SubjectName;
+	}
+	X509GeneralNames Issuer;
+	X509AlgorithmIdentifier Signature;
+	X509CertificateSerialNumber SerialNumber;
+	X509AttCertValidityPeriod AttCertValidityPeriod;
+	AsnBerInfo SequenceOfHeader;
+	[CmsACI1SequenceEnd = Offset+LengthValue]
+	while Attrs[Offset<CmsACI1SequenceEnd] {
+		X509Attribute Attribute;
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0x03):
+		struct {
+			X509UniqueIdentifier IssuerUniqueId;
+		}
+	}
+	switch {
+		case(UINT8(FrameData,Offset) == 0x30):
+		struct {
+			X509Extensions Extensions;
+		}
+	}
+}
+
+struct CmsAttCertVersionV1 = X509VersionTable(CertVerNo) {
+	[post.CertVerNo = AsnIntValue]
+	AsnBerInteger Version = X509VersionTable(AsnIntValue);
+}
+
+

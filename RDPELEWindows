@@ -1,0 +1,171 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Licensing Extension
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPELE]: Remote Desktop Protocol: Licensing Extension (4.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/2/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPELE = FormatString("%s", Property.RDPBCGREncrypted ? "Encrypted" : RDPBCGRPreambleHeaderMsgTypeTable(TsPreambleHeader.MsgType))
+{
+	switch
+	{
+		case Property.RDPBCGREncrypted:
+			Blob(FrameLength - FrameOffset) EncryptedLicensePacket; 
+	
+		default:
+			_struct
+			{
+				RDPBCGRTsPreambleHeader TsPreambleHeader;
+				switch (TsPreambleHeader.MsgType)
+				{
+					case 0x01:
+						RDPELEServerLicenseRequest ServerLicenseRequest;
+					case 0x02:
+						RDPELEServerPlatformChallenge ServerPlatformChallenge;
+					case 0x03:
+						RDPELEServerNewLicense ServerNewLicense;
+					case 0x04:
+						RDPELEServerUpgradeLicense ServerUpgradeLicense;
+					// 0x12: ClientLicenseInformation, client to server always encrypted
+					// 0x13: ClientNewLicenseRequest, client to server always encrypted
+					// 0x15: Client Platform Challenge Response, client to server always encrypted
+					case 0xFF:
+						RDPBCGRTsLicenseErrorMessage TsLicenseErrorMessage;
+				}
+			}
+	}
+}
+
+//
+// 2.2.1.4.2.1 CertBlob (CERT_BLOB)
+//
+struct RDPELECertBlob
+{
+	UINT32 cbCert;
+	X509Certificate Certificate;
+}
+
+//
+//	PRODUCT_INFO
+//
+Struct RDPELEProductInfo
+{
+	UINT32 Version;
+	UINT32 CbCompanyName;
+	Unicodestring(CbCompanyName/2) pbCompanyName;
+	UINT32 CbProductId;
+	Unicodestring ProductId = RDPELEProductInfoProductIdTable(this);
+}
+
+
+Table RDPELEProductInfoProductIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case "A02": "Per Device License.";
+		Default: Formatstring("Unknown: %s", value);
+	}
+}
+
+struct RDPELEScope(Value)
+{
+	switch
+	{
+		case Value > 0:
+			Asciistring(Value) BlobData;
+	}
+}
+
+Table RDPELEKeyExchangeAlgorithmTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "RSA key exchange algorithm with a 512-bit asymmetric key.";
+		Default: Formatstring("Unknown: %s", value);
+	}
+}
+
+struct RDPELEKeyExchangeAlgorithm(Value)
+{
+	switch
+	{
+		case Value > 0:
+			[Property.KeyExchangeAlgorithmCount = 0]
+			while[KeyExchangeAlgorithmCount != (Value / 4)]
+			{	
+				[Property.KeyExchangeAlgorithmCount = Property.KeyExchangeAlgorithmCount + 1]
+				UINT32 KeyExchangeAlgorithm = RDPELEKeyExchangeAlgorithmTable(this);
+			}
+	}
+}
+
+//
+//	SCOPE_LIST
+//
+struct RDPELEScopeList = FormatString("Count = %u", ScopeCount)
+{
+	UINT32 ScopeCount;
+	RDPBCGRLicenseBinaryBlob Scopes[ScopeCount];
+}
+
+
+//
+//	Server_License_Request
+//
+Struct RDPELEServerLicenseRequest
+{
+	Blob(32) ServerRandom;
+	RDPELEProductInfo ProductInfo;
+	RDPBCGRLicenseBinaryBlob KeyExchngList;
+	RDPBCGRLicenseBinaryBlob ServerCertificate;
+	RDPELEScopeList ScopeList;
+}
+
+
+//
+//	2.2.2.4 Server Platform Challenge (Server_Platform_Challenge)
+//
+struct RDPELEServerPlatformChallenge
+{
+	UINT32 ConnectFlags = "Unused";
+	RDPBCGRLicenseBinaryBlob EncryptedPlatformChallenge;
+	Blob(16) MACData;
+}
+
+
+//
+//	2.2.2.6 Server Upgrade License (Server_Upgrade_License)
+//
+Struct RDPELEServerUpgradeLicense
+{
+	RDPBCGRLicenseBinaryBlob EncryptedPlatformChallenge;
+	Blob(16) MACData;
+}
+
+
+//
+//	2.2.1.4.2 X.509 Certificate Chain (X509_Certificate_Chain)
+//
+struct RDPELEX509CertificateChain
+{
+	UINT32 NumCertBlobs;
+	RDPELECertBlob CertBlob[NumCertBlobs];
+	Blob(8 + 4 * NumCertBlobs) Padding;
+}
+
+//
+//	2.2.2.7 Server New License (Server_New_License)
+//
+struct RDPELEServerNewLicense
+{
+	RDPBCGRLicenseBinaryBlob EncryptedPlatformChallenge;
+	Blob(16) MACData;
+}

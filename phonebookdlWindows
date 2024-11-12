@@ -1,0 +1,79 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Phonebook Download Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://protoserver/protocol_without_lh/protocol/portal_phonebook_download__protocol.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[property.HTTPPayloadType = "PhoneBook"]
+[
+	RegisterBefore( HTTPPayloadData.FrontPage, PhoneBookDL, property.HTTPPayloadType == "PhoneBook" || Property.HttpUriLocation.Contains("/pbserver.dll") ),
+	RegisterBefore( HTTP.defaultname, PhoneBookDL, property.HTTPPayloadType == "PhoneBook" || Property.HttpUriLocation.Contains("/pbserver.dll") )
+]
+Protocol PhoneBookDL = Property.PhoneBookDLSummary
+{
+	switch
+	{
+		//Request
+		case Property.HttpIsRequest:
+			[Property.PhoneBookDLSummary = formatstring( "PhoneBook Request, Location = %s" , Property.HttpUriLocation? Property.HttpUriLocation:"" ) ]
+			_struct PBRequest
+			{
+				switch
+				{
+					case FrameLength == FrameOffset:
+						_struct{};
+					default:
+						BLOB( FrameLength - FrameOffset ) PBRequestPayLoad;
+				}	
+			}
+		//Response	
+		default:
+			[
+				Property.PhoneBookDLSummary = formatstring("%s, StatusCode = %s, %s", Local.PhoneBookDownload ? "PhoneBook Download" : "PB No Download", 
+																																						Property.HttpStatusCode ? Property.HttpStatusCode : "", 
+																																						PhoneBookDLStatusCodeTable (Property.HttpStatusCode) )
+			]
+			_struct PBResponse
+			{
+				switch
+				{
+					case Property.HttpStatusCode.Contains("200"):
+						[Local.PhoneBookDownload = true]
+						BLOB(FrameLength - FrameOffset) CabinetFile;
+					default:
+						BLOB( FrameLength - FrameOffset ) PhoneBookResponse;
+				}
+			}			
+	}
+}
+
+Table PhoneBookDLStatusCodeTable ( Value )
+{
+	switch ( Value )
+	{
+		case "200" : "The request has succeeded.";
+		case "201" :	"The request has been fulfilled and resulted in a new resource being created.";
+		case "202" :	"The request has been accepted for processing, but the processing has not been completed.";
+		case "204" :	"The server has fulfilled the request but there is no new information to send back.";
+		case "301" :	"The requested resource has been assigned a new permanent URL and any future references to this resource should be done using that URL.";
+		case "302" :	"The requested resource resides temporarily under a different URL.";
+		case "304" :	"Access is allowed, but the document has not been modified since the date and time specified in the If-Modified-Since field.";
+		case "400" :	"The request could not be understood by the server due to malformed syntax.";
+		case "401" :	"The request requires user authentication.";
+		case "403" :	"The server understood the request, but is refusing to fulfill it. Authorization will not help and the request should not be repeated.";
+		case "404" :	"The server has not found anything matching the Request-URI.";
+		case "405" :	"The requested service exists, but is currently unavailable.";
+		case "500" :	"The server encountered an unexpected condition which prevented it from fulfilling the request.";
+		case "501" :	"The server does not support the functionality required to fulfill the request.";
+		case "502" :	"The server, while acting as a gateway or proxy, received an invalid response from the upstream server it accessed in attempting to fulfill the request.";
+	}
+}
+

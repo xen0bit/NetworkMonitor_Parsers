@@ -1,0 +1,5877 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Server Service Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SRVS]: Server Service Remote Protocol Specification (12.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 5/25/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol SRVS = FormatString( "%s %s%s%s%s%s", 
+	Property.SRVSMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.SRVSSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.SRVSSummary : "" )
+{
+	[Property.SRVSSummary = ""]
+	[Property.SRVSMethodName = SRVSMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 8:
+			_Struct NetrConnectionEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Qualifier=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, Qualifier.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr Qualifier;
+										NdrAlign Padd1;
+										SRVSConnectEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSConnectEnumStruct InfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct NetrFileEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s BasePath=%s UserName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, BasePath.ToString, UserName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr BasePath;
+										NdrWideStringPtr UserName;
+										NdrAlign Pad1;
+										SRVSFileEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSFileEnumStruct InfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct NetrFileGetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s FileId=%u Level=%u", ServerName.ToString, FileId, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad;
+										UINT32 FileId;
+										UINT32 Level = SRVSNetrFileGetInfoLevelTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSFileInfo InfoStruct;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct NetrFileClose
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s FileId=%u", ServerName.ToString, FileId )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad;
+										UINT32 FileId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct NetrSessionEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s ClientName=%s UserName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, ClientName.ToString, UserName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr ClientName;
+										NdrWideStringPtr UserName;
+										NdrAlign Pad1;
+										SRVSSessionEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSSessionEnumStruct InfoStruct;
+										Align4 pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct NetrSessionDel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s ClientName=%s UserName=%s", ServerName.ToString, ClientName.ToString, UserName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr ClientName;
+										NdrWideStringPtr UserName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct NetrShareAdd
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u ParmErr=%s", ServerName.ToString, Level, ParmErr.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrShareAddLevelTable(this);
+										SRVSShareInfo InfoStruct;
+										Align4 Pad3;
+										UINT32Ptr ParmErr;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ParmErr=%s Status=%s", ParmErr.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr ParmErr;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct NetrShareEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Pad;
+										SRVSShareEnumStruct InfoStruct;
+										Align4 pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSShareEnumStruct InfoStruct;
+										Align4 pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct NetrShareGetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s NetName=%s Level=%u", ServerName.ToString, NetName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NetName;
+										Align4 Pad;
+										UINT32 Level = SRVSNetrShareGetInfoLevelTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSShareInfo InfoStruct;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct NetrShareSetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s NetName=%s Level=%u ParmErr=%s", ServerName.ToString, NetName.ToString, Level, ParmErr.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NetName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrShareSetInfoLevelTable(this);
+										SRVSShareInfo ShareInfo;
+										Align4 Pad2;
+										UINT32Ptr ParmErr;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ParmErr=%s Status=%s", ParmErr.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr ParmErr;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct NetrShareDel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s NetName=%s Reserved=%u", ServerName.ToString, NetName.ToString, Reserved )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NetName;
+										Align4 Pad;
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct NetrShareDelSticky
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s NetName=%s Reserved=%u", ServerName.ToString, NetName.ToString, Reserved )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NetName;
+										Align4 Pad;
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct NetrShareCheck
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Device=%s", ServerName.ToString, Device.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString Device;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Type=%u Status=%s", Type, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 Type;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 21:
+			_Struct NetrServerGetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad;
+										UINT32 Level = SRVSNetrServerGetInfoLevelTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSServerInfo InfoStruct;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 22:
+			_Struct NetrServerSetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u ParmErr=%s", ServerName.ToString, Level, ParmErr.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrServerSetInfoLevelTable(this);
+										SRVSServerInfo ServerInfo;
+										UINT32Ptr ParmErr;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ParmErr=%s Status=%s", ParmErr.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr ParmErr;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct NetrServerDiskEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, Level, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level;
+										NdrAlign Pad;
+										SRVSDiskEnumContainer DiskInfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSDiskEnumContainer DiskInfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct NetrServerStatisticsGet
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Service=%s Level=%u Options=%u", ServerName.ToString, Service.ToString, Level, Options )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr Service;
+										Align4 Pad;
+										UINT32 Level;
+										UINT32 Options;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSStatServer0 StatServer0;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct NetrServerTransportAdd
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level;
+										NdrAlign Pad2;
+										SRVSPServerTransportInfo0 Buffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct NetrServerTransportEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Pad1;
+										SRVSServerXportEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSServerXportEnumStruct InfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct NetrServerTransportDel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level;
+										NdrAlign Pad2;
+										SRVSPServerTransportInfo0 Buffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct NetrRemoteTOD
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s", ServerName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSTimeOfDayInfo TimeOfDayInfo;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct NetprPathType
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PathName=%s Flags=%u", ServerName.ToString, PathName.ToString, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString PathName;
+										Align4 Pad;
+										UINT32 Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "PathType=%u Status=%s", PathType, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 PathType;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 31:
+			_Struct NetprPathCanonicalize
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PathName=%s OutbufLen=%u Prefix=%s PathType=%u Flags=%u", ServerName.ToString, PathName.ToString, OutbufLen, Prefix.ToString, PathType, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString PathName;
+										Align4 Pad1;
+										UINT32 OutbufLen;
+										NdrWideString Prefix;
+										Align4 Pad2;
+										UINT32 PathType;
+										UINT32 Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "PathType=%u Status=%s", PathType, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant	OutBufLen;
+										Struct OutBuf
+										{
+											UINT8 OutBuf[OutBufLen.MaxCount];
+										}
+										Align4 Pad;
+										UINT32 PathType;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 32:
+			_Struct NetprPathCompare
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PathName1=%s PathName2=%s PathType=%u Flags=%u", ServerName.ToString, PathName1.ToString, PathName2.ToString, PathType, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString PathName1;
+										NdrWideString PathName2;
+										Align4 Pad;
+										UINT32 PathType;
+										UINT32 Flags
+										{
+											UINT32 V1:1 = FormatString("       (%s) %s",this.ToString,this ? "SHOULD be set if both of the paths have already been canonicalized." : "");
+											UINT32 Reserved:31 = FormatString("(%s)",this.ToString);
+										};
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 33:
+			_Struct NetprNameValidate
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Name=%s NameType=%u Flags=%u", ServerName.ToString, Name.ToString, NameType, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString Name;
+										Align4 Pad;
+										UINT32 NameType;
+										UINT32 Flags;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 34:
+			_Struct NetprNameCanonicalize
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Name=%s OutbufLen=%u NameType=%u Flags=%u", ServerName.ToString, Name.ToString, OutbufLen, NameType, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString Name;
+										Align4 Pad;
+										UINT32 OutbufLen;
+										UINT32 NameType;
+										UINT32 Flags
+										{
+											UINT32 V1:1 = FormatString("       (%s) %s",this.ToString,this ? "The method requires the length of the output buffer to be sufficient to hold any name of the specified type." : "");
+											UINT32 Reserved:30 = FormatString("(%s)",this.ToString);
+											UINT32 v2:1 = FormatString("       (%s) %s",this.ToString,this ? "LM2.x compatible name canonicalization." : "");
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant Size;
+										switch
+										{
+											case Size.MaxCount > 0: UnicodeString OutBuf[Size.MaxCount];
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 35:
+			_Struct NetprNameCompare
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Name1=%s Name2=%s NameType=%u Flags=%u", ServerName.ToString, Name1.ToString, Name2.ToString, NameType, Flags )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString Name1;
+										NdrWideString Name2;
+										Align4 Pad;
+										UINT32 NameType;
+										UINT32 Flags
+										{
+											UINT32 V1:1 = FormatString("       (%s) %s",this.ToString,this ? "SHOULD be set if both names have already been canonicalized (by using NetprNameCanonicalize)." : "");
+											UINT32 Reserved:30 = FormatString("(%s)",this.ToString);
+											UINT32 v2:1 = FormatString("       (%s) %s",this.ToString,this ? "Enable LM2.x compatibility." : "");
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 36:
+			_Struct NetrShareEnumSticky
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Pad1;
+										SRVSShareEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSShareEnumStruct InfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 37:
+			_Struct NetrShareDelStart
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s NetName=%s Reserved=%u", ServerName.ToString, NetName.ToString, Reserved )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString NetName;
+										Align4 pad;
+										UINT32 Reserved;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ContextHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 38:
+			_Struct NetrShareDelCommit
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										ContextHandle ContextHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ContextHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 39:
+			_Struct NetrpGetFileSecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s ShareName=%s FileName=%s RequestedInformation=%u", ServerName.ToString, ShareName.ToString, FileName.ToString, RequestedInformation )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr ShareName;
+										NdrWideString FileName;
+										Align4 Pad;
+										UINT32 RequestedInformation;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr AdtSecurityDescriptorPtr;
+										Switch {
+											Case AdtSecurityDescriptorPtr.ReferentID != 0:
+												SRVSAdtSecurityDescriptor AdtSecurityDescriptor;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 40:
+			_Struct NetrpSetFileSecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s ShareName=%s FileName=%s SecurityInformation=%u", ServerName.ToString, ShareName.ToString, FileName.ToString, SecurityInformation )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideStringPtr ShareName;
+										NdrWideString FileName;
+										Align4 Pad1;
+										UINT32 SecurityInformation;
+										NdrAlign Pad2;
+										SRVSAdtSecurityDescriptor SecurityDescriptor;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 41:
+			_Struct NetrServerTransportAddEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrServerTransportAddExLevelTable(this);
+										SRVSTransportInfo Buffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 43:
+			_Struct NetrDfsGetVersion
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s", ServerName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Version=%u Status=%s", Version, WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										UINT32 Version;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 44:
+			_Struct NetrDfsCreateLocalPartition
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s ShareName=%s EntryPrefix=%s ShortName=%s Force=%d", ServerName.ToString, ShareName.ToString, EntryPrefix.ToString, ShortName.ToString, Force )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString ShareName;
+										MSRPCUuidT EntryUid;
+										NdrWideString EntryPrefix;
+										NdrWideString ShortName;
+										NdrAlign pad1;
+										SRVSNetDfsEntryIdContainer RelationInfo;
+										Align4 pad2;
+										INT32 Force;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 45:
+			_Struct NetrDfsDeleteLocalPartition
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Prefix=%s", ServerName.ToString, Prefix.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										MSRPCUuidT Uid;
+										NdrWideString Prefix;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 46:
+			_Struct NetrDfsSetLocalVolumeState
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Prefix=%s State=%u", ServerName.ToString, Prefix.ToString, State )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										MSRPCUuidT Uid;
+										NdrWideString Prefix;
+										Align4 Pad;
+										UINT32 State;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 48:
+			_Struct NetrDfsCreateExitPoint
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Prefix=%s Type=%u ShortPrefixLen=%u", ServerName.ToString, Prefix.ToString, Type, ShortPrefixLen )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										MSRPCUuidT Uid;
+										NdrWideString Prefix;
+										Align4 Pad;
+										UINT32 Type;
+										UINT32 ShortPrefixLen;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ShortPrefix=%s Status=%s", ShortPrefix.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrWideString ShortPrefix;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 49:
+			_Struct NetrDfsDeleteExitPoint
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Prefix=%s Type=%u", ServerName.ToString, Prefix.ToString, Type )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										MSRPCUuidT Uid;
+										NdrWideString Prefix;
+										Align4 Pad;
+										UINT32 Type;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 50:
+			_Struct NetrDfsModifyPrefix
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Prefix=%s", ServerName.ToString, Prefix.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										MSRPCUuidT Uid;
+										NdrWideString Prefix;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 51:
+			_Struct NetrDfsFixLocalVolume
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s VolumeName=%s EntryType=%u ServiceType=%u StgId=%s EntryPrefix=%s CreateDisposition=%u", ServerName.ToString, VolumeName.ToString, EntryType, ServiceType, StgId.ToString, EntryPrefix.ToString, CreateDisposition )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrWideString VolumeName;
+										Align4 Pad1;
+										UINT32 EntryType;
+										UINT32 ServiceType
+										{
+											UINT32 DfsServiceTypeMaster:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Master service" : "Not a master service");
+											UINT32 DfsServiceTypeReadOnly:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Read only service" : "Not a read only service");
+											UINT32 DfsServiceTypeLocal:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Local service" : "Not a local service");
+											UINT32 DfsServiceTypeReferral:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Referral service" : "Not a referral service");
+											UINT32 DfsServiceTypeActive:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Active service" : "Not an active service");
+											UINT32 DfsServiceTypeDownLevel:1 = FormatString("(%s) %s", this.ToBitString, this ? "Down-level service" : "Not a down-level service");
+											UINT32 DfsServiceTypeCostlier:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Costlier than previous" : "Not costlier than previous");
+											UINT32 DfsServiceTypeOffline:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Service is offline" : "Service is online");
+											UINT32 Reserved:24 = FormatString("             (%s)", this.ToBitString);
+										};
+										NdrWideString StgId;
+										MSRPCUuidT EntryUid;
+										NdrWideString EntryPrefix;
+										NdrAlign Pad2;
+										SRVSNetDfsEntryIdContainer RelationInfo;
+										Align4 pad3;
+										UINT32 CreateDisposition = SRVSNetrDfsFixLocalVolumeCreateDispositionTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 52:
+			_Struct NetrDfsManagerReportSiteInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s", ServerName.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										SRVSPPDfsSitelistInfo SiteInfo;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSPPDfsSitelistInfo SiteInfo;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 53:
+			_Struct NetrServerTransportDelEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrServerTransportDelExLevelTable(this);
+										SRVSTransportInfo Buffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 54:
+			_Struct NetrServerAliasAdd
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrServerAliasAddLevelTable(this);
+										NdrAlign Pad2;
+										SRVSServerAliasInfo InfoStruct;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 55:
+			_Struct NetrServerAliasEnum
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s PreferedMaximumLength=%u ResumeHandle=%s", ServerName.ToString, PreferedMaximumLength, ResumeHandle.ToString )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										NdrAlign Pad1;
+										SRVSServerAliasEnumStruct InfoStruct;
+										Align4 Pad2;
+										UINT32 PreferedMaximumLength;
+										UINT32Ptr ResumeHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "TotalEntries=%u ResumeHandle=%s Status=%s", TotalEntries, ResumeHandle.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SRVSServerAliasEnumStruct InfoStruct;
+										Align4 Pad;
+										UINT32 TotalEntries;
+										UINT32Ptr ResumeHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 56:
+			_Struct NetrServerAliasDel
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrServerAliasDelLevelTable(this);
+										NdrAlign Pad2;
+										SRVSServerAliasInfo InfoStruct;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 57:
+			_Struct NetrShareDelEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "ServerName=%s Level=%u", ServerName.ToString, Level )]
+									Struct
+									{
+										NdrWideStringPtr ServerName;
+										Align4 Pad1;
+										UINT32 Level = SRVSNetrShareDelExLevelTable(this);
+										SRVSShareInfo ShareInfo;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[SRVSSummary = FormatString( "Status=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 0:
+		Case 1:
+		Case 2:
+		Case 3:
+		Case 4:
+		Case 5:
+		Case 6:
+		Case 7:
+		Case 29:
+		Case 42:
+		Case 47:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[SRVSSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("SRVS", "Invalid srvs method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[SRVSSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("SRVS", "Invalid srvs method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("SRVS", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown srvs method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+//
+//	_ADT_SECURITY_DESCRIPTOR
+//
+Struct SRVSAdtSecurityDescriptor
+{
+	UINT32 Length;
+	Struct buffer
+	{
+		NdrPtrToConformant ArrayPointer;
+		Switch {
+			Case ArrayPointer.ReferentID > 0:
+				Switch
+				{
+					Case ArrayPointer.MaxCount > 0: SecurityDescriptorRelative SecurityDescriptor;
+				}
+			}
+	}
+}
+
+//
+//	_CONNECT_ENUM_UNION
+//
+Struct SRVSConnectEnumUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 0:
+			SRVSConnectInfo0Container Level0;
+		Case 1:
+			SRVSConnectInfo1Container Level1;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_CONNECT_INFO_0_CONTAINER
+//
+Struct SRVSConnectInfo0Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0:
+			struct
+			{
+				UINT32 EntriesRead;
+				Struct PConnectInfo0
+				{
+					NdrPtr	Pointer;
+					Switch
+					{
+						Case Pointer.ReferentID > 0:
+							struct
+							{
+								NdrConformant Size;
+								SRVSConnectionInfo0 Buffer[ Size.MaxCount ];
+							}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_CONNECT_INFO_1_CONTAINER
+//
+Struct SRVSConnectInfo1Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0:
+			struct
+			{
+				UINT32 EntriesRead;
+				Struct PConnectInfo1
+				{
+					NdrPtr Pointer;
+					Switch
+					{
+						Case Pointer.ReferentID > 0:
+							struct
+							{
+								[Local.MaxCount = Size.Maxcount]
+								NdrConformant size;
+								[property.SRVSConnectInfo1Count = 0]
+								SRVSConnectionInfo1 Buffer[size.MaxCount];
+								[Local.count = 0]
+								[MaxLoopCount = Local.MaxCount]
+								while[local.count < Local.MaxCount]
+								{
+									
+									switch
+									{
+										case Property.SRVSConi1Username$[Local.Count]!= 0:
+										 NdrWideString Coni1Username;
+									}
+									switch
+									{
+										case Property.SRVSConi1NetnamePtr$[Local.Count]!= 0:
+										 NdrWideString Coni1Username;
+									}
+									[Local.Count = Local.Count + 1]
+									struct {};
+								}
+							}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_CONNECTION_INFO_0
+//
+Struct SRVSConnectionInfo0
+{
+	UINT32 Coni0Id;
+}
+
+//
+//	_CONNECTION_INFO_1
+//
+Struct SRVSConnectionInfo1
+{
+	UINT32 Coni1Id;
+	UINT32 Coni1Type;
+	UINT32 Coni1NumOpens;
+	UINT32 Coni1NumUsers;
+	UINT32 Coni1Time;
+	NdrAlign Padding;
+	[Property.SRVSConi1Username$[Property.SRVSConnectInfo1Count] = Coni1UsernamePtr.ReferentID]
+	NdrPtr Coni1UsernamePtr;
+	[Property.SRVSConi1NetnamePtr$[Property.SRVSConnectInfo1Count] = Coni1NetnamePtr.ReferentID]
+	NdrPtr Coni1NetnamePtr;
+	[property.SRVSConnectInfo1Count = property.SRVSConnectInfo1Count + 1]
+	struct {};
+}
+
+//
+//	_DFS_SITELIST_INFO
+//
+Struct SRVSDfsSitelistInfo
+{
+	NdrConformant Size;
+	UINT32 CSites;
+	SRVSDfsSitenameInfo Site[ Size.MaxCount ];
+	NdrWideString SiteName[ Size.MaxCount ];
+}
+
+Struct SRVSPPDfsSitelistInfo
+{
+	NdrPtr DfsSitelistInfoPtr;
+	Switch {
+		Case DfsSitelistInfoPtr.ReferentID != 0:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0:
+						SRVSDfsSitelistInfo DfsSitelistInfo;
+				}
+			}
+	}
+}
+
+
+//	DFS_SITENAME_INFO
+//	Alignment: NdrAlign
+//
+Struct SRVSDfsSitenameInfo
+{
+	Align4 pad;
+	UINT32 SiteFlags
+	{
+		UINT32 DfsSitePrimary:1 = FormatString("(%s) %s", this.ToBitString, this ? "The site name was returned by DsGetSiteName()" : "The site name was NOT returned by DsGetSiteName()");
+		UINT32 Reserved:31 = FormatString("    (%s)", this.ToBitString);
+	};
+	NdrPtr SiteNamePtr;
+}
+
+Table SRVSDfsSitenameInfoSiteFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "DFS_SITE_PRIMARY - The site name was returned by the DsrGetSiteName method, as specified in [MS-NRPC] section .";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_DISK_ENUM_CONTAINER
+//
+Struct SRVSDiskEnumContainer
+{
+	UINT32	EntriesRead;
+		Switch {
+		Case EntriesRead > 0:
+			Struct
+			{
+				NdrPtr Pointer;
+				Switch
+				{
+					Case Pointer.ReferentID > 0: 
+					Struct
+					{
+						NdrConformantVarying Length;
+						SRVSDiskInfo Buffer[Length.ActualCount];
+					}
+				}
+			}
+	}
+}
+
+//
+//	DISK_INFO
+//
+Struct SRVSDiskInfo = Disk.ToString
+{
+	NdrVarying Length;
+	UnicodeString Disk;
+}
+
+//
+//	_FILE_ENUM_STRUCT
+//
+Struct SRVSFileEnumStruct
+{
+	UINT32 Level = SRVSFileEnumStructLevelTable(this);
+	SRVSFileEnumUnion FileInfo;
+}
+
+Table SRVSFileEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 2: "V1 - FILE_INFO_2_CONTAINER";
+		Case 3: "V2 - FILE_INFO_2_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_FILE_ENUM_UNION
+//
+Struct SRVSFileEnumUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 2:
+			SRVSFileInfo2Container Level2;
+		Case 3:
+			SRVSFileInfo3Container Level3;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_FILE_INFO
+//
+Struct SRVSFileInfo
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 Level;
+	Switch( Level )
+	{
+		Case 2:
+			struct SRVSPfileInfo2
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0:
+						SRVSFileInfo2 FileInfo2;
+				}
+			}
+		Case 3:
+			struct SRVSPfileInfo3
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0:
+						struct
+						{
+							[Property.SRVSFileInfo3Count = 0]
+							SRVSFileInfo3 FileInfo3;
+							switch
+							{
+								case Property.SRVSFi3PathnamePtr$[0] != 0:
+								 NdrWideString Coni1Username;
+							}
+							switch
+							{
+								case Property.SRVSFi3UsernamePtr$[0]!= 0:
+								 NdrWideString Coni1Username;
+							}
+						}
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_FILE_INFO_2
+//
+Struct SRVSFileInfo2
+{
+	UINT32 Fi2Id;
+}
+
+//
+//	_FILE_INFO_2_CONTAINER
+//
+Struct SRVSFileInfo2Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.referentID != 0:
+			struct
+			{
+				UINT32 EntriesRead;
+				NdrPtr	Buffer;
+				switch
+				{
+					case Buffer > 0:
+						struct
+						{
+							NdrConformant	 Size;
+							SRVSFileInfo2 BuferData[Size.MaxCount];
+						}
+				}
+			}
+	}
+}
+
+//
+//	_FILE_INFO_3
+//
+Struct SRVSFileInfo3
+{
+	UINT32	Fi3Id;
+	UINT32	Fi3Permissions;
+	UINT32	Fi3NumLocks;
+	NdrAlign Padding;
+	[Property.SRVSFi3PathnamePtr$[Property.SRVSFileInfo3Count] = Fi3PathnamePtr.ReferentID]
+	NdrPtr	Fi3PathnamePtr;
+	[Property.SRVSFi3UsernamePtr$[Property.SRVSFileInfo3Count] = Fi3UsernamePtr.ReferentID]
+	NdrPtr	Fi3UsernamePtr;
+	[Property.SRVSFileInfo3Count = Property.SRVSFileInfo3Count + 1]
+	struct {};
+}
+
+//
+//	_FILE_INFO_3_CONTAINER
+//
+Struct SRVSFileInfo3Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case pointer.referentID != 0:
+		struct
+		{
+			UINT32	EntriesRead;
+			NdrPtr	Pointer;
+			Switch
+			{
+				Case Pointer.ReferentID > 0:
+					struct
+					{
+						[Local.MaxCount = Size.Maxcount]
+						NdrConformant  Size;
+						[Property.SRVSFileInfo3Count = 0]
+						SRVSFileInfo3 Buffer[Size.MaxCount];
+						[Local.count = 0]
+						[MaxLoopCount = Local.MaxCount]
+						while[local.count < Local.MaxCount]
+						{
+							switch
+							{
+								case Property.SRVSFi3PathnamePtr$[Local.Count]!= 0:
+								 NdrWideString Coni1Username;
+							}
+							switch
+							{
+								case Property.SRVSFi3UsernamePtr$[Local.Count]!= 0:
+								 NdrWideString Coni1Username;
+							}
+							[Local.Count = Local.Count + 1]
+							struct {};
+						}
+					}
+			}
+		}
+	}
+}
+
+Table SRVSFileInfo3Fi3PermissionsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PERM_FILE_READ - Permission to read a resource, and, by default, execute the resource.";
+		Case 0x00000002: "PERM_FILE_WRITE - Permission to write to a resource.";
+		Case 0x00000004: "PERM_FILE_CREATE - Permission to create a resource; data can be written when creating the resource.";
+		Case 0x00000008: "ACCESS_EXEC - Permission to execute a resourse.";
+		Case 0x00000010: "ACCESS_DELETE - Permission to delete a resource.";
+		Case 0x00000020: "ACCESS_ATRIB - Permission to modify the attributes of a resource.";
+		Case 0x00000040: "ACCESS_PERM - Permission to modify the permissions assigned to a resource for a user or application.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_ALIAS_ENUM_UNION
+//
+Struct SRVSServerAliasEnumUnion
+{
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 0:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentId > 0:
+						SRVSServerAliasInfo0Container ServerAliasInfo0Container;
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_NET_DFS_ENTRY_ID
+//
+Struct SRVSNetDfsEntryId
+{
+	NdrAlign Padding;
+	MSRPCUuidT Uid;
+	[property.SRVSPrefixPtr$[property.SRVSNetDfsEntryIdCount] = PrefixPtr.ReferentId]
+	NdrPtr PrefixPtr;
+	[property.SRVSNetDfsEntryIdCount = property.SRVSNetDfsEntryIdCount + 1]
+	struct{};
+}
+
+
+//
+//	_NET_DFS_ENTRY_ID_CONTAINER
+//
+Struct SRVSNetDfsEntryIdContainer
+{
+	UINT32 Count;
+	Struct Buffer
+	{
+		NdrPtr Pointer;
+		Switch {
+			Case Pointer.ReferentID > 0:
+				Struct NetDfsEntryIDArray
+				{
+					[Local.MaxCount = Size.Maxcount]
+					NdrConformant Size;
+					[property.SRVSNetDfsEntryIdCount = 0]
+					SRVSNetDfsEntryID NetDfsEntryID[ Size.MaxCount ];
+					[Local.Count = 0]
+					[MaxLoopCount = Local.MaxCount]
+					while[local.count < Local.MaxCount]
+					{
+						switch
+						{
+							case property.SRVSPrefixPtr$[Local.Count] != 0:
+								NdrWideString Prefix;
+						}
+						[Local.Count = Local.Count + 1]
+						struct {};
+					}
+				}
+		}
+	}
+}
+
+Table SRVSNetrDfsFixLocalVolumeCreateDispositionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "FILE_SUPERSEDE - If the share already exists, replace it with the specified share. If it does not exist, create the specified share.";
+		Case 0x00000001: "FILE_OPEN - If the share already exists, fail the request and do not create or open the specified share. If it does not exist, create the specified share.";
+		Case 0x00000002: "FILE_CREATE - If the file already exists, open it instead of creating a new share. If it does not exist, fail the request and do not create a new share.";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrDfsFixLocalVolumeServiceTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "DFS_SERVICE_TYPE_MASTER - Master service.";
+		Case 0x00000002: "DFS_SERVICE_TYPE_READONLY - Read-only service.";
+		Case 0x00000004: "DFS_SERVICE_TYPE_LOCAL - Local service.";
+		Case 0x00000008: "DFS_SERVICE_TYPE_REFERRAL - Referral service.";
+		Case 0x000000010: "DFS_SERVICE_TYPE_ACTIVE - Active service.";
+		Case 0x000000020: "DFS_SERVICE_TYPE_DOWN_LEVEL - Down-level service.";
+		Case 0x000000040: "DFS_SERVICE_TYPE_COSTLIER - Costlier service than previous.";
+		Case 0x000000080: "DFS_SERVICE_TYPE_OFFLINE - Service is offline.";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrFileGetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 2: "V1 - FILE_INFO_2";
+		Case 3: "V2 - FILE_INFO_3";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrServerAliasAddLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - The buffer is of type SERVER_ALIAS_INFO_0_CONTAINER.";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrServerAliasDelLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - The buffer is of type SERVER_ALIAS_INFO_0_CONTAINER.";
+		Default: "Unknown";
+	}
+}
+
+
+Table SRVSNetrServerGetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 100: "V1 - LPSERVER_INFO_100";
+		Case 101: "V2 - LPSERVER_INFO_101";
+		Case 102: "V3 - LPSERVER_INFO_102";
+		Case 103: "V4 - LPSERVER_INFO_103";
+		Case 502: "V5 - LPSERVER_INFO_502";
+		Case 503: "V6 - LPSERVER_INFO_503";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrServerSetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 101: "V1 - LPSERVER_INFO_101";
+		Case 102: "V2 - LPSERVER_INFO_102";
+		Case 502: "V3 - LPSERVER_INFO_502";
+		Case 503: "V4 - LPSERVER_INFO_503";
+		Case 599: "V5 - LPSERVER_INFO_599";
+		Case 1005: "V6 - LPSERVER_INFO_1005";
+		Case 1107: "V7 - LPSERVER_INFO_1107";
+		Case 1010: "V8 - LPSERVER_INFO_1010";
+		Case 1016: "V9 - LPSERVER_INFO_1016";
+		Case 1017: "V10 - LPSERVER_INFO_1017";
+		Case 1018: "V11 - LPSERVER_INFO_1018";
+		Case 1501: "V12 - LPSERVER_INFO_1501";
+		Case 1502: "V13 - LPSERVER_INFO_1502";
+		Case 1503: "V14 - LPSERVER_INFO_1503";
+		Case 1506: "V15 - LPSERVER_INFO_1506";
+		Case 1510: "V16 - LPSERVER_INFO_1510";
+		Case 1511: "V17 - LPSERVER_INFO_1511";
+		Case 1512: "V18 - LPSERVER_INFO_1512";
+		Case 1513: "V19 - LPSERVER_INFO_1513";
+		Case 1514: "V20 - LPSERVER_INFO_1514";
+		Case 1515: "V21 - LPSERVER_INFO_1515";
+		Case 1516: "V22 - LPSERVER_INFO_1516";
+		Case 1518: "V23 - LPSERVER_INFO_1518";
+		Case 1523: "V24 - LPSERVER_INFO_1523";
+		Case 1528: "V25 - LPSERVER_INFO_1528";
+		Case 1529: "V26 - LPSERVER_INFO_1529";
+		Case 1530: "V27 - LPSERVER_INFO_1530";
+		Case 1533: "V28 - LPSERVER_INFO_1533";
+		Case 1534: "V29 - LPSERVER_INFO_1534";
+		Case 1535: "V30 - LPSERVER_INFO_1535";
+		Case 1536: "V31 - LPSERVER_INFO_1536";
+		Case 1538: "V32 - LPSERVER_INFO_1538";
+		Case 1539: "V33 - LPSERVER_INFO_1539";
+		Case 1540: "V34 - LPSERVER_INFO_1540";
+		Case 1541: "V35 - LPSERVER_INFO_1541";
+		Case 1542: "V36 - LPSERVER_INFO_1542";
+		Case 1543: "V37 - LPSERVER_INFO_1543";
+		Case 1544: "V38 - LPSERVER_INFO_1544";
+		Case 1545: "V39 - LPSERVER_INFO_1545";
+		Case 1546: "V40 - LPSERVER_INFO_1546";
+		Case 1547: "V41 - LPSERVER_INFO_1547";
+		Case 1548: "V42 - LPSERVER_INFO_1548";
+		Case 1549: "V43 - LPSERVER_INFO_1549";
+		Case 1550: "V44 - LPSERVER_INFO_1550";
+		Case 1552: "V45 - LPSERVER_INFO_1552";
+		Case 1553: "V46 - LPSERVER_INFO_1553";
+		Case 1554: "V47 - LPSERVER_INFO_1554";
+		Case 1555: "V48 - LPSERVER_INFO_1555";
+		Case 1556: "V49 - LPSERVER_INFO_1556";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrServerTransportAddExLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - The buffer is of type SERVER_TRANSPORT_INFO_0.";
+		Case 1: "V2 - The buffer is of type SERVER_TRANSPORT_INFO_1.";
+		Case 2: "V3 - The buffer is of type SERVER_TRANSPORT_INFO_2.";
+		Case 3: "V4 - The buffer is of type SERVER_TRANSPORT_INFO_3.";
+		Default: "Unknown";
+	}
+}
+
+
+Table SRVSNetrServerTransportDelExLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - The buffer is of type SERVER_XPORT INFO_0_CONTAINER.";
+		Case 1: "V2 - The buffer is of type SERVER_XPORT INFO_1_CONTAINER.";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrShareAddLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 2: "V1 - Possible value.";
+		Case 502: "V2 - Possible value.";
+		Case 503: "V3 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrShareDelExLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 503: "V1 - LPSHARE_INFO_503_I";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrShareGetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - LPSHARE_INFO_0";
+		Case 1: "V2 - LPSHARE_INFO_1";
+		Case 2: "V3 - LPSHARE_INFO_2";
+		Case 501: "V4 - LPSHARE_INFO_501";
+		Case 502: "V5 - LPSHARE_INFO_502_I";
+		Case 503: "V6 - LPSHARE_INFO_503_I";
+		Case 1005: "V7 - LPSHARE_INFO_1005";
+		Default: "Unknown";
+	}
+}
+
+Table SRVSNetrShareSetInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "V1 - LPSHARE_INFO_1";
+		Case 2: "V2 - LPSHARE_INFO_2";
+		Case 502: "V3 - SHARE_INFO_502_I";
+		Case 503: "V4 - SHARE_INFO_503_I";
+		Case 1004: "V5 - LPSHARE_INFO_1004";
+		Case 1005: "V6 - LPSHARE_INFO_1005";
+		Case 1006: "V7 - LPSHARE_INFO_1006";
+		Case 1501: "V8 - LPSHARE_INFO_1501_I";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_ALIAS_ENUM_STRUCT
+//
+Struct SRVSServerAliasEnumStruct
+{
+	UINT32 Level = SRVSServerAliasEnumStructLevelTable(this);
+	NdrAlign Padding;
+	SRVSServerAliasEnumUnion ServerAliasInfo;
+}
+
+Table SRVSServerAliasEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - SERVER_ALIAS_INFO_0_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_ALIAS_INFO
+//
+Struct SRVSServerAliasInfo
+{
+	UINT32 Level;
+	Switch( Level )
+	{
+		Case 0:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0 :
+						struct
+						{
+							[Property.SRVSServerAliasInfo0Count = 0]
+							SRVSServerAliasInfo0 ServerAliasInfo0;
+							switch
+							{
+								case property.SRVSSrvai0AliasPtr$[Property.SRVSServerAliasInfo0Count] > 0:
+									NdrWideString Srvai0Alias;
+							}
+							switch
+							{
+								case property.SRVSSrvai0TargetPtr$[Property.SRVSServerAliasInfo0Count] > 0:
+									NdrWideString Srvai0Target;
+							}
+						}
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SERVER_ALIAS_INFO_0
+//
+Struct SRVSServerAliasInfo0
+{
+	[property.SRVSSrvai0AliasPtr$[Property.SRVSServerAliasInfo0Count] = Srvai0AliasPtr.ReferentID]
+	NdrPtr Srvai0AliasPtr;
+	[property.SRVSSrvai0TargetPtr$[Property.SRVSServerAliasInfo0Count] = Srvai0TargetPtr.ReferentID]
+	NdrPtr Srvai0TargetPtr;
+	BOOLEAN Srvai0Default;
+	Align4 Padding;
+	UINT32 Srvai0Reserved;
+	[Property.SRVSServerAliasInfo0Count = Property.SRVSServerAliasInfo0Count + 1]
+	struct{};
+}
+
+//
+//	_SERVER_ALIAS_INFO_0_CONTAINER
+//
+Struct SRVSServerAliasInfo0Container
+{
+	UINT32 EntriesRead;
+	NdrPtr BufferPtr;
+	switch
+	{
+		case BufferPtr.ReferentId > 0:
+			struct
+			{
+				[Local.MaxCount = Size.Maxcount]
+				NdrConformant Size;
+				[Property.SRVSServerAliasInfo0Count = 0]
+				SRVSServerAliasInfo0 ServerAliasInfo0[Size.Maxcount];
+				[Local.Count = 0]
+				[MaxLoopCount = Local.MaxCount]
+				while[local.count < Local.MaxCount]
+				{
+					switch
+					{
+						case property.SRVSSrvai0AliasPtr$[local.count] > 0:
+							NdrWideString Srvai0Alias;
+					}
+					switch
+					{
+						case property.SRVSSrvai0TargetPtr$[local.count] > 0:
+							NdrWideString Srvai0Target;
+					}
+					[Local.Count = Local.Count + 1]
+					struct {};
+				}
+			}
+	}
+}
+
+//
+//	_SERVER_INFO
+//
+Struct SRVSServerInfo
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 Level;
+	Switch( Level )
+	{
+		Case 100:
+			struct
+			{
+				NdrPtr	Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo100 ServerInfo100;
+				}
+			}
+		Case 101:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo101 ServerInfo101;
+				}
+			}
+		Case 102:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo102 ServerInfo102;
+				}
+			}
+		Case 103:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo103 ServerInfo103;
+				}
+			}
+		Case 502:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo502 ServerInfo502;
+				}
+			}
+		Case 503:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo503 ServerInfo503;
+				}
+			}
+		Case 599:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo599 ServerInfo599;
+				}
+			}
+		Case 1005:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1005 ServerInfo1005;
+				}
+			}
+		Case 1107:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1107 ServerInfo1107;
+				}
+			}
+		Case 1010:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1010 ServerInfo1010;
+				}
+			}
+		Case 1016:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1016 ServerInfo1016;
+				}
+			}
+		Case 1017:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1017 ServerInfo1017;
+				}
+			}
+		Case 1018:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1018 ServerInfo1018;
+				}
+			}
+		Case 1501:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1501 ServerInfo1501;
+				}
+			}
+		Case 1502:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1502 ServerInfo1502;
+				}
+			}
+		Case 1503:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1503 ServerInfo1503;
+				}
+			}
+		Case 1506:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1506 ServerInfo1506;
+				}
+			}
+		Case 1510:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1510 ServerInfo1510;
+				}
+			}
+		Case 1511:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1511 ServerInfo1511;
+				}
+			}
+		Case 1512:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1512 ServerInfo1512;
+				}
+			}
+		Case 1513:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1513 ServerInfo1513;
+				}
+			}
+		Case 1514:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1514 ServerInfo1514;
+				}
+			}
+		Case 1515:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1515 ServerInfo1515;
+				}
+			}
+		Case 1516:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1516 ServerInfo1516;
+				}
+			}
+		Case 1518:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1518 ServerInfo1518;
+				}
+			}
+		Case 1523:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1523 ServerInfo1523;
+				}
+			}
+		Case 1528:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1528 ServerInfo1528;
+				}
+			}
+		Case 1529:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1529 ServerInfo1529;
+				}
+			}
+		Case 1530:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1530 ServerInfo1530;
+				}
+			}
+		Case 1533:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1533 ServerInfo1533;
+				}
+			}
+		Case 1534:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1534 ServerInfo1534;
+				}
+			}
+		Case 1535:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1535 ServerInfo1535;
+				}
+			}
+		Case 1536:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1536 ServerInfo1536;
+				}
+			}
+		Case 1538:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1538 ServerInfo1538;
+				}
+			}
+		Case 1539:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1539 ServerInfo1539;
+				}
+			}
+		Case 1540:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1540 ServerInfo1540;
+				}
+			}
+		Case 1541:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1541 ServerInfo1541;
+				}
+			}
+		Case 1542:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1542 ServerInfo1542;
+				}
+			}
+		Case 1543:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1543 ServerInfo1543;
+				}
+			}
+		Case 1544:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1544 ServerInfo1544;
+				}
+			}
+		Case 1545:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1545 ServerInfo1545;
+				}
+			}
+		Case 1546:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1546 ServerInfo1546;
+				}
+			}
+		Case 1547:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1547 ServerInfo1547;
+				}
+			}
+		Case 1548:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1548 ServerInfo1548;
+				}
+			}
+		Case 1549:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1549 ServerInfo1549;
+				}
+			}
+		Case 1550:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1550 ServerInfo1550;
+				}
+			}
+		Case 1552:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1552 ServerInfo1552;
+				}
+			}
+		Case 1553:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1553 ServerInfo1553;
+				}
+			}
+		Case 1554:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1554 ServerInfo1554;
+				}
+			}
+		Case 1555:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1555 ServerInfo1555;
+				}
+			}
+		Case 1556:
+			struct
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0: SRVSServerInfo1556 ServerInfo1556;
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SERVER_INFO_100
+//
+Struct SRVSServerInfo100
+{
+	UINT32 Sv100PlatformId;
+	NdrWIDESTRINGPtr Sv100Name;
+}
+
+//
+//	_SERVER_INFO_1005
+//
+Struct SRVSServerInfo1005
+{
+	NdrPtr Sv1005CommentPtr;
+	switch
+	{
+		case Sv1005CommentPtr.ReferentID > 0: NdrWideString Sv1005Comment;
+	}
+}
+
+//
+//	_SERVER_INFO_101
+//
+Struct SRVSServerInfo101
+{
+	UINT32 Sv101PlatformId = SRVSPlatformIDsTable(this);
+	[SRVSSv101NamePtr = this.ReferentID]
+	NdrPtr Sv101NamePtr;
+	UINT32 Sv101VersionMajor;
+	UINT32 Sv101VersionMinor;
+	UINT32 Sv101Type;
+	[SRVSSv101CommentPtr = this.ReferentID]
+	NdrPtr Sv101CommentPtr;
+	switch
+	{
+		case SRVSSv101NamePtr > 0: NdrWideString Sv101Name;
+	}
+	switch
+	{
+		case SRVSSv101CommentPtr > 0: NdrWideString Sv101Comment;
+	}
+}
+
+Table SRVSPlatformIDsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 300: "PLATFORM_ID_DOS - Specified by server running DOS.";
+		Case 400: "PLATFORM_ID_OS2 - Specified by server running OS2.";
+		Case 500: "PLATFORM_ID_NT - Specified by server running Windows NT or newer Windows OS version.";
+		Case 600: "PLATFORM_ID_OSF - Specified by server running OSF/1.";
+		Case 700: "PLATFORM_ID_VMS - Specified by server running VMS.";
+		default:"unknown";
+	}
+}
+
+//
+//	_SERVER_INFO_1010
+//
+Struct SRVSServerInfo1010
+{
+	INT32 Sv1010Disc;
+}
+
+//
+//	_SERVER_INFO_1016
+//
+Struct SRVSServerInfo1016
+{
+	INT32 Sv1016Hidden;
+}
+
+//
+//	_SERVER_INFO_1017
+//
+Struct SRVSServerInfo1017
+{
+	UINT32 Sv1017Announce;
+}
+
+//
+//	_SERVER_INFO_1018
+//
+Struct SRVSServerInfo1018
+{
+	UINT32 Sv1018Anndelta;
+}
+
+//
+//	_SERVER_INFO_102
+//
+Struct SRVSServerInfo102
+{
+	UINT32 Sv102PlatformId = SRVSPlatformIDsTable(this);
+	[SRVSSv102NamePtr = this.ReferentID]
+	NdrPtr Sv102NamePtr;
+	UINT32 Sv102VersionMajor;
+	UINT32 Sv102VersionMinor;
+	UINT32 Sv102Type = FormatString("%s",this == 0xFFFFFFFF ? "All servers" : "")
+	{
+		UINT32 Workstation:1 = FormatString("     (%s) %s",this.ToBitString,this ? "A server running the WorkStation Service" : "");
+		UINT32 Server:1 = FormatString("          (%s) %s",this.ToBitString,this ? "A server running the Server Service" : "");
+		UINT32 SqlServer:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Any server running with SQL Server" : "");
+		UINT32 DomainCtrl:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Primary domain controller" : "");
+		UINT32 DomainBakCtrl:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Backup domain controller" : "");
+		UINT32 TimeSoutce:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Server is available as a time source for network time synchronization" : "");
+		UINT32 Afp:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Apple File Protocol server" : "");
+		UINT32 Novell:1 = FormatString("          (%s) %s",this.ToBitString,this ? "Novell server" : "");
+		UINT32 DomainMember:1 = FormatString("    (%s) %s",this.ToBitString,this ? "LAN Manager 2.x domain member" : "");
+		UINT32 PrintqServer:1 = FormatString("    (%s) %s",this.ToBitString,this ? "Server sharing print queue" : "");
+		UINT32 DialinServer:1 = FormatString("    (%s) %s",this.ToBitString,this ? "Server running dial-in service" : "");
+		UINT32 XenixServer:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Xenix server" : "");
+		UINT32 Nt:1 = FormatString("              (%s) %s",this.ToBitString,this ? "Windows Server 2003, Windows XP, Windows 2000, or Windows NT" : "");
+		UINT32 Wfw:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Server running Windows for Workgroups" : "");
+		UINT32 ServerMfpn:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Microsoft File and Print for NetWare" : "");
+		UINT32 ServerNt:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Windows Server 2003, Windows 2000 Server, or server that is not a domain controller" : "");
+		UINT32 PotentialBrowser:1 = FormatString("(%s) %s",this.ToBitString,this ? "Server that can run the browser service" : "");
+		UINT32 BackupBrowser:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Server running a browser service as backup" : "");
+		UINT32 MasterBrowser:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Server running the master browser service" : "");
+		UINT32 DomainMaster:1 = FormatString("    (%s) %s",this.ToBitString,this ? "Server running the domain master browser" : "");
+		UINT32 Reserved1:2 = FormatString("       (%s)",this.ToBitString);
+		UINT32 Windows:1 = FormatString("         (%s) %s",this.ToBitString,this ? "Windows Me, Windows 98, or Windows 95" : "");
+		UINT32 Reserved2:2 = FormatString("       (%s)",this.ToBitString);
+		UINT32 TerminalServer:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Terminal Server" : "");
+		UINT32 ClusterVsNt:1 = FormatString("     (%s) %s",this.ToBitString,this ? "Cluster virtual servers available in the domain" : "");
+		UINT32 Reserved3:1 = FormatString("       (%s)",this.ToBitString);
+		UINT32 ClusterNt:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Server clusters available in the domain" : "");
+		UINT32 Reserved4:1 = FormatString("       (%s)",this.ToBitString);
+		UINT32 LocalListOnly:1 = FormatString("   (%s) %s",this.ToBitString,this ? "Servers maintained by the browser" : "");
+		UINT32 DomainEnum:1 = FormatString("      (%s) %s",this.ToBitString,this ? "Primary domain" : "");
+	};
+	[SRVSSv102CommentPtr = this.ReferentID]
+	NdrPtr Sv102CommentPtr;
+	UINT32 Sv102Users;
+	INT32 Sv102Disc;
+	INT32 Sv102Hidden;
+	UINT32 Sv102Announce;
+	UINT32 Sv102Anndelta;
+	UINT32 Sv102Licenses;
+	[SRVSSv102UserpathPtr = this.ReferentID]
+	NdrPtr Sv102UserpathPtr;
+	switch
+	{
+		case SRVSSv102NamePtr > 0: NdrWideString Sv102Name;
+	}
+	switch
+	{
+		case SRVSSv102CommentPtr > 0: NdrWideString Sv102Comment;
+	}
+	switch
+	{
+		case SRVSSv102UserpathPtr > 0: NdrWideString Sv102Userpath;
+	}
+}
+
+//
+//	_SERVER_INFO_103
+//
+Struct SRVSServerInfo103
+{
+	UINT32 Sv103PlatformId = SRVSPlatformIDsTable(this);
+	[SRVSSv103NamePtr = this.ReferentID]
+	NdrPtr Sv103NamePtr;
+	UINT32 Sv103VersionMajor;
+	UINT32 Sv103VersionMinor;
+	UINT32 Sv103Type;
+	[SRVSSv103CommentPtr = this.ReferentID]
+	NdrPtr Sv103CommentPtr;
+	UINT32 Sv103Users;
+	INT32 Sv103Disc;
+	INT32 Sv103Hidden;
+	UINT32 Sv103Announce;
+	UINT32 Sv103Anndelta;
+	UINT32 Sv103Licenses;
+	[SRVSSv103UserpathPtr = this.ReferentID]
+	NdrPtr Sv103UserpathPtr;
+	UINT32 Sv103Capabilities = SRVSServerInfo103Sv103CapabilitiesTable(this);
+	switch
+	{
+		case SRVSSv103NamePtr > 0: NdrWideString Sv103Name;
+	}
+	switch
+	{
+		case SRVSSv103CommentPtr > 0: NdrWideString Sv103Comment;
+	}
+	switch
+	{
+		case SRVSSv103UserpathPtr > 0: NdrWideString Sv103Userpath;
+	}
+}
+
+Table SRVSServerInfo103Sv103CapabilitiesTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0001: "SRV_SUPPORT_HASH_GENERATION - Hash generation for branch cache functionality is supported by the server.";
+		Case 0x0002: "SRV_HASH_GENERATION_ACTIVE - The branch cache component is installed.SRV_HASH_GENERATION_ACTIVE is enabled only if SRV_SUPPORT_HASH_GENERATION is enabled.";
+		Default: "Unknown";
+	}
+}
+
+
+//
+//	_SERVER_INFO_1107
+//
+Struct SRVSServerInfo1107
+{
+	UINT32 Sv1107Users;
+}
+
+//
+//	_SERVER_INFO_1501
+//
+Struct SRVSServerInfo1501
+{
+	UINT32 Sv1501Sessopens;
+}
+
+//
+//	_SERVER_INFO_1502
+//
+Struct SRVSServerInfo1502
+{
+	UINT32 Sv1502Sessvcs;
+}
+
+//
+//	_SERVER_INFO_1503
+//
+Struct SRVSServerInfo1503
+{
+	UINT32 Sv1503Opensearch;
+}
+
+//
+//	_SERVER_INFO_1506
+//
+Struct SRVSServerInfo1506
+{
+	UINT32 Sv1506Maxworkitems;
+}
+
+//
+//	_SERVER_INFO_1510
+//
+Struct SRVSServerInfo1510
+{
+	UINT32 Sv1510Sessusers;
+}
+
+//
+//	_SERVER_INFO_1511
+//
+Struct SRVSServerInfo1511
+{
+	UINT32 Sv1511Sessconns;
+}
+
+//
+//	_SERVER_INFO_1512
+//
+Struct SRVSServerInfo1512
+{
+	UINT32 Sv1512Maxnonpagedmemoryusage;
+}
+
+//
+//	_SERVER_INFO_1513
+//
+Struct SRVSServerInfo1513
+{
+	UINT32 Sv1513Maxpagedmemoryusage;
+}
+
+//
+//	SERVER_INFO_1514
+//
+Struct SRVSServerInfo1514
+{
+	INT32 Sv1514Enablesoftcompat;
+}
+
+//
+//	_SERVER_INFO_1515
+//
+Struct SRVSServerInfo1515
+{
+	INT32 Sv1515Enableforcedlogoff;
+}
+
+//
+//	_SERVER_INFO_1516
+//
+Struct SRVSServerInfo1516
+{
+	INT32 Sv1516Timesource;
+}
+
+//
+//	_SERVER_INFO_1518
+//
+Struct SRVSServerInfo1518
+{
+	INT32 Sv1518Lmannounce;
+}
+
+//
+//	_SERVER_INFO_1523
+//
+Struct SRVSServerInfo1523
+{
+	UINT32 Sv1523Maxkeepsearch;
+}
+
+//
+//	_SERVER_INFO_1528
+//
+Struct SRVSServerInfo1528
+{
+	UINT32 Sv1528Scavtimeout;
+}
+
+//
+//	_SERVER_INFO_1529
+//
+Struct SRVSServerInfo1529
+{
+	UINT32 Sv1529Minrcvqueue;
+}
+
+//
+//	_SERVER_INFO_1530
+//
+Struct SRVSServerInfo1530
+{
+	UINT32 Sv1530Minfreeworkitems;
+}
+
+//
+//	_SERVER_INFO_1533
+//
+Struct SRVSServerInfo1533
+{
+	UINT32 Sv1533Maxmpxct;
+}
+
+//
+//	_SERVER_INFO_1534
+//
+Struct SRVSServerInfo1534
+{
+	UINT32 Sv1534Oplockbreakwait;
+}
+
+//
+//	_SERVER_INFO_1535
+//
+Struct SRVSServerInfo1535
+{
+	UINT32 Sv1535Oplockbreakresponsewait;
+}
+
+//
+//	_SERVER_INFO_1536
+//
+Struct SRVSServerInfo1536
+{
+	INT32 Sv1536Enableoplocks;
+}
+
+//
+//	_SERVER_INFO_1538
+//
+Struct SRVSServerInfo1538
+{
+	INT32 Sv1538Enablefcbopens;
+}
+
+//
+//	_SERVER_INFO_1539
+//
+Struct SRVSServerInfo1539
+{
+	INT32 Sv1539Enableraw;
+}
+
+//
+//	_SERVER_INFO_1540
+//
+Struct SRVSServerInfo1540
+{
+	INT32 Sv1540Enablesharednetdrives;
+}
+
+//
+//	_SERVER_INFO_1541
+//
+Struct SRVSServerInfo1541
+{
+	INT32 Sv1541Minfreeconnections;
+}
+
+//
+//	_SERVER_INFO_1542
+//
+Struct SRVSServerInfo1542
+{
+	INT32 Sv1542Maxfreeconnections;
+}
+
+//
+//	_SERVER_INFO_1543
+//
+Struct SRVSServerInfo1543
+{
+	UINT32 Sv1543Initsesstable;
+}
+
+//
+//	_SERVER_INFO_1544
+//
+Struct SRVSServerInfo1544
+{
+	UINT32 Sv1544Initconntable;
+}
+
+//
+//	_SERVER_INFO_1545
+//
+Struct SRVSServerInfo1545
+{
+	UINT32 Sv1545Initfiletable;
+}
+
+//
+//	_SERVER_INFO_1546
+//
+Struct SRVSServerInfo1546
+{
+	UINT32 Sv1546Initsearchtable;
+}
+
+//
+//	_SERVER_INFO_1547
+//
+Struct SRVSServerInfo1547
+{
+	UINT32 Sv1547Alertschedule;
+}
+
+//
+//	_SERVER_INFO_1548
+//
+Struct SRVSServerInfo1548
+{
+	UINT32 Sv1548Errorthreshold;
+}
+
+//
+//	_SERVER_INFO_1549
+//
+Struct SRVSServerInfo1549
+{
+	UINT32 Sv1549Networkerrorthreshold;
+}
+
+//
+//	_SERVER_INFO_1550
+//
+Struct SRVSServerInfo1550
+{
+	UINT32 Sv1550Diskspacethreshold;
+}
+
+//
+//	_SERVER_INFO_1552
+//
+Struct SRVSServerInfo1552
+{
+	UINT32 Sv1552Maxlinkdelay;
+}
+
+//
+//	_SERVER_INFO_1553
+//
+Struct SRVSServerInfo1553
+{
+	UINT32 Sv1553Minlinkthroughput;
+}
+
+//
+//	_SERVER_INFO_1554
+//
+Struct SRVSServerInfo1554
+{
+	UINT32 Sv1554Linkinfovalidtime;
+}
+
+//
+//	_SERVER_INFO_1555
+//
+Struct SRVSServerInfo1555
+{
+	UINT32 Sv1555Scavqosinfoupdatetime;
+}
+
+//
+//	_SERVER_INFO_1556
+//
+Struct SRVSServerInfo1556
+{
+	UINT32 Sv1556Maxworkitemidletime;
+}
+
+//
+//	_SERVER_INFO_502
+//
+Struct SRVSServerInfo502
+{
+	UINT32 Sv502Sessopens;
+	UINT32 Sv502Sessvcs;
+	UINT32 Sv502Opensearch;
+	UINT32 Sv502Sizreqbuf;
+	UINT32 Sv502Initworkitems;
+	UINT32 Sv502Maxworkitems;
+	UINT32 Sv502Rawworkitems;
+	UINT32 Sv502Irpstacksize;
+	UINT32 Sv502Maxrawbuflen;
+	UINT32 Sv502Sessusers;
+	UINT32 Sv502Sessconns;
+	UINT32 Sv502Maxpagedmemoryusage;
+	UINT32 Sv502Maxnonpagedmemoryusage;
+	INT32 Sv502Enablesoftcompat;
+	INT32 Sv502Enableforcedlogoff;
+	INT32 Sv502Timesource;
+	INT32 Sv502Acceptdownlevelapis;
+	INT32 Sv502Lmannounce;
+}
+
+//
+//	_SERVER_INFO_503
+//
+Struct SRVSServerInfo503
+{
+	UINT32 Sv503Sessopens;
+	UINT32 Sv503Sessvcs;
+	UINT32 Sv503Opensearch;
+	UINT32 Sv503Sizreqbuf;
+	UINT32 Sv503Initworkitems;
+	UINT32 Sv503Maxworkitems;
+	UINT32 Sv503Rawworkitems;
+	UINT32 Sv503Irpstacksize;
+	UINT32 Sv503Maxrawbuflen;
+	UINT32 Sv503Sessusers;
+	UINT32 Sv503Sessconns;
+	UINT32 Sv503Maxpagedmemoryusage;
+	UINT32 Sv503Maxnonpagedmemoryusage;
+	INT32 Sv503Enablesoftcompat;
+	INT32 Sv503Enableforcedlogoff;
+	INT32 Sv503Timesource;
+	INT32 Sv503Acceptdownlevelapis;
+	INT32 Sv503Lmannounce;
+	[SRVSSv503DomainPtr = this.ReferentID]
+	NdrPtr Sv503DomainPtr;
+	UINT32 Sv503Maxcopyreadlen;
+	UINT32 Sv503Maxcopywritelen;
+	UINT32 Sv503Minkeepsearch;
+	UINT32 Sv503Maxkeepsearch;
+	UINT32 Sv503Minkeepcomplsearch;
+	UINT32 Sv503Maxkeepcomplsearch;
+	UINT32 Sv503Threadcountadd;
+	UINT32 Sv503Numblockthreads;
+	UINT32 Sv503Scavtimeout;
+	UINT32 Sv503Minrcvqueue;
+	UINT32 Sv503Minfreeworkitems;
+	UINT32 Sv503Xactmemsize;
+	UINT32 Sv503Threadpriority;
+	UINT32 Sv503Maxmpxct;
+	UINT32 Sv503Oplockbreakwait;
+	UINT32 Sv503Oplockbreakresponsewait;
+	INT32 Sv503Enableoplocks;
+	INT32 Sv503Enableoplockforceclose;
+	INT32 Sv503Enablefcbopens;
+	INT32 Sv503Enableraw;
+	INT32 Sv503Enablesharednetdrives;
+	UINT32 Sv503Minfreeconnections;
+	UINT32 Sv503Maxfreeconnections;
+	switch
+	{
+		case SRVSSv503DomainPtr > 0: NdrWideString Sv503Domain;
+	}
+}
+
+//
+//	_SERVER_INFO_599
+//
+Struct SRVSServerInfo599
+{
+	UINT32 Sv599Sessopens;
+	UINT32 Sv599Sessvcs;
+	UINT32 Sv599Opensearch;
+	UINT32 Sv599Sizreqbuf;
+	UINT32 Sv599Initworkitems;
+	UINT32 Sv599Maxworkitems;
+	UINT32 Sv599Rawworkitems;
+	UINT32 Sv599Irpstacksize;
+	UINT32 Sv599Maxrawbuflen;
+	UINT32 Sv599Sessusers;
+	UINT32 Sv599Sessconns;
+	UINT32 Sv599Maxpagedmemoryusage;
+	UINT32 Sv599Maxnonpagedmemoryusage;
+	INT32 Sv599Enablesoftcompat;
+	INT32 Sv599Enableforcedlogoff;
+	INT32 Sv599Timesource;
+	INT32 Sv599Acceptdownlevelapis;
+	INT32 Sv599Lmannounce;
+	[SRVSSv599DomainPtr = this.ReferentID]
+	NdrPtr Sv599DomainPtr;
+	UINT32 Sv599Maxcopyreadlen;
+	UINT32 Sv599Maxcopywritelen;
+	UINT32 Sv599Minkeepsearch;
+	UINT32 Sv599Maxkeepsearch;
+	UINT32 Sv599Minkeepcomplsearch;
+	UINT32 Sv599Maxkeepcomplsearch;
+	UINT32 Sv599Threadcountadd;
+	UINT32 Sv599Numblockthreads;
+	UINT32 Sv599Scavtimeout;
+	UINT32 Sv599Minrcvqueue;
+	UINT32 Sv599Minfreeworkitems;
+	UINT32 Sv599Xactmemsize;
+	UINT32 Sv599Threadpriority;
+	UINT32 Sv599Maxmpxct;
+	UINT32 Sv599Oplockbreakwait;
+	UINT32 Sv599Oplockbreakresponsewait;
+	INT32 Sv599Enableoplocks;
+	INT32 Sv599Enableoplockforceclose;
+	INT32 Sv599Enablefcbopens;
+	INT32 Sv599Enableraw;
+	INT32 Sv599Enablesharednetdrives;
+	UINT32 Sv599Minfreeconnections;
+	UINT32 Sv599Maxfreeconnections;
+	UINT32 Sv599Initsesstable;
+	UINT32 Sv599Initconntable;
+	UINT32 Sv599Initfiletable;
+	UINT32 Sv599Initsearchtable;
+	UINT32 Sv599Alertschedule;
+	UINT32 Sv599Errorthreshold;
+	UINT32 Sv599Networkerrorthreshold;
+	UINT32 Sv599Diskspacethreshold;
+	UINT32 Sv599Reserved;
+	UINT32 Sv599Maxlinkdelay;
+	UINT32 Sv599Minlinkthroughput;
+	UINT32 Sv599Linkinfovalidtime;
+	UINT32 Sv599Scavqosinfoupdatetime;
+	UINT32 Sv599Maxworkitemidletime;
+	switch
+	{
+		case SRVSSv599DomainPtr > 0: NdrWideString Sv599Domain;
+	}
+}
+
+//
+//	_SERVER_TRANSPORT_INFO_0
+//
+Struct SRVSServerTransportInfo0
+{
+	UINT32 Svti0Numberofvcs;
+	[property.SRVSSvti0TransportnamePtr$[property.SRVSServerTransportInfo0Count] = this.ReferentID]
+	NdrPtr Svti0TransportnamePtr;
+	[property.SRVSSvti0TransportaddressPtr$[property.SRVSServerTransportInfo0Count] = this.ReferentID]
+	NdrPtr Svti0TransportaddressPtr;
+	UINT32 Svti0Transportaddresslength;
+	[property.SRVSSvti0NetworkaddressPtr$[property.SRVSServerTransportInfo0Count] = this.ReferentID]
+	NdrPtr Svti0NetworkaddressPtr;
+	[property.SRVSServerTransportInfo0Count = property.SRVSServerTransportInfo0Count + 1]
+	struct{};
+}
+
+Struct SRVSPServerTransportInfo0
+{
+	[property.SRVSServerTransportInfo0Count = 0]
+	SRVSServerTransportInfo0 ServerTransportInfo0;
+	Switch {
+		Case property.SRVSSvti0TransportnamePtr$[0] != 0:
+			NdrWideString Svti0Transportname;
+	}
+	Switch {
+		Case property.SRVSSvti0TransportaddressPtr$[0] != 0:
+			SRVSSvti0Transportaddress Svti0Transportaddress;
+	}
+	Switch {
+		Case property.SRVSSvti0NetworkaddressPtr$[0] != 0:
+			NdrWideString Svti0Networkaddress;
+	}
+}
+
+Struct SRVSSvti0Transportaddress
+{
+	NdrConformant	Size;
+	AsciiString(Size.MaxCount) Transportaddress;
+}
+
+//
+//	_SERVER_TRANSPORT_INFO_1
+//
+Struct SRVSServerTransportInfo1
+{
+	NdrAlign pad;
+	UINT32 Svti1Numberofvcs;
+	[property.SRVSSvti1TransportnamePtr$[property.SRVSServerTransportInfo1Count] = Svti1TransportnamePtr.ReferentId]
+	NdrPtr Svti1TransportnamePtr;
+	[property.SRVSSvti1TransportaddressPtr$[property.SRVSServerTransportInfo1Count] = Svti1TransportaddressPtr.ReferentId]
+	NdrPtr Svti1TransportaddressPtr;
+	UINT32 Svti1Transportaddresslength;
+	[property.SRVSSvti1NetworkaddressPtr$[property.SRVSServerTransportInfo1Count] = Svti1NetworkaddressPtr.ReferentId]
+	NdrPtr Svti1NetworkaddressPtr;
+	[property.SRVSSvti1DomainPtr$[property.SRVSServerTransportInfo1Count] = Svti1DomainPtr.ReferentId]
+	NdrPtr Svti1DomainPtr;
+	[property.SRVSServerTransportInfo1Count = property.SRVSServerTransportInfo1Count + 1]
+	struct{}
+}
+
+//
+//	_SERVER_TRANSPORT_INFO_2
+//
+Struct SRVSServerTransportInfo2
+{
+	NdrAlign pad;
+	UINT32 Svti2Numberofvcs;
+	[property.SRVSSvti2TransportnamePtr$[property.SRVSServerTransportInfo2Count] = Svti2TransportnamePtr.ReferentId]
+	NdrPtr Svti2TransportnamePtr;
+	[property.SRVSSvti2TransportaddressPtr$[property.SRVSServerTransportInfo2Count] = Svti2TransportaddressPtr.ReferentId]
+	NdrPtr Svti2TransportaddressPtr;
+	UINT32 Svti2Transportaddresslength;
+	[property.SRVSSvti2NetworkaddressPtr$[property.SRVSServerTransportInfo2Count] = Svti2NetworkaddressPtr.ReferentId]
+	NdrPtr Svti2NetworkaddressPtr;
+	[property.SRVSSvti2DomainPtr$[property.SRVSServerTransportInfo2Count] = Svti2DomainPtr.ReferentId]
+	NdrPtr Svti2DomainPtr;
+	UINT32 Svti2Flags = SRVSServerTransportInfo2Svti2FlagsTable(this);
+	[property.SRVSServerTransportInfo2Count = property.SRVSServerTransportInfo2Count + 1]
+	struct{};
+}
+
+
+Table SRVSServerTransportInfo2Svti2FlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000002: "SVTI2_REMAP_PIPE_NAMES - If this value is set for an endpoint, client requests that arrive over the transport to open a named pipe are rerouted (remapped) to the local pipe name $$\\ServerName\\PipeName.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_TRANSPORT_INFO_3
+//
+Struct SRVSServerTransportInfo3
+{
+	NdrAlign Pad;
+	UINT32 Svti3Numberofvcs;
+	[Property.SRVSSvti3TransportnamePtr$[property.SRVSServerTransportInfo3Count] = Svti3TransportnamePtr.ReferentId]
+	NdrPtr Svti3TransportnamePtr;
+	[Property.SRVSSvti3TransportaddressPtr$[property.SRVSServerTransportInfo3Count] = Svti3TransportaddressPtr.ReferentId]
+	NdrPtr Svti3TransportaddressPtr;
+	UINT32 Svti3Transportaddresslength;
+	[Property.SRVSSvti3NetworkaddressPtr$[property.SRVSServerTransportInfo3Count] = Svti3NetworkaddressPtr.ReferentId]
+	NdrPtr Svti3NetworkaddressPtr;
+	[Property.SRVSSvti3DomainPtr$[property.SRVSServerTransportInfo3Count] = Svti3DomainPtr.ReferentId]
+	NdrPtr Svti3DomainPtr;
+	UINT32 Svti3Flags = SRVSServerTransportInfo2Svti2FlagsTable(this);
+	UINT32 Svti3Passwordlength;
+	Uint8 Svti3Password[256];
+	[property.SRVSServerTransportInfo3Count = property.SRVSServerTransportInfo3Count + 1]
+	struct{};
+}
+
+//
+//	_SERVER_XPORT_ENUM_STRUCT
+//
+Struct SRVSServerXportEnumStruct
+{
+	UINT32 Level = SRVSServerXportEnumStructLevelTable(this);
+	SRVSServerXportEnumUnion XportInfo;
+}
+
+Table SRVSServerXportEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - SERVER_XPORT_INFO_0_CONTAINER";
+		Case 1: "V2 - SERVER_XPORT_INFO_1_CONTAINER";
+		Case 2: "V3 - SERVER_XPORT_INFO_2_CONTAINER";
+		Case 3: "V4 - SERVER_XPORT_INFO_3_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVER_XPORT_ENUM_UNION
+//
+Struct SRVSServerXportEnumUnion
+{
+	
+	Switch
+		{
+			case Property.MSRPCNdr64:
+			Align8 padUnion;
+		}
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 0:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0:
+						SRVSServerXportInfo0Container Level0;
+				}
+			}
+		Case 1:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0:
+						SRVSServerXportInfo1Container Level1;
+				}
+			}
+		Case 2:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0:
+						SRVSServerXportInfo2Container Level2;
+				}
+			}
+		Case 3:
+			struct
+			{
+				NdrPtr Pointer;
+				switch
+				{
+					case Pointer.ReferentID > 0:
+						SRVSServerXportInfo3Container Level3;
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SERVER_XPORT_INFO_0_CONTAINER
+//
+Struct SRVSServerXportInfo0Container
+{
+	UINT32	EntriesRead;
+	Struct PServerTransportInfo0
+	{
+		NdrPtr BufferPtr;
+		Switch
+		{
+			Case BufferPtr.ReferentID > 0:
+				struct
+				{
+					[Local.MaxCount = Size.Maxcount]
+					NdrConformant Size; 
+					[property.SRVSServerTransportInfo0Count = 0]
+					SRVSServerTransportInfo0 Buffer[Size.MaxCount];
+					[Local.Count = 0]
+					[MaxLoopCount = Local.MaxCount]
+					while[local.count < Local.MaxCount]
+					{
+						switch
+						{
+							case property.SRVSSvti0TransportnamePtr$[local.count] != 0:
+								NdrWideString Svti0Transportname;
+						}
+						switch
+						{
+							case property.SRVSSvti0TransportaddressPtr$[local.count] != 0:
+								SRVSSvti0Transportaddress Svti0Transportaddress;
+						}
+						switch
+						{
+							case property.SRVSSvti0NetworkaddressPtr$[local.count] != 0:
+								NdrWideString Svti0Networkaddress;
+						}
+						[Post.Local.Count = Local.Count + 1]
+						struct {};
+					}
+			}
+		}
+	}
+}
+
+//
+//	_SERVER_XPORT_INFO_1_CONTAINER
+//
+Struct SRVSServerXportInfo1Container
+{
+	UINT32	EntriesRead;
+	Struct PServerTransportInfo1
+	{
+		NdrPtr BufferPtr;
+		Switch
+		{
+			Case BufferPtr.ReferentID > 0: 
+				struct
+				{
+					[Local.MaxCount = Size.Maxcount]
+					NdrConformant Size;
+					[property.SRVSServerTransportInfo1Count = 0]
+					SRVSServerTransportInfo1 Buffer[Size.MaxCount];
+					[Local.Count = 0]
+					[MaxLoopCount = Local.MaxCount]
+					while[local.count < Local.MaxCount]
+					{
+						switch
+						{
+							case Property.SRVSSvti1TransportnamePtr$[local.count]!= 0:
+								NdrWideString Svti1Transportname;
+						}
+						switch
+						{
+							case Property.SRVSSvti1TransportaddressPtr$[local.count]!= 0:
+								SRVSSvti0Transportaddress Svti1Transportaddress;
+						}
+						switch
+						{
+							case Property.SRVSSvti1NetworkaddressPtr$[local.count]!= 0:
+							NdrWideString Svti1Networkaddress;
+						}
+						switch
+						{
+							case Property.SRVSSvti1DomainPtr$[local.count]!= 0:
+							NdrWideString Svti1Svti1Domain;
+						}
+						[Local.Count = Local.Count + 1]
+						struct {};
+					}
+				}
+		}
+	}
+}
+
+//
+//	_SERVER_XPORT_INFO_2_CONTAINER
+//
+Struct SRVSServerXportInfo2Container
+{
+	UINT32	EntriesRead;
+	Struct PServerTransportInfo2
+	{
+		NdrPtr BufferPtr;
+		Switch
+		{
+			Case BufferPtr.ReferentID > 0:
+				struct
+				{
+					[Local.MaxCount = Size.Maxcount]
+					NdrConformant Size;
+					[property.SRVSServerTransportInfo2Count = 0]
+					SRVSServerTransportInfo2 Buffer[EntriesRead];
+					[Local.Count = 0]
+					[MaxLoopCount = Local.MaxCount]
+					while[local.count < Local.MaxCount]
+					{
+						switch
+						{
+							case Property.SRVSSvti2TransportnamePtr$[local.count]!= 0:
+								NdrWideString Svti2Transportname;
+						}
+						switch
+						{
+							case Property.SRVSSvti2TransportaddressPtr$[local.count]!= 0:
+							SRVSSvti0Transportaddress Svti2Transportaddress;
+						}
+						switch
+						{
+							case Property.SRVSSvti2NetworkaddressPtr$[local.count]!= 0:
+							NdrWideString Svti2Networkaddress;
+						}
+						switch
+						{
+							case Property.SRVSSvti2DomainPtr$[local.count]!= 0:
+							NdrWideString Svti12Svti1Domain;
+						}
+						[Local.Count = Local.Count + 1]
+						struct {};
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SERVER_XPORT_INFO_3_CONTAINER
+//
+Struct SRVSServerXportInfo3Container
+{
+	UINT32	EntriesRead;
+	Struct PServerTransportInfo3
+	{
+		NdrPtr BufferPtr;
+		Switch
+		{
+			Case BufferPtr.ReferentID > 0: 
+			struct
+			{
+				[Local.MaxCount = Size.Maxcount]
+				NdrConformant Size;
+				[property.SRVSServerTransportInfo3Count = 0]
+				SRVSServerTransportInfo3 Buffer[Size.MaxCount];
+				[Local.Count = 0]
+				[MaxLoopCount = Local.MaxCount]
+				while[local.count < Local.MaxCount]
+				{
+					switch
+					{
+						case Property.SRVSSvti3TransportnamePtr$[local.count]!= 0:
+							NdrWideString Svti3Transportname;
+					}
+					switch
+					{
+						case Property.SRVSSvti3TransportaddressPtr$[local.count]!= 0:
+						SRVSSvti0Transportaddress Svti3Transportaddress;
+					}
+					switch
+					{
+						case Property.SRVSSvti3NetworkaddressPtr$[local.count]!= 0:
+							NdrWideString Svti3Networkaddress;
+					}
+					switch
+					{
+						case Property.SRVSSvti3DomainPtr$[local.count]!= 0:
+						NdrWideString Svti13Svti1Domain;
+					}
+					[Local.Count = Local.Count + 1]
+					struct {};
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SESSION_ENUM_STRUCT
+//
+Struct SRVSSessionEnumStruct
+{
+	UINT32 Level = SRVSSessionEnumStructLevelTable(this);
+	SRVSSessionEnumUnion SessionInfo;
+}
+
+Table SRVSSessionEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - SESSION_INFO_0_CONTAINER";
+		Case 1: "V2 - SESSION_INFO_1_CONTAINER";
+		Case 2: "V3 - SESSION_INFO_2_CONTAINER";
+		Case 10: "V4 - SESSION_INFO_10_CONTAINER";
+		Case 502: "V5 - SESSION_INFO_502_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SESSION_ENUM_UNION
+//
+Struct SRVSSessionEnumUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 0:	SRVSPSessionInfo0Container Level0;
+		Case 1:	SRVSPSessionInfo1Container Level1;
+		Case 2:	SRVSPSessionInfo2Container Level2;
+		Case 10:	SRVSPSessionInfo10Container Level10;
+		Case 502:	SRVSPSessionInfo502Container Level502;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SESSION_INFO_0
+//
+Struct SRVSSessionInfo0
+{
+	[Property.SRVSSesi0CnamePtr$[Property.SRVSSessionInfo0Count] = Sesi0CnamePtr.referentid]
+	NdrPtr Sesi0CnamePtr;
+	[Property.SRVSSessionInfo0Count = Property.SRVSSessionInfo0Count + 1]
+	Struct {};
+}
+
+//
+//	_SESSION_INFO_0_CONTAINER
+//
+Struct SRVSPSessionInfo0Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.referentID != 0:
+			Struct SessionInfo0Container
+			{
+				UINT32 EntriesRead;
+				Struct PSessionInfo0
+				{
+					NdrPtr BufferPtr;
+					switch
+					{
+						case BufferPtr.referentID != 0:
+						Struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[Property.SRVSSessionInfo0Count = 0]
+							SRVSSessionInfo0 Buffer[Size.MaxCount];
+							[Local.Count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								[Post.Local.Count = Local.Count + 1]
+								switch
+								{
+									case Property.SRVSSesi0CnamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi0Cname;
+								}
+							}
+						}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_SESSION_INFO_1
+//
+Struct SRVSSessionInfo1
+{
+	[Property.SRVSSesi1CnamePtr$[property.SRVSSessionInfo1Count]= Sesi1CnamePtr.referentID]
+	NdrPtr Sesi1CnamePtr;
+	[Property.SRVSSesi1UsernamePtr$[property.SRVSSessionInfo1Count]= Sesi1UsernamePtr.referentID]
+	NdrPtr Sesi1UsernamePtr;
+	UINT32 Sesi1NumOpens;
+	UINT32 Sesi1Time;
+	UINT32 Sesi1IdleTime;
+	UINT32 Sesi1UserFlags;
+	[property.SRVSSessionInfo1Count = property.SRVSSessionInfo1Count + 1]
+	struct {};
+}
+
+//
+//	_SESSION_INFO_10
+//
+Struct SRVSSessionInfo10
+{
+	[Property.SRVSSesi10CnamePtr$[property.SRVSSessionInfo10Count]= Sesi10CnamePtr.referentID]
+	NdrPtr Sesi10CnamePtr;
+	[Property.SRVSSesi10UsernamePtr$[property.SRVSSessionInfo10Count]= Sesi10UsernamePtr.referentID]
+	NdrPtr Sesi10UsernamePtr;
+	UINT32 Sesi10Time;
+	UINT32 Sesi10IdleTime;
+	[property.SRVSSessionInfo10Count = property.SRVSSessionInfo10Count + 1]
+	struct {}
+}
+
+//
+//	_SESSION_INFO_10_CONTAINER
+//
+Struct SRVSPSessionInfo10Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID != 0:
+			Struct SessionInfo10Container
+			{
+				UINT32	EntriesRead;
+				Struct PSessionInfo10
+				{
+					NdrPtr BufferPtr;
+					Switch
+					{
+						Case BufferPtr.ReferentID > 0:
+						Struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[ property.SRVSSessionInfo10Count = 0 ]
+							SRVSSessionInfo10		Buffer[Size.MaxCount];
+							[Local.count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								switch
+								{
+									case Property.SRVSSesi10CnamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi10Cname;
+								}
+								switch
+								{
+									case Property.SRVSSesi10UsernamePtr$[Local.Count]!= 0:
+									NdrWideString Sesi10Username;
+								}
+								[Local.Count = Local.Count + 1]
+								Struct{};
+							}
+						}
+					}
+				}
+			}
+	}
+}
+
+
+//
+//	_SESSION_INFO_1_CONTAINER
+//
+Struct SRVSPSessionInfo1Container
+{
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.referentID != 0:
+			Struct SessionInfo1Container
+			{
+				UINT32 EntriesRead;
+				Struct PSessionInfo1
+				{
+					NdrPtr BufferPtr;
+					switch
+					{
+						case BufferPtr.referentID != 0:
+						Struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[property.SRVSSessionInfo1Count = 0]
+							SRVSSessionInfo1		Buffer[Size.MaxCount];
+							[Local.count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								switch
+								{
+									case Property.SRVSSesi1CnamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi1Cname;
+								}
+								switch
+								{
+									case Property.SRVSSesi1UsernamePtr$[Local.Count]!= 0:
+									NdrWideString Sesi1Username;
+								}
+								[Local.Count = Local.Count + 1]
+								Struct {};
+							}
+						}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_SESSION_INFO_2
+//
+Struct SRVSSessionInfo2
+{
+	[Property.SRVSSesi2CnamePtr$[property.SRVSSessionInfo2Count]= Sesi2CnamePtr.referentID]
+	NdrPtr Sesi2CnamePtr;
+	[Property.SRVSSesi2UsernamePtr$[property.SRVSSessionInfo2Count]= Sesi2UsernamePtr.referentID]
+	NdrPtr Sesi2UsernamePtr;
+	UINT32 Sesi2NumOpens;
+	UINT32 Sesi2Time;
+	UINT32 Sesi2IdleTime;
+	UINT32 Sesi2UserFlags;
+	[Property.SRVSSesi2CltypeNamePtr$[property.SRVSSessionInfo2Count]= Sesi2CltypeNamePtr.referentID]
+	NdrPtr Sesi2CltypeNamePtr;
+	[property.SRVSSessionInfo2Count = property.SRVSSessionInfo2Count + 1]
+	Struct {};
+}
+
+//
+//	_SESSION_INFO_2_CONTAINER
+//
+Struct SRVSPSessionInfo2Container
+{
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID != 0:
+			Struct SessionInfo2Container
+			{
+				UINT32 EntriesRead;
+				Struct PSessionInfo2
+				{
+					NdrPtr BufferPtr;
+					Switch
+					{
+						Case BufferPtr.ReferentID != 0:
+						Struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[property.SRVSSessionInfo2Count = 0]
+							SRVSSessionInfo2	Buffer[Size.MaxCount];
+							[Local.count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								Switch
+								{
+									Case Property.SRVSSesi2CnamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi2Cname;
+								}
+								Switch
+								{
+									Case Property.SRVSSesi2UsernamePtr$[Local.Count]!= 0:
+									NdrWideString Sesi2Username;
+								}
+								Switch
+								{
+									Case Property.SRVSSesi2CltypeNamePtr$[Local.Count]!= 0:
+									NdrWideString Sesi2CltypeName;
+								}
+								[Local.Count = Local.Count + 1]
+								Struct {};
+							}
+						}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_SESSION_INFO_502
+//
+Struct SRVSSessionInfo502
+{
+	[Property.SRVSSesi502CnamePtr$[property.SRVSSessionInfo502Count] = Sesi502CnamePtr.referentID]
+	NdrPtr Sesi502CnamePtr;
+	[Property.SRVSSesi502UsernamePtr$[property.SRVSSessionInfo502Count] = Sesi502UsernamePtr.referentID]
+	NdrPtr Sesi502UsernamePtr;
+	UINT32 Sesi502NumOpens;
+	UINT32 Sesi502Time;
+	UINT32 Sesi502IdleTime;
+	UINT32 Sesi502UserFlags;
+	[Property.SRVSSesi502CltypeNamePtr$[property.SRVSSessionInfo502Count] = Sesi502CltypeNamePtr.referentID]
+	NdrPtr Sesi502CltypeNamePtr;
+	[Property.SRVSSesi502TransportPtr$[property.SRVSSessionInfo502Count] = Sesi502TransportPtr.referentID]
+	NdrPtr Sesi502TransportPtr;
+	[property.SRVSSessionInfo502Count = property.SRVSSessionInfo502Count +1]
+	Struct{}
+}
+
+//
+//	_SESSION_INFO_502_CONTAINER
+//
+Struct SRVSPSessionInfo502Container
+{
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID != 0:
+			Struct SessionInfo502Container
+			{
+				UINT32	EntriesRead;
+				Struct PSessionInfo502
+				{
+					NdrPtr BufferPtr;
+					Switch
+					{
+						Case BufferPtr.ReferentID > 0:
+							Struct
+							{
+								[Local.MaxCount = Size.Maxcount]
+								NdrConformant Size;
+								[ property.SRVSSessionInfo502Count = 0 ]
+								SRVSSessionInfo502		Buffer[Size.MaxCount];
+								[MaxLoopCount = Local.MaxCount]
+								while[local.count < Local.MaxCount]
+								{
+									Switch
+									{
+										Case Property.SRVSSesi502CnamePtr$[Local.Count]!= 0:
+											NdrWideString Sesi502Cname;
+									}
+									Switch
+									{
+										Case Property.SRVSSesi502UsernamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi10Username;
+									}
+									Switch
+									{
+										Case Property.SRVSSesi502CltypeNamePtr$[Local.Count]!= 0:
+										NdrWideString Sesi502CltypeName;
+									}
+									Switch
+									{
+										Case Property.SRVSSesi502TransportPtr$[Local.Count]!= 0:
+										NdrWideString Sesi502Transport;
+									}
+									[Local.Count = Local.Count + 1]
+									Struct {};
+							}
+							}
+					}
+				}
+			}
+	}
+}
+
+//
+//	_SHARE_ENUM_STRUCT
+//
+Struct SRVSShareEnumStruct
+{
+	UINT32 Level = SRVSShareEnumStructLevelTable(this);
+	SRVSShareEnumUnion ShareInfo;
+}
+
+Table SRVSShareEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - SHARE_INFO_0_CONTAINER";
+		Case 1: "V2 - SHARE_INFO_1_CONTAINER";
+		Case 2: "V3 - SHARE_INFO_2_CONTAINER";
+		Case 501: "V4 - SHARE_INFO_501_CONTAINER";
+		Case 502: "V5 - SHARE_INFO_502_CONTAINER";
+		Case 503: "V6 - SHARE_INFO_503_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SHARE_ENUM_UNION
+//
+Struct SRVSShareEnumUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	UINT32 SwitchValue;
+	Switch( SwitchValue )
+	{
+		Case 0: SRVSPShareInfo0Container Level0;
+		Case 1: SRVSPShareInfo1Container Level1;
+		Case 2: SRVSPShareInfo2Container Level2;
+		Case 501: SRVSPShareInfo501Container Level501;
+		Case 502: SRVSPShareInfo502Container Level502;
+		Case 503: SRVSPShareInfo503Container Level503;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+//
+//	_SHARE_INFO
+//
+Struct SRVSShareInfo
+{
+	NdrAlign Padding;
+	UINT32 Level;
+	Switch( Level )
+	{
+		Case 0:
+			struct PShareInfo0
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0 :
+					struct
+					{
+						NdrPtr	Shi0Netname;
+						Switch {
+							Case Shi0Netname.ReferentID > 0: NdrWideStringPtr Shi0Netname;
+						}
+					}
+				}
+			}
+		Case 1:
+			Struct PShareInfo1
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0 :
+					Struct
+					{
+						[property.SRVSShareInfo1Count = 0 ]
+						SRVSShareInfo1 ShareInfo1;
+						Switch {
+							Case Property.SRVSShi1NetnamePtr$[0] > 0: NdrWideString netname;
+						}
+						Switch {
+							Case Property.SRVSShi1RemarkPtr$[0] > 0: NdrWideString remark;
+						}
+					}
+				}
+			}
+		Case 2:
+			Struct PShareInfo2
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0 :
+					struct
+					{
+						[property.SRVSShareInfo2Count = 0]
+						SRVSShareInfo2 ShareInfo2;
+						Switch {
+							Case Property.SRVSShi2NetnamePtr$[0] > 0: NdrWideString netname;
+						}
+						Switch {
+							Case Property.SRVSShi2RemarkPtr$[0] > 0: NdrWideString remark;
+						}
+						Switch {
+							Case Property.SRVSShi2PathPtr$[0] > 0: NdrWideString path;
+						}
+						Switch {
+							Case Property.SRVSShi2PasswdPtr$[0] > 0: NdrWideString passwd;
+						}
+					}
+				}
+			}
+		Case 501:
+			Struct PShareInfo501
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0 :
+					Struct
+					{
+						[property.SRVSShareInfo501Count = 0]
+						SRVSShareInfo501 ShareInfo501;
+						Switch {
+							Case Property.SRVSShi501NetnamePtr$[0] > 0: NdrWideString netname;
+						}
+						Switch {
+							Case Property.SRVSShi501RemarkPtr$[0] > 0: NdrWideString remark;
+						}
+					}
+				}
+			}
+		Case 502:
+			Struct PShareInfo502I
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0 :
+					Struct
+					{
+						[property.SRVSShareInfo502Count = 0]
+						SRVSShareInfo502I ShareInfo502I;
+						Switch {
+							Case Property.SRVSShi502NetnamePtr$[0] > 0: NdrWideString netname;
+						}
+						Switch {
+							Case Property.SRVSShi502RemarkPtr$[0] > 0: NdrWideString remark;
+						}
+						Switch {
+							Case Property.SRVSShi502PathPtr$[0] > 0: NdrWideString path;
+						}
+						Switch {
+							Case Property.SRVSShi502PasswdPtr$[0] > 0: NdrWideString passwd;
+						}
+						Switch {
+							Case Property.SRVSShi502SecurityDescriptorPtr$[0] > 0: 
+							Struct SecurityDescriptorArray
+							{
+								NdrConformant Size;
+								Switch
+								{
+									case Size.MaxCount > 0:
+									 SecurityDescriptorRelative SecurityDescriptor;
+								}
+							}
+						}
+					}
+				}
+			}
+		Case 503:
+			Struct PShareInfo503I
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0 :
+					Struct ShareInfo503I
+					{
+						[property.SRVSShareInfo503Count = 0]
+						SRVSShareInfo503I ShareInfo503I;
+						switch
+						{
+							case Property.SRVSShi503NetnamePtr$[0] > 0: NdrWideString netname;
+						}
+						switch
+						{
+							case Property.SRVSShi503RemarkPtr$[0] > 0: NdrWideString Remark;
+						}
+						switch
+						{
+							case Property.SRVSShi503PathPtr$[0] > 0: NdrWideString Path;
+						}
+						switch
+						{
+							case Property.SRVSShi503PasswdPtr$[0] > 0: NdrWideString Passwd;
+						}
+						switch
+						{
+							case Property.SRVSShi503ServernamePtr$[0] > 0: NdrWideString Servername;
+						}
+						switch
+						{
+							case Property.SRVSShi503SecurityDescriptorPtr$[0] > 0: 
+								struct Shi503SecurityDescriptorArray
+								{
+									NdrConformant Size;
+									Switch
+									{
+										case Size.MaxCount > 0:
+											SecurityDescriptorRelative Shi503SecurityDescriptor;
+									}
+								}
+						}
+					}
+				}
+			}
+		Case 1004:
+			Struct PShareInfo1004
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0:
+						Struct ShareInfo1004
+						{
+							 NdrWideStringPtr Remark;
+						}
+				}
+			}
+		Case 1005:
+			Struct PShareInfo1005
+			{
+				NdrPtr Pointer;
+				Switch {
+					Case Pointer.ReferentID > 0:
+						Struct ShareInfo1005
+						{
+							UINT32	Shi1005Flags
+							{
+								UINT32 Dfs:1 = FormatString("                     (%s) %s", this.ToBitString, this ? "The specified share is present in a DFS tree structure." : "The specified share isn't present in a DFS tree structure.");
+								UINT32 DfsRoot:1 = FormatString("                 (%s) %s", this.ToBitString, this ? "The specified share is the root volume in a DFS tree structure." : "The specified share isn't the root volume in a DFS tree structure.");
+								UINT32 Reserved1:2 = FormatString("                (%s)", this.ToBitString);
+								UINT32 CscMask:2 = FormatString("                 (%s) %s", this.ToBitString, this ? "Provides a mask for one of the four possible client-side caching (CSC) (section ) states." : "Doesn't provide a mask for one of the four possible client-side caching (CSC) (section ) states.");
+								UINT32 Reserved2:2 = FormatString("                (%s)", this.ToBitString);
+								UINT32 RestrictExclusiveOpens:1 = FormatString("  (%s) %s", this.ToBitString, this ? "The specified share disallows exclusive file opens that deny reads to an open file." : "The specified share allows exclusive file opens that deny reads to an open file.");
+								UINT32 ForceSharedDelete:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Shared files in the specified share can be forcibly deleted." : "Shared files in the specified share cann't be forcibly deleted.");
+								UINT32 AllowNamespaceCaching:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Clients are allowed to cache the namespace of the specified share." : "Clients are disallowed to cache the namespace of the specified share.");
+								UINT32 AccessBasedDirectoryEnum:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server filters directory entries based on the access permissions of the client." : "The server filters directory doesn't entry based on the access permissions of the client.");
+								UINT32 ForceLeveliiOplock:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The server does not issue exclusive caching rights on this share." : "The server issues exclusive caching rights on this share.");
+								UINT32 EnableHash:1 = FormatString("              (%s) %s", this.ToBitString, this ? "The share supports hash generation for branch cache retrieval of data." : "The share doesn't support hash generation for branch cache retrieval of data.");
+								UINT32 Reserved3:18 = FormatString("               (%s)", this.ToBitString);
+							}
+						}
+				}
+			}
+		Case 1006:
+			Struct PShareInfo1006
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0:
+						struct ShareInfo1006
+						{
+							UINT32 Shi1006MaxUses;
+						}
+				}
+			}
+		Case 1501:
+			Struct PShareInfo1501I
+			{
+				NdrPtr Pointer;
+				switch {
+					case Pointer.ReferentID > 0:
+						struct ShareInfo1501I
+						{
+							NdrAlign Pad;
+							UINT32 Shi1501Reserved;
+							NdrPtr Shi1501SecurityDescriptorPtr;
+							switch
+							{
+								case Shi1501SecurityDescriptorPtr > 0:
+									struct
+									{
+										NdrConformant Size;
+										Switch
+										{
+											case Size.MaxCount > 0:
+												SecurityDescriptorRelative Shi1501SecurityDescriptor;
+										}
+									}
+							}
+						}
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+
+//
+//	_SHARE_INFO_0
+//
+Struct SRVSShareInfo0
+{
+	[Property.SRVSShi0NetnamePtr$[Property.SRVSShareInfo0Count] = Shi0NetnamePtr.ReferentID]
+	NdrPtr	Shi0NetnamePtr;
+	[Property.SRVSShareInfo0Count= Property.SRVSShareInfo0Count + 1]
+	Struct{}
+}
+
+//
+//	_SHARE_INFO_0_CONTAINER
+//
+Struct SRVSPShareInfo0Container
+{
+	NdrPtr	Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+		Struct ShareInfo0Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo0
+			{
+				NdrPtr BufferPtr;
+				Switch
+				{
+					Case BufferPtr.ReferentID > 0: 
+					Struct
+					{
+						[Local.MaxCount = Size.Maxcount]
+						NdrConformant Size;
+						[ Property.SRVSShareInfo0Count = 0 ]
+						SRVSShareInfo0		Buffer[Size.MaxCount];
+						[Local.Count = 0]
+						[MaxLoopCount = Local.MaxCount]
+						while[local.count < Local.MaxCount]
+						{
+							Switch
+							{
+								case Property.SRVSShi0NetnamePtr$[Local.Count]!= 0:
+									NdrWideString Shi0Netname;
+							}
+							[Local.Count = Local.Count + 1]
+							struct{};
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_1
+//
+Struct SRVSShareInfo1
+{
+	[Property.SRVSShi1NetnamePtr$[property.SRVSShareInfo1Count] = Shi1NetnamePtr.ReferentID]
+	NdrPtr	Shi1NetnamePtr;
+	UINT32	Shi1Type;
+	[Property.SRVSShi1RemarkPtr$[property.SRVSShareInfo1Count] = Shi1RemarkPtr.ReferentID]
+	NdrPtr	Shi1RemarkPtr;
+	[property.SRVSShareInfo1Count = property.SRVSShareInfo1Count + 1]
+	struct {};
+}
+
+//
+//	_SHARE_INFO_1_CONTAINER
+//
+Struct SRVSPShareInfo1Container
+{
+	NdrPtr	Pointer;
+	switch
+	{
+		case Pointer.ReferentID > 0:
+		struct ShareInfo1Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo1
+			{
+				NdrPtr Pointer;
+				Switch
+				{
+					Case Pointer.ReferentID > 0:
+					struct
+					{	
+						[Local.MaxCount = Size.Maxcount]
+						NdrConformant Size;
+						[property.SRVSShareInfo1Count = 0 ]
+						SRVSShareInfo1 Buffer[Size.MaxCount];
+						[Local.Count = 0]
+						[MaxLoopCount = Local.MaxCount]
+						while[local.count < Local.MaxCount]
+						{
+							switch
+							{
+								case Property.SRVSShi1NetnamePtr$[Local.Count] != 0:
+									NdrWideString Shi1Netname;
+							}
+							switch
+							{
+								case Property.SRVSShi1RemarkPtr$[Local.Count] != 0:
+									NdrWideString Shi1Remark;
+							}
+							[Local.Count = Local.Count + 1]
+							struct {};
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_2
+//
+Struct SRVSShareInfo2
+{
+	[Property.SRVSShi2NetnamePtr$[property.SRVSShareInfo2Count] = Shi2NetnamePtr.ReferentID]
+	NdrPtr	Shi2NetnamePtr;
+	UINT32	Shi2Type;
+	[Property.SRVSShi2RemarkPtr$[property.SRVSShareInfo2Count] = Shi2RemarkPtr.ReferentID]
+	NdrPtr	Shi2RemarkPtr;
+	UINT32	Shi2Permissions;
+	UINT32	Shi2MaxUses;
+	UINT32	Shi2CurrentUses;
+	[Property.SRVSShi2PathPtr$[property.SRVSShareInfo2Count] = Shi2PathPtr.ReferentID]
+	NdrPtr	Shi2PathPtr;
+	[Property.SRVSShi2PasswdPtr$[property.SRVSShareInfo2Count] = Shi2PasswdPtr.ReferentID]
+	NdrPtr	Shi2PasswdPtr;
+	[property.SRVSShareInfo2Count = property.SRVSShareInfo2Count + 1]
+	struct {};
+}
+
+//
+//	_SHARE_INFO_2_CONTAINER
+//
+Struct SRVSPShareInfo2Container
+{
+	NdrPtr	Pointer;
+	Switch
+	{
+		case Pointer.ReferentID > 0:
+		Struct ShareInfo2Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo2
+			{
+				NdrPtr BufferPtr;
+				Switch
+				{
+					Case BufferPtr.ReferentID > 0:
+						struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[property.SRVSShareInfo2Count = 0 ]
+							SRVSShareInfo2 Buffer[Size.MaxCount];
+							[Local.Count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								switch
+								{
+									case Property.SRVSShi2NetnamePtr$[Local.Count] != 0:
+										NdrWideString Shi2Netname;
+								}
+								switch
+								{
+									case Property.SRVSShi2RemarkPtr$[Local.Count] != 0:
+										NdrWideString Shi2Remark;
+								}
+								switch
+								{
+									case Property.SRVSShi2PathPtr$[Local.Count] != 0:
+										NdrWideString Shi2Path;
+								}
+								switch
+								{
+									case Property.SRVSShi2PasswdPtr$[Local.Count] != 0:
+										NdrWideString Shi2Passwd;
+								}
+								[Local.Count = Local.Count + 1]
+								struct {};
+							}
+						}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_501
+//
+Struct SRVSShareInfo501
+{
+	[Property.SRVSShi501NetnamePtr$[property.SRVSShareInfo501Count] = Shi501NetnamePtr.ReferentID]
+	NdrPtr	Shi501NetnamePtr;
+	UINT32 Shi501Type;
+	[Property.SRVSShi501RemarkPtr$[property.SRVSShareInfo501Count] = Shi501RemarkPtr.ReferentID]
+	NdrPtr	Shi501RemarkPtr;
+	UINT32	Shi501Flags;
+	[property.SRVSShareInfo501Count = property.SRVSShareInfo501Count + 1]
+	Struct {};
+}
+
+
+//
+//	_SHARE_INFO_501_CONTAINER
+//
+Struct SRVSPShareInfo501Container
+{
+	NdrPtr	Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+		Struct ShareInfo501Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo501
+			{
+				NdrPtr BufferPtr;
+				Switch
+				{
+					Case BufferPtr.ReferentID > 0:
+					Struct
+					{
+						[Local.MaxCount = Size.Maxcount]
+						NdrConformant Size;
+						[property.SRVSShareInfo501Count = 0 ]
+						SRVSShareInfo501 Buffer[Size.MaxCount];
+						[Local.Count = 0]
+						[MaxLoopCount = Local.MaxCount]
+						while[local.count < Local.MaxCount]
+						{
+							switch
+							{
+								case Property.SRVSShi501NetnamePtr$[Local.Count] != 0:
+									NdrWideString Shi501Netname;
+							}
+							switch
+							{
+								case Property.SRVSShi501RemarkPtr$[Local.Count] != 0:
+									NdrWideString Shi501Remark;
+							}
+							[Local.Count = Local.Count + 1]
+							struct {};
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_502_CONTAINER
+//
+Struct SRVSPShareInfo502Container
+{
+	NdrPtr	Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+		Struct ShareInfo502Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo502I
+			{
+				NdrPtr BufferPtr;
+				Switch
+				{
+					Case BufferPtr.ReferentID > 0:
+						struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[property.SRVSShareInfo502Count = 0 ]
+							SRVSShareInfo502I Buffer[Size.MaxCount];
+							[Local.Count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								switch
+								{
+									case Property.SRVSShi502NetnamePtr$[Local.Count] != 0:
+										NdrWideString Shi2Netname;
+								}
+								switch
+								{
+									case Property.SRVSShi502RemarkPtr$[Local.Count] != 0:
+										NdrWideString Shi2Remark;
+								}
+								switch
+								{
+									case Property.SRVSShi502PathPtr$[Local.Count] != 0:
+										NdrWideString Shi2Path;
+								}
+								switch
+								{
+									case Property.SRVSShi502PasswdPtr$[Local.Count] != 0:
+										NdrWideString Shi2Passwd;
+								}
+								switch
+								{
+									case Property.SRVSShi502SecurityDescriptorPtr$[Local.Count] != 0:
+										struct SecurityDescriptorArray
+										{
+											NdrConformant Size;
+											Switch
+											{
+												case Size.MaxCount > 0:
+													SecurityDescriptorRelative SecurityDescriptor;
+											}	
+										}
+								}
+								[Local.Count = Local.Count + 1]
+								struct {};
+							}
+						}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_502_I
+//
+Struct SRVSShareInfo502I
+{
+	[Property.SRVSShi502NetnamePtr$[property.SRVSShareInfo502Count] = Shi502NetnamePtr.ReferentID]
+	NdrPtr	Shi502NetnamePtr;
+	UINT32	Shi502Type;
+	[Property.SRVSShi502RemarkPtr$[property.SRVSShareInfo502Count] = Shi502RemarkPtr.ReferentID]
+	NdrPtr	Shi502RemarkPtr;
+	UINT32	Shi502Permissions;
+	UINT32	Shi502MaxUses;
+	UINT32	Shi502CurrentUses;
+	[Property.SRVSShi502PathPtr$[property.SRVSShareInfo502Count] = Shi502PathPtr.ReferentID]
+	NdrPtr	Shi502PathPtr;
+	[Property.SRVSShi502PasswdPtr$[property.SRVSShareInfo502Count] = Shi502PasswdPtr.ReferentID]
+	NdrPtr	Shi502PasswdPtr;
+	UINT32	Shi502Reserved;
+	[Property.SRVSShi502SecurityDescriptorPtr$[property.SRVSShareInfo502Count] = Shi502SecurityDescriptorPtr.ReferentID]
+	NdrPtr	Shi502SecurityDescriptorPtr;
+	[property.SRVSShareInfo502Count = property.SRVSShareInfo502Count + 1]
+	struct {};
+}
+
+
+//
+//	_SHARE_INFO_503_CONTAINER
+//
+Struct SRVSPShareInfo503Container
+{
+	NdrPtr	Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0:
+		Struct ShareInfo503Container
+		{
+			UINT32	EntriesRead;
+			Struct PShareInfo503I
+			{
+				NdrPtr BufferPtr;
+				Switch
+				{
+					Case BufferPtr.ReferentID > 0:
+						struct
+						{
+							[Local.MaxCount = Size.Maxcount]
+							NdrConformant Size;
+							[property.SRVSShareInfo503Count = 0 ]
+							SRVSShareInfo503I Buffer[Size.MaxCount];
+							[Local.Count = 0]
+							[MaxLoopCount = Local.MaxCount]
+							while[local.count < Local.MaxCount]
+							{
+								switch
+								{
+									case Property.SRVSShi503NetnamePtr$[Local.Count] != 0:
+										NdrWideString Shi503Netname;
+								}
+								switch
+								{
+									case Property.SRVSShi503RemarkPtr$[Local.Count] != 0:
+										NdrWideString Shi503Remark;
+								}
+								switch
+								{
+									case Property.SRVSShi503PathPtr$[Local.Count] != 0:
+										NdrWideString Shi503Path;
+								}
+								switch
+								{
+									case Property.SRVSShi503PasswdPtr$[Local.Count] != 0:
+										NdrWideString Shi503Passwd;
+								}
+								switch
+								{
+									case Property.SRVSShi503ServernamePtr$[Local.Count] != 0:
+										NdrWideString Shi503Servername;
+								}
+								switch
+								{
+									case Property.SRVSShi503SecurityDescriptorPtr$[Local.Count] != 0:
+										Struct
+										{
+											NdrConformant Size;
+											Switch
+											{
+												case Size.MaxCount > 0:
+													SecurityDescriptorRelative Shi503SecurityDescriptor;
+											}
+										}
+								}
+								[Local.Count = Local.Count + 1]
+								struct {};
+							}
+						}
+				}
+			}
+		}
+	}
+}
+
+//
+//	_SHARE_INFO_503_I
+//
+Struct SRVSShareInfo503I
+{
+	[Property.SRVSShi503NetnamePtr$[property.SRVSShareInfo503Count] = Shi503NetnamePtr.ReferentID]
+	NdrPtr Shi503NetnamePtr;
+	UINT32 Shi503Type;
+	[Property.SRVSShi503RemarkPtr$[property.SRVSShareInfo503Count] = Shi503RemarkPtr.ReferentID]
+	NdrPtr Shi503RemarkPtr;
+	UINT32 Shi503Permissions;
+	UINT32 Shi503MaxUses;
+	UINT32 Shi503CurrentUses;
+	[Property.SRVSShi503PathPtr$[property.SRVSShareInfo503Count]  = Shi503PathPtr.ReferentID]
+	NdrPtr Shi503PathPtr;
+	[Property.SRVSShi503PasswdPtr$[property.SRVSShareInfo503Count]  = Shi503PasswdPtr.ReferentID]
+	NdrPtr Shi503PasswdPtr;
+	[Property.SRVSShi503ServernamePtr$[property.SRVSShareInfo503Count] = Shi503ServernamePtr.ReferentID]
+	NdrPtr Shi503ServernamePtr;
+	UINT32 Shi503Reserved;
+	[Property.SRVSShi503SecurityDescriptorPtr$[property.SRVSShareInfo503Count] = this.ReferentID]
+	NdrPtr Shi503SecurityDescriptorPtr;
+	[Property.SRVSShareInfo503Count = Property.SRVSShareInfo503Count + 1]
+	Struct{};
+}
+
+//
+//	_STAT_SERVER_0
+//
+Struct SRVSStatServer0
+{
+	NdrPtr StatServer0Ptr;
+	Switch {
+		Case StatServer0Ptr.ReferentID != 0:
+			Struct StatServer0
+			{
+				UINT32 Sts0Start;
+				UINT32 Sts0Fopens;
+				UINT32 Sts0Devopens;
+				UINT32 Sts0Jobsqueued;
+				UINT32 Sts0Sopens;
+				UINT32 Sts0Stimedout;
+				UINT32 Sts0Serrorout;
+				UINT32 Sts0Pwerrors;
+				UINT32 Sts0Permerrors;
+				UINT32 Sts0Syserrors;
+				UINT32 Sts0BytessentLow;
+				UINT32 Sts0BytessentHigh;
+				UINT32 Sts0BytesrcvdLow;
+				UINT32 Sts0BytesrcvdHigh;
+				UINT32 Sts0Avresponse;
+				UINT32 Sts0Reqbufneed;
+				UINT32 Sts0Bigbufneed;
+			}
+		}
+}
+
+//
+//	_CONNECT_ENUM_STRUCT
+//
+Struct SRVSConnectEnumStruct
+{
+	UINT32 Level = SRVSConnectEnumStructLevelTable(this);
+	SRVSConnectEnumUnion ConnectInfo;
+}
+
+Table SRVSConnectEnumStructLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - CONNECT_INFO_0_CONTAINER";
+		Case 1: "V2 - CONNECT_INFO_1_CONTAINER";
+		Default: "Unknown";
+	}
+}
+
+//
+//	TIME_OF_DAY_INFO
+//
+Struct SRVSTimeOfDayInfo
+{
+	NdrPtr TimeOfDayInfoPtr;
+	Switch
+	{
+		Case TimeOfDayInfoPtr.ReferentID != 0:
+			Struct TimeOfDayInfo
+			{
+				UINT32 TodElapsedt;
+				UINT32 TodMsecs;
+				UINT32 TodHours;
+				UINT32 TodMins;
+				UINT32 TodSecs;
+				UINT32 TodHunds;
+				INT32 TodTimezone;
+				UINT32 TodTinterval;
+				UINT32 TodDay;
+				UINT32 TodMonth;
+				UINT32 TodYear;
+				UINT32 TodWeekday;
+			}
+	}
+}
+
+//
+//	_TRANSPORT_INFO
+//
+Struct SRVSTransportInfo
+{
+	NdrAlign Pad;
+	UINT32 SwitchValue;
+	NdrAlign Padding;
+	Switch( SwitchValue )
+	{
+		Case 0:
+		struct
+		{
+			[property.SRVSServerTransportInfo0Count = 0]
+			SRVSServerTransportInfo0 Transport0;
+			switch
+			{
+				case property.SRVSSvti0TransportnamePtr$[0] != 0:
+					NdrWideString Svti0Transportname;
+			}
+			switch
+			{
+				case property.SRVSSvti0TransportaddressPtr$[0] != 0:
+					SRVSSvti0Transportaddress Svti0Transportaddress;
+			}
+			switch
+			{
+				case property.SRVSSvti0NetworkaddressPtr$[0] != 0:
+					NdrWideString Svti0Networkaddress;
+			}
+		}
+		Case 1:
+			struct
+			{
+				[property.SRVSServerTransportInfo1Count = 0]
+				SRVSServerTransportInfo1 Transport1;
+				switch
+				{
+					case Property.SRVSSvti1TransportnamePtr$[0]!= 0:
+						NdrWideString Svti1Transportname;
+				}
+				switch
+				{
+					case Property.SRVSSvti1TransportaddressPtr$[0]!= 0:
+						SRVSSvti0Transportaddress Svti1Transportaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti1NetworkaddressPtr$[0]!= 0:
+					NdrWideString Svti1Networkaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti1DomainPtr$[0]!= 0:
+					NdrWideString Svti1Svti1Domain;
+				}
+			}
+		Case 2:
+			struct
+			{
+				[property.SRVSServerTransportInfo2Count = 0]
+				SRVSServerTransportInfo2 Transport2;
+				switch
+				{
+					case Property.SRVSSvti2TransportnamePtr$[0]!= 0:
+						NdrWideString Svti2Transportname;
+				}
+				switch
+				{
+					case Property.SRVSSvti2TransportaddressPtr$[0]!= 0:
+					SRVSSvti0Transportaddress Svti2Transportaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti2NetworkaddressPtr$[0]!= 0:
+					NdrWideString Svti2Networkaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti2DomainPtr$[0]!= 0:
+					NdrWideString Svti12Svti1Domain;
+				}
+			}
+		Case 3:
+			struct
+			{
+				[property.SRVSServerTransportInfo3Count = 0]
+				SRVSServerTransportInfo3 Transport3;
+				switch
+				{
+					case Property.SRVSSvti3TransportnamePtr$[0]!= 0:
+						NdrWideString Svti3Transportname;
+				}
+				switch
+				{
+					case Property.SRVSSvti3TransportaddressPtr$[0]!= 0:
+					SRVSSvti0Transportaddress Svti3Transportaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti3NetworkaddressPtr$[0]!= 0:
+						NdrWideString Svti3Networkaddress;
+				}
+				switch
+				{
+					case Property.SRVSSvti3DomainPtr$[0]!= 0:
+					NdrWideString Svti13Svti1Domain;
+				}
+			}
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SRVS", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Table SRVSMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Opnum0NotUsedOnWire";
+		Case 1: "Opnum1NotUsedOnWire";
+		Case 2: "Opnum2NotUsedOnWire";
+		Case 3: "Opnum3NotUsedOnWire";
+		Case 4: "Opnum4NotUsedOnWire";
+		Case 5: "Opnum5NotUsedOnWire";
+		Case 6: "Opnum6NotUsedOnWire";
+		Case 7: "Opnum7NotUsedOnWire";
+		Case 8: "NetrConnectionEnum";
+		Case 9: "NetrFileEnum";
+		Case 10: "NetrFileGetInfo";
+		Case 11: "NetrFileClose";
+		Case 12: "NetrSessionEnum";
+		Case 13: "NetrSessionDel";
+		Case 14: "NetrShareAdd";
+		Case 15: "NetrShareEnum";
+		Case 16: "NetrShareGetInfo";
+		Case 17: "NetrShareSetInfo";
+		Case 18: "NetrShareDel";
+		Case 19: "NetrShareDelSticky";
+		Case 20: "NetrShareCheck";
+		Case 21: "NetrServerGetInfo";
+		Case 22: "NetrServerSetInfo";
+		Case 23: "NetrServerDiskEnum";
+		Case 24: "NetrServerStatisticsGet";
+		Case 25: "NetrServerTransportAdd";
+		Case 26: "NetrServerTransportEnum";
+		Case 27: "NetrServerTransportDel";
+		Case 28: "NetrRemoteTOD";
+		Case 29: "Opnum29NotUsedOnWire";
+		Case 30: "NetprPathType";
+		Case 31: "NetprPathCanonicalize";
+		Case 32: "NetprPathCompare";
+		Case 33: "NetprNameValidate";
+		Case 34: "NetprNameCanonicalize";
+		Case 35: "NetprNameCompare";
+		Case 36: "NetrShareEnumSticky";
+		Case 37: "NetrShareDelStart";
+		Case 38: "NetrShareDelCommit";
+		Case 39: "NetrpGetFileSecurity";
+		Case 40: "NetrpSetFileSecurity";
+		Case 41: "NetrServerTransportAddEx";
+		Case 42: "Opnum42NotUsedOnWire";
+		Case 43: "NetrDfsGetVersion";
+		Case 44: "NetrDfsCreateLocalPartition";
+		Case 45: "NetrDfsDeleteLocalPartition";
+		Case 46: "NetrDfsSetLocalVolumeState";
+		Case 47: "Opnum47NotUsedOnWire";
+		Case 48: "NetrDfsCreateExitPoint";
+		Case 49: "NetrDfsDeleteExitPoint";
+		Case 50: "NetrDfsModifyPrefix";
+		Case 51: "NetrDfsFixLocalVolume";
+		Case 52: "NetrDfsManagerReportSiteInfo";
+		Case 53: "NetrServerTransportDelEx";
+		Case 54: "NetrServerAliasAdd";
+		Case 55: "NetrServerAliasEnum";
+		Case 56: "NetrServerAliasDel";
+		Case 57: "NetrShareDelEx";
+		Default: "unknown";
+	}
+}
+

@@ -1,0 +1,2021 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Encrypting File System Remote (EFSRPC) Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-EFSR]: Encrypting File System Remote (EFSRPC) Protocol Specification (5.0.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#                          Microsoft implementation is encrypted
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+Protocol EFSR = FormatString( "%s %s%s%s%s%s", 
+	Property.EFSRMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.EFSRSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.EFSRSummary : "" )
+{
+	[Property.EFSRSummary = ""]
+	[Property.EFSRMethodName = EFSRMethodNameTable( Property.MSRPCOpnum )]
+	[Conversation.EFSRKeyInforClassMVS$[Framenumber] = Conversation.EFSRKeyInforClass,
+	 Property.EFSRKeyInforClass = Conversation.EFSRKeyInforClassMVS$[Framenumber]]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct EfsRpcOpenFileRaw
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s Flags=%d", FileName.ToString, Flags )]
+									Struct
+									{
+										NdrWideString FileName;
+										Align4 pad;
+										INT32 Flags = FormatString( "0x%08X", this )
+										{
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+												Struct
+												{
+													INT32 IMPORT:1 = FormatString("                 (%s) - File %s Being Opened For Writing", this.ToBitString, this ? "Is" : "Is Not" );
+													INT32 DIR:1 = FormatString("                    (%s) - File %s Being restored %s a container for other objects", this.ToBitString, this ? "Is" : "Is Not" );
+													INT32 HIDDEN:1 = FormatString("                 (%s) - Object %s Hidden", this.ToBitString, this ? "Is" : "Is Not" );
+													INT32 ReservedForFutureUse04:29 = FormatString(" (%s)", this.ToBitString);
+												}
+												Default:
+												Struct
+												{
+													INT32 ReservedForFutureUse04:29 = FormatString(" (%s)", this.ToBitString);
+													INT32 HIDDEN:1 = FormatString("                 (%s) - Object %s Hidden", this.ToBitString, this ? "Is" : "Is Not" );INT32 Directory:1 = FormatString("             (%s) - Object Is %s", this.ToBitString, this ? "A Directory" : "A File" );
+													INT32 DIR:1 = FormatString("                    (%s) - File %s Being restored %s a container for other objects", this.ToBitString, this ? "Is" : "Is Not" );
+													INT32 IMPORT:1 = FormatString("                 (%s) - File %s Being Opened For Writing", this.ToBitString, this ? "Is" : "Is Not" );
+												}
+											}
+											
+										}
+										
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										ContextHandle Context;
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct EfsRpcReadFileRaw
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										 ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										EFSRPCRawData EfsOutPipe;
+										Align4 pad;
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct EfsRpcWriteFileRaw
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+										EFSRPCRawData EfsInPipe;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct EfsRpcCloseRaw
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+	
+									ContextHandle Context;
+										
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									ContextHandle Context;
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct EfsRpcEncryptFileSrv
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue))]
+									Struct
+									{
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct EfsRpcDecryptFileSrv
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s OpenFlag=%u", FileName.ToString, OpenFlag )]
+									Struct
+									{
+										NdrWideString FileName;
+										Align4 pad;
+										UINT32 OpenFlag = EFSRDecryptFileSrvOpenFlagTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										INT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct EfsRpcQueryUsersOnFile
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr UsersPtr;
+										Switch
+										{
+											Case UsersPtr.ReferentID >0:
+											EFSREncryptionCertificateHashList Users;
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct EfsRpcQueryRecoveryAgents
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr RecoveryAgentslistPtr; 
+										switch
+										{
+											case RecoveryAgentslistPtr.ReferentID > 0:
+												EFSREncryptionCertificateHashList RecoveryAgents;
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct EfsRpcRemoveUsersFromFile
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+										NdrAlign Pad;
+										EFSREncryptionCertificateHashList Users;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct EfsRpcAddUsersToFile
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+										NdrAlign Pad;
+										EFSREncryptionCertificateList EncryptionCertificates;
+										
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct EfsRpcNotSupported
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "Reserved1=%s Reserved2=%s Reserved11=%u Reserved21=%u Reserved3=%d", Reserved1.ToString, Reserved2.ToString, Reserved11, Reserved21, Reserved3 )]
+									Struct
+									{
+										NdrWideString Reserved1 = EFSRNotSupportedReserved1Table(this);
+										NdrWideString Reserved2 = EFSRNotSupportedReserved2Table(this);
+										Align4 pad1;
+										UINT32 Reserved11 = EFSRNotSupportedReserved11Table(this);
+										UINT32 Reserved21 = EFSRNotSupportedReserved21Table(this);
+										NdrAlign pad2;
+										EFSRpcBlobPtr Reserved = EFSRNotSupportedReservedTable(this);
+										Align4 pad;
+										BOOL Reserved3 = FormatString("%s (Must set to FALSE)", Reserved3.ToString);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct EfsRpcFileKeyInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s InfoClass=%u", FileName.ToString, InfoClass )]
+									Struct
+									{
+										NdrWideString FileName;
+										Align4 pad;
+										[ Conversation.EFSRKeyInforClass ]
+										UINT32 InfoClass = EFSRFileKeyInfoInfoClassTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr KeyInfoPtr;
+										Switch 
+										{
+											Case KeyInfoPtr.ReferentID != 0:
+												Struct
+												{
+													UINT32 Size = FormatString( "%u", this );
+													NdrPtrToConformant Pointer;	
+													switch
+													{
+														case Pointer.ReferentID:
+															EFSRKeyInfoClass KeyInfo;
+													}
+												}
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct EfsRpcDuplicateEncryptionInfoFile
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "SrcFileName=%s DestFileName=%s CreationDisposition=%u Attributes=%u InheritHandle=%d", SrcFileName.ToString, DestFileName.ToString, CreationDisposition, Attributes, InheritHandle )]
+									Struct
+									{
+										NdrWideString SrcFileName;
+										NdrWideString DestFileName;
+										Align4 pad;
+										UINT32 CreationDisposition = EFSRDuplicateEncryptionInfoFileCreationDispositionTable(this);
+										UINT32 Attributes;
+										EFSRpcBlobPtr RelativeSD;
+										Align4 Pad1;
+										BOOL InheritHandle;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct EfsRpcAddUsersToFileEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "Flags=%u FileName=%s", Flags, FileName.ToString )]
+									Struct
+									{
+										UINT32 Flags = EFSRAddUsersToFileExFlagsTable(this);
+										EFSRpcBlobPtr Reserved = EFSRAddUsersToFileExReservedTable(this);
+										NdrAlign pad;
+										NdrWideString FileName;
+										NdrAlign pad1;
+										EFSREncryptionCertificateList EncryptionCertificates;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+	
+		//OSs EFSR and below are encrypted
+		Case 16:
+			_Struct EfsRpcFileKeyInfoEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileKeyInfoFlags=%u FileName=%s InfoClass=%u", dwFileKeyInfoFlags, FileName.ToString, InfoClass )]
+									Struct
+									{
+										UINT32 dwFileKeyInfoFlags;
+										NdrPtr EFSRpcBlobPtr;
+										Switch 
+										{
+											Case EFSRpcBlobPtr.ReferentID != 0:
+												EFSRpcBlob Reserved;
+										}
+										NdrWideString FileName;
+										Align4 pad;
+										[ Conversation.EFSRKeyInforClass ]
+										UINT32 InfoClass;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										NdrPtr KeyInfoPtr;
+										Switch 
+										{
+											Case KeyInfoPtr.ReferentID != 0:
+												Struct
+												{
+													UINT32 Size = FormatString( "%u", this );
+													NdrPtrToConformant Pointer;	
+													switch
+													{
+														case Pointer.ReferentID:
+															EFSRKeyInfoClass KeyInfo;
+													}
+												}
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		
+		//OSs EFSR and below are encrypted(Opnum 18-20)
+		Case 18:
+			_Struct EfsRpcGetEncryptedFileMetadata
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										NdrPtr EFSRpcBlobPtr;
+										Switch 
+										{
+											Case EFSRpcBlobPtr.ReferentID != 0:
+												EFSRMetadataBlob EfsStreamBlob;
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct EfsRpcSetEncryptedFileMetadata
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "FileName=%s", FileName.ToString )]
+									Struct
+									{
+										NdrWideString FileName;
+										NdrPtr EFSRpcBlobPtr;
+										Switch 
+										{
+											Case EFSRpcBlobPtr.ReferentID != 0:
+												EFSRMetadataBlob OldEfsStreamBlob;
+										}
+										NdrAlign Pad;
+										EFSRMetadataBlob NewEfsStreamBlob;
+										NdrPtr NewEfsSignaturePtr;
+										Switch 
+										{
+											case NewEfsSignaturePtr.ReferentID != 0:
+											Struct 
+											{
+												EFSREncryptedFileMetadataSignature NewEfsSignature;
+												EFSREncryptedFileMetadataSignatureRef NewEfsSignatureRef;
+											}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct EfsRpcFlushEfsCache
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[EFSRSummary = FormatString( "ReturnValue=%u", ReturnValue )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+		Case 14:
+		Case 17:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[EFSRSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("EFSR", "Invalid EFSR method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[EFSRSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("EFSR", "Invalid EFSR method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("EFSR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "EFSR", "Unknown EFSR method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+
+Table EFSRCertificateBlobCertEncodingTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - Certificate uses X.509 ASN.1 encoding.";
+		Case 0x00000002: "V2 - Certificate uses X.509 NDR encoding.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_EFS_HASH_BLOB
+// Alignment : none
+//
+Struct EfsHashBlob
+{
+	UINT32 Size;
+	NdrPtrToConformant ArrayPointer; 
+	switch 
+	{
+		Case ArrayPointer.ReferentID > 0:
+		ArrayAsHex( ArrayPointer.MaxCount ) Data;
+	}
+
+}
+
+//
+//	_ENCRYPTED_FILE_METADATA_SIGNATURE
+// Alignment : NdrAlign
+//
+
+Struct EFSREncryptedFileMetadataSignature
+{
+	UINT32 EfsAccessType = EFSREncryptedFileMetadataSignatureEfsAccessTypeTable(this);
+	[ Property.CertificatesAddedPtr = this.ReferentID ]
+	NdrPtr CertificatesAddedPtr;
+	[ Property.EncryptionCertificatePtr = this.ReferentID ]
+	NdrPtr EncryptionCertificatePtr;
+	[ Property.EfsStreamSignaturePtr = this.ReferentID ]
+	NdrPtr EfsStreamSignaturePtr;
+}
+
+Struct EFSREncryptedFileMetadataSignatureRef
+{
+	Switch
+	{
+		Case Property.CertificatesAddedPtr != 0:
+			Struct 
+			{
+				EFSREncryptionCertificateHashList EFSREncryptionCertificateHashList;
+			}
+	}
+	Switch
+	{
+		Case Property.EncryptionCertificatePtr != 0:
+			Struct 
+			{
+				EFSEncrpytionCertificate EFSEncrpytionCertificate;
+			}
+	}
+	Switch
+	{
+		Case  Property.EfsStreamSignaturePtr != 0:
+			Struct 
+			{
+				EFSRMetadataBlob EFSRpcBlob;
+			}
+	}
+}
+
+Table EFSREncryptedFileMetadataSignatureEfsAccessTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "EFS_METADATA_ADD_USER - One or more additional user certificates are being granted access to the object.";
+		Case 0x00000002: "EFS_METADATA_REMOVE_USER - One or more user certificates are having their access to the object revoked.";
+		Case 0x00000004: "EFS_METADATA_REPLACE_USER - One or more user certificates with access to the object are being replaced.";
+		Case 0x00000008: "EFS_METADATA_GENERAL_OP - A change is being made to the metadata that is not fully described by exactly one of the previous options.";
+		Default: "Unknown";
+	}
+}
+
+
+//
+//	_ENCRYPTION_CERTIFICATE_HASH
+// Alignment : NdrAlign
+//
+Struct EFSREncryptionCertificateHash
+{
+	UINT32 TotalLength;
+	NdrAlign pad;
+	NdrPtr UserSidPtr;
+	NdrPtr HashPtr;
+	NdrPtr DisplayInformationPtr;
+	
+	Switch 
+	{
+		Case UserSidPtr.ReferentID > 0:
+		SID( TRUE )		UserSid;
+	}
+	Switch 
+	{
+		Case HashPtr.ReferentID > 0:
+			struct
+			{	
+				NdrAlign padding;
+				EfsHashBlob		HashBlob;
+			}
+	}
+	Switch 
+	{
+		Case DisplayInformationPtr.ReferentID > 0:
+			NdrWideString	DisplayInformation;
+	}
+}
+
+//
+//	_ENCRYPTION_CERTIFICATE_HASH_LIST
+// Alignment : NdrAlign
+//
+Struct EFSREncryptionCertificateHashList
+{
+	UINT32 nCertHash;
+	NdrPtrToConformant ArrayPointer;
+	switch
+	{
+		case ArrayPointer.ReferentId > 0 :
+		struct
+		{
+			[MaxLoopCount = ArrayPointer.MaxCount,Property.EFSRPUserArrayListCount = 0]
+			while[Property.EFSRPUserArrayListCount < ArrayPointer.maxcount]
+			{
+				[Property.EFSRPUserArrayListCount = Property.EFSRPUserArrayListCount + 1]
+				[Property.EFSRUserArrayListPtr$[Property.EFSRPUserArrayListCount] = this.ReferentId]
+				NdrPtr PUser;
+			}
+			[MaxLoopCount = ArrayPointer.MaxCount,Property.EFSRPtrUserCount = 0]
+			while[Property.EFSRPtrUserCount < ArrayPointer.maxcount]
+			{
+				[Property.EFSRPtrUserCount = Property.EFSRPtrUserCount + 1]
+				switch 
+				{
+					case Property.EFSRUserArrayListPtr$[Property.EFSRPtrUserCount] > 0:
+					struct
+						{
+							EFSREncryptionCertificateHash Users;
+						}
+				}
+				
+			}
+		}
+	}
+	
+}
+
+//
+//  _ENCRYPTION_CERTIFICATE;
+//
+//
+Struct EFSEncrpytionCertificate
+{
+	UINT32 cbTotalLength;
+	NdrPtr UserSid;
+	NdrPtr EfsCertificateBlobPtr;
+	Switch
+	{
+		case UserSid.referentid != 0:
+			SID( TRUE ) UserSid;
+	}
+	Switch
+	{
+		Case EfsCertificateBlobPtr.ReferentID != 0:
+			EfsCertificateBlob EfsCertificateBlob;
+	}
+}
+
+//
+//	_ENCRYPTION_CERTIFICATE_LIST
+//  Alignment : NdrAlign
+//
+Struct EFSREncryptionCertificateList
+{
+	UINT32 nCertHash;
+	NdrPtrToConformant ArrayPointer; //is it need to put first
+	switch
+	{
+		case ArrayPointer.ReferentId > 0 :
+		struct
+		{
+			[MaxLoopCount = ArrayPointer.Maxcount, Property.EFSRPtrUserArrayListCount = 0]
+			while[Property.EFSRPtrUserArrayListCount < ArrayPointer.Maxcount]
+			{
+				[Property.EFSRPtrUserArrayListCount = Property.EFSRPtrUserArrayListCount + 1]
+				[Property.EFSRUserArrayList$[Property.EFSRPtrUserArrayListCount] = this.ReferentID ]
+				NdrPtr PtrUser;
+			}
+			[MaxLoopCount = ArrayPointer.Maxcount,Property.EFSRPtrUserCount = 0]
+			while[Property.EFSRPtrUserCount < ArrayPointer.Maxcount]
+			{
+				[Property.EFSRPtrUserCount = Property.EFSRPtrUserCount + 1]
+				switch 
+				{
+					case Property.EFSRUserArrayList$[Property.EFSRPtrUserCount] > 0:
+					
+					struct
+						{
+							EFSREncryptionCertificate Users;
+						}
+				}
+			}
+		}
+	}
+	
+}
+
+//
+// EFS_CERTIFICATE_BLOB
+// Alignment : NdrAlign
+//
+Struct EfsCertificateBlob
+{
+    UINT32 CertEncodingType = EFSRCertificateEncodingTypeTable( this );
+    UINT32 CertSize;
+	NdrPtrToConformant		ArrayPointer;
+	Switch
+	{
+		Case ArrayPointer.ReferentID > 0:
+		Struct
+		{
+			Switch( CertEncodingType )
+			{
+				Case 1:
+				Struct 
+				{
+					X509Certificate			Certificate;
+				}
+				Default:
+				Struct 
+				{
+					Blob(CertSize)		Certificate;
+				}
+			}
+		}
+	}
+}
+
+Table EFSRAddUsersToFileExFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000002: "EFSRPC_ADDUSERFLAG_ADD_POLICY_KEYTYPE - Possible value.";
+		Case 0x00000004: "EFSRPC_ADDUSERFLAG_REPLACE_DDF - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRAddUsersToFileExReservedTable( Value )
+{
+	Switch( Value )
+	{
+		Case "NULL": "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_EFS_RPC_BLOB
+//
+Struct EFSRpcBlob
+{
+	UINT32 Size = FormatString( "%u", this );
+	NdrPtrToConformant Pointer;	
+	switch
+	{
+		case Pointer.ReferentID:
+			Blob( Pointer.MaxCount ) DataBlob;
+	}
+	
+	
+}
+
+Struct EFSRpcBlobPtr
+{
+	NdrPtr EFSRpcBlobPtr;
+	Switch {
+		Case EFSRpcBlobPtr.ReferentID != 0:
+			EFSRpcBlob EFSRpcBlob;
+	}
+}
+
+Table EFSRDecryptFileSrvOpenFlagTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRDuplicateEncryptionInfoFileCreationDispositionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "CREATE_NEW - Do not overwrite the data object referred to by DestFileName if it already exists.";
+		Case 0x00000002: "CREATE_ALWAYS - Overwrite the data object referred to by DestFileName if it already exists.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRFileKeyInfoExFileKeyInfoFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRFileKeyInfoExReservedTable( Value )
+{
+	Switch( Value )
+	{
+		Case "NULL": "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRFileKeyInfoInfoClassTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "BASIC_KEY_INFO - Request information about the keys used to encrypt the object's contents. On success, the server will return the information in an EFS_KEY_INFO ()structure in the KeyInfo parameter.";
+		Case 0x00000002: "CHECK_COMPATIBILITY_INFO - Requests the EfsVersion for the encrypted file. On success, the server will return the information in an EFS_COMPATIBILITY_INFO structure in the KeyInfo parameter. (Protocol version 2 only.)";
+		Case 0x00000100: "UPDATE_KEY_USED - Update the user certificates used to give a specific user access to an object. The server will populate the KeyInfo parameter with a zero-terminated, wide character Unicode string that contains a newline-separated list of names of objects successfully updated.";
+		Case 0x00000200: "CHECK_DECRYPTION_STATUS - Request a hint from the server as to whether the given object could be successfully decrypted without further user intervention or higher-level events. The server will return this information in an EFS_DECRYPTION_STATUS_INFO structure in the KeyInfo parameter.";
+		Case 0x00000400: "CHECK_ENCRYPTION_STATUS - Request a hint from the server as to whether the given object could be successfully encrypted without further user intervention or higher-level events. The server will return this information in an EFS_ENCRYPTION_STATUS_INFO structure in the KeyInfo parameter.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReserved11Table( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReserved1Table( Value )
+{
+	Switch( Value )
+	{
+		Case "0": "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReserved21Table( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReserved2Table( Value )
+{
+	Switch( Value )
+	{
+		Case "0": "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReserved3Table( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table EFSRNotSupportedReservedTable( Value )
+{
+	Switch( Value )
+	{
+		Case "NULL": "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+
+Table EFSRMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "EfsRpcOpenFileRaw";
+		Case 1: "EfsRpcReadFileRaw";
+		Case 2: "EfsRpcWriteFileRaw";
+		Case 3: "EfsRpcCloseRaw";
+		Case 4: "EfsRpcEncryptFileSrv";
+		Case 5: "EfsRpcDecryptFileSrv";
+		Case 6: "EfsRpcQueryUsersOnFile";
+		Case 7: "EfsRpcQueryRecoveryAgents";
+		Case 8: "EfsRpcRemoveUsersFromFile";
+		Case 9: "EfsRpcAddUsersToFile";
+		Case 10: "Opnum10NotUsedOnWire";
+		Case 11: "EfsRpcNotSupported";
+		Case 12: "EfsRpcFileKeyInfo";
+		Case 13: "EfsRpcDuplicateEncryptionInfoFile";
+		Case 14: "Opnum14NotUsedOnWire";
+		Case 15: "EfsRpcAddUsersToFileEx";
+		Case 16: "EfsRpcFileKeyInfoEx";
+		Case 17: "Opnum17NotUsedOnWire";
+		Case 18: "EfsRpcGetEncryptedFileMetadata";
+		Case 19: "EfsRpcSetEncryptedFileMetadata";
+		Case 20: "EfsRpcFlushEfsCache";
+		Default: "unknown";
+	}
+}
+
+
+Table EFSRCertificateEncodingTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Certificate uses X.509 ASN.1 encoding";
+		Case 0x00000002: "Certificate uses X.509 NDR encoding.";
+	}
+}
+
+//
+// ENCRYPTION_CERTIFICATE
+// Alignment : NdrAlign
+//
+Struct EFSREncryptionCertificate = SidPointer.ReferentID ? UserSid.ToString : "NULL"
+{
+	UINT32			TotalLength = FormatString( "%u", this );
+	NdrPtr			SidPointer;
+	NdrPtr			CertBlobPointer;
+	Switch 
+	{
+		Case SidPointer.ReferentID > 0:
+		SID( TRUE )		UserSid;
+	}
+	Switch 
+	{
+		Case CertBlobPointer.ReferentID > 0:
+			struct
+			{
+				NdrAlign Pad;
+				EfsCertificateBlob		CertBlob;
+			}
+	}
+}
+
+Struct EFSRMetadataBlob
+{
+	UINT32 Size = FormatString( "%u", this );
+	NdrPtrToConformant Pointer;	
+	switch
+	{
+		case Pointer.ReferentID && Pointer.MaxCount > 0:
+			EFSRMetadata Metadata;
+	}
+}
+
+[ Property.EFSRPCMetadatastream = false ]
+Struct EFSRMetadata
+{
+	[ Property.EFSRMetadataLength, Property.EFSRMetadataVersion1Offset = FrameOffset ]
+	UINT32 Length;
+	UINT32 Reserved1;
+	[ Property.EFSREFSVersion ]
+	UINT32 EFSVersion = EFSREFSVersionTable(this);
+	UINT32 Reserved2;
+	GUID(TRUE) EFSID;
+	Switch(Property.EFSREFSVersion)
+	{
+		Case 1:
+		Case 2:
+		Case 3:
+			EFSRMetadataVersion1 MetadataVersion1;
+		Case 4:
+			EFSRMetadataVersion2 MetadataVersion2;
+		Default:
+			ReportParserError(ParserErrorProtocolClassWindows, "EFSR", "Unknown Version" ) ProtocolError;
+	}
+}
+
+//
+// EFSRPC Metadata Version 1
+//
+Struct EFSRMetadataVersion1
+{
+	Blob(16) EFSHash;
+	Blob(16) Reserved3;
+	UINT32 DDFOffset;
+	UINT32 DRFOffset;
+	Blob(12) Reserved4;
+	EFSRKeyList DDFkeylist;
+	Switch
+	{
+		Case DRFOffset != 0:
+			EFSRKeyList DRFkeylist;
+	}
+	
+	Switch
+	{
+		Case FrameOffset - Property.EFSRMetadataVersion1Offset != Property.EFSRMetadataLength:
+			Blob( Property.EFSRMetadataLength - ( FrameOffset - Property.EFSRMetadataVersion1Offset ) ) MetadataVersion1Padding;
+	}
+}
+
+Table EFSREFSVersionTable(value)
+{
+	Switch(value)
+	{
+		Case 1:	"The FEK will be a DESX key, and encrypted with RSA only. The Flags field in all key list entries will be zero";
+		Case 2:	"The FEK will use DESX, 3DES, or AES-256. The FEK will be encrypted with RSA only. The Flags field in all key list entries will be zero";
+		Case 3:	"The FEK will use DESX, 3DES, or AES-256. The FEK will be encrypted with either RSA or AES-256";
+		Case 4: "The highest EFS version, support all lower numbered versions";
+		Default:"Unknown version";
+	}
+}
+
+//
+// Key List Structure
+//
+Struct EFSRKeyList
+{
+	[ Property.EntryCount ]
+	UINT32 Length;
+	[ MaxLoopCount = Property.EntryCount ]
+	While[ Property.EntryCount != 0 ]
+	{
+		[ Property.EntryCount = Property.EntryCount - 1 ]
+		EFSRKeyListEntry KeyList;
+	}
+}
+
+//
+// Key List Entry
+//
+Struct EFSRKeyListEntry
+{
+	UINT32 Length;
+	UINT32 OffsettoPublicKeyInformation;
+	UINT32 EncryptedFEKLength;
+	UINT32 OffsettoEncryptedFEK;
+	UINT32 Flag = EFSRKeyListEntryFlagTable(this);
+	EFSRPublicKeyInformation PublicKeyInformation;
+	Blob( Framelength - FrameOffset > (Length - OffsettoEncryptedFEK) ? Length - OffsettoEncryptedFEK : Framelength - FrameOffset ) EncryptedFEK;
+}
+
+Table EFSRKeyListEntryFlagTable(value)
+{
+	Switch(value)
+	{
+		Case 0:	"The Encrypted FEK field is encrypted using RSA, with a public key belonging to a user or DRA";
+		Case 1:	"The Encrypted FEK field is encrypted using AES-256, with a key that is obtained by signing the non-terminated Unicode string \"MICROSOFTE\" (20 bytes long) with the user's RSA and computing the SHA-256 hash of the result";
+		Default:"Unknown version";
+	}
+}
+
+//
+// Public Key Information
+//
+Struct EFSRPublicKeyInformation
+{
+	UINT32 Length;
+	UINT32 OffsettoOwnerHint;
+	UINT32 Pad = "This field must be 0x03000000";
+	[ Property.CertificateDatLength ]
+	UINT32 LengthofCertificateData;
+	UINT32 OffsettoCertificateData;
+	UINT64 Reserved;
+	Switch
+	{
+		Case OffsettoOwnerHint != 0:
+			Sid(0) OwnerHint;
+	}
+	EFSRCertificateData CertificateData;
+}
+
+//
+// Certificate Data
+//
+Struct EFSRCertificateData
+{
+	UINT32 OffsettoCertificateThumbprint;
+	UINT32 LengthofCertificateThumbprint;
+	UINT32 OffsetofContainerName;
+	UINT32 OffsetofProviderName;
+	UINT32 OffsetofDisplayName;
+	Blob(LengthofCertificateThumbprint) CertificateThumbprint;
+	Switch
+	{
+		Case OffsetofContainerName != 0:
+			Unicodestring( (OffsetofProviderName - OffsetofContainerName) / 2 ) ContainerName;
+	}
+	Switch
+	{
+		Case OffsetofProviderName != 0:
+			Unicodestring( (OffsetofDisplayName - OffsetofProviderName) / 2 ) ProviderName;
+	}
+	Switch
+	{
+		Case OffsetofDisplayName != 0:
+			Unicodestring( (Property.CertificateDatLength - OffsetofDisplayName) / 2 ) DisplayName;
+	}
+}
+
+//
+// Encrypted FEK
+//
+Struct EFSREncryptedFEK
+{
+	UINT32 KeyLength;
+	UINT32 Entropy;
+	UINT32 Algorithm = EFSRAlgorithmTable(this);
+	UINT32 Reserved;
+	Blob( KeyLength ) Key;
+}
+
+Table EFSRAlgorithmTable(value)
+{
+	Switch(value)
+	{
+		Case 0x6610:	"CALG_AES_256";
+		Case 0x6603:	"CALG_3DES";
+		Case 0x6604:	"CALG_DESX";
+		Default:"Unknown value";
+	}
+}
+
+//
+// EFSRPC Metadata Version 2
+//
+Struct EFSRMetadataVersion2
+{
+	UINT32 DDFOffset;
+	UINT32 DRFOffset;
+	EFSREFSXDatum FekInfoDatum;
+	EFSRProtectorList DDFProtectorLlist;
+	Switch
+	{
+		Case DRFOffset != 0:
+			EFSRProtectorList DRFProtectorLlist;
+	}
+}
+
+//
+// Fek Info Datum
+//
+Struct EFSRFekInfoDatum
+{
+	UINT32 AlgorithmID = EFSRAlgorithmTable(this);
+	While[ 
+			(UINT16(FrameData,Offset + 2) >= 0x0000 && UINT16(FrameData,Offset + 2) <= 0x000b) &&
+			(UINT16(FrameData,Offset + 4) >= 0x0000 && UINT16(FrameData,Offset + 4) <= 0x0006) &&
+			(UINT16(FrameData,Offset + 6) >= 0x0000 && UINT16(FrameData,Offset + 6) <= 0x0003)
+		 ]
+	{
+		EFSREFSXDatum EFSXDatum;
+	}
+}
+
+//
+// EFSX Datum
+//
+Struct EFSREFSXDatum = formatstring("Type: %s", EFSREFSXDatumTypeTable(Property.EFSXDatumType))
+{
+	[ Property.EFSXDatumSize ]
+	UINT16 StructureSize;
+	UINT16 Role = EFSREFSXDatumRoleTable(this);
+	[ Property.EFSXDatumType ]
+	UINT16 Type = EFSREFSXDatumTypeTable(this);
+	EFSREFSXDatumFlagType Flag;
+	Switch(Property.EFSXDatumType)
+	{
+		Case 0x0001:
+			EFSRBlobDatum BlobDatum;
+		Case 0x0002:
+			EFSRDescriptorDatum DescriptorDatum;
+		Case 0x0003:
+			EFSRProtectorListEntry KeyProtectorDatum;
+		Case 0x0004:
+			EFSRProtectorInfoDatum ProtectorInfoDatum;
+		Case 0x0005:
+			EFSRKeyAgreementDatum KeyAgreementDatum;
+		Case 0x0006:
+			EFSRFekInfoDatum FekInfoDatum;
+	}
+}
+
+Table EFSREFSXDatumRoleTable(value)
+{
+	Switch(value)
+	{
+		Case 0x0000:	"The EFSX Datum has no defined role";
+		Case 0x0001:	"The EFSX Datum contains a reference to a user's certificate store";
+		Case 0x0002:	"The EFSX Datum contains data specific to a protector type";
+		Case 0x0003:	"The EFSX Datum contains information that is suitable for user display";
+		Case 0x0004:	"The EFSX Datum contains information that identifies a private key container";
+		Case 0x0005:	"The EFSX Datum contains information that identifies the provider name of a CSP or KSP";
+		Case 0x0006:	"The EFSX Datum contains a user SID";
+		Case 0x0007:	"The EFSX Datum contains the encrypted File Master Key (FMK)";
+		Case 0x0008:	"The EFSX Datum contains a user's public key";
+		Case 0x0009:	"The EFSX Datum contains an ephemeral public key";
+		Case 0x000a:	"The EFSX Datum contains the encrypted File Encryption Key (FEK)";
+		Case 0x000b:	"The EFSX Datum contains the file Initialization Vector (IV)";
+		Default:"Unknown value";
+	}
+}
+
+Table EFSREFSXDatumTypeTable(value)
+{
+	Switch(value)
+	{
+		Case 0x0000:	"Reserved";
+		Case 0x0001:	"EFSX_TYPE_BLOB";
+		Case 0x0002:	"EFSX_TYPE_DESCRIPTOR";
+		Case 0x0003:	"EFSX_TYPE_KEY_PROTECTOR";
+		Case 0x0004:	"EFSX_TYPE_PROTECTOR_INFO";
+		Case 0x0005:	"EFSX_TYPE_KEY_AGMT_DATA";
+		Case 0x0006:	"EFSX_TYPE_FEK_INFO";
+		Default:"Unknown value";
+	}
+}
+
+Struct EFSREFSXDatumFlagType
+{
+	UINT16 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT16 Bit1: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The EFSX Datum is nested inside a parent structure" : "Not set");
+					UINT16 Bit2: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The EFSX Datum is a complex datum containing nested datum structures" : "Not set");
+					UINT16 Unused: 14 = FormatString( "(%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT16 Unused: 14 = FormatString( "(%s)", this.ToBitString );
+					UINT16 Bit2: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The EFSX Datum is a complex datum containing nested datum structures" : "Not set");
+					UINT16 Bit3: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The EFSX Datum is nested inside a parent structure" : "Not set");
+				}
+		}
+	}
+}
+
+//
+// Protector List Structure
+//
+Struct EFSRProtectorList
+{
+	UINT32 StructureSize;
+	[ Local.ProtectorsCount ]
+	UINT16 ProtectorsCount;
+	[ MaxLoopCount = Local.ProtectorsCount ]
+	While[ Local.ProtectorsCount != 0 ]
+	{
+		[ Local.ProtectorsCount = Local.ProtectorsCount - 1 ]
+		EFSREFSXDatum ProtectorListEntry;
+	}
+}
+
+//
+// Protector List Entry
+//
+Struct EFSRProtectorListEntry
+{
+	UINT16 ProtectorType = EFSRProtectorTypeTable(this);
+	EFSRProtectorFlags ProtectorFlags;
+	While[ 
+			(UINT16(FrameData,Offset + 2) >= 0x0000 && UINT16(FrameData,Offset + 2) <= 0x000b) &&
+			(UINT16(FrameData,Offset + 4) >= 0x0000 && UINT16(FrameData,Offset + 4) <= 0x0006) &&
+			(UINT16(FrameData,Offset + 6) >= 0x0000 && UINT16(FrameData,Offset + 6) <= 0x0003)
+		 ]
+	{
+		EFSREFSXDatum EFSXDatum;
+	}
+}
+
+Table EFSRProtectorTypeTable(value)
+{
+	Switch(value)
+	{
+		Case 0x0001:	"The protector was derived from a public/private key pair capable of performing asymmetric encryption";
+		Case 0x0002:	"The protector was derived from a public/private key pair using a key agreement";
+		Default:"Unknown value";
+	}
+}
+
+Struct EFSRProtectorFlags
+{
+	UINT16 Flags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					UINT16 Bit1: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The protector is a legacy protector, and stores the Encrypted FEK" : "Not set");
+					UINT16 Bit2: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "If this is a legacy protector (flag 0x0001 is also set), the Encrypted FEK is encrypted using AES 256, with a key that is obtained by signing the non-terminated Unicode string \"MICROSOFTE\" (20 bytes long) with the user's RSA and computing the SHA-256 hash of the result" : "Not set");
+					UINT16 Bit3: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "If this bit is set, bit 0x0001 MUST also be set to indicate a legacy protector. This bit indicates that the legacy protector stores the File Master Key (FMK) encrypted in the Encrypted FEK structure instead of the File Encryption Key (FEK)" : "Not set");
+					UINT16 Unused: 13 = FormatString( "(%s)", this.ToBitString );
+				}
+			Case BigEndian:
+				Struct
+				{
+					UINT16 Unused: 13 = FormatString( "(%s)", this.ToBitString );
+					UINT16 Bit1: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "The protector is a legacy protector, and stores the Encrypted FEK" : "Not set");
+					UINT16 Bit2: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "If this is a legacy protector (flag 0x0001 is also set), the Encrypted FEK is encrypted using AES 256, with a key that is obtained by signing the non-terminated Unicode string \"MICROSOFTE\" (20 bytes long) with the user's RSA and computing the SHA-256 hash of the result" : "Not set");
+					UINT16 Bit3: 1 = FormatString( "   (%s) %s", this.ToBitString, this ? "If this bit is set, bit 0x0001 MUST also be set to indicate a legacy protector. This bit indicates that the legacy protector stores the File Master Key (FMK) encrypted in the Encrypted FEK structure instead of the File Encryption Key (FEK)" : "Not set");
+				}
+		}
+	}
+}
+
+//
+// Blob Datum
+//
+Struct EFSRBlobDatum
+{
+	UINT16 BlobType = EFSRBlobTypeTable(this);
+	UINT16 BlobFlags;
+	Blob( Framelength - FrameOffset > (Property.EFSXDatumSize - 12) ? Property.EFSXDatumSize - 12 : Framelength - FrameOffset ) BlobData;
+}
+
+Table EFSRBlobTypeTable(value)
+{
+	Switch(value)
+	{
+		Case 0x0000:	"The blob has no special formatting";
+		Case 0x0001:	"The blob contains a public key formatted as a BCRYPT_PUBLIC_KEY_BLOB";
+		Case 0x0002:	"The blob contains a SHA-1 hash of a DER-encoded form of a certificate";
+		Case 0x0003:	"The blob contains the encrypted form of an Encrypted FEK structure";
+		Case 0x0004:	"The blob contains key material wrapped with an AES-256 key wrapping key";
+		Default:"Unknown value";
+	}
+}
+
+//
+// Descriptor Datum
+//
+Struct EFSRDescriptorDatum
+{
+	Unicodestring((Property.EFSXDatumSize - 8) / 2) DescriptorText;
+}
+
+//
+// Protector Info Datum
+//
+Struct EFSRProtectorInfoDatum
+{
+	While[ 
+			(UINT16(FrameData,Offset + 2) >= 0x0000 && UINT16(FrameData,Offset + 2) <= 0x000b) &&
+			(UINT16(FrameData,Offset + 4) >= 0x0000 && UINT16(FrameData,Offset + 4) <= 0x0006) &&
+			(UINT16(FrameData,Offset + 6) >= 0x0000 && UINT16(FrameData,Offset + 6) <= 0x0003)
+		 ]
+	{
+		EFSREFSXDatum EFSXDatum;
+	}
+}
+
+//
+// Key Agreement Datum
+//
+Struct EFSRKeyAgreementDatum
+{
+	UINT16 KeyAgmtFlags;
+	While[ 
+			(UINT16(FrameData,Offset + 2) >= 0x0000 && UINT16(FrameData,Offset + 2) <= 0x000b) &&
+			(UINT16(FrameData,Offset + 4) >= 0x0000 && UINT16(FrameData,Offset + 4) <= 0x0006) &&
+			(UINT16(FrameData,Offset + 6) >= 0x0000 && UINT16(FrameData,Offset + 6) <= 0x0003)
+		 ]
+	{
+		EFSREFSXDatum EFSXDatum;
+	}
+}
+
+//
+// EFSRPC Raw Data Format
+//
+Struct EFSRPCRawData
+{
+	//workaround
+	UINT32 FirstChunkSize;
+	
+	UINT32 Pad1 = "This field must be 0x00010000";
+	UINT32 Pad2 = "This field must be 0x52004f00";
+	UINT32 Pad3 = "This field must be 0x42005300";
+	UINT64 Reserved;
+	EFSRMarshaledStream EFSRPCMetadataStream;
+	//workaround
+	while[ ContainsBin(FrameData, 1, "NTFS", FrameOffset, 28) ]
+	{
+		EFSRMarshaledStream AdditionalStream;
+	}
+	UINT32 ChunkEnd;
+}
+
+//
+// Marshaled Stream
+//
+Struct EFSRMarshaledStream
+{
+	//workaround
+	Switch
+	{
+		Case !(UINT8( Framedata, Offset + 4 ) == 0x4e &&
+			UINT8( Framedata, Offset + 5 ) == 0x00 &&
+			UINT8( Framedata, Offset + 6 ) == 0x54 &&
+			UINT8( Framedata, Offset + 7 ) == 0x00 &&
+			UINT8( Framedata, Offset + 8 ) == 0x46 &&
+			UINT8( Framedata, Offset + 9 ) == 0x00 &&
+			UINT8( Framedata, Offset + 10 ) == 0x53 &&
+			UINT8( Framedata, Offset + 11 ) == 0x00):
+			Struct
+			{
+				NdrAlign Pad;
+				UINT32 ChunkSize;
+			}
+	}
+	UINT32 Length;
+	UINT32 Pad1 = "This field must be 0x4e005400";
+	UINT32 Pad2 = "This field must be 0x46005300";
+	[ Property.EFSRMarshaledStreamFlag ]
+	UINT32 Flag = EFSRMarshaledStreamFlagTable(this);
+	UINT64 Reserved;
+	[ Property.EFSRNameLength ]
+	UINT32 NameLength = EFSRMarshaledStreamNameLengthTable(this);
+	Switch
+	{
+		Case Property.EFSRNameLength == 0:
+			_Struct{}
+		Case ( Property.EFSRNameLength == 2 && UINT16(FrameData,FrameOffset) == 0x1910 ):
+			[ Property.EFSRPCMetadatastream = true ]	
+			UINT16 EFSRPCMetadatastream = "0x1910: EFSRPC Metadata stream";
+		Default:	Unicodestring(Property.EFSRNameLength / 2) StreamName;
+	}
+	//workaround TDI 39333
+	while[ ContainsBin(FrameData, 1, "GURE", FrameOffset, 28) ]
+	{
+		EFSRStreamDataSegment StreamDataSegment;
+	}
+}
+
+Table EFSRMarshaledStreamFlagTable(value)
+{
+	Switch(value)
+	{
+		Case 0:	"FEK encryption present";
+		Case 1:	"FEK encryption not present";
+		Default:"Unknown value";
+	}
+}
+
+Table EFSRMarshaledStreamNameLengthTable(value)
+{
+	Switch(value)
+	{
+		Case 0:	"Main data stream";
+		Case 2:	"EFSRPC Metadata stream";
+		Default:"Name Length";
+	}
+}
+
+//
+// Stream Data Segment
+//
+Struct EFSRStreamDataSegment
+{
+	//workaround
+	Switch
+	{
+		Case !(UINT8( Framedata, Offset + 4 ) == 0x47 &&
+			UINT8( Framedata, Offset + 5 ) == 0x00 &&
+			UINT8( Framedata, Offset + 6 ) == 0x55 &&
+			UINT8( Framedata, Offset + 7 ) == 0x00 &&
+			UINT8( Framedata, Offset + 8 ) == 0x52 &&
+			UINT8( Framedata, Offset + 9 ) == 0x00 &&
+			UINT8( Framedata, Offset + 10 ) == 0x45 &&
+			UINT8( Framedata, Offset + 11 ) == 0x00):
+			Struct
+			{
+				NdrAlign Pad;
+				UINT32 ChunkSize;
+			}
+	}
+	[ Property.EFSRStreamDataSegmentLength ]
+	UINT32 Length;
+	UINT32 Pad1 = MustBeSetToTable(this,0x47005500);
+	UINT32 Pad2 = MustBeSetToTable(this,0x52004500);
+	UINT32 Reserved;//workaround TDI 39330
+	Switch
+	{
+		Case Property.EFSRPCMetadatastream == true:
+			[Property.EFSRPCMetadatastream = false]
+			EFSRMetadata StreamDataMetadata;
+		Case Property.EFSRMarshaledStreamFlag == 0 && Property.EFSRPCMetadatastream != true:
+			Struct
+			{
+				EFSRDataSegmentEncryptionHeader DataSegmentEncryptionHeader;
+				[ Local.EFSRStreamDataCount = 0 ]
+				while [ Property.EFSRNumberofDataBlocks != Local.EFSRStreamDataCount ]
+				{
+					[ Local.EFSRStreamDataCount = Local.EFSRStreamDataCount + 1 ]
+					Blob( Property.EFSRDataBlockSizeArray[ Local.EFSRStreamDataCount - 1 ] ) StreamDataEncryptionHeader;
+					Blob( Property.EFSRStreamDataSegmentLength - Property.EFSRDataSegmentEncryptionHeaderLength - 16 ) EncryptedStreamData;
+				}
+			}
+		Default:
+			Blob( Property.EFSRStreamDataSegmentLength - 16 ) StreamData;
+	}
+}
+
+//
+// Data Segment Encryption Header
+//
+Struct EFSRDataSegmentEncryptionHeader
+{
+	UINT64 StartingFileOffset;
+	[Property.EFSRDataSegmentEncryptionHeaderLength ]
+	UINT32 Length;
+	UINT32 BytesWithinStreamSize;
+	UINT32 BytesWithinVDL;
+	UINT16 Pad1 = MustBeSetToTable(this,0x0000);
+	UINT8 DataUnitShift;
+	UINT8 ChunkShift;
+	UINT8 ClusterShift;
+	UINT8 Pad2 = MustBeSetToTable(this,0x01);
+	[ Property.EFSRNumberofDataBlocks ]
+	UINT16 NumberofDataBlocks;
+	Struct DataBlockSizes
+	{
+		[ Property.EFSRDataBlockSizeArray = makebytearray(this) ]
+		UINT32 DataBlockSize[ Property.EFSRNumberofDataBlocks ];
+	}
+	[Property.EfsrpcExtendedHeaderLength = 0]
+	While[UINT32(FrameData,offset) == 0x45585444]
+	{
+		[Property.EfsrpcExtendedHeaderLength = 16]
+		EfsrpcExtendedHeader EfsrpcExtendedHeader;
+	}
+	Blob( Property.EFSRDataSegmentEncryptionHeaderLength - Property.EfsrpcExtendedHeaderLength - 4*Property.EFSRNumberofDataBlocks - 28) Pad3;
+}
+
+Struct EfsrpcExtendedHeader
+{
+		UINT32 pad1 = MustBeSetToTable(this,0x45585444);
+		UINT32 pad2 = MustBeSetToTable(this,0x10000000);
+		UINT32 Flags = ExtendedHeaderFlagTable(this);
+		UINT32 Reserved = MustBeSetToTable(this,0x00000000);
+}
+
+Table ExtendedHeaderFlagTable(value)
+{
+	Switch(value)
+	{
+		case 0x00000001: "Used to indicate that the stream is contained within a sparse file";
+		case 0x00000000: "";
+		default:
+			"Unknown value";
+	}
+}
+
+Struct EFSRKeyInfoClass
+{
+	Switch(Property.EFSRKeyInforClass)
+	{
+		Case 0x00000001:	EFSREFSKeyInfo				EFSKeyInfo;
+		Case 0x00000002:	EFSREFSCompatibilityInfo	EFSCompatibilityInfo;
+		Case 0x00000100:	UnicodeString				UpdateKeyUsed;
+		Case 0x00000200:	EFSREFSEncryptionStatusInfo	EFSEncryptionStatusInfo;
+		Case 0x00000400:	EFSREFSDecryptionStatusInfo	EFSDncryptionStatusInfo;
+	}
+}
+
+//
+// EFS_KEY_INFO
+//
+Struct EFSREFSKeyInfo
+{
+	UINT32 Version;
+	UINT32 Entropy;
+	UINT32 Algorithm = EFSRAlgorithmTable(this);
+	UINT32 KeyLength;
+}
+
+//
+// EFS_COMPATIBILITY_INFO
+//
+Struct EFSREFSCompatibilityInfo
+{
+	UINT32 EFSVersion = EFSREFSVersionTable(this);
+}
+
+//
+// EFS_ENCRYPTION_STATUS_INFO
+//
+Struct EFSREFSEncryptionStatusInfo
+{
+	BOOL HasCurrentKey;
+	UINT32 EncryptionError;
+}
+
+//
+// EFS_DECRYPTION_STATUS_INFO
+//
+Struct EFSREFSDecryptionStatusInfo
+{
+	UINT32 DecryptionError;
+	UINT32 HashOffse;
+	UINT32 Hash;
+}

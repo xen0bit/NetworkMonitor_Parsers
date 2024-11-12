@@ -1,0 +1,102 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  ITU X224
+//#
+//#  Details:                an ITU protocol
+//#
+//#  Public References:      ISO 8073, ITU X224
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 8/14/2009
+//#
+//####
+
+[DataTypeByteOrder = BigEndian]
+Protocol X224 = FormatString("%s", TPDUTypeTable(X224TPDUType))
+{
+	switch (UINT8(FrameData, FrameOffset + 1))
+	{
+		case 0xE0:
+			[Conversation.TCP.ClientNetworkAddress = Property.SourceNetworkAddress,
+			 Conversation.X224Connection = true]
+			_struct ConnectionRequest
+			{
+				UINT8 LengthIndicator;
+				[X224TPDUType]
+				UINT8 TypeCredit = TPDUTypeTable(this);
+				UINT16 DestinationReference;
+				UINT16 SourceReference;
+				UINT8 ClassOptions;
+				switch 
+				{
+					case FrameLength > FrameOffset:
+						switch
+						{
+							case TCP.Port == 3389:
+							case TSGURDPPayload:
+								RDPBCGRClientX224ConnectionRequestPdu ClientX224ConnectionRequestPdu;
+							default:
+								BLOB(FrameLength - FrameOffset) UserData;
+						}
+				}
+			}
+		case 0xD0:
+			[Conversation.TCP.ServerNetworkAddress = Property.SourceNetworkAddress]
+			_struct ConnectionConfirm
+			{
+				UINT8 LengthIndicator;
+				[X224TPDUType]
+				UINT8 TypeCredit = TPDUTypeTable(this);
+				UINT16 DestinationReference;
+				UINT16 SourceReference;
+				UINT8 ClassOptions;
+				switch 
+				{
+					case FrameLength > FrameOffset:
+						switch
+						{
+							case TCP.Port == 3389:
+							case TSGURDPPayload:
+								RDPBCGRServerX224ConnectionConfirmPdu ServerX224ConnectionConfirmPdu;
+							default:
+								BLOB(FrameLength - FrameOffset) UserData;
+						}
+				}
+			}
+		case 0xF0:
+			_struct Data
+			{
+				UINT8 Length;
+				[X224TPDUType]
+				UINT8 Type = TPDUTypeTable(this);
+				UINT8 EOT;
+				switch
+				{
+					case SourcePort == 3389 || DestinationPort == 3389:
+					case SourcePort == 1503 || DestinationPort == 1503:
+					case TSGURDPPayload:
+						T125 T125;
+				}
+			}
+	}
+	switch
+	{
+		case FrameOffset < FrameLength:
+			Blob(FrameLength - FrameOffset) Padding;
+	}
+}
+
+Table TPDUTypeTable(code)
+{
+	switch (code & 0xF0)
+	{
+		case 0xE0: "Connection Request";
+		case 0xD0: "Connection Confirm";
+		case 0x80: "Disconnect Request";
+		case 0xF0: "Data";
+		case 0x70: "Error";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+

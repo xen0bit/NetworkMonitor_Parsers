@@ -1,0 +1,186 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NetBIOS over IPX
+//#
+//#  Details:                
+//#
+//#  Public References:      http://timothydevans.me.uk/nbf2cifs/nbf2cifs.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/4/2010
+//#
+//####
+
+Protocol NBIPX = FormatString("%s%s",
+							  NBIMPStreamTypeExist ? NBIPXDataStreamTypeTable(Property.NBIMPStreamType):"",
+							  NBIPXNameTypeExist ? ", " + Property.NBIPXNameType : "")
+{
+	[Local.NBIPXSecondByte = UINT8( Framedata, Offset + 1 )]
+	switch
+	{
+		case UINT8( Framedata, ProtocolOffset - 25 ) == 0x14:
+		case (UINT8( Framedata, ProtocolOffset - 25 ) == 0x04 &&
+			 Local.NBIPXSecondByte >= 0x01 &&
+			 Local.NBIPXSecondByte <= 0x05 &&
+			(FrameLength - ProtocolOffset >= 50 )):
+				_struct NBIPXWithRoutingInfo
+				{
+					NBIPXRoutingInfo NBIPXRoutingInfo;
+					switch
+					{
+						case UINT8( Framedata, ProtocolOffset + 33 ) >= 0x01 &&
+							UINT8( Framedata, ProtocolOffset + 33 ) <= 0x05:
+							NBIPXName NBIPXName;
+					}
+				};
+		default  :
+			_struct NBIPXWithoutRoutingInfo
+			{
+				NBIPXTypeFalg TypeFalg;
+				switch(Local.NBIPXSecondByte)
+				{
+					case 0x09:
+						Asciistring(14) Padding=FormatString("14 Bytes");
+					case 0x0A:
+						NBIPXStsResponse NBIPXStsResponse;
+					case 0x0B:
+						NBIPXDatagram Datagram;
+					case 0x0C:
+						NETBIOSName SourceName;
+					case 0x01:
+					case 0x02:
+					case 0x03:
+					case 0x04:
+					case 0x05:
+						NBIPXName NBIPXName;
+					case 0x06:
+					case 0x07:
+					case 0x08:
+						NBIPXSession Session;
+				}
+			};
+	}
+	//
+	// VMC modification to include SMB 07/08/05
+	//
+	switch(UINT32(FrameData, Offset))
+	{
+		case 0xFF534D42: // 0xFF SMB
+			SMB Smb;
+	}		
+	// End of VMC modification	
+}
+
+Table NBIPXDataStreamTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: "Find Name";
+		case 0x02: "Name Recognized";
+		case 0x03: "Add Name";
+		case 0x04: "Name in Use";
+		case 0x05: "Delete Name";
+		case 0x06: "Session Data";
+		case 0x07: "Session End";
+		case 0x08: "Session End Ack";
+		case 0x09: "Adapter Status Query";
+		case 0x0A: "Adapter Status Response";
+		case 0x0B: "Directed Datagram";
+		case 0x0C: "Broadcast Datagram";
+		default  : "Unknown DataStreamType";
+	}
+}
+
+struct NBIPXRoutingInfo
+{
+	UINT32 RoutingInformation[8];
+}
+
+struct NBIPXTypeFalg = NBIPXDataStreamTypeTable(DataStreamType)
+{
+	UINT8 ConnCtrlFlag
+	{
+		UINT8 Sys:1 = FormatString("(%s) %s",this.ToBitString, this ? "System Packet":"Not System Packet");
+		UINT8 Sen:1 = FormatString("(%s) %s",this.ToBitString, this ? "Send Acknowledge":"No Send Acknowledge");
+		UINT8 Att:1 = FormatString("(%s) %s",this.ToBitString, this ? "Attention":"No Attention");
+		UINT8 End:1 = FormatString("(%s) %s",this.ToBitString, this ? "End of Message":"Not End of Message");
+		UINT8 Res:1 = FormatString("(%s) %s",this.ToBitString, this ? "Resend":"No Resend");
+		UINT8 Rsv:3 = FormatString("(%s)", this.ToBitString);
+	};
+	[NBIMPStreamTypeExist = 1, NBIMPStreamType]
+	UINT8 DataStreamType = FormatString("%s, %d(0x%02X)", NBIPXDataStreamTypeTable(this), this, this);
+}
+
+struct NBIPXName = FormatString("%s, %s", NBIPXDataStreamTypeTable(DataStreamType), Name.ToSTring)
+{
+	UINT8 NameTypeFlag
+	{
+		UINT8 Type:1  = FormatString("    (%s) %s",this.ToBitString, this ? "Group Name":"Unique Name");
+		UINT8 Use:1   = FormatString("     (%s) %s",this.ToBitString, this ? "Name in use":"Name not used");
+		UINT8 Reserved:3 = FormatString("(%s)",this.ToBitString);
+		UINT8 Reg:1   = FormatString("     (%s) %s",this.ToBitString, this ? "Name Registered":"Name not Registered");
+		UINT8 Dup:1   = FormatString("     (%s) %s",this.ToBitString, this ? "Name Duplicated":"Name not Duplicated");
+		UINT8 Dereg:1 = FormatString("   (%s) %s",this.ToBitString, this ? "Name Deregistered":"Name not Deregistered");
+	};
+	[Post.NBIMPStreamType = NBIMPStreamTypeExist ? NBIMPStreamType
+												 : this , Post.NBIMPStreamTypeExist = 1]
+	UINT8 DataStreamType = FormatString("%s, %d(0x%02X)", NBIPXDataStreamTypeTable(this), this, this);
+	[Post.NBIPXNameTypeExist = 1, NBIPXNameType = this.ToString]
+	NETBIOSName Name;
+}
+
+struct NBIPXSession = FormatString("Recv Seq %s, %s Bytes Received",
+									RecvSequence.ToString, BytesReceived.ToString)
+{
+	UINT16 SourceConnID;
+	UINT16 DestConnID;
+	UINT16 SendSequence;
+	UINT16 TotalDataLen;
+	UINT16 Offset;
+	UINT16 DataLen;
+	UINT16 RecvSequence;
+	UINT16 BytesReceived;
+}
+
+struct NBIPXNameEntry
+{
+	NETBIOSName Name;
+	UINT8 NameNumber;
+	UINT8 NameFlag;
+}
+
+struct NBIPXStsResponse
+{
+	INT48 AdapterID;
+	UINT8 Jumpers;
+	UINT8 SelfTest;
+	UINT8 MajorVersion;
+	UINT8 MinorVersion;
+	UINT16 ReportingPeriod;
+	UINT16 RecvCRCErrors;
+	UINT16 RecvAlignErrors;
+	UINT16 XmitCollisions;
+	UINT16 XmitAbort;
+	UINT32 SuccessfulXmit;
+	UINT32 SuccessfulRecv;
+	UINT16 XmitRetries;
+	UINT16 ExhaustedResource;
+	INT64 Reserved;
+	UINT16 FreeBlocks;
+	UINT16 ConfiguredNCB;
+	UINT16 MaxNCB;
+	UINT32 Reserved2;
+	UINT16 CurrentSessions;
+	UINT16 MaxSessConfig;
+	UINT16 MaxSessPossible;
+	UINT16 MaxSessPacketSize;
+	UINT16 NameCount;
+	NBIPXNameEntry Name[NameCount];
+}
+
+struct NBIPXDatagram
+{
+	 NETBIOSName SourceName;
+	NETBIOSName DestName;
+}

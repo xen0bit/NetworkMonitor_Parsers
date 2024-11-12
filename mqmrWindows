@@ -1,0 +1,342 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Queue Manager Management Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQMR]: Message Queuing (MSMQ): Queue Manager Management Protocol Specification
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1991.0
+//#
+//#  Revision Class and Date:Major, 10/16/2009
+//#                          Minor, 4/23/2010
+//#
+//####
+
+Protocol MQMR = FormatString( "%s %s%s%s%s%s", 
+	Property.MQMRMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.MQMRSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.MQMRSummary : "" )
+{
+	[Property.MQMRSummary = ""]
+	[Property.MQMRMethodName = MQMRMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct RQMMgmtGetInfo
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQMRSummary = FormatString( "Cp=%u", Cp )]
+									Struct
+									{
+										MQMRMgmtObject ObjectFormat;
+										Align4 Pad1;
+										UINT32 Cp;
+										MQMRPropertyIdentifyArray PropertyIdentifyArray;
+										MQMRPropertyValueArray PropertyValueArray; 
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQMRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										MQMRPropertyValueArray PropertyValueArray;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct RQMMgmtAction
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQMRSummary = FormatString( "LpwszAction=%u", LpwszAction )]
+									Struct
+									{
+										MQMRMgmtObject ObjectFormat;
+										NdrWideString LpwszAction=MQMRRQMMgmtActionLpwszActionTable(this.Array.ArrayData);
+									}
+							}
+						}
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQMRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("MQMR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "MQMR", "Unknown qmmgmt method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+//
+//	_MGMT_OBJECT
+//
+Struct MQMRMgmtObject
+{
+	[Conversation.MQMRDirectoryObjectType$[Property.MSRPCCallId]=this.value]
+	NdrEnum Value = MQMRMgmtObjectTypeTable(this.value);
+	MQMRNestedMgmtObjectUnion UnionObject;
+}
+
+Table MQMRMgmtObjectTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "MGMT_MACHINE - A machine management object.";
+		Case 2: "MGMT_QUEUE - A queue management object.";
+		Case 3: "MGMT_SESSION - A session management object.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_nested___MGMT_OBJECT
+//
+Struct MQMRNestedMgmtObjectUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 padUnion;
+	}
+	NdrEnum SwitchValue = MQMRMgmtObjectTypeTable(this.value);
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	Switch( SwitchValue.value )
+	{
+		Case 2:
+			Struct
+			{
+				[Property.QueueFormatPtr=this.ReferentID]
+				NdrPtr QueueFormatPtr;
+				Switch
+				{
+					Case Property.QueueFormatPtr!=0:
+						_struct{
+							MQMQCommonQueueFormat QueueFormat;
+							MQMQCommonQueueFormatRef QueueFormatRef;
+						}
+				}
+			}
+		Case 1:
+			UINT32 Reserved1;
+		Case 3:
+			UINT32 Reserved2;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "MQMR", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Table MQMRRQMMgmtActionLpwszActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case "CONNECT": "V1 - A machine action. Connects the computer to the network and the MSMQ Directory Service server.";
+		Case "DISCONNECT": "V2 - A machine action. Disconnects the computer from the network and the MSMQ Directory Service server.";
+		Case "TIDY": "V3 - A machine action. Cleans up empty message files. MSMQ does this every 6 hours. It is helpful when a large number of messages are deleted (purged or received by an application), and the application needs the disk space immediately.";
+		Case "PAUSE": "V4 - A queue action. Valid for outgoing queues only. Stops the sending of messages from the computer. The queue manager will not send messages to the applicable destination queue until a RESUME action is initiated.";
+		Case "RESUME": "V5 - A queue action. Valid for outgoing queues only. Restarts the sending of messages after a PAUSE action is initiated.";
+		Case "EOD_RESEND": "V6 - A queue action. Resends the pending transaction sequence.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMRMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "R_QMMgmtGetInfo";
+		Case 1: "R_QMMgmtAction";
+		Default: "unknown";
+	}
+}
+
+
+struct MQMRPropertyIdentifyArray
+{
+	[Property.MQMRPropertyIDTotalCount = this.MaxCount]
+	NDRConformant PropertyIdentifyArrayConf;
+	switch
+	{
+	case PropertyIdentifyArrayConf.MaxCount > 0:
+		_struct
+		{
+			switch( Conversation.MQMRDirectoryObjectType$[Property.MSRPCCallId] )
+			{
+			case 1: //ManagementMachine
+				_struct
+				{
+					[Property.MQMRPropertyCounter = 0,MaxLoopCount=Property.MQMRPropertyIDTotalCount ]
+					while MQMRDirObjMgmtPropIdElements[ Property.MQMRPropertyCounter < Property.MQMRPropertyIDTotalCount ]
+					{
+						[Conversation.MQMRPropertyID$[Property.MSRPCCallId, Property.MQMRPropertyCounter],Post.MQMRPropertyCounter = Property.MQMRPropertyCounter + 1]
+						UINT32 PropertyId = MQMRMachinePropertyIDTable( this );
+					}
+				}
+			case 2: //ManagementQueue
+				_struct
+				{
+					[MQMRPropertyCounter = 0,MaxLoopCount=Property.MQMRPropertyIDTotalCount]
+					while MQMRDirObjMgmtPropIdElements[ Property.MQMRPropertyCounter < Property.MQMRPropertyIDTotalCount ]
+					{
+						[Conversation.MQMRPropertyID$[Property.MSRPCCallId, Property.MQMRPropertyCounter],Post.Property.MQMRPropertyCounter = Property.MQMRPropertyCounter + 1]
+						UINT32 PropertyId = MQMRDirectoryObjectManagementQueuePROPIDTable( this );
+					}
+				}
+			}
+		}
+	}
+}
+
+struct MQMRPropertyValueArray
+{ 
+	[Property.MQMRPropertyIDTotalCount = this.MaxCount]
+	NdrConformant PropertyValueArrayConf;
+	switch
+	{
+	case PropertyValueArrayConf.MaxCount > 0:
+		_struct
+		{
+			switch( Conversation.MQMRDirectoryObjectType$[Property.MSRPCCallId] )
+			{ 
+			case 1: //MgmtMachine
+				_struct
+				{
+					[Property.MQMRPropertyValueCounter = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0,MaxLoopCount=Property.MQMRPropertyIDTotalCount]
+					while[ Property.MQMRPropertyValueCounter < Property.MQMRPropertyIDTotalCount ]
+					{
+						[Post.Property.MQMRPropertyValueCounter = Property.MQMRPropertyValueCounter + 1]
+						MQMQCommonPropVariant PropertyValue=MQMRMachinePropertyIDTable(Conversation.MQMRPropertyID$[Property.MSRPCCallId, Property.MQMRPropertyValueCounter] );
+					}
+					[Property.MQMRPropertyVariantReferenceCounter = 0,MaxLoopCount=Property.MQMRPropertyIDTotalCount]
+					while[ Property.MQMRPropertyVariantReferenceCounter < Property.MQMQCommonPropVariantPointerReferenceCount ]
+					{
+						[Post.Property.MQMRPropertyVariantReferenceCounter = Property.MQMRPropertyVariantReferenceCounter + 1]
+						MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMRPropertyVariantReferenceCounter] ) PropertyValueRef;
+					}
+				}
+			case 2: //MgmtQueue
+				_struct
+				{
+					[Property.MQMRPropertyValueCounter = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0,MaxLoopCount=Property.MQMRPropertyIDTotalCount]
+					while[ MQMRPropertyValueCounter < Property.MQMRPropertyIDTotalCount ]
+					{
+						[Post.Property.MQMRPropertyValueCounter = Property.MQMRPropertyValueCounter + 1]
+						MQMQCommonPropVariant Values=MQMRDirectoryObjectManagementQueuePROPIDTable( Conversation.MQMRPropertyID$[Property.MSRPCCallId, Property.MQMRPropertyValueCounter] );
+					}
+					[Property.MQMRPropertyVariantReferenceCounter = 0]
+					while [ Property.MQMRPropertyVariantReferenceCounter < Property.MQMQCommonPropVariantPointerReferenceCount ]
+					{
+						[Post.Property.MQMRPropertyVariantReferenceCounter = Property.MQMRPropertyVariantReferenceCounter + 1]
+						MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMRPropertyVariantReferenceCounter] ) Values;
+					}
+				}
+			}
+		}
+	}
+}
+
+Table MQMRDirectoryObjectManagementQueuePROPIDTable( value )
+{
+	switch( value )
+	{
+	case 1: "PropidMgmtQueuePathname - Path name of the queue";
+	case 2: "PropidMgmtQueueFormatname - Format name of the queue";
+	case 3: "PropidMgmtQueueType - Type of the queue";
+	case 4: "PropidMgmtQueueLocation - Whether the queue is located on the computer";
+	case 5: "PropidMgmtQueueXact - Whether the queue is transactional";
+	case 6: "PropidMgmtQueueForeign - Whether the queue is a foreign queue";
+	case 7: "PropidMgmtQueueMessageCount - The number of messages in the queue";
+	case 8: "PropidMgmtQueueBytesInQueue - Number of message bytes for all messages in the queue";
+	case 9: "PropidMgmtQueueJournalMessageCount - Number of messages in the queue journal";
+	case 10: "PropidMgmtQueueBytesInJournal - Number of message bytes for all messages in the queue journal";
+	case 11: "PropidMgmtQueueState - Connection state of the outgoing queue";
+	case 12: "PropidMgmtQueueNextHops - Routing message addresses to the next hop destination queue";
+	case 13: "PropidMgmtQueueEodLastAck - Sequence information for the last sent message with an order receipt acknowledgment";
+	case 14: "PropidMgmtQueueEodLastAckTime - Date and time for the last sent message with an order receipt acknowledgment";
+	case 15: "PropidMgmtQueueEodLastAckCount - Number of receipts for the last sent message with an order receipt acknowledgment";
+	case 16: "PropidMgmtQueueEodFirstNonAck - Sequence information for the first sent message with no order receipt acknowledgment";
+	case 17: "PropidMgmtQueueEodLastNonAck - Sequence information for the last sent message with no order receipt acknowledgment";
+	case 18: "PropidMgmtQueueEodNextSeq - Sequence information for the next message to be sent from the computer to the queue";
+	case 19: "PropidMgmtQueueEodNoReadCount - Number of sent messages with 'order' but no 'receipt' acknowledgement";
+	case 20: "PropidMgmtQueueEodNoAckCount - Number of sent messages with no order acknowledgment receipt";
+	case 21: "PropidMgmtQueueEodResendTime - Time when MSMQ will attempt to send a message to the queue again";
+	case 22: "PropidMgmtQueueEodResendInterval - Resend interval for outgoing queue messages with no order acknowledgment receipt";
+	case 23: "PropidMgmtQueueEodResendCount - Number of times the last message in the corresponding outgoing queue was sent";
+	case 24: "PropidMgmtQueueEodSourceInfo - All source computer sent transactional messages to target computer queue information";
+	case 25: "PropidMgmtQueueConnectionHistory - Queue connection state history array";
+	case 26: "PropidMgmtQueueSubqueueCount - The number of subqueues for a given queue";
+	case 27: "PropidMgmtQueueSubqueueNames - List of subqueue names for a given queue";
+	}
+}
+
+table MQMRMachinePropertyIDTable( value )
+{
+	switch( value )
+	{
+	case 1: "PropidMgmtMsmqActiveQueues - All the active queue names on the computer";
+	case 2: "PropidMgmtMsmqPrivateQ - Path names of all the private queues registered on the computer";
+	case 3: "PropidMgmtMsmqDsServer - Name of the current MSMQ Directory Service server for the computer";
+	case 4: "PropidMgmtMsmqConnected - Whether the computer queue manager has been disconnected from the network";
+	case 5: "PropidMgmtMsmqType - Computer operating system and MSMQ installation version and build information";
+	case 6: "PropidMgmtMsmqBytesInAllQueues - Number of message bytes stored in all the queues on the computer";
+	}
+}

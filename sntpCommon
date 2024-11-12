@@ -1,0 +1,151 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Network Time Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1305
+//#  Microsoft References:   [MS-SNTP]: Network Time Protocol (NTP) Authentication Extensions (10.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 12/23/2009
+//#
+//####
+
+[ByteOrder = BigEndian, NtpSummary = ""]
+[BuildConversationWithParent]
+Protocol SNTP = NtpSummary
+{
+	[Conversation.ConversationDescription = FormatString("(%u - %u) ConvID = %d", Property.SourcePort,Property.DestinationPort, ConvID)]
+	[NtpSummary = FormatString( "NTPv%u %s, Leap = %u, Mode = %u", Flags.Version, (Flags.Mode == 1 || Flags.Mode == 3 )? "Request" : (Flags.Mode == 2 || Flags.Mode == 4 )? "Response" : Flags.Mode == 5 ? "Broadcast":"", Flags.Leap, Flags.Mode )]
+	UINT8 Flags = FormatString( "Version = %u, Leap = %u, Mode = %u", Version, Leap, Mode )
+	{
+		UINT8 Leap:2 = FormatString("    (%s) %s",this.ToBitString,NtpLeapTable( this ));
+		UINT8 Version:3 = FormatString(" (%s) %u", this.ToBitString,this );
+		UINT8 Mode:3 = FormatString("    (%s) %s",this.ToBitString,NtpModeTable( this ));
+	};
+
+	UINT8 Stratum = NtpStratumTable( this );
+
+	INT8 PollingInterval = FormatString( "%d (%d Seconds)", this, 1 << this );
+	INT8 Precision = NtpPrecisionTable( this );
+
+	[DataFieldByteOrder = BigEndian]
+	FixedPoint32 RootDelay = FormatString( "%f Seconds", this );
+	[DataFieldByteOrder = BigEndian]
+	FixedPoint32 RootDispersion = FormatString( "%f Seconds", this );
+	
+	switch(Stratum)
+	{
+		case 0:
+		case 1: AsciiString(4) ReferenceClockIdentifier  = SNTPRefClockIdentiferTable(AsciiString(FrameData,FrameOffset,4));
+		default: Ipv4Address RefClockIdentifierAddress;
+	}
+	
+	NTPTimeValue ReferenceTimestamp = UINT32( FrameData, Offset ) > 0 ? FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss'}.%t{ffff}", this, this, this ) : "NULL";
+	NTPTimeValue OriginateTimestamp = UINT32( FrameData, Offset ) > 0 ? FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss'}.%t{ffff}", this, this, this ) : "NULL";
+	NTPTimeValue ReceiveTimestamp   = UINT32( FrameData, Offset ) > 0 ? FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss'}.%t{ffff}", this, this, this ) : "NULL";
+	NTPTimeValue TransmitTimestamp  = UINT32( FrameData, Offset ) > 0 ? FormatString( "%T{MM/dd/yyyy}, %t{hh':'mm':'ss'}.%t{ffff}", this, this, this ) : "NULL";
+
+	Switch
+	{
+		Case FrameLength - Offset > 0:
+		Struct
+		{
+			[NtpSummary = NtpSummary + ", RID = " + FormatString("%u",Rid)]
+			[DataFieldByteOrder = LittleEndian]
+			UINT32 KeyIdentifier = FormatString("%u",Rid)
+			{
+				UINT32 Rid:31 = FormatString( " (%s)%u", this.ToBitString,this );
+				UINT32 Sign:1 = FormatString( "(%s)%u - Response Packet Is Signed Using The %s Password", this.ToBitString, this, this ? "Previous" : "Current" );
+			}
+
+			Blob(16) CryptoChecksum;
+		}
+	}
+}
+Table NtpModeTable( value )
+{
+	Switch( value )
+	{
+		Case 0x00: FormatString( "Reserved (0x%02X)", value );
+		Case 0x01: FormatString( "The Peer Is Running In Symmetric Active Mode (0x%02X)", value );
+		Case 0x02: FormatString( "The Peer Is Running In Symmetric Passive Mode (0x%02X)", value );
+		Case 0x03: FormatString( "The Peer Is Running In Client Mode (0x%02X)", value );
+		Case 0x04: FormatString( "The Peer Is Running In Server Mode (0x%02X)", value );
+		Case 0x05: FormatString( "The Peer Is Running In Broadcast Mode (0x%02X)", value );
+		Case 0x06: FormatString( "Used To Identify Control Messages (0x%02X)", value );
+		Case 0x07: FormatString( "Used To Identify Private Messages (0x%02X)", value );
+		Default  : FormatString( "No Description Available (0x%02X)", value );
+	}
+}
+
+Table NtpLeapTable( Leap )
+{
+	Switch( Leap )
+	{
+		Case 0x00: FormatString( "No Warning Is Used (0x%02X)", Leap );
+		Case 0x01: FormatString( "The Last Minute Has 61 Seconds (0x%02X)", Leap );
+		Case 0x02: FormatString( "The Last Minute Has 59 Seconds (0x%02X)", Leap );
+		Case 0x03: FormatString( "The Clock Is Not Synchronized (0x%02X)", Leap );
+		Default  : FormatString( "No Description Available (0x%02X)", Leap );
+	}
+}
+
+Table NtpStratumTable( Stratum )
+{
+	Switch( Stratum )
+	{
+		Case 0x00: FormatString( "No Stratum Level Specified (0x%02X)", Stratum );
+		Case 0x01: FormatString( "Stratum Level Is A Primary Time Reference (0x%02X)", Stratum );
+		Default  : FormatString( "Stratum Level Is A Secondary Time Reference (0x%02X)", Stratum );
+	}
+}
+
+Table NtpPrecisionTable( Precision )
+{
+	Switch( Precision )
+	{
+		Case 0xFF: FormatString( "0.500000 Seconds (0x%02X)", Precision );
+		Case 0xFE: FormatString( "0.250000 Seconds (0x%02X)", Precision );
+		Case 0xFD: FormatString( "0.125000 Seconds (0x%02X)", Precision );
+		Case 0xFC: FormatString( "0.062500 Seconds (0x%02X)", Precision );
+		Case 0xFB: FormatString( "0.031250 Seconds (0x%02X)", Precision );
+		Case 0xFA: FormatString( "0.015625 Seconds (0x%02X)", Precision );
+		Case 0xF9: FormatString( "0.007813 Seconds (0x%02X)", Precision );
+		Case 0xF8: FormatString( "0.003906 Seconds (0x%02X)", Precision );
+		Case 0xF7: FormatString( "0.001953 Seconds (0x%02X)", Precision );
+		Case 0xF6: FormatString( "0.000977 Seconds (0x%02X)", Precision );
+		Case 0xF5: FormatString( "0.000488 Seconds (0x%02X)", Precision );
+		Case 0xF4: FormatString( "0.000244 Seconds (0x%02X)", Precision );
+		Case 0xF3: FormatString( "0.000122 Seconds (0x%02X)", Precision );
+		Case 0xF2: FormatString( "0.000061 Seconds (0x%02X)", Precision );
+		Case 0xF1: FormatString( "0.000031 Seconds (0x%02X)", Precision );
+		Case 0xF0: FormatString( "0.000015 Seconds (0x%02X)", Precision );
+		Case 0xEF: FormatString( "0.000008 Seconds (0x%02X)", Precision );
+		Case 0xEE: FormatString( "0.000004 Seconds (0x%02X)", Precision );
+		Case 0xED: FormatString( "0.000002 Seconds (0x%02X)", Precision );
+		Default  : FormatString( "No Description Available (0x%02X)", Precision );
+	}
+}
+
+Table SNTPRefClockIdentiferTable( Value )
+{
+	switch( Value )
+	{
+		case "DCN":      "DCN routing protocol";
+		case "NIST":     "NIST public modem";
+		case "TSP":      "TSP time protocol";
+		case "DTS":      "Digital Time Service";
+		case "ATOM":     "Atomic clock (calibrated)";
+		case "VLF":      "VLF radio";
+		case "callsign": "Generic radio";
+		case "LORC":     "LORAN-C radionavigation";
+		case "GOES":     "GOES UHF environment satellite";
+		case "GPS":      "GPS UHF satellite positioning";
+		case "LOCL":     "Uncalibrated Local Clock ";
+		case "VMTP":     "The client is utilizing the virtualization host's hardware as a time source.";
+		default:         "Unknown Reference Source";
+	}
+}

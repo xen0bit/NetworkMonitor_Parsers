@@ -1,0 +1,345 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Statement of Health for Network Access Protection (NAP) Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-HCEP]: Health Certificate Enrollment Protocol Specification
+//#                          [MS-SOH]: Statement of Health for Network Access Protection (NAP) Protocol Specification
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 11/17/2009
+//#
+//####
+
+Struct SOH = SoHSummary
+{
+	Struct SOHHeader
+	{
+		UINT16 OuterType
+		{
+			UINT16 Reserved:2 = FormatString("  (%s)", this.ToBitString);
+			UINT16 OuterType:14 = FormatString("(%s) %s", this.ToBitString, "Vendor Specific");
+		};
+		UINT16 Length;
+		[SoHSummary = "Vendor = " + this.ToString]
+		UINT32 IANASMICode = EnterpriseNumberTable(this);
+		[SoHSummary = SoHSummary + ", Version " + FormatString("%u", this)]
+		UINT16 InnerType;
+		UINT16 InnerLength;
+	}
+	[Local.VendorBaseOffset = FrameOffset]
+	Switch (SoHHeader.IANASMICode)
+	{
+		Case 311:
+			_Struct Microsoft
+			{
+				Switch 
+				{
+					Case SoHHeader.InnerType == 2:
+						Struct SOHModeSubHeader
+						{
+							UINT16 OuterType
+							{
+								UINT16 Reserved:2 = FormatString("  (%s)", this.ToBitString);
+								UINT16 OuterType:14 = FormatString("(%s) %s", this.ToBitString, "Vendor Specific");
+							};
+							UINT16 Length;
+							UINT32 IANASMICode = EnterpriseNumberTable(this);
+							BLOB(24) CorrelationId;
+							UINT8 IntentFlag = this ? "SoH request message" : "SoHR response message";
+							UINT8 ContentType = MUSTBeSetToTable(this, "0");
+						}
+				}
+				Struct SOHSSoH = SystemHealthEntityId.SystemHealthId.ToString
+				{
+					SOHAttribute SystemHealthEntityId;
+					SOHAttribute VendorSpecificAttribute;
+				}
+				while [FrameOffset - Local.VendorBaseOffset < SoHHeader.InnerLength]
+				{
+					Struct SOHReportEntry = SystemHealthId.SystemHealthId.ToString
+					{
+						SOHAttribute SystemHealthId;
+						while [(FrameOffset - Local.VendorBaseOffset < SoHHeader.InnerLength) && !((UINT16(FrameData, FrameOffset) & 0x3FFF) == 2)]
+						{
+							SOHAttribute SOHAttribute;
+						}
+					}
+				}
+			}
+		default:
+			BLOB(SoHHeader.Length - 6) VendorSpecificData;
+	}
+}
+
+Table SOHAttributeTypeTable(code)
+{
+	Switch (code)
+	{
+		Case 0: "Reserved";
+		Case 1: "Reserved";
+ 		Case 2: "SystemHealthId";
+ 		Case 3: "Ipv4FixupServers";
+ 		Case 4: "ComplianceResultCodes";
+ 		Case 5: "TimeOfLastUpdate";
+ 		Case 6: "ClientId";
+ 		Case 7: "VendorSpecific";
+ 		Case 8: "HealthClass";
+ 		Case 9: "SoftwareVersion";
+ 		Case 10: "ProductName";
+ 		Case 11: "HealthClassStatus";
+ 		Case 12: "SoHGenerationTime";
+ 		Case 13: "ErrorCodes";
+ 		Case 14: "FailureCategory";
+  		Case 15: "Ipv6FixupServers";
+		default: "Reserved";
+	}
+}
+
+Table SOHAttributeFailureCategoryTable(code)
+{
+	Switch (code)
+	{
+		Case 0: "failureCategoryNone";
+		Case 1: "failureCategoryOther";
+		Case 2: "failureCategoryClientComponent";
+		Case 3: "failureCategoryClientCommunication";
+		Case 4: "failureCategoryServerComponent";
+		Case 5: "failureCategoryServerCommunication";
+		default: FormatString("Undefined Value (%u)", code);
+	}
+}
+
+Struct SOHAttribute = SOHAttributeTypeTable(type)
+{
+	UINT16 Type
+	{
+		UINT16 Mandatory: 1 = FormatString("(%s) %s", this.ToBitString,this?"Mandatory TLV":"Optional TLV");
+		UINT16 Reserved: 1 = FormatString(" (%s)", this.ToBitString);
+		UINT16 TLVType:14 = FormatString("   (%s) %s", this.ToBitString, SoHAttributeTypeTable(this));
+	};
+	[Property.SohAttributeLength]
+	UINT16 Length;
+	[DataFieldFrameLength = FrameOffset + Length]
+	Switch (Type.TLVType)
+	{
+		Case 2: SOHId SystemHealthId;
+		Case 3: IPV4Address IPv4FixupServers;
+		Case 4: HRESULT ComplianceResultCodes[Length/4];
+		Case 5: FILETIME TimeOfLastUpdate;
+		Case 6: BLOB(Length) ClientId;
+		Case 7:
+			_Struct VendorSpecific
+			{
+				[Local.SoHBaseOffset = FrameOffset]
+				UINT32 VendorID = EnterpriseNumberTable(this);
+				Switch (VendorID)
+				{
+					Case 311:
+						while [FrameOffset - Local.SoHBaseOffset < Length]
+						{
+							SOHMSVendorSpecificSoHValue MSVendorSpecificValue;
+						}
+					default:
+						BLOB(Length - 4) VendorSpecificSOHValue;
+				}
+			}
+		Case 8: UINT8 HealthClass = WSHHealthClassIDTable(this);
+		Case 9: UINT32 SoftwareVersion = WSHVersionTable(this);
+		Case 10: [DataFieldByteOrder = LittleEndian]UnicodeString(Length / 2) ProductName;
+		Case 11: 
+			Switch(UINT32(FrameData,FrameOffset))
+				{
+					Case 0x00FF0008:
+						UINT32 HealthClassErrorCode = FormatString("Error:%s",WSHStatusCodeTable(this));
+					default:
+					_Struct SpecorError
+					{
+						Switch(UINT8(FrameData,FrameOffset))
+						{
+							Case 0:
+								UINT32 HealthClassStatusCode=FormatString("Status:%s","No Error")
+								{
+									UINT32 Ignored:28 = FormatString("(%s)%s",this.toBitString,"Ignored");
+									UINT32 B3:1 = FormatString("      (%s)%s",this.toBitString,this?"Product is snoozed":"Product is not snoozed");
+									UINT32 B2:1 = FormatString("      (%s)%s",this.toBitString,this?"Microsoft Product":"Not Microsoft Product");
+									UINT32 B1:1 = FormatString("      (%s)%s",this.toBitString,this?"The Product is updated":"The Product is not updated");
+									UINT32 B0:1 = FormatString("      (%s)%s",this.toBitString,this?"Product enabled":"Product unabled");
+								};
+							Case 0xC0:
+								UINT32 HealthClassErrorCode = FormatString("Error:%s",WSHStatusCodeTable(this));
+						}
+					}
+				};
+		Case 12: FILETIME SoHGenerationTime;
+		Case 13: HRESULT ErrorCodes[Length/4];
+		Case 14: UINT8 FailureCategory = SoHAttributeFailureCategoryTable(this);
+		Case 15: IPV6Address IPv6FixupServers[Length/16];
+		default: BLOB(Length) Value;
+	}
+}
+
+
+// NAP System SoH Request and Response
+// http://msdn.microsoft.com/library/default.asp?url=/library/en-us/randz/protocol/nap_peap_extension.asp
+Table SOHSSOHAttributeTypeTable(code)
+{
+	Switch (code)
+	{
+		Case 1: "MS-Machine-Inventory";
+		Case 2: "MS-Quarantine-State";
+		Case 3: "MS-Packet-Info";
+		Case 4: "MS-SystemGenerated-Ids";
+		Case 5: "MS-MachineName";
+		Case 6: "MS-CorrelationId";
+		Case 7: "MS-Installed-Shvs";
+		Case 8: "MS-Machine-Inventory-Ex";
+		default: FormatString("Undefined Value (%u)", code);
+	}
+}
+
+Table SOHSSOHMSQuarantineStateQStateFlagTable(code)
+{
+	Switch (code)
+	{
+		Case 1: "Network connectivity is not being restricted";
+		Case 2: "Network connectivity is not being restricted but may be at a later time";
+		Case 3: "Network connectivity is being restricted";
+		default: FormatString("Undefined Value (%u)", code);
+	}
+}
+
+Table SOHSSOHMSMachineInventoryExProductTypeTable(code)
+{
+	Switch (code)
+	{
+		Case 0x0000001: "The system is a client";
+		Case 0x0000002: "The system is a domain controller running on a Windows server operating system";
+		Case 0x0000003: "The system is a server";
+		default: FormatString("Undefined Value (%u)", code);
+	}
+}
+
+Struct SOHId = FormatString("%s, ID = %u", EnterpriseNumberTable(VendorCode), Id)
+{
+	UINT24 VendorCode = EnterpriseNumberTable(this);
+	UINT8 Id;
+}
+
+Table SOHExtStateTable(code)
+{
+	Switch (code)
+	{
+		Case 0: "No evaluation was done";
+		Case 1: "Machine is transitioning from one state to another";
+		Case 2: "Machine is infected, implying a bad health state";
+		Case 3: "Evaluation was done, but extended information could not be determined";
+		default: FormatString("Undefined Value (%u)", code);
+	}
+}
+
+Table SOHOSVersionTable( osVersionMajor, osVersionMinor )
+{
+	Switch
+	{
+		Case osVersionMajor == 0x00000004 && osVersionMinor == 0x00000000: "The operating system is Windows NT 4.0";
+		Case osVersionMajor == 0x00000005 && osVersionMinor == 0x00000000: "The operating system is Windows 2000";
+		Case osVersionMajor == 0x00000005 && osVersionMinor == 0x00000001: "The operating system is Windows XP";
+		Case osVersionMajor == 0x00000005 && osVersionMinor == 0x00000002: "The operating system is Windows Server 2003 or Windows Server 2003 R2";
+		Case osVersionMajor == 0x00000006 && osVersionMinor == 0x00000000: "The operating system is Windows Vista or Windows Server 2008";
+		Case osVersionMajor == 0x00000006 && osVersionMinor == 0x00000001: "The operating system is Windows 7 or Windows Server 2008 R2";
+		default: FormatString("Unknown version (%u, %u)", osVersionMajor, osVersionMinor);
+	}
+}
+
+Table SOHProcessorArchitecture( value )
+{
+	Switch(value)
+	{
+		Case 0x0000: "x86 architecture";
+		Case 0x0006: "Intel Itanium Processor Family (IPF)";
+		Case 0x0009: "x64 (AMD or Intel) architecture";
+		Case 0xffff: "Unknown processor";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+
+Struct SOHMSVendorSpecificSoHValue = SOHSSOHAttributeTypeTable(AttributeType)
+{
+	UINT8 AttributeType = SOHSSOHAttributeTypeTable(this);
+	Switch (AttributeType)
+	{
+		Case 1:
+			_Struct MSMachineInventory
+			{
+				Struct osVersion = SOHOSVersionTable( osVersionMajor, osVersionMinor )
+				{
+					UINT32 osVersionMajor;
+					UINT32 osVersionMinor;
+				}
+				UINT32 osVersionBuild;
+				UINT16 spVersionMajor;
+				UINT16 spVersionMinor;
+				UINT16 procArch = SOHProcessorArchitecture(this);
+			}
+		Case 2: 
+			_Struct MSQuarantineState
+			{
+				UINT16 Flags
+				{
+					UINT16 Reserved1:8 = FormatString("(%s)", this.ToBitString);
+					UINT16 ExtState:4 = FormatString(" (%s) %s", this.ToBitString, SOHExtStateTable(this));
+					UINT16 f:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Remediation required by policy" : "Remediation not required by policy");
+					UINT16 qState:3 = FormatString("   (%s) %s", this.ToBitString, SOHSSOHMSQuarantineStateQStateFlagTable(this));
+				};
+				FILETIME probTime;
+				UINT16 urlLenInBytes;
+				MBCString(urlLenInBytes) url;
+			}
+		Case 3: 
+			UINT8 MSPacketInfo
+			{
+				UINT8 Reserved:3 = FormatString("(%s)", this.ToBitString);
+				[SoHSummary = SoHSummary + ", " + (this ? "Request" : "Response")]
+				UINT8 r:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Request" : "Response");
+				UINT8 Vers:4 = FormatString("  (%s) %u", this.ToBitString, this);
+			};
+		Case 4:
+			_Struct MSSystemGeneratedIds
+			{
+				UINT16 Length;
+				SOHId IdList[Length / 4];
+			}
+		Case 5: 
+			_Struct MSMachineName
+			{
+				UINT16 machineNameLenInBytes;
+				MBCString(machineNameLenInBytes) machineName;
+			}
+		Case 6: 
+			BLOB(24) correlationId;
+		Case 7:
+			_Struct MSInstalledShvs
+			{
+				UINT16 Length;
+				SOHId IdList[Length / 4];
+			}
+		Case 8: 
+			_Struct MSMachineInventoryEx
+			{
+				UINT32 Reserved;
+				UINT8 ProductType = SOHSSOHMSMachineInventoryExProductTypeTable(this);
+			}
+	}
+}
+
+// AsnBer Encoding Object By OID
+// 1.3.6.1.4.1.311.47.1.1
+Struct SoHCertificateExtension = SoH.ToString
+{
+	[Post.NAPPEAPExtLength = LengthValue]
+	AsnBerInfo SequenceHeader;
+	[DataFiledFrameLength = LengthValue, EmbeddedProtocol]
+	SoH SoH;
+}

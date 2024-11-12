@@ -1,0 +1,1351 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  ECMPv6, Internet Control Message Protocol for IPv6
+//#                          MLD, Multicast Listener Discovery
+//#                          MRD, Multicast Router Discovery
+//#                          SEND, SEcure Neighbor Discovery
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2461, 2463, 2894, 3122, 3810, 3775, 3971
+//#                          http://www.iana.org/assignments/icmpv6-parameters
+//#                          http://www.ietf.org/internet-drafts/draft-ietf-ipngwg-icmp-name-lookups-15.txt
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DefaultTimeOut = ICMPv6ConversationTimeout]
+Protocol ICMPv6 = FormatString("%s%s%s%s",
+								ICMPv6TypeTable(MessageType),
+								Property.ICMPv6IDExist ? ", ID = " + Property.ICMPv6Identifier : "",
+								Property.ICMPv6SeqExist ? ", Seq = " + Property.ICMPv6SequenceNumber :"",
+								Property.ICMPv6TargExist ? ", Target = " + Property.ICMPv6Target : ""
+								)
+{
+	UINT8 MessageType = FormatString("%s, %d(%#x)",ICMPv6TypeTable(this), this, this);
+	switch(MessageType)
+	{
+		case   1:
+			_struct DestUnreachable
+			{
+				UINT8 Code = ICMPv6DestUnreachableCodeTable(this);
+				UINT16 Checksum;
+				UINT32 Unused;
+				ICMPv6IPHeader InvokingPacket;
+			}
+		case   2:
+			_struct PacketTooBig
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 MTU;
+				ICMPv6IPHeader InvokingPacket;
+			}
+		case   3:
+			_struct TimeExceeded
+			{
+				UINT8 Code = ICMPv6TimeExceededCodeTable(this);
+				UINT16 Checksum;
+				UINT32 Unused;
+				ICMPv6IPHeader InvokingPacket;
+			}
+		case   4:
+			_struct ParameterProblem
+			{
+				UINT8 Code = ICMPv6ParameterProblemCodeTable(this);
+				UINT16 Checksum;
+				UINT32 Pointer;
+				ICMPv6IPHeader InvokingPacket;
+			}
+		case 128:
+			_struct EchoRequest
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				[
+					ICMPv6IDExist = TRUE,
+					ICMPv6Identifier,
+					BuildConversationWithParent( Identifier),
+					Post.Conversation.ConversationDescription = FormatString("(ID: %d) ConvID = %d", Identifier,ConvID)
+				]
+				UINT16 Identifier;
+				[ICMPv6SeqExist = TRUE, ICMPv6SequenceNumber]
+				UINT16 SequenceNumber;
+				//Data Zero or more octets of arbitrary data
+				[Property.ICMPEchoData = AsciiString(FrameData, FrameOffset, frameLength - frameOffset)]
+				BLOB(FrameLength - FrameOffset) EchoData;
+			}
+		case 129:
+			_struct EchoReply
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				[
+					ICMPv6IDExist = TRUE,
+					ICMPv6Identifier,
+					BuildConversationWithParent( Identifier),
+					Post.Conversation.ConversationDescription = FormatString("(ID: %d) ConvID = %d", Identifier, ConvID)
+				]
+				UINT16 Identifier;
+				[ICMPv6SeqExist = TRUE, ICMPv6SequenceNumber]
+				UINT16 SequenceNumber;
+				//Data The data from the invoking Echo Request message
+				[Property.ICMPEchoData = AsciiString(FrameData, FrameOffset, frameLength - frameOffset)]
+				BLOB(FrameLength - FrameOffset) EchoData;
+			}
+		case 130:
+		case 131:
+		case 132:
+			//RFC 2710, 3810
+			_struct MulticastListener
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 MaximumResponseCode = FormatString("%d", id == 1 ? (mant | 0x1000) << (exp+3) : this )
+				{
+					UINT16 id:1 = FormatString("  (%s) %d", this.ToBitString, this);
+					UINT16 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+					UINT16 mant:12 = FormatString("(%s) %d", this.ToBitString, this);
+				};
+				UINT16 Reserved;
+				IPv6Address MulticastAddress;
+				switch
+				{
+					case FrameOffset < FrameLength:
+						_struct SourceAddresses
+						{
+							UINT8 Flags
+							{
+								UINT8 Resv:4 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+								UINT8 S:1 = FormatString("   (%s) %s", this.ToBitString,
+																this ? "S: Supress router side processing"
+																	: "S: Do not supress router side processing");
+																		
+								UINT8 QRV:3 = FormatString(" (%s) %d", this.ToBitString, this);
+							};
+							UINT8 QQIC = FormatString("Querier's Query Interval %#x (%d seconds)", this, id == 0 ? this : (mant | 0x10)<<(exp + 3) )
+							{
+								UINT8 id:1 = FormatString("  (%s) %d", this.ToBitString, this);
+								UINT8 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+								UINT8 mant:4 = FormatString("(%s) %d", this.ToBitString, this);
+							};
+							UINT16 NumOfSources;
+							switch
+							{
+								case NumOfSources > 0:
+									struct SourceAddresses
+									{
+										IPv6Address IPAddress[ NumOfSources ];
+									}
+							}
+						}
+				}
+				
+			}
+		case 133:
+			_struct RouterSolicitation
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 Reserved;
+				//options: Source link-layer address
+			}
+		case 134:
+			_struct RouterAdvertisement
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT8 CurHopLimit;
+				struct RouterAdvertisementFlag
+				{
+					UINT8 M:1 = FormatString("               (%s) %s", this.ToBitString,
+													this ? "Managed address configuration"
+														: "Not managed address configuration");
+															
+					UINT8 O:1 = FormatString("               (%s) %s", this.ToBitString,
+													this ? "Other stateful configuration"
+														: "Not other stateful configuration");
+															
+					UINT8 A:1 = FormatString("               (%s) %s", this.ToBitString,
+													this ? "Mobile IP Home Agent"
+														: "Not a Mobile IP Home Agent");
+															
+					UINT8 RouterPreference:2 = FormatString("(%s) %s",this.ToBitString, ICMPv6RouterPreferenceTable(this));
+					UINT8 Reserved:3 = FormatString("        (%s)", this.ToBitString);
+				}
+				UINT16 RouterLifetime;
+				UINT32 ReachableTime;
+				UINT32 RetransTimer;
+				//options: Source link-layer address/MTU/Prefix Information
+			}
+		case 135:
+			_struct NeighborSolicitation
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 Reserved;
+				[Post.ICMPv6TargExist = TRUE, ICMPv6Target = this.ToString]
+				IPv6Address TargetAddress;
+				//options Source link-layer address
+			}
+		case 136:
+			_struct NeighborAdvertisement
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 NeighborAdvertisementFlag
+				{
+					UINT32 R:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Router":"Not router");
+					UINT32 S:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Solicited":"Not solicited");
+					UINT32 O:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Override":"Not override");
+					UINT32 Rsv:29 = FormatString("(%s)", this.ToBitString);
+				};
+				[ICMPv6TargExist = TRUE, ICMPv6Target = this.ToString]
+				IPv6Address TargetAddress;
+				//options Source link-layer address
+			}
+		case 137:
+			_struct Redirect
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 Reserved;
+				[ICMPv6TargExist = TRUE, ICMPv6Target = this.ToString]
+				IPv6Address TargetAddress;
+				IPv6Address DestAddress;
+				//options Source link-layer address
+			}
+		case 138:
+			//RFC 2894
+			_struct RouterRenumbering
+			{
+				UINT8 Code = ICMPv6RouterRenumberingCodeTable(this);
+				UINT16 CheckSum;
+				UINT32 SequenceNumber;
+				UINT8 SegmentNumber;
+				UINT8 Flags
+				{
+					UINT8 T:1   = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Processing is to be simulated and no configuration changes are to be made"
+														: "Router configuration is to be modified");
+															
+					UINT8 R:1   = FormatString("  (%s) %s", this.ToBitString,
+													this ? "The router MUST send a Result message upon completion of processing the Command message"
+														: "A Result message MUST NOT be sent");
+															
+					UINT8 A:1   = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Command MUST be applied to all interfaces"
+														: "Command MUST NOT be applied to interfaces which are administratively shut down");
+															
+					UINT8 S:1   = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Command MUST be applied  only to interfaces which belong to the same site as the interface to which the Command is addressed"
+														: "Command MUST be applied to interfaces regardless of which site they belong to");
+															
+					UINT8 P:1   = FormatString("  (%s) %s", this.ToBitString,
+													this ? "This flag MUST be ignored unless the router treats interfaces as belonging to different 'sites'"
+														: "Result message contains the complete report of processing the Command");
+															
+					UINT8 Res:3 =FormatString("(%s) %s",this.ToBitString, "Reserved");
+				};
+				UINT16 MaxDelay = FormatString("%u milliseconds", this);
+				UINT32 Reserved;
+				switch (Code)
+				{
+					case 0:
+						while CmdMessageBody[ frameOffset < frameLength ]
+						{
+							ICMPv6PrefixControlOperations PrefixControlOperations;
+						};
+					case 1:
+						while ResultMessageBody[ frameOffset < frameLength]
+						{
+							ICMPv6MatchReport MatchReport;
+						};
+				}
+			}
+		case 139:
+			//draft-ietf-ipngwg-icmp-name-lookups-15.txt
+			_struct NodeInformationQuery
+			{
+				UINT8 Code = ICMPv6NIQueryCodeTable( this );
+				UINT16 CheckSum;
+				UINT32 Reserved;
+				UINT16 Qtype = ICMPv6NIQTypeTable( this );
+				UINT16 Flags
+				{
+					switch(Qtype)
+					{
+						case 3:
+							_struct NodeAddressFlags
+							{
+								UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+								UINT16 A:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "All the Responder's unicast addresses (of the specified scope(s)) are requested"
+																	: "Only those addresses are requested which belong to the interface which are associated with the Subject Address/Name");
+																		
+								UINT16 C:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "IPv4-compatible and IPv4-mapped addresses are requested"
+																	: "IPv4-compatible and IPv4-mapped addresses are NOT requested");
+																		
+								UINT16 L:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "Link-local addresses are requested"
+																	: "Link-local addresses are NOT requested");
+																		
+								UINT16 S:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "Site-local addresses are requested"
+																	: "Site-local addresses are NOT requested");
+																		
+								UINT16 G:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "Global-scope addresses are requested"
+																	: "Global-scope addresses are NOT requested");
+								UINT16 Unused:10 = FormatString("  (%s)",this.ToBitString);
+							}
+						case 4:
+							_struct Ipv4AddressFlags
+							{
+								UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+								UINT16 A:1 = FormatString("       (%s) %s", this.ToBitString,
+																this ? "All the Responder's unicast addresses are requested"
+																	: "Only those addresses are requested which belong to the interface which are associated with the Subject Address/Name");
+								UINT16 Unused:14 = FormatString("  (%s)",this.ToBitString);
+							}
+					}
+				};
+				BLOB(8) Nonce;
+				// These are Datas
+				switch(Code)
+				{
+					case  0:
+						IPv6Address SubjectIpv6Address;
+					case  1:
+						DNSString SubjectName;
+					case  2:
+						IPv4Address SubjectIpv4Address;
+					default:
+						ReportParserError(ParserErrorProtocolClassPublic, "ICMPv6", "Unhandled ICMPv6 Node Information Query Code") NICodeError;
+				}
+			}
+		case 140:
+			//draft-ietf-ipngwg-icmp-name-lookups-15.txt
+			_struct NodeInformationReply
+			{
+				UINT8 Code = ICMPv6NIReplyCodeTable( this );
+				UINT16 CheckSum;
+				UINT32 Reserved;
+				UINT16 Qtype = ICMPv6NIQTypeTable( this );
+				UINT16 Flags
+				{
+					switch(Qtype)
+					{
+						case 3:
+							_struct NodeAddressFlags
+							{
+								UINT16 T:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "The set of addresses is incomplete for space reasons"
+																	: "The set of addresses is complete");
+																		
+								UINT16 A:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "All the Responder's unicast addresses (of the specified scope(s)) are requested"
+																	: "Only those addresses are requested which belong to the interface which are associated with the Subject Address/Name");
+																		
+								UINT16 C:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "IPv4-compatible and IPv4-mapped addresses are requested"
+																	: "IPv4-compatible and IPv4-mapped addresses are NOT requested");
+																		
+								UINT16 L:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "Link-local addresses are requested"
+																	: "Link-local addresses are NOT requested");
+																		
+								UINT16 S:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "Site-local addresses are requested"
+																	: "Site-local addresses are NOT requested");
+																		
+								UINT16 G:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "Global-scope addresses are requested"
+																	: "Global-scope addresses are NOT requested");
+								UINT16 Unused:10 = FormatString("(%s)",this.ToBitString);
+							}
+						case 4:
+							_struct Ipv4AddressFlags
+							{
+								UINT16 T:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "The set of addresses is incomplete for space reasons"
+																	: "The set of addresses is complete");
+																		
+								UINT16 A:1 = FormatString("     (%s) %s", this.ToBitString,
+																this ? "All the Responder's unicast addresses are requested"
+																	: "Only those addresses are requested which belong to the interface which are associated with the Subject Address/Name");
+								UINT16 Unused:14 = FormatString("(%s)",this.ToBitString);
+							}
+					}
+				};
+				// These are Datas
+				switch(Code)
+				{
+					case 0:
+						switch(Qtype)
+						{
+							case  2:
+								_struct NodeNames
+								{
+									//[ICMPv6NINodeNameOffset = FrameOffset]
+									UINT32 TTL;
+									while NodeNames[frameOffset < frameLength]
+									{
+										//This feature is not supported for now.
+										//DNSString(ICMPv6NINodeNameOffset) NodeName;
+										DNSString NodeName;
+									}
+								}
+							case  3:
+								while UnicastAddresses[frameOffset < frameLength]
+								{
+									UINT32 TTL;
+									IPv6Address UnicastAddress;
+								}
+							case  4:
+								while Ipv4Addresses[frameOffset < frameLength]
+								{
+									UINT32 TTL;
+									IPv4Address Ipv4Address;
+								}
+							default:
+								switch
+								{
+									case frameOffset < frameLength:
+										_struct UnhandledData
+										{
+											ReportParserError(ParserErrorProtocolClassPublic, "ICMPv6", "Unhandled ICMPv6 Node Information Reply Data") NIDataError;
+											BLOB(frameLength - frameOffset) Data;
+										}
+								}
+						}
+				}
+					
+			}
+		case 141:
+		case 142:
+			//141: InvNbrDiscoverySolicitation;
+			//142: InvNbrDiscoveryAdvertisement;
+			//RFC3122, page 3, 2.1. Inverse Neighbor Discovery Solicitation Message
+			_struct InverseNeighborDiscovery
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT32 Reserved;
+				//options: Source/Target link-layer address; Source/Target Address List; MTU
+			}
+		case 143:
+			//RFC3810 page 20, 5.2.  Version 2 Multicast Listener Report Message
+			_struct MulticastListenerReport
+			{
+				UINT8 Reserved;
+				UINT16 CheckSum;
+				UINT16 Reserved1;
+				UINT16 NrofMcastAddrRecords;
+				ICMPv6McastAddressRecord McastAddressRecord[NrofMcastAddrRecords];
+			}
+		case 144:
+			_struct HomeAgentAddressDiscoveryRequest
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 Reserved;
+			}
+		case 145:
+			_struct HomeAgentAddressDiscoveryReply
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 Reserved;
+				While conditions[offset < FrameLength]
+				{
+					Ipv6Address HomeAgentAddress;
+				}
+			}
+		case 146:
+			_struct MobilePrefixSolicitation
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 Reserved;
+			}
+		case 147:
+			_struct MobilePrefixAdvertisement
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 ConfigurationFlag
+				{
+					UINT16 M:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Managed Address Configuration" 
+														: "Not managed Address Configuration flag");
+															
+					UINT16 O:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Other Stateful Configuration"
+														: "Not other Stateful Configuration");
+					UINT16 Rsv:14 = FormatString("(%s)", this.ToBitString);
+				};
+				//options: Source link-layer address
+			}
+		case 148:
+			_struct ICMPv6CertificationPathSolicitation
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 Component;
+			}
+		case 149:
+			_struct CertificationPathAdvertisement
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT16 Identifier;
+				UINT16 AllComponents;
+				UINT16 Component;
+				UINT16 Reserved;
+			}
+		case 150:
+			_struct ExperimentalMobility
+			{
+				UINT8 Code;
+				UINT16 CheckSum;
+				UINT8 Subtype = ICMPv6ExperimentalMobilitySubTypeTable(this);
+				UINT24 Reserved;
+				switch (Subtype)
+				{
+					case  0:
+						while [FrameOffset < FrameLength]
+						{
+							switch (UINT8(FrameData, FrameOffset))
+							{
+								case 138:
+									[CardRequestOptionStartOffset = FrameOffset]
+									struct CardRequestOption
+									{
+										UINT8 Type;
+										UINT8 Length;
+										UINT16 Vers:3 = FormatString("    (%s) %u", this.ToBitString, this);
+										UINT16 P:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Piggybacking" : "Not Piggybacking");
+										UINT16 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "CARs" : "Not CARs");
+										UINT16 A:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Do NOT Perform reverse address translation" : "Perform reverse address translation");
+										UINT16 T:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Obtain all certificates" : "Not Obtain all certificates");
+										UINT16 Reserved:9 = FormatString("(%s)", this.ToBitString);
+										UINT32 SequenceNumber;
+										while [FrameOffset - CardRequestOptionStartOffset < Length]
+										{
+											switch (UINT8(FrameData, FrameOffset))
+											{
+												case 0x01: ICMPv6SubOptionL2ID ICMPv6SubOptionL2ID;
+												case 0x04: ICMPv6SubOptionPreferences ICMPv6SubOptionPreferences;
+												case 0x05: ICMPv6SubOptionRequirements ICMPv6SubOptionRequirements;
+												case 0x06: ICMPv6SubOptionTrustedAnchor ICMPv6SubOptionTrustedAnchor;
+											}
+										}
+									}
+								case 139:
+									[CardReplyOptionStartOffset = FrameOffset]
+									struct CardReplyOption
+									{
+										UINT8 Type;
+										UINT8 Length;
+										UINT8 Vers:3 = FormatString("     (%s) %u", this.ToBitString, this);
+										UINT8 P:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Piggybacking" : "Not Piggybacking");
+										UINT8 U:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Unsolicited" : "Not Unsolicited");
+										UINT8 L:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Last message" : "Not Last message");
+										UINT16 Reserved:9 = FormatString("(%s)", this.ToBitString);
+										UINT32 SequenceNumber;
+										while [FrameOffset - CardReplyOptionStartOffset < Length]
+										{
+											switch (UINT8(FrameData, FrameOffset))
+											{
+												case 0x01: ICMPv6SubOptionL2ID ICMPv6SubOptionL2ID;
+												case 0x02: ICMPv6SubOptionAddress ICMPv6SubOptionAddress;
+												case 0x03: ICMPv6SubOptionCapabilityContainer ICMPv6SubOptionCapabilityContainer;
+												case 0x07: ICMPv6SubOptionRouterCertificate ICMPv6SubOptionRouterCertificate;
+											}
+										}
+									}
+								default:
+									struct UndefinedOption
+									{
+										UINT8 Type;
+										UINT8 Length;
+										BLOB(Length - 2) OptionData;
+									}
+							}
+						}
+					case  1:
+						switch (UINT8(FrameData, FrameOffset) & 0x1F)
+						{
+							case 0x01:
+								struct CTAR
+								{
+									UINT8 Vers:3 = FormatString("    (%s) %u", this.ToBitString, this);
+									UINT8 Type:5 = FormatString("    (%s) %s", this.ToBitString, "CTAR");
+									UINT8 V:1 = FormatString("       (%s) %s", this.ToBitString, this ? "IPv4" : "IPv6");
+									UINT8 A:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Request Ack" : "NOT Request Ack");
+									UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+									UINT16 Length;
+									switch (V)
+									{
+										case 1:
+											_struct IPv4Addr
+											{
+												IPv4Address MNPreviousIPAddress;
+												IPv4Address ARIPAddress;
+											}
+										case 0:
+											_struct IPv6Addr
+											{
+												IPv6Address MNPreviousIPAddress;
+												IPv6Address ARIPAddress;
+											}
+									}
+									UINT32 SequenceNumber;
+									UINT32 MNAuthorizationToken;
+									switch
+									{
+										case FrameLength > FrameOffset:
+											BLOB(FrameLength - FrameOffset) ContextBlock;
+									}
+								}
+							case 0x02:
+								struct CTAA
+								{
+									UINT8 Vers:3 = FormatString("    (%s) %u", this.ToBitString, this);
+									UINT8 Type:5 = FormatString("    (%s) %s", this.ToBitString, "CTAA");
+									UINT8 V:1 = FormatString("       (%s) %s", this.ToBitString, this ? "IPv4" : "IPv6");
+									UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+									UINT16 Length;
+									switch (V)
+									{
+										case 1:
+											_struct IPv4Addr
+											{
+												IPv4Address MobileNodePreviousIPaddress;
+											}
+										case 0:
+											_Struct IPv6Addr
+											{
+												IPv6Address MobileNodePreviousIPaddress;
+											}
+									}
+									BLOB(FrameLength - FrameOffset) FPTAndStatusCode;
+								}
+						}
+				}
+			}
+		case 151:
+			_struct MulticastRouterAdvertisement
+			{
+				UINT8 Type;
+				UINT8 AdInterval;
+				UINT16 Checksum;
+				UINT16 QueryInterval;
+				UINT16 RobustnessVariable;
+			}
+		case 152:
+			_struct MulticastRouterSolicitation
+			{
+				UINT8 Type;
+				UINT8 Reserved;
+				UINT16 Checksum;
+			}
+		case 153:
+			_struct MulticastRouterTermination   
+			{
+				UINT8 Type;
+				UINT8 Reserved;
+				UINT16 Checksum;
+			}
+	}
+	//
+	//These are ICMPv6 Options
+	//
+	switch(MessageType)
+	{
+		case 133:
+		case 134:
+		case 135:
+		case 136:
+		case 137:
+		case 141:
+		case 142:
+		case 147:
+		case 148:
+		case 149:
+			while conditions[FrameOffset < FrameLength]
+			{
+				switch(UINT8( Framedata, Offset ))
+				{
+					case  1:
+						ICMPv6OptionLinkLayerAddress SourceLinkLayerAddress;
+					case  2:
+						ICMPv6OptionLinkLayerAddress TargetLinkLayerAddress;
+					case  3:
+						ICMPv6OptionPrefixInformation PrefixInformation;
+					case  4:
+						ICMPv6OptionRedirectedHeader RedirectedHeader;
+					case  5:
+						ICMPv6OptionMTU MTU;
+					case  7:
+						ICMPv6OptionAdvertisementInterval AdvertisementInterval;
+					case  8:
+						ICMPv6OptionHomeAgentInformation HomeAgentInformation;
+					case  9:
+						ICMPv6OptionAddressList SourceAddressList;
+					case 10:
+						ICMPv6OptionAddressList TargetAddressList;
+					case 11:
+						ICMPv6OptionCGA CGA;
+					case 12:
+						ICMPv6RSASignatureOption RSASignature;
+					case 13:
+						ICMPv6OptionTimestamp Timestamp;
+					case 14:
+						ICMPv6OptionNonce Nonce;
+					case 15:
+						ICMPv6OptionTrustAnchor TrustAnchor;
+					case 16:
+						ICMPv6OptionCertificate Certificate;
+				}
+			}
+	}
+	
+	switch
+	{
+		case FrameLength > FrameOffset:
+			_struct UnhandledIcmpv6Data
+			{
+				ReportParserError(ParserErrorProtocolClassPublic, "ICMPv6", "ICMPv6 Data Error") ICMPv6DataError;
+				BLOB( FrameLength - FrameOffset ) UnknownData;
+			}
+	}
+}
+Table ICMPv6TypeTable(type)
+{
+	switch(type)
+	{
+		case   1:"Destination unreachable";
+		case   2:"Packet too big";
+		case   3:"Time exceeded";
+		case   4:"Parameter problem";
+		case 100:"Private experimentation";
+		case 101:"Private experimentation";
+		case 127:"Reserved for expansion of ICMPv6 error messages";
+		case 128:"Echo request";
+		case 129:"Echo reply";
+		//case 130:"Group Membership Query";
+		//case 131:"Group Membership Report";
+		//case 132:"Group Membership Reduction";
+		case 130:"MLD, Multicast Listener Query";
+		case 131:"MLD, Multicast Listener Report";
+		case 132:"MLD, Multicast Listener Done";
+		case 133:"Router Solicitation";
+		case 134:"Router Advertisement";
+		case 135:"Neighbor Solicitation";
+		case 136:"Neighbor Advertisement";
+		case 137:"Redirect";
+		case 138:"Router Renumbering";
+		case 139:"ICMP Node Information Query";
+		case 140:"ICMP Node Information Response";
+		case 141:"Inverse Neighbor Discovery Solicitation Message";
+		case 142:"Inverse Neighbor Discovery Advertisement Message";
+		case 143:"MLDv2 Multicast Listener Report";
+		case 144:"Home Agent Address Discovery Request Message";
+		case 145:"Home Agent Address Discovery Reply Message";
+		case 146:"Mobile Prefix Solicitation";
+		case 147:"Mobile Prefix Advertisement";
+		case 148:"SEND, Certification Path Solicitation";
+		case 149:"SEND, Certification Path Advertisement";
+		case 150:"MRD, Experimental mobility protocols";
+		case 151:"MRD, Multicast Router Advertisement";
+		case 152:"MRD, Multicast Router Solicitation";
+		case 153:"Multicast Router Termination";
+		case 200:"Private experimentation";
+		case 201:"Private experimentation";
+		case 255:"Reserved for expansion of ICMPv6 informational messages";
+		default :"Undefined";
+	}
+}
+
+Table ICMPv6DestUnreachableCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("No route to destination, %d(%#x)",Code,Code);
+		case  1:FormatString("Communication with destination administratively prohibited, %d(%#x)",Code,Code);
+		case  2:FormatString("Beyond scope of source address, %d(%#x)",Code,Code);
+		case  3:FormatString("Address unreachable, %d(%#x)",Code,Code);
+		case  4:FormatString("Port unreachable, %d(%#x)",Code,Code);
+		case  5:FormatString("Source address failed ingress/egress policy, %d(%#x)",Code,Code);
+		case  6:FormatString("Reject route to destination, %d(%#x)",Code,Code);
+		default:FormatString("Undefined, %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPv6TimeExceededCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Hop limit exceeded in transit, %d(%#x)",Code,Code);
+		case  1:FormatString("Fragment reassembly time exceeded, %d(%#x)",Code,Code);
+		default:FormatString("Undefined,  %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPv6ParameterProblemCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Erroneous header field encountered, %d(%#x)",Code,Code);
+		case  1:FormatString("Unrecognized Next Header type encountered, %d(%#x)",Code,Code);
+		case  2:FormatString("Unrecognized IPv6 option encountered, %d(%#x)",Code,Code);
+		default:FormatString("Undefined,  %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPv6OptionTypeTable(Type)
+{
+	switch(Type)
+	{
+		case  0:FormatString("Invalid value, %d(%#x)",Type,Type);
+		case  1:FormatString("Source Link-Layer Address, %d(%#x)",Type,Type);
+		case  2:FormatString("Target Link-Layer Address, %d(%#x)",Type,Type);
+		case  3:FormatString("Prefix Information, %d(%#x)",Type,Type);
+		case  4:FormatString("Redirected Header, %d(%#x)",Type,Type);
+		case  5:FormatString("MTU, %d(%#x)",Type,Type);
+		case  6:FormatString("NBMA Shortcut Limit Option, %d(%#x)",Type,Type);
+		case  7:FormatString("Advertisement Interval, %d(%#x)",Type,Type);
+		case  8:FormatString("Home Agent Information, %d(%#x)",Type,Type);
+		case  9:FormatString("Source Address List, %d(%#x)",Type,Type);
+		case 10:FormatString("Target Address List, %d(%#x)",Type,Type);
+		case 11:FormatString("CGA, %d(%#x)",Type,Type);
+		case 12:FormatString("RSA Signature, %d(%#x)",Type,Type);
+		case 13:FormatString("Timestamp, %d(%#x)",Type,Type);
+		case 14:FormatString("Nonce, %d(%#x)",Type,Type);
+		case 15:FormatString("Trust Ancho, %d(%#x)",Type,Type);
+		case 16:FormatString("Certificate, %d(%#x)",Type,Type);
+		case 17:FormatString("IP Address Option, %d(%#x)",Type,Type);
+		case 18:FormatString("New Router Prefix Information Option, %d(%#x)",Type,Type);
+		case 19:FormatString("Link-layer Address Option, %d(%#x)",Type,Type);
+		case 20:FormatString("Neighbor Advertisement Acknowledgment Option, %d(%#x)",Type,Type);
+		case 21:FormatString("CARD Request option, %d(%#x)",Type,Type);
+		case 22:FormatString("CARD Reply option , %d(%#x)",Type,Type);
+		case 23:FormatString("MAP Option, %d(%#x)",Type,Type);
+		case 24:FormatString("Route Information Option, %d(%#x)",Type,Type);
+		default:FormatString("Undefined,  %d(%#x)",Type,Type);
+	}
+}
+
+Table ICMPv6RouterPreferenceTable(value)
+{
+	switch(value)
+	{
+		case 0 :FormatString("Medium,%d(0x%X)",value,value);
+		case 1 :FormatString("High,%d(0x%X)",value,value);
+		default:FormatString("Reserved,%d(0x%X)",value,value);
+	}
+}
+
+UnsignedNumber LinkLayerAddress
+{
+	size = 6,
+	DisplayFormat = FormatString("%02X-%02X-%02X-%02X-%02X-%02X",this[5],this[4],this[3],this[2],this[1],this[0])
+}
+
+struct ICMPv6OptionLinkLayerAddress
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	LinkLayerAddress Address;
+}
+
+struct ICMPv6OptionPrefixInformation
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	UINT8 PrefixLength;
+	UINT8 Flags
+	{
+		UINT8 L:1 = FormatString("  (%s) %s", this.ToBitString,
+									this ? "On-Link determination allowed":"Not on-Link specification");
+		UINT8 A:1 = FormatString("  (%s) %s", this.ToBitString,
+									this ? "Autonomous address-configuration":"Not autonomous address-configuration");
+		UINT8 R:1 = FormatString("  (%s) %s", this.ToBitString,
+									this ? "Router Address":"Not router Address");
+		UINT8 S:1 = FormatString("  (%s) %s", this.ToBitString,
+									this ? "Site prefix":"Not a site prefix");
+		UINT8 P:1 = FormatString("  (%s) %s", this.ToBitString,
+									this ? "Router prefix":"Not a router prefix");
+		UINT8 Rsv:3 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 ValidLifetime;
+	UINT32 PreferredLifetime;
+	UINT32 Reserved;
+	IPv6Address Prefix;
+}
+
+struct ICMPv6IPHeader = FormatString("Next Protocol = %s, Payload Length = %d",
+							ProtocolTypeAbbreviationTable(NextProtocol),
+							PayloadLength)
+{
+	UINT32 Versions = FormatString("%s, DSCP %d",IPVersionTable(Version),DSCP)
+	{
+		UINT32 Version:4  = FormatString(" (%s) %s, %d(%#x)",this.ToBitString, IPVersionTable(this), this, this);
+		UINT32 DSCP:6  = FormatString("    (%s) %s %d", this.ToBitString, "Differentiated services codepoint",this);
+		UINT32 ECT:1  = FormatString("     (%s) %s", this.ToBitString, this?"ECN-Capable Transport set":"ECN-Capable Transport not set");
+		UINT32 CE:1  = FormatString("      (%s) %s", this.ToBitString, this?"ECN-CE set":"ECN-CE not set");
+		UINT32 FlowLabe:20 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	UINT16 PayloadLength;
+	UINT8 NextProtocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	UINT8 HopLimit;
+	IPv6Address SourceAddress;
+	IPv6Address DestinationAddress;
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength - FrameOffset) OriginalIPPayload;
+	}
+}
+
+struct ICMPv6OptionRedirectedHeader
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	INT48 Reserved;
+	ICMPv6IPHeader InvokingPacket;
+}
+
+struct ICMPv6OptionMTU
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	UINT16 Reserved;
+	UINT32 MTU;
+}
+
+struct ICMPv6RSASignatureOption
+{
+	UINT8 Type;
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	UINT16 Reserved;
+	BLOB(16) KeyHash;
+	//#? computed with the RSASSA-PKCS1-v1_5 algorithm and SHA-1 signature , length?
+	//BLOB( ? ) Signature;
+
+	UINT8 Reserved2 = MustBeSetToTable(this, "01");
+	while [UINT8(FrameData, FrameOffset) == 0xFF]
+	{
+		UINT8 PS = MustBeSetToTable(this, "0xFF");
+	}
+	UINT8 Reserved3 = MustBeSetToTable(this, "00");
+	PkcsDigestInfo T;
+	//#? length?
+	//BLOB(Length - 20 - ?) Padding;
+}
+
+struct ICMPv6OptionTimestamp
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	INT48 Reserved;
+	//Here is a timestamp,which will update in the furture
+	UINT64 Timestamp;
+}
+
+struct ICMPv6OptionNonce
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	BLOB(Length*8 - 2) Nonce;
+}
+
+Table ICMPv6McastAddressRecordTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"MODE_IS_INCLUDE";
+		case  2:"MODE_IS_EXCLUDE";
+		case  3:"CHANGE_TO_INCLUDE_MODE";
+		case  4:"CHANGE_TO_EXCLUDE_MODE";
+		case  5:"ALLOW_NEW_SOURCES";
+		case  6:"BLOCK_OLD_SOURCES";
+		default:"UNDEFINED_MODE";
+	}
+}
+
+struct ICMPv6McastAddressRecord
+{
+	UINT8 RecordType = FormatString("%s, %d(0x%02X)", ICMPv6McastAddressRecordTypeTable(this), this, this);
+	UINT8 AuxDataLen = FormatString("%d, in units of 4 bytes",this);
+	UINT16 NumberofSources;
+	IPv6Address MulticastAddress;
+	IPv6Address SourceAddress[NumberofSources];
+	switch
+	{
+		case AuxDataLen > 0:
+			AsciiString(AuxDataLen * 4) AuxiliaryData;
+	}
+}
+
+//RFC3122, page 6, 3.1  Source/Target Address List
+struct ICMPv6OptionAddressList
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets", this);
+	INT48 Reserved;
+	Ipv6Address AddressesOfTheInterface[(Length - 1)/2];
+}
+
+struct ICMPv6UsePrefix
+{
+	UINT8 UseLen;
+	UINT8 KeepLen;
+	UINT8 FlagMask;
+	UINT8 RAFlags;
+	UINT32 ValidLifetime = FormatString("%u seconds", this);
+	UINT32 PreferredLifetime = FormatString("%u seconds", this);
+	UINT32 V:1 = FormatString("       (%s) %s", this.ToBitString,
+									this ?"Valid lifetime MUST be effectively decremented in real time"
+										:"Valid lifetime MAY NOT be effectively decremented in real time");
+											
+	UINT32 P:1 = FormatString("       (%s) %s", this.ToBitString,
+									this ? "Preferred lifetime MUST be effectively decremented in real time"
+										: "Preferred lifetime MAY NOT be effectively decremented in real time");
+											
+	UINT32 Reserved:30 = FormatString("(%s)", this.ToBitString);
+	IPv6Address UsePrefix;
+}
+
+Table ICMPv6PrefixControlOpCodeTable(OpCode)
+{
+	switch(OpCode)
+	{
+		case  1:"ADD operation";
+		case  2:"CHANGE operation";
+		case  3:"SET-GLOBAL operation";
+		default:"Unknown operation";
+	}
+}
+
+struct ICMPv6PrefixControlOperations
+{
+	UINT8 OpCode = ICMPv6PrefixControlOpCodeTable(this);
+	UINT8 OpLength = FormatString("%u bytes", this * 8);
+	UINT8 Ordinal;
+	UINT8 MatchLen = FormatString("Initial %u bits of MatchPrefix", this);
+	UINT8 MinLen;
+	UINT8 MaxLen;
+	UINT16 Reserved;
+	IPv6Address MatchPrefix;
+	ICMPv6UsePrefix UsePrefix[(OpLength - 3)/4];
+}
+
+struct ICMPv6MatchReport
+{
+	UINT16 Reserved:14 = FormatString("(%s)", this.ToBitString);
+	UINT16 B:1 = FormatString("       (%s) %s", this.ToBitString,
+									this ? "One or more fields in the associated PCO were out of bounds"
+										: "No fields in the associated PCO were out of bounds");
+											
+	UINT16 F:1 = FormatString("       (%s) %s", this.ToBitString,
+									this ? "One or more Use-Prefix parts from the associated PCO were not honored by the router"
+										: "All Use-Prefix parts from the associated PCO were honored by the router");
+	UINT8 Ordinal;
+	UINT8 MatchedLen = FormatString("%u bits", this);
+	UINT32 InterfaceIndex;
+	IPv6Address MatchPrefix;
+}
+
+Table ICMPv6RouterRenumberingCodeTable(code)
+{
+	switch(code)
+	{
+		case    0:"Command";
+		case    1:"Result";
+		case  255:"Sequence Number Reset";
+		default  :"Unknown code";
+	}
+}
+
+Table ICMPv6OptionTrustAnchorNameTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"DER Encoded X.501 Name";
+		case  2:"FQDN";
+		default:"Unknown Name Type";
+	}
+}
+
+struct X501CertificationPathComponent(Length) = X501CertificationPathComponentName
+{
+	UINT8 NameType = ICMPv6OptionTrustAnchorNameTypeTable(this);
+	UINT8 PadLength;
+	switch(NameType)
+	{
+		case  1://#? ASN.1 encoded
+			[X501CertificationPathComponentName = DEREncodedName.ToString]
+			AsnBerOctetString DEREncodedName;
+		case  2://#? DNS encoded
+			[X501CertificationPathComponentName]
+			DNSString FQDNName;
+		default:
+			switch
+			{
+				case Length*8 - 4 - PadLength > 0:
+					BLOB(Length*8 - 4 - PadLength) UnknownEncodedName;
+			}
+	}
+	AsciiString(PadLength) Padding = FormatString("%d bytes",PadLength);
+}
+
+struct ICMPv6OptionHomeAgentInformation
+{
+	UINT8  Type = ICMPv6OptionTypeTable(this);
+	UINT8  Length = FormatString("%d,in unit of 8 octets",this);
+	UINT16 Reserved;
+	UINT16 HomeAgentPreference;
+	UINT16 HomeAgentLifetime = FormatString("%d seconds",this);
+}
+
+struct SubjectPublicKeyInfo
+{
+	X509AlgorithmIdentifier algorithm;
+	AsnBerBitString subjectPublicKey;
+}
+
+struct ICMPv6OptionCGA
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d,in unit of 8 octets",this);
+	UINT8 PadLength;
+	UINT8 Reserved;
+	struct CGAParameters
+	{
+		BLOB(16) Modifier;
+		BLOB(8) SubnetPrefix;
+		UINT8 CollisionCount;
+		SubjectPublicKeyInfo PublicKey;
+	}
+	BLOB(PadLength) Padding;
+}
+
+struct ICMPv6OptionTrustAnchor
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d, in unit of 8 octets",this);
+	X501CertificationPathComponent(Length) TrustedAnchorName;
+}
+
+Table ICMPv6OptionCertTypeTable(type)
+{
+	switch(type)
+	{
+		case  1:"X.509v3 Certificate";
+		default:"Unknown Certificate Type";
+	}
+}
+
+struct ICMPv6OptionAdvertisementInterval
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	UINT8 Length = FormatString("%d,in unit of 8 octets",this);
+	UINT16 Reserved;
+	UINT32 AdvertisementInterval = FormatString("%d ms",this);
+}
+
+struct ICMPv6OptionCertificate
+{
+	UINT8 Type = ICMPv6OptionTypeTable(this);
+	[OptionEndOffset = FrameOffset+ this * 8 - 1]
+	UINT8 Length = FormatString("%d ,in unit of 8 octets", this);
+	UINT8 CertType = ICMPv6OptionCertTypeTable(this);
+	UINT8 Reserved;
+	//Asciistring(Length*8 - 4) CertificateDatas;
+	//#? rfc 3971 6.3.1
+	//Liam : I'm not very sure on Certificate
+	X509Certificate CertificateDatas;
+	switch
+	{
+		case FrameOffset< Property.OptionEndOffset:
+			Asciistring(Property.OptionEndOffset - Offset) Padding;
+	}
+}
+
+Table ICMPv6SubOptionTypeTable(value)
+{
+	switch (value)
+	{
+		case 0x1: "L2 ID";
+		case 0x2: "Address";
+		case 0x3: "Capability Container";
+		case 0x4: "Preferences";
+		case 0x5: "Requirements";
+		case 0x6: "Trusted Anchor";
+		case 0x7: "Router Certificate";
+		default: FormatString("Undefined value (%u)", value);
+	}
+}
+
+Table ICMPv6SubOptionStatusCodeTable(value)
+{
+	switch (value)
+	{
+		case 0x0: "NONE";
+		case 0x1: "CANDIDATE";
+		case 0x2: "MATCH";
+		case 0x3: "RESOLVER ERROR";
+		default: FormatString("Undefined value (%u)", value);
+	}
+}
+
+Table ICMPv6SubOptionL2IDL2TypeTable(value)
+{
+	switch (value)
+	{
+		case 0x00: "RESERVED";
+		case 0x01: "IEEE 802.3 (Ethernet)";
+		case 0x02: "IEEE 802.11a";
+		case 0x03: "IEEE 802.11b";
+		case 0x04: "IEEE 802.11g";
+		case 0x05: "IEEE 802.15.1(Bluetooth)";
+		case 0x06: "IEEE 802.15.3";
+		case 0x07: "IEEE 802.15.4";
+		case 0x08: "IEEE 802.16";
+		default: FormatString("Undefined value (%u)", value);                         
+	}
+}
+
+struct ICMPv6SubOptionL2ID = "Status = " + ICMPv6SubOptionStatusCodeTable(StatusCode)
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 ContextID;
+	UINT8 StatusCode = ICMPv6SubOptionStatusCodeTable(this);
+	UINT16 L2Type = ICMPv6SubOptionL2IDL2TypeTable(this);
+	BLOB(Length - 6) L2Identifier;
+}
+
+Table ICMPv6SubOptionAddressTypeTable(value)
+{
+	switch (value)
+	{
+		case 0x01: "IPv4";
+		case 0x02: "IPv6";
+		default: FormatString("Undefined value (%u)", value);                         
+	}
+}
+
+struct ICMPv6SubOptionAddress = "AddressType = " + ICMPv6SubOptionAddressTypeTable(AddressType)
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 ContextID;
+	UINT8 AddressType = ICMPv6SubOptionAddressTypeTable(this);
+	BLOB(Length - 4) Address;
+}
+struct ICMPv6SubOptionCapabilityContainer
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 ContextID;
+	UINT8 Flags
+	{
+		UINT8 P:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Selected new AR can perform piggybacking" : "Selected new AR can NOT perform piggybacking");
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+	};
+	BLOB(Length - 4) AVPs;
+}
+struct ICMPv6SubOptionPreferences
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	BLOB(Length - 2) Preferences;
+}
+struct ICMPv6SubOptionRequirements
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	BLOB(Length - 2) Requirements;
+}
+struct ICMPv6SubOptionTrustedAnchor = TrustedAnchorName.ToString
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	UINT16 Component;
+	X501CertificationPathComponent(Length) TrustedAnchorName;
+}
+
+struct ICMPv6SubOptionRouterCertificate
+{
+	UINT8 Type = ICMPv6SubOptionTypeTable(this);
+	UINT8 Length;
+	UINT8 ContextID;
+	UINT8 Reserved;
+	UINT16 AllCompnents;
+	UINT16 Compnent;
+	BLOB(Length - 8) CeritificateAndPadding;
+}
+
+Table ICMPv6NIQueryCodeTable(code)
+{
+	switch(code)
+	{
+		case  0:"Data contains an IPv6 address";
+		case  1:"Data contains a name";
+		case  2:"Data contains an IPv4 address";
+		default:"Unhandled Icmpv6 NI Query Code";	
+	}
+}
+
+Table ICMPv6NIReplyCodeTable(code)
+{
+	switch(code)
+	{
+		case  0:"successful";
+		case  1:"the Responder refuses to supply the answer";
+		case  2:"Qtype of the Query is unknown to the Responder";
+		default:"Unhandled Icmpv6 NI Reply Code";	
+	}
+}
+
+Table ICMPv6NIQTypeTable(type)
+{
+	switch(type)
+	{
+		case  0:"NOOP";
+		case  1:"unused";
+		case  2:"Node Name";
+		case  3:"Node Addresses";
+		case  4:"IPv4 Addresses";
+		default:"Unhandled Qtype";
+	}	
+}
+
+Table ICMPv6ExperimentalMobilitySubTypeTable(type)
+{
+	switch(type)
+	{
+		case  0:"CARD(Candidate Access Router Discovery)";
+		case  1:"CXTP(Context Transfer Protocol)";
+		case  2:"RtSolPr(Router Solicitation for Proxy Advertisement)";
+		case  3:"PrRtAdv(Proxy Router Advertisement)";
+		case  4:"HI(Handover Initiate)";
+		case  5:"HAck(Handover Acknowledge)";
+		default:"Unhandled Experimental Mobility SubType";
+	}
+}
+
+

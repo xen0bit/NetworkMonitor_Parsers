@@ -1,0 +1,199 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Ethernet Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2108, 1042, 2464
+//#                          IEEE Std 802.1Q, 2003 Edition
+//#                          IEEE Std 802.1D, 1998 Edition
+//#                          IEEE Std 802.1D, 2004 Edition
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 02/04/2009
+//#
+//####
+
+Protocol Ethernet = FormatString("%s%s,DestinationAddress:%s,SourceAddress:%s", Property.EthernetType, 
+						Property.DataLength ? FormatString("DataLength = %d bytes", Property.DataLength ): FormatString("Etype = %s", ProtocolTable(Property.EType)),
+						DestinationRawHardwareAddress,
+						SourceRawHardwareAddress)
+{
+	[
+		Pair = Address,
+		DestinationMacAlias = Global.AliasTable$[this],
+		Destination = DestinationMacAlias ? DestinationMacAlias : FormatString("[%s]", this.ToString),
+		DestinationRawHardwareAddress = FormatString("[%02X-%02X-%02X-%02X-%02X-%02X]", this[5], this[4], this[3], this[2], this[1], this[0]),
+		DestinationHardwareAddress
+	]
+	[ Property.DestinationNetworkAddress ]
+	MacAddress DestinationAddress = FormatString("%s [%02X-%02X-%02X-%02X-%02X-%02X]", MacTable(this), this[5], this[4], this[3], this[2], this[1], this[0])
+	{
+		UINT8 Rsv:6 = FormatString("(%s)", this.ToBitString);
+		UINT8 UL:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Locally Administered Address"
+						 : "Universally Administered Address");
+		UINT8 IG:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Group address (multicast)"
+						 : "Individual address (unicast)");
+	};
+	[
+		Pair = Address,
+		SourceMACAlias = Global.AliasTable$[this],
+		Source = SourceMACAlias ? SourceMACAlias : FormatString("[%s]", this.ToString),
+		SourceRawHardwareAddress = FormatString("[%02X-%02X-%02X-%02X-%02X-%02X]", this[5], this[4], this[3], this[2], this[1], this[0]),
+		SourceHardwareAddress
+	]
+	[ Property.SourceNetworkAddress ]
+	MacAddress SourceAddress = FormatString("%s [%02X-%02X-%02X-%02X-%02X-%02X]", MacTable(this), this[5], this[4], this[3], this[2], this[1], this[0])
+	{
+		UINT8 Rsv:6 = FormatString("(%s)", this.ToBitString);
+		UINT8 UL:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Locally Administered Address"
+						 : "Universally Administered Address");
+		UINT8 IG:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Group address (multicast)"
+						 : "Individual address (unicast)");
+	};
+
+	//#? IEEE Std 802-2001 10.5 Figure 18Ethernet frame SNAP-encapsulated in IEEE 802.5 frame
+	switch
+	{
+		// http://www.iana.org/assignments/ethernet-numbers
+		// 0000-05DC   -       -    IEEE802.3 Length Field   [XEROX]
+		case UINT16(FrameData,offset) <= 0x05DC:
+			[Property.EthernetType = "802.3, ", Property.DataLength]
+			UINT16 DataLength;
+		case UINT16(FrameData,offset) == 0x8100:
+			[Property.EthernetType = "802.1Q, "]
+			UINT16 Tag = FormatString("%s, %d(%#x)",ProtocolTable(this),this,this);
+		case UINT16(FrameData,offset) == 0x8808:
+			[EthernetType = "802.3X, "]
+			UINT16 FlowContr = FormatString("%s, %d(%#x)",ProtocolTable(this),this,this);
+		default:
+			[Property.EthernetType = "", Property.EType]
+			UINT16 EthernetType = FormatString("%s, %d(%#x)",ProtocolTable(this),this,this);
+	};
+
+	//IEEE Std 802.1Q, 2003 Edition 9.3.1 Tag Protocol Identifier (TPID) format
+	switch
+	{
+		case Tag:
+			_struct IEEE8021QTag
+			{
+				UINT16 TagControlInformation
+				{
+					UINT16 Pri: 3 = FormatString("(%s) User Priority %d, %s", this.ToBitString,this, TrafficTypeTable(this));
+					UINT16 CFI: 1 = FormatString("(%s) CanonicalFormatIndicator %d", this.ToBitString, this);
+					UINT16 VID:12 = FormatString("(%s) VLANIdentifier %d", this.ToBitString,this);
+				};
+				
+				switch
+				{
+					case UINT16(FrameData,offset) < FrameLength:
+						[Property.DataLength]
+						UINT16 DataLength;
+					default:
+						[Property.EType]
+						UINT16 EthernetType = FormatString("%s, %d(%#x)", ProtocolTable(this), this, this);
+				};
+			}
+		//IEEE Std 802.3x, MAC flow control; this is LLC-encapsulated so the next switch is Ok to fall through
+		case FlowContr:
+			_struct IEEE8023XFlowContr
+			{
+				UINT16 Command = (0 == this)?"Normal Flow":"Pause Sending";
+				UINT16 Quanta;
+				BLOB(42) ReservedData;
+				BLOB(4) FrameCheckSequence;
+			}
+	}
+
+	//
+	// This switch statement determines and invokes the protocol that follows ethernet. The ethernet protocol use the Etype field to determine
+	// which protocol follows ethernet
+	//
+	[Property.EthernetEndOffset = Property.DataLength ? ( frameOffset + Property.DataLength ) : frameLength]
+	switch
+	{
+		case FrameOffset < FrameLength:
+			switch(Property.EType)
+			{
+				case 0x0800:
+					IPv4 Ipv4;
+				case 0x86DD:
+					IPv6 Ipv6;
+				case 0x0806:
+					switch(UINT16(FrameData,FrameOffset))
+					{
+						case 0x0013:
+							ATMARP ArpAtmarp;
+						case 0x0018:
+							IEEE1394ARP Ieee1394Arp;
+						default:
+							ARP Arp;
+					}
+				case 0x8035:
+					RARP Rarp;
+				case 0x8137:
+					IPX Ipx;
+				case 0X0600:
+					XNS  Xns;
+				case 0x1984:
+					TRAIL Trail;
+				case 0x809B:
+					LAP Lap;
+				case 0x80D5:
+					SNA Sna;
+				case 0x80F3:
+					AARP Aarp;
+				case 0x88C7:
+				case 0x888E:
+					EAPOL Eapol;
+				case 0x9000:
+					ATMARP Atmarp;
+				case 0x88D9:
+					LLTD Lltd;
+				case 0x886F:
+					NLBHB NLBHB;
+				default:
+					switch
+					{
+						case Property.Etype > 0:
+							UndescribedFrameData remainder;
+						default:
+							switch
+							{
+								case UINT16(FrameData,offset) == 0xFFFF:
+									[DataFieldFrameLength = Property.EthernetEndOffset]
+									IPX Ipx;
+								default:
+									[DataFieldFrameLength = Property.EthernetEndOffset]
+									LLC Llc;
+							}
+					}
+			}
+	}
+	
+	switch
+	{
+		case FrameOffset < Property.EthernetEndOffset:
+			BLOB(Property.EthernetEndOffset - FrameOffset) UnknownData;
+	}
+}
+//IEEE Std 802.1D, 1998 Edition H2.2 Table H-15Traffic type acronyms
+//IEEE Std 802.1D, 2004 Edition G3 Table G-2Traffic type acronyms
+Table TrafficTypeTable(priority)
+{
+	switch(priority)
+	{
+		case 0: "BE - Best Effort(Default)";
+		case 1: "BK - Background";
+		case 2: "Spare";
+		case 3: "EE - Excellent Effort";
+		case 4: "CL - Controlled Load";
+		case 5: "VI - Video, < 100 ms latency and jitter";
+		case 6: "VO - Voice, < 10 ms latency and jitter";
+		case 7: "NC - Network Control";
+		default: "Unknown Traffic Type";
+	}
+}
+
+

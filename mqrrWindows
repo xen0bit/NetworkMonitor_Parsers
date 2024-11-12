@@ -1,0 +1,901 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Queue Manager Remote Read Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQRR]: Message Queuing (MSMQ): Queue Manager Remote Read Protocol Specification (9.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1991.0
+//#
+//#  Revision Class and Date:Major, 10/12/2009
+//#                          Minor, 4/23/2010
+//#
+//####
+
+Protocol MQRR = FormatString( "%s %s%s%s%s%s", 
+	Property.MQRRMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.MQRRSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.MQRRSummary : "" )
+{
+	[Property.MQRRSummary = ""]
+	[Property.MQRRMethodName = MQRRMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct RGetServerPort
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "%s", ReturnValue ? ("Port number:" + ReturnValue) : ReturnValue)]
+									Struct
+									{
+										UINT32 ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct ROpenQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Access=%s ShareMode=%s NonRoutingServer=%s Major=%d Minor=%d BuildNumber=%d Workgroup=%s", MQRRROpenQueueAccessTable(Access), MQRRROpenQueueShareModeTable(ShareMode), NonRoutingServer, Major, Minor, BuildNumber, Workgroup)]
+									Struct
+									{
+										MQMQCommonQueueFormat QueueFormat;
+										MQMQCommonQueueFormatRef QueueFormatRef;
+										Align4 Padding1;
+										UINT32 Access = MQRRROpenQueueAccessTable(this);
+										UINT32 ShareMode = MQRRROpenQueueShareModeTable(this);
+										MSRPCGuid ClientId;
+										BOOL NonRoutingServer;
+										UINT8 Major;
+										UINT8 Minor;
+										UINT16 BuildNumber;
+										BOOL Workgroup;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct RCloseQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle Context;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct RCreateCursor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Cursor=%u ReturnValue=%s", Cursor, ReturnValue.ToString )]
+									Struct
+									{
+										UINT32 Cursor;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct RCloseCursor
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Cursor=%u", Cursor )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 Cursor;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct RPurgeQueue
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Context;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct RStartReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "LookupId=%u Cursor=%u Action=%u Timeout=%u RequestId=%u MaxBodySize=%u MaxCompoundMessageSize=%u", LookupId, Cursor, Action, Timeout, RequestId, MaxBodySize, MaxCompoundMessageSize )]
+									Struct
+									{
+										ContextHandle Context;
+										Align8 Padding;
+										UINT64 LookupId;
+										UINT32 Cursor;
+										UINT32 Action = MQRRRStartReceiveActionTable(this);
+										UINT32 Timeout;
+										UINT32 RequestId;
+										UINT32 MaxBodySize;
+										UINT32 MaxCompoundMessageSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ArriveTime=%u SequenceId=%u NumberOfSections=%d ReturnValue=%s", ArriveTime, SequenceId, NumberOfSections, ReturnValue.ToString )]
+									Struct
+									{
+										UNIXTIMESTAMP ArriveTime;
+										Align8 Padding;
+										UINT64 SequenceId;
+										UINT32 NumberOfSections;
+										NdrPtr SectionBufferPointer;
+										Switch
+										{
+											case SectionBufferPointer.ReferentId > 0:
+												Struct
+												{
+													NdrConformant SectionBufferConf;
+													[MaxLoopCount = SectionBufferConf.MaxCount,Property.SectionBufferCount = 0]
+													while[Property.SectionBufferCount < SectionBufferConf.MaxCount]
+													{
+														[Property.SectionBufferCount = Property.SectionBufferCount + 1]
+														MQRRSectionBuffer PacketSection;
+													}
+													[MaxLoopCount = SectionBufferConf.MaxCount,Property.SectionBufferRefCount = 0]
+													while[Property.SectionBufferRefCount < SectionBufferConf.MaxCount]
+													{
+														[Property.SectionBufferRefCount = Property.SectionBufferRefCount + 1]
+														MQRRSectionBufferRef PacketSectionRef;
+													}
+												}
+										}
+										Align4 Padding2;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct RCancelReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "RequestId=%u", RequestId )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 RequestId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%d", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct REndReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Ack=%u RequestId=%u", Ack, RequestId )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 Ack = MQRRREndReceiveAckTable(this);
+										UINT32 RequestId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+			_Struct RMoveMessage
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "UllContextTo=%u LookupId=%u", UllContextTo, LookupId )]
+									Struct
+									{
+										ContextHandle ContextFrom;
+										Align8 Padding;
+										UINT64 UllContextTo;
+										UINT64 LookupId;
+										MQMPXACTUOW TransactionId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct ROpenQueueForMove
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Access=%d ShareMode=%u NonRoutingServer=%s Major=%d Minor=%d BuildNumber=%d Workgroup=%d", Access, ShareMode, NonRoutingServer, Major, Minor, BuildNumber, Workgroup)]
+									Struct
+									{
+										MQMQCommonQueueFormat QueueFormat;
+										MQMQCommonQueueFormatRef QueueFormatRef;
+										Align4 Padding;
+										UINT32 Access = MustBeSetToTable(this,"0x00000004");
+										UINT32 ShareMode;
+										MSRPCGuid ClientId;
+										BOOL NonRoutingServer;
+										UINT8 Major;
+										UINT8 Minor;
+										UINT16 BuildNumber;
+										BOOL Workgroup;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "MoveContext=%u", MoveContext )]
+									Struct
+									{
+										UINT64 MoveContext;
+										ContextHandle Context;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct RQMEnlistRemoteTransaction
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "PropagationToken=%u", PropagationToken )]
+									Struct
+									{
+										MQMPXACTUOW TransactionId;
+										UINT32 PropagationToken;
+										NdrConformant Size;
+										Switch
+										{
+											case Size.MaxCount > 0:
+												[DataFieldFrameLength = FrameOffSet + Size.MaxCount]
+												Struct
+												{
+													DTCOPropagationToken PropagationToken;
+													Blob(FrameLength - FrameOffSet) Data;
+												}
+										};
+										MQMQCommonQueueFormat QueueFormat;
+										MQMQCommonQueueFormatRef QueueFormatRef;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct RStartTransactionalReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "LookupId=%u Cursor=%u Action=%s Timeout=%u RequestId=%u MaxBodySize=%u MaxCompoundMessageSize=%u", LookupId, Cursor, MQRRRStartTransactionalReceiveActionTable(Action), Timeout, RequestId, MaxBodySize, MaxCompoundMessageSize )]
+									Struct
+									{
+										ContextHandle Context;
+										Align8 Padding;
+										UINT64 LookupId;
+										UINT32 Cursor;
+										UINT32 Action = MQRRRStartTransactionalReceiveActionTable(this);
+										UINT32 Timeout;
+										UINT32 RequestId;
+										UINT32 MaxBodySize;
+										UINT32 MaxCompoundMessageSize;
+										MQMPXACTUOW TransactionId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ArriveTime=%u SequenceId=%u NumberOfSections=%d ReturnValue=%s", ArriveTime, SequenceId, NumberOfSections, ReturnValue.ToString )]
+									Struct
+									{
+										UNIXTIMESTAMP ArriveTime;
+										Align8 Padding;
+										UINT64 SequenceId;
+										UINT32 NumberOfSections;
+										NdrPtr SectionBufferPointer;
+										Switch
+										{
+											case SectionBufferPointer.ReferentId > 0:
+												Struct
+												{
+													NdrConformant SectionBufferConf;
+													[MaxLoopCount = SectionBufferConf.MaxCount,Property.SectionBufferCount = 0]
+													while[Property.SectionBufferCount < SectionBufferConf.MaxCount]
+													{
+														[Property.SectionBufferCount = Property.SectionBufferCount + 1]
+														MQRRSectionBuffer PacketSection;
+													}
+													[MaxLoopCount = SectionBufferConf.MaxCount,Property.SectionBufferRefCount = 0]
+													while[Property.SectionBufferRefCount < SectionBufferConf.MaxCount]
+													{
+														[Property.SectionBufferRefCount = Property.SectionBufferRefCount + 1]
+														MQRRSectionBufferRef PacketSectionRef;
+													}
+												}
+										}
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct RSetUserAcknowledgementClass
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "LookupId=%u Class=%s", LookupId, MQRRRSetUserAcknowledgementClassUsClassTable(Class) )]
+									Struct
+									{
+										ContextHandle Context;
+										Align8 Padding;
+										UINT64 LookupId;
+										UINT16 Class = MQRRRSetUserAcknowledgementClassUsClassTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString)]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct REndTransactionalReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "Ack=%u RequestId=%u", MQRRREndReceiveAckTable(Ack), RequestId )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 Ack = MQRRREndReceiveAckTable(this);
+										UINT32 RequestId;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[MQRRSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[MQRRSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("MQRR", "Invalid RemoteRead method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[MQRRSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("MQRR", "Invalid RemoteRead method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("MQRR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "MQRR", "Unknown RemoteRead method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+Table MQRRREndReceiveAckTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "RR_NACK - The client acknowledges that the message packet was not delivered successfully.The server MUST keep the message in the queue and make it available for subsequent consumption.";
+		Case 0x00000002: "RR_ACK - The client acknowledges that the message packet was delivered successfully.The server MUST remove the message from the queue and make it unavailable for subsequent consumption.";
+		Default: "Unknown";
+	}
+}
+
+Table MQRRROpenQueueAccessTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "RECEIVE_ACCESS - The returned QueueContextHandle can be used in the R_StartReceive or R_StartTransactionalReceive methods with ulAction set to either a Peek or Receive action type as defined in the table under the ulAction parameter in R_StartReceive.";
+		Case 0x00000020: "PEEK_ACCESS - The returned QueueContextHandle can be used in the R_StartReceive method with ulAction set only to a Peek action type as defined in the table under the ulAction parameter in R_StartReceive.";
+		Default: "Unknown";
+	}
+}
+
+Table MQRRROpenQueueShareModeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_DENY_NONE - Permits multiple QueueContextHandles to the queue to be opened concurrently.";
+		Case 0x00000001: "MQ_DENY_SHARE - Permits a single QueueContextHandle to the queue at a time, providing exclusive access to the queue.";
+		Default: "Unknown";
+	}
+}
+
+Table MQRRRSetUserAcknowledgementClassUsClassTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "No-op. No change is made to the acknowledgment class.";
+		Case 0xC004: "MQMSG_CLASS_NACK_RECEIVE_REJECTED - Marks the message as rejected.";
+		Default: "Unknown";
+	}
+}
+
+Table MQRRRStartReceiveActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_ACTION_RECEIVE - If hCursor is nonzero, read and remove the message for the current cursor location and advance the cursor to the next position.If hCursor is 0, read and remove the message from the front of the queue.The LookupId parameter MUST be set to 0.";
+		Case 0x80000000: "MQ_ACTION_PEEK_CURRENT - If hCursor is nonzero, read the message at the current cursor location, but do not remove it from the queue.If hCursor is 0, read the message at the front of the queue but do not remove it from the queue.The LookupId parameter MUST be set to 0.";
+		Case 0x80000001: "MQ_ACTION_PEEK_NEXT - If hCursor is nonzero, advance the cursor to the next position and read the message, but do not remove it from the queue.The LookupId parameter MUST be set to 0.The hCursor parameter MUST be set to a nonzero cursor handle obtained from the R_CreateCursor method.";
+		Case 0x40000010: "MQ_LOOKUP_PEEK_CURRENT - Read the message specified by the LookupId parameter but do not remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000011: "MQ_LOOKUP_PEEK_NEXT - Read the message following the message specified by LookupId but do not remove it.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000012: "MQ_LOOKUP_PEEK_PREV - Read the message preceding the message specified by the LookupId parameter but do not remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000020: "MQ_LOOKUP_RECEIVE_CURRENT - Read the message specified by the LookupId parameter and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000021: "MQ_LOOKUP_RECEIVE_NEXT - Read the message following the message specified by the LookupId parameter and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000022: "MQ_LOOKUP_RECEIVE_PREV - Read the message preceding the message specified by the LookupId parameter and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Default: "Unknown";
+	}
+}
+
+Table MQRRRStartTransactionalReceiveActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_ACTION_RECEIVE - If hCursor is nonzero, read and remove the message at the current cursor location from the queue and advance the cursor.If hCursor is 0, read and remove the message from the front of the queue.The LookupId parameter MUST be set to 0.";
+		Case 0x80000000: "MQ_ACTION_PEEK_CURRENT - If hCursor is nonzero, read the message at the current cursor location but do not remove it from the queue.If hCursor is 0, read the message at the front of the queue, but do not remove it from the queue.The LookupId parameter MUST be set to 0.The pTransactionId parameter MUST be NULL.";
+		Case 0x80000001: "MQ_ACTION_PEEK_NEXT - If hCursor is nonzero, advance the cursor to the next position and read the message but do not remove it from the queue.The LookupId parameter MUST be set to 0.The hCursor parameter MUST be set to a nonzero cursor handle obtained from the R_CreateCursor method.The pTransactionId parameter MUST be NULL.";
+		Case 0x40000010: "MQ_LOOKUP_PEEK_CURRENT - Read the message specified by the LookupId parameter but do not remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.The LookupId parameter MUST be NULL.The pTransactionId parameter MUST be NULL.";
+		Case 0x40000011: "MQ_LOOKUP_PEEK_NEXT - Read the message following the message specified by LookupId but do not remove it.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.The pTransactionId parameter MUST be NULL.";
+		Case 0x40000012: "MQ_LOOKUP_PEEK_PREV - Read the message preceding the message specified by the LookupId parameter but do not remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The LookupId parameter MUST be set to 0x00000000.The pTransactionId parameter MUST be NULL.";
+		Case 0x40000020: "MQ_LOOKUP_RECEIVE_CURRENT - Read the message specified by LookupId and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000021: "MQ_LOOKUP_RECEIVE_NEXT - Read the message following the message specified by LookupId and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Case 0x40000022: "MQ_LOOKUP_RECEIVE_PREV - Read the message preceding the message specified by LookupId and remove it from the queue.The hCursor parameter MUST be set to 0.The LookupId parameter MUST NOT be set to 0.The ulTimeout parameter MUST be set to 0x00000000.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SectionBuffer
+//
+Struct MQRRSectionBuffer
+{
+	MQRRSectionType SectionBufferType;
+	Align4 Pad;
+	UINT32 SectionSizeAlloc;
+	UINT32 SectionSize;
+	[Property.SectionBufferPtr$[Property.SectionBufferCount] = this.ReferentID]
+	NdrPtr pSectionBuffer;
+}
+
+Struct MQRRSectionBufferRef
+{
+	Switch
+	{
+		case Property.SectionBufferPtr$[Property.SectionBufferRefCount] > 0:
+			Struct
+			{
+				NdrConformant Size;
+				BLOB(Size.MaxCount) Value;
+			}
+	}
+}
+
+//
+//	SectionType
+//
+Struct MQRRSectionType
+{
+	NdrEnum Value = MQRRSectionTypeTable(this.value);
+}
+
+Table MQRRSectionTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "FullPacket - The pSectionBuffer element of the SectionBuffer structure contains a complete Message Packet. The UserMessage is either that specified in section  or in section .";
+		Case 1: "BinaryFirstSection - The pSectionBuffer element of the SectionBuffer structure contains the first section of the Binary Message packet up to, but not beyond, the MessagePropertiesHeader in the UserMessage.";
+		Case 2: "BinarySecondSection - The pSectionBuffer element of the SectionBuffer structure contains the second section of the Binary Message packet from beyond the end of the MessagePropertiesHeader in the UserMessage to the end of the packet.";
+		Case 3: "SrmpFirstSection - The pSectionBuffer element of the SectionBuffer structure contains the first section of the SRMP Message packet up to, but not beyond, the CompoundMessageHeader in the UserMessage.";
+		Case 4: "SrmpSecondSection - The pSectionBuffer element of the SectionBuffer structure contains the second section of the SRMP Message packet from beyond the end of the CompoundMessageHeader in the UserMessage to the end of the packet.";
+	}
+}
+
+Table MQRRMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "R_GetServerPort";
+		Case 1: "Opnum1NotUsedOnWire";
+		Case 2: "R_OpenQueue";
+		Case 3: "R_CloseQueue";
+		Case 4: "R_CreateCursor";
+		Case 5: "R_CloseCursor";
+		Case 6: "R_PurgeQueue";
+		Case 7: "R_StartReceive";
+		Case 8: "R_CancelReceive";
+		Case 9: "R_EndReceive";
+		Case 10: "R_MoveMessage";
+		Case 11: "R_OpenQueueForMove";
+		Case 12: "R_QMEnlistRemoteTransaction";
+		Case 13: "R_StartTransactionalReceive";
+		Case 14: "R_SetUserAcknowledgementClass";
+		Case 15: "R_EndTransactionalReceive";
+		Default: "unknown";
+	}
+}

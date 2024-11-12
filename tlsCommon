@@ -1,0 +1,401 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Transport Layer Security (TLS) Protocols
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2246
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/12/2010
+//#                          Minor, 5/13/2010
+//#
+//####
+
+[BuildConversationWithParent]
+[
+	Conversation.TLVTotalLengthTempMVS$[Framenumber] = Conversation.TLVTotalLengthMVS,
+	Property.TLVTotalLength = Conversation.TLVTotalLengthTempMVS$[Framenumber],
+	Post.Conversation.TLVTotalLengthMVS = Property.TLVTotalLength
+]
+[
+	Conversation.TLVCurrentLengthTempMVS$[Framenumber] = Conversation.TLVCurrentLengthMVS,
+	Property.TLVCurrentLength = Conversation.TLVCurrentLengthTempMVS$[Framenumber],
+	Post.Conversation.TLVCurrentLengthMVS = Property.TLVCurrentLength
+]
+[
+	Conversation.LVCurrentLengthSeqTempMVS$[Framenumber] = Conversation.TLVCurrentLengthSeqMVS$[ Property.TCPSeqNumber ],
+	Property.TLVCurrentLengthSeq = Conversation.LVCurrentLengthSeqTempMVS$[Framenumber],
+	Post.Conversation.TLVCurrentLengthSeqMVS$[ Property.TCPSeqNumber ] = Property.TLVCurrentLengthSeq
+]
+Protocol TLS = Property.TLSSummary
+{
+	Switch
+	{
+		case ( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x01 ) ||
+			( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x02 ) ||
+			( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x03 ):
+			[ Property.TLSIsFirst = true ]
+			Struct{}
+	}
+	[Conversation.ConversationDescription = 
+		Conversation.TLS.ConversationDescription ? Conversation.TLS.ConversationDescription : 
+		(
+			(Property.SourcePort && Property.DestinationPort ? FormatString("(%u - %u) ", Property.SourcePort, Property.DestinationPort) : "") +
+			(FormatString("ConvID = %d", ConvID))
+		),
+	Property.TLSRecLayerCnt = 0]
+	[ Property.TLVCurrentLength = Property.TLVCurrentLengthSeq ? Property.TLVCurrentLengthSeq : Property.TLVCurrentLength ]
+	[ Property.TLVCurrentLengthSeq = Property.TLVCurrentLengthSeq ? 0 : Property.TLVCurrentLength ]
+	[ PostAfter.Property.TLSIsLast = ( FrameLength - Offset ) != 0 ? Property.TLSIsLast : Property.TLVCurrentLength == Property.TLVTotalLength ? true : false]
+	[
+		PostAfter.payloadstart(
+			NetworkDirection, /* direction */
+			0, /* id */
+			TCPSeqNumber, /* sequence token */
+			TCPNextSeqNumber, /* next sequence token */
+			0, /* total payload length */
+			Property.TLSIsFirst, /* is first */
+			Property.TLSIsLast, /* is last */
+			RssmblyIndStartBit + RssmblyIndEndBit + RssmblySequenceBit + RssmblySelfBit
+		)
+	]
+	While TlsRecLayer[FrameLength - Offset > 0] 
+	{
+		Switch
+		{
+			Case !(( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x01 ) ||
+					( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x02 ) ||
+					( UINT8( Framedata, Offset + 1 ) == 0x03 && UINT8( Framedata, Offset + 2 ) == 0x03 )):
+				[ Property.TLSSummary = "Continued Data: " + FormatString( "%d", FrameLength - Offset ) + " Bytes" ]
+				[ Property.TLVCurrentLengthTemp = Property.TLVCurrentLength ]
+				[ Property.TLVCurrentLength = Property.TLVCurrentLength + ( ( Property.TLVCurrentLength + FrameLength - Offset ) > Property.TLVTotalLength ? Property.TLVTotalLength - Property.TLVCurrentLength : (FrameLength - Offset) ) ]
+				BLOB( ( Property.TLVCurrentLengthTemp + FrameLength - Offset ) > Property.TLVTotalLength ? Property.TLVTotalLength - Property.TLVCurrentLengthTemp : FrameLength - Offset ) ContinuedTLVData;
+			Default:
+				[Property.TLSRecLayerCnt = Property.TLSRecLayerCnt + 1]
+				TLSRecordLayer TlsRecordLayer;
+		}
+	}
+}
+
+[ PostAfter.Property.TLVCurrentLength = Property.TLVCurrentLength + Offset - TLSRLOffset1 ]
+Struct TLSRecordLayer = "TLS Rec Layer-" + FormatString("%d ",Property.TLSRecLayerCnt) + SSLContentTypeTable( TLSRecordLayerType )
+{
+    [TLSRecordLayerType,
+     Post.Property.TLSSummary = Property.TLSSummary + (Property.TLSSummary ? "; ":"") + "TLS Rec Layer-" + FormatString("%d ",Property.TLSRecLayerCnt) + SSLContentTypeTable( TLSRecordLayerType ),
+     Property.TLSIsFirst = true,
+     Property.TLVCurrentLength = 0]
+	UINT8	ContentType = SSLContentTypeTable( this );
+   	[Post.Property.SSLVersion = "TLS"]
+   	SSLVersion	Version;
+	[DataFieldByteOrder = BigEndian, RecordLayerLength = this,
+	 PostAfter.Property.SSLNeedReassemble = (FrameLength < FrameOffset + this),
+	 Property.TLVTotalLength]
+    UINT16	Length;
+    [TLSRLOffset1 = FrameOffset, SSLHSOffset1 = FrameOffset]
+	Switch ( TLSRecordLayerType )
+    {
+        Case 0x14: 
+			[Post.TLSRLOffset2 = FrameOffset]
+			[Property.SSLMeetChangeCipherSpec = true]
+			SSLChangeCipherSpec ChangeCipherSpec;
+        Case 0x15: BLOB( Length ) EncryptedData; // TLSAlert
+        Case 0x16: [Post.TLSRLOffset2 = FrameOffset]SSLHandShake(Length) SSLHandshake;
+        Case 0x17: SSLApplicationData(Length) ApplicationData;
+	}
+}
+
+Struct TLSCipherSuite = TLSCipherSuitesTable(Cipher)
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT16 Cipher;
+}
+
+Table TLSCipherSuitesTable(Cipher)
+{
+	Switch( Cipher )
+	{
+			Case 0x0000: "TLS_NULL_WITH_NULL_NULL                 { 0x00,0x00 }";
+			Case 0x0001: "TLS_RSA_WITH_NULL_MD5                   { 0x00,0x01 }";
+			Case 0x0002: "TLS_RSA_WITH_NULL_SHA                   { 0x00,0x02 }";
+			Case 0x0003: "TLS_RSA_EXPORT_WITH_RC4_40_MD5          { 0x00,0x03 }";
+			Case 0x0004: "TLS_RSA_WITH_RC4_128_MD5                { 0x00,0x04 }";
+			Case 0x0005: "TLS_RSA_WITH_RC4_128_SHA                { 0x00,0x05 }";
+			Case 0x0006: "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5      { 0x00,0x06 }";
+			Case 0x0007: "TLS_RSA_WITH_IDEA_CBC_SHA               { 0x00,0x07 }";
+			Case 0x0008: "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA       { 0x00,0x08 }";
+			Case 0x0009: "TLS_RSA_WITH_DES_CBC_SHA                { 0x00,0x09 }";
+			Case 0x000A: "TLS_RSA_WITH_3DES_EDE_CBC_SHA           { 0x00,0x0A }";
+			Case 0x000B: "TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA    { 0x00,0x0B }";
+			Case 0x000C: "TLS_DH_DSS_WITH_DES_CBC_SHA             { 0x00,0x0C }";
+			Case 0x000D: "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA        { 0x00,0x0D }";
+			Case 0x000E: "TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA    { 0x00,0x0E }";
+			Case 0x000F: "TLS_DH_RSA_WITH_DES_CBC_SHA             { 0x00,0x0F }";
+			Case 0x0010: "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA        { 0x00,0x10 }";
+			Case 0x0011: "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA   { 0x00,0x11 }";
+			Case 0x0012:"TLS_DHE_DSS_WITH_DES_CBC_SHA             { 0x00,0x12 }";
+			Case 0x0013:"TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA        { 0x00,0x13 }";
+			Case 0x0014:"TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA    { 0x00,0x14 }";
+			Case 0x0015:"TLS_DHE_RSA_WITH_DES_CBC_SHA             { 0x00,0x15 }";
+			Case 0x0016:"TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA        { 0x00,0x16}";
+			Case 0x0017:"TLS_DH_anon_EXPORT_WITH_RC4_40_MD5       { 0x00,0x17 }";
+			Case 0x0018:"TLS_DH_anon_WITH_RC4_128_MD5             { 0x00,0x18 }";
+			Case 0x0019:"TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA    { 0x00,0x19 }";
+			Case 0x001A:"TLS_DH_anon_WITH_DES_CBC_SHA             { 0x00,0x1A }";
+			Case 0x001B:"TLS_DH_anon_WITH_3DES_EDE_CBC_SHA        { 0x00,0x1B }";
+			Case 0x001E: "TLS_KRB5_WITH_DES_CBC_SHA               { 0x00,0x1E }";
+			Case 0x001F: "TLS_KRB5_WITH_3DES_EDE_CBC_SHA          { 0x00,0x1F }";
+			Case 0x0020: "TLS_KRB5_WITH_RC4_128_SHA               { 0x00,0x20 }";
+			Case 0x0021: "TLS_KRB5_WITH_IDEA_CBC_SHA              { 0x00,0x21 }";
+			Case 0x0022: "TLS_KRB5_WITH_DES_CBC_MD5               { 0x00,0x22 }";
+			Case 0x0023: "TLS_KRB5_WITH_3DES_EDE_CBC_MD5          { 0x00,0x23 }";
+			Case 0x0024: "TLS_KRB5_WITH_RC4_128_MD5               { 0x00,0x24 }";
+			Case 0x0025: "TLS_KRB5_WITH_IDEA_CBC_MD5              { 0x00,0x25 }";
+			Case 0x0026: "TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA     { 0x00,0x26 }";
+			Case 0x0027: "TLS_KRB5_EXPORT_WITH_RC2_CBC_40_SHA     { 0x00,0x27 }";
+			Case 0x0028: "TLS_KRB5_EXPORT_WITH_RC4_40_SHA         { 0x00,0x28 }";
+			Case 0x0029: "TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5     { 0x00,0x29 }";
+			Case 0x002A: "TLS_KRB5_EXPORT_WITH_RC2_CBC_40_MD5     { 0x00,0x2A }";
+			Case 0x002B: "TLS_KRB5_EXPORT_WITH_RC4_40_MD5         { 0x00,0x2B }";
+			Case 0x002C: "TLS_PSK_WITH_NULL_SHA					  { 0x00,0x2C }";
+			Case 0x002D: "TLS_DHE_PSK_WITH_NULL_SHA				  { 0x00,0x2D }";
+			Case 0x002E: "TLS_RSA_PSK_WITH_NULL_SHA				  { 0x00,0x2E }";
+			Case 0x002F: "TLS_RSA_WITH_AES_128_CBC_SHA            { 0x00, 0x2F }";
+			Case 0x0030: "TLS_DH_DSS_WITH_AES_128_CBC_SHA         { 0x00, 0x30 }";
+			Case 0x0031: "TLS_DH_RSA_WITH_AES_128_CBC_SHA         { 0x00, 0x31 }";
+			Case 0x0032: "TLS_DHE_DSS_WITH_AES_128_CBC_SHA        { 0x00, 0x32 }";
+			Case 0x0033: "TLS_DHE_RSA_WITH_AES_128_CBC_SHA        { 0x00, 0x33 }";
+			Case 0x0034: "TLS_DH_anon_WITH_AES_128_CBC_SHA        { 0x00, 0x34 }";
+			Case 0x0035: "TLS_RSA_WITH_AES_256_CBC_SHA            { 0x00, 0x35 }";
+			Case 0x0036: "TLS_DH_DSS_WITH_AES_256_CBC_SHA         { 0x00, 0x36 }";
+			Case 0x0037: "TLS_DH_RSA_WITH_AES_256_CBC_SHA         { 0x00, 0x37 }";
+			Case 0x0038: "TLS_DHE_DSS_WITH_AES_256_CBC_SHA        { 0x00, 0x38 }";
+			Case 0x0039: "TLS_DHE_RSA_WITH_AES_256_CBC_SHA        { 0x00, 0x39 }";
+			Case 0x003A: "TLS_DH_anon_WITH_AES_256_CBC_SHA        { 0x00, 0x3A }";
+			Case 0x003B: "TLS_RSA_WITH_NULL_SHA256				  { 0x00, 0x3B }";
+			Case 0x003C: "TLS_RSA_WITH_AES_128_CBC_SHA256         { 0x00, 0x3C }";
+			Case 0x003D: "TLS_RSA_WITH_AES_256_CBC_SHA256         { 0x00, 0x3D }";
+			Case 0x003E: "TLS_DH_DSS_WITH_AES_128_CBC_SHA256      { 0x00, 0x3E }";
+			Case 0x003F: "TLS_DH_RSA_WITH_AES_128_CBC_SHA256      { 0x00, 0x3F }";
+			Case 0x0040: "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256     { 0x00, 0x40 }";
+			Case 0x0041: "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA       { 0x00, 0x41 }";
+			Case 0x0042: "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA    { 0x00, 0x42 }";
+			Case 0x0043: "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA    { 0x00, 0x43 }";
+			Case 0x0044: "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA   { 0x00, 0x44 }";
+			Case 0x0045: "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA   { 0x00, 0x45 }";
+			Case 0x0046: "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA   { 0x00, 0x46 }";
+			Case 0x0047: "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA       { 0x00, 0x47 }";
+			Case 0x0048: "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA    { 0x00, 0x48 }";
+			Case 0x0049: "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA    { 0x00, 0x49 }";
+			Case 0x004A: "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x4A }";
+			Case 0x004B: "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x4B }";
+			Case 0x004C: "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x4C }";
+			Case 0x0061: "TLS_NTRU_NSS_WITH_RC4_128_SHA           { 0x00, 0x61 }";
+			Case 0x0062: "TLS_NTRU_NSS_WITH_3DES_EDE_CBC_SHA      { 0x00, 0x62 }";
+			Case 0x0063: "TLS_NTRU_NSS_WITH_AES_128_CBC_SHA       { 0x00, 0x63 }";
+			Case 0x0064: "TLS_NTRU_NSS_WITH_AES_256_CBC_SHA       { 0x00, 0x64 }";
+			Case 0x0065: "TLS_NTRU_RSA_WITH_RC4_128_SHA           { 0x00, 0x65 }";
+			Case 0x0066: "TLS_NTRU_RSA_WITH_3DES_EDE_CBC_SHA      { 0x00, 0x66 }";
+			Case 0x0067: "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256     { 0x00, 0x67 }";
+			Case 0x0068: "TLS_DH_DSS_WITH_AES_256_CBC_SHA256      { 0x00, 0x68 }";
+			Case 0x0069: "TLS_DH_RSA_WITH_AES_256_CBC_SHA256      { 0x00, 0x69 }";
+			Case 0x006A: "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256     { 0x00, 0x6A }";
+			Case 0x006B: "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256     { 0x00, 0x6B }";
+			Case 0x006C: "TLS_DH_anon_WITH_AES_128_CBC_SHA256     { 0x00, 0x6C }";
+			Case 0x006D: "TLS_DH_anon_WITH_AES_256_CBC_SHA256     { 0x00, 0x6D }";
+			Case 0x0084: "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA       { 0x00, 0x84 }";
+			Case 0x0085: "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA    { 0x00, 0x85 }";
+			Case 0x0086: "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA    { 0x00, 0x86 }";
+			Case 0x0087: "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x87 }";
+			Case 0x0088: "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x88 }";
+			Case 0x0089: "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA   { 0x00, 0x89 }";
+			Case 0x008A: "TLS_PSK_WITH_RC4_128_SHA				  { 0x00, 0x8A }";
+			Case 0x008B: "TLS_PSK_WITH_3DES_EDE_CBC_SHA			  { 0x00, 0x8B }";
+			Case 0x008C: "TLS_PSK_WITH_AES_128_CBC_SHA			  { 0x00, 0x8C }";
+			Case 0x008D: "TLS_PSK_WITH_AES_256_CBC_SHA			  { 0x00, 0x8D }";
+			Case 0x008E: "TLS_DHE_PSK_WITH_RC4_128_SHA			  { 0x00, 0x8E}";
+			Case 0x008F: "TLS_DHE_PSK_WITH_3DES_EDE_CBC_SHA       { 0x00, 0x8F }";
+			Case 0x0090: "TLS_DHE_PSK_WITH_AES_128_CBC_SHA        { 0x00, 0x90 }";
+			Case 0x0091: "TLS_DHE_PSK_WITH_AES_256_CBC_SHA        { 0x00, 0x91 }";
+			Case 0x0092: "TLS_RSA_PSK_WITH_RC4_128_SHA			  { 0x00, 0x92 }";
+			Case 0x0093: "TLS_RSA_PSK_WITH_3DES_EDE_CBC_SHA       { 0x00, 0x93 }";
+			Case 0x0094: "TLS_RSA_PSK_WITH_AES_128_CBC_SHA        { 0x00, 0x94 }";
+			Case 0x0095: "TLS_RSA_PSK_WITH_AES_256_CBC_SHA        { 0x00, 0x95 }";
+			Case 0x0096: "TLS_RSA_WITH_SEED_CBC_SHA				  { 0x00, 0x96 }";
+			Case 0x0097: "TLS_DH_DSS_WITH_SEED_CBC_SHA			  { 0x00, 0x97 }";
+			Case 0x0098: "TLS_DH_RSA_WITH_SEED_CBC_SHA			  { 0x00, 0x98 }";
+			Case 0x0099: "TLS_DHE_DSS_WITH_SEED_CBC_SHA			  { 0x00, 0x99 }";
+			Case 0x009A: "TLS_DHE_RSA_WITH_SEED_CBC_SHA			  { 0x00, 0x9A }";
+			Case 0x009B: "TLS_DH_anon_WITH_SEED_CBC_SHA			  { 0x00, 0x9B }";
+			Case 0x009C: "TLS_RSA_WITH_AES_128_GCM_SHA256         { 0x00, 0x9C }";
+			Case 0x009D: "TLS_RSA_WITH_AES_256_GCM_SHA384		  { 0x00, 0x9D }";
+			Case 0x009E: "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256     { 0x00, 0x9E }";
+			Case 0x009F: "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384     { 0x00, 0x9F }";
+			Case 0x00A0: "TLS_DH_RSA_WITH_AES_128_GCM_SHA256      { 0x00, 0xA0 }";
+			Case 0x00A1: "TLS_DH_RSA_WITH_AES_256_GCM_SHA384      { 0x00, 0xA1 }";
+			Case 0x00A2: "TLS_DHE_DSS_WITH_AES_128_GCM_SHA256     { 0x00, 0xA2 }";
+			Case 0x00A3: "TLS_DHE_DSS_WITH_AES_256_GCM_SHA384     { 0x00, 0xA3 }";
+			Case 0x00A4: "TLS_DH_DSS_WITH_AES_128_GCM_SHA256      { 0x00, 0xA4 }";
+			Case 0x00A5: "TLS_DH_DSS_WITH_AES_256_GCM_SHA384      { 0x00, 0xA5 }";
+			Case 0x00A6: "TLS_DH_anon_WITH_AES_128_GCM_SHA256     { 0x00, 0xA6 }";
+			Case 0x00A7: "TLS_DH_anon_WITH_AES_256_GCM_SHA384     { 0x00, 0xA7 }";
+			Case 0x00A8: "TLS_PSK_WITH_AES_128_GCM_SHA256	   	  { 0x00, 0xA8 }";
+			Case 0x00A9: "TLS_PSK_WITH_AES_256_GCM_SHA384		  { 0x00, 0xA9 }";
+			Case 0x00AA: "TLS_DHE_PSK_WITH_AES_128_GCM_SHA256     { 0x00, 0xAA }";
+			Case 0x00AB: "TLS_DHE_PSK_WITH_AES_256_GCM_SHA384     { 0x00, 0xAB }";
+			Case 0x00AC: "TLS_RSA_PSK_WITH_AES_128_GCM_SHA256     { 0x00, 0xAC }";
+			Case 0x00AD: "TLS_RSA_PSK_WITH_AES_256_GCM_SHA384     { 0x00, 0xAD }";
+			Case 0x00AE: "TLS_PSK_WITH_AES_128_CBC_SHA256		  { 0x00, 0xAE }";
+			Case 0x00AF: "TLS_PSK_WITH_AES_256_CBC_SHA384		  { 0x00, 0xAF }";
+			Case 0x00B0: "TLS_PSK_WITH_NULL_SHA256				  { 0x00, 0xB0 }";
+			Case 0x00B1: "TLS_PSK_WITH_NULL_SHA384				  { 0x00, 0xB1 }";
+			Case 0x00B2: "TLS_DHE_PSK_WITH_AES_128_CBC_SHA256     { 0x00, 0xB2 }";
+			Case 0x00B3: "TLS_DHE_PSK_WITH_AES_256_CBC_SHA384     { 0x00, 0xB3 }";
+			Case 0x00B4: "TLS_DHE_PSK_WITH_NULL_SHA256			  { 0x00, 0xB4 }";
+			Case 0x00B5: "TLS_DHE_PSK_WITH_NULL_SHA384			  { 0x00, 0xB5 }";
+			Case 0x00B6: "TLS_RSA_PSK_WITH_AES_128_CBC_SHA256     { 0x00, 0xB6 }";
+			Case 0x00B7: "TLS_RSA_PSK_WITH_AES_256_CBC_SHA384     { 0x00, 0xB7 }";
+			Case 0x00B8: "TLS_RSA_PSK_WITH_NULL_SHA256		  	  { 0x00, 0xB8 }";
+			Case 0x00B9: "TLS_RSA_PSK_WITH_NULL_SHA384		  	  { 0x00, 0xB9 }";
+			Case 0xC001: "TLS_ECDH_ECDSA_WITH_NULL_SHA            { 0xC0,0x01 }";
+			Case 0xC002: "TLS_ECDH_ECDSA_WITH_RC4_128_SHA         { 0xC0,0x02 }";
+			Case 0xC003: "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA    { 0xC0,0x03 }";
+			Case 0xC004: "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA     { 0xC0,0x04 }";
+			Case 0xC005: "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA     { 0xC0,0x05 }";
+			Case 0xC006: "TLS_ECDHE_ECDSA_WITH_NULL_SHA           { 0xC0,0x06 }";
+			Case 0xC007: "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA        { 0xC0,0x07 }";
+			Case 0xC008: "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA   { 0xC0,0x08 }";
+			Case 0xC009: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA    { 0xC0,0x09 }";
+			Case 0xC00A: "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA    { 0xC0,0x0A }";
+			Case 0xC00B: "TLS_ECDH_RSA_WITH_NULL_SHA              { 0xC0,0x0B }";
+			Case 0xC00C: "TLS_ECDH_RSA_WITH_RC4_128_SHA           { 0xC0,0x0C }";
+			Case 0xC00D: "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA      { 0xC0,0x0D }";
+			Case 0xC00E: "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA       { 0xC0,0x0E }";
+			Case 0xC00F: "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA       { 0xC0,0x0F }";
+			Case 0xC010: "TLS_ECDHE_RSA_WITH_NULL_SHA             { 0xC0,0x10 }";
+			Case 0xC011: "TLS_ECDHE_RSA_WITH_RC4_128_SHA          { 0xC0,0x11 }";
+			Case 0xC012: "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA     { 0xC0,0x12 }";
+			Case 0xC013: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA      { 0xC0,0x13 }";
+			Case 0xC014: "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA      { 0xC0,0x14 }";
+			Case 0xC015: "TLS_ECDH_anon_WITH_NULL_SHA             { 0xC0,0x15 }";
+			Case 0xC016: "TLS_ECDH_anon_WITH_RC4_128_SHA          { 0xC0,0x16 }";
+			Case 0xC017: "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA     { 0xC0,0x17 }";
+			Case 0xC018: "TLS_ECDH_anon_WITH_AES_128_CBC_SHA      { 0xC0,0x18 }";
+			Case 0xC019: "TLS_ECDH_anon_WITH_AES_256_CBC_SHA      { 0xC0,0x19 }";
+			Case 0xC01A: "TLS_SRP_SHA_WITH_3DES_EDE_CBC_SHA		  { 0xC0,0xA }";
+			Case 0xC01B: "TLS_SRP_SHA_RSA_WITH_3DES_EDE_CBC_SHA   { 0xC0,0x1B }";
+			Case 0xC01C: "TLS_SRP_SHA_DSS_WITH_3DES_EDE_CBC_SHA   { 0xC0,0x1C }";
+			Case 0xC01D: "TLS_SRP_SHA_WITH_AES_128_CBC_SHA		  { 0xC0,0x1D }";
+			Case 0xC01E: "TLS_SRP_SHA_RSA_WITH_AES_128_CBC_SHA    { 0xC0,0x1E }";
+			Case 0xC01F: "TLS_SRP_SHA_DSS_WITH_AES_128_CBC_SHA    { 0xC0,0x1F }";
+			Case 0xC020: "TLS_SRP_SHA_WITH_AES_256_CBC_SHA		  { 0xC0,0x20 }";
+			Case 0xC021: "TLS_SRP_SHA_RSA_WITH_AES_256_CBC_SHA	  { 0xC0,0x21 }";
+			Case 0xC022: "TLS_SRP_SHA_DSS_WITH_AES_256_CBC_SHA    { 0xC0,0x22 }";
+			Case 0xC023: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 { 0xC0,0x23 }";
+			Case 0xC024: "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 { 0xC0,0x24 }";
+			Case 0xC025: "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256  { 0xC0,0x25 }";
+			Case 0xC026: "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384  { 0xC0,0x26 }";
+			Case 0xC027: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256   { 0xC0,0x27 }";
+			Case 0xC028: "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384   { 0xC0,0x28 }";
+			Case 0xC029: "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256    { 0xC0,0x29 }";
+			Case 0xC02A: "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384    { 0xC0,0x2A }";
+			Case 0xC02B: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 { 0xC0,0x2B }";
+			Case 0xC02C: "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 { 0xC0,0x2C }";
+			Case 0xC02D: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256  { 0xC0,0x2D }";
+			Case 0xC02E: "TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384  { 0xC0,0x2E }";
+			Case 0xC02F: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   { 0xC0,0x2F }";
+			Case 0xC030: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384   { 0xC0,0x30 }";
+			Case 0xC031: "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256    { 0xC0,0x31 }";
+			Case 0xC032: "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384    { 0xC0,0x32 }";
+			Case 0xC033: "TLS_ECDHE_PSK_WITH_RC4_128_SHA		  { 0xC0,0x33 }";
+			Case 0xC034: "TLS_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA     { 0xC0,0x34 }";
+			Case 0xC035: "TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA      { 0xC0,0x35 }";
+			Case 0xC036: "TLS_ECDHE_PSK_WITH_AES_256_CBC_SHA      { 0xC0,0x36 }";
+			Case 0xC037: "TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256   { 0xC0,0x37 }";
+			Case 0xC038: "TLS_ECDHE_PSK_WITH_AES_256_CBC_SHA384   { 0xC0,0x38 }";
+			Case 0xC039: "TLS_ECDHE_PSK_WITH_NULL_SHA			  { 0xC0,0x39 }";
+			Case 0xC03A: "TLS_ECDHE_PSK_WITH_NULL_SHA256		  { 0xC0,0x3A }";
+			Case 0xC03B: "TLS_ECDHE_PSK_WITH_NULL_SHA384		  { 0xC0,0x3B }";
+			Case 0xFEFE: "Reserved to avoid conflicts with widely deployed implementations";
+			Case 0xFEFF: "Reserved to avoid conflicts with widely deployed implementations";
+			Default: "Unknown Cipher";
+		}
+}
+
+Table TLSNamedCurveTable( NamedCurve )
+{
+    Switch( NamedCurve )
+    {
+        Case 0x0001: "sect163k1(0x0001)";
+        Case 0x0002: "sect163r1(0x0002)";
+        Case 0x0003: "sect163r2(0x0003)";
+        Case 0x0004: "sect193r1(0x0004)";
+        Case 0x0005: "sect193r2(0x0005)";
+        Case 0x0006: "sect233k1(0x0006)";
+        Case 0x0007: "sect233r1(0x0007)";
+        Case 0x0008: "sect239k1(0x0008)";
+        Case 0x0009: "sect283k1(0x0009)";
+        Case 0x000A: "sect283r1(0x000A)";
+        Case 0x000B: "sect409k1(0x000B)";
+        Case 0x000C: "sect409r1(0x000C)";
+        Case 0x000D: "sect571k1(0x000D)";
+        Case 0x000E: "sect571r1(0x000E)";
+        Case 0x000F: "secp160k1(0x000F)";
+        Case 0x0010: "secp160r1(0x0010)";
+        Case 0x0011: "secp160r2(0x0011)";
+        Case 0x0012: "secp192k1(0x0012)";
+        Case 0x0013: "secp192r1(0x0013)";
+        Case 0x0014: "secp224k1(0x0014)";
+        Case 0x0015: "secp224r1(0x0015)";
+        Case 0x0016: "secp256k1(0x0016)";
+        Case 0x0017: "secp256r1(0x0017)";
+        Case 0x0018: "secp384r1(0x0018)";
+        Case 0x0019: "secp521r1(0x0019)";
+        Case 0xFF01: "arbitrary_explicit_prime_curves(0xFF01)";
+        Case 0xFF02: "arbitrary_explicit_char2_curves(0xFF02)";
+		Default    : "Unknown Extension Type";
+    }
+}
+
+Table TLSEcPointFormatTable( ECPoint )
+{
+    Switch( ECPoint )
+    {
+        Case 0x00: "uncompressed(0x00)";
+        Case 0x01: "ansiX962_compressed_prime(0x01)";
+        Case 0x02: "ansiX962_compressed_char2(0x02)";
+		Default  : "Unknown Extension Type";        
+    }
+}
+
+Table TLSSupplementalDataTypeTable( DataType )
+{
+    Switch( DataType )
+    {
+        Case 0x0000: "User Mapping Data(0x0000)";
+        Default    : "Unknown Supplemental Data Type";
+    }
+}
+
+Table TLSUserMappingTypeTable( Type )
+{
+    Switch( Type )
+    {
+        Case 0x40: "UPN Domain Hint(0x40)";
+        Default  : "Unknown User Mapping Type";
+    }
+}
+
+Table TLSVersionTable( MajorValue , MinorValue )
+{
+	Switch
+	{
+		Case ( MajorValue == 0 && MinorValue == 2 ): "SSL 2.0";
+		Case ( MajorValue == 3 && MinorValue == 1 ): "TLS 1.0";
+		Case ( MajorValue == 3 && MinorValue == 2 ): "TLS 1.1";
+		Case ( MajorValue == 3 && MinorValue == 3 ): "TLS 1.2";
+		Default:
+			FormatString("SSL %d.%d", MajorValue, MinorValue );
+	}
+}

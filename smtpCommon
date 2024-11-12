@@ -1,0 +1,315 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Simple Mail Transfer Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 821, 1985, 2554, 2645, 2821, 3030, 3207
+//#                          http://www.iana.org/assignments/mail-parameters
+//#  Microsoft References:   [MS-SMTP]: NT LAN Manager (NTLM) Authentication: Simple Mail Transfer Protocol (SMTP) Extension (5.1.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol SMTP = FormatString("%s", Property.SMTPPayloadSummary)
+{
+	switch (AsciiStringTerm(FrameData, FrameOffset, " "))
+	{
+		case "DSN":
+		case "ATRN":
+		case "AUTH":
+		case "BDAT":
+		case "EHLO":
+		case "ETRN":
+		case "EXPN":
+		case "HELO":
+		case "HELP":
+		case "LHLO":
+		case "MAIL":
+		case "MTRK":
+		case "NOOP":
+		case "ONEX":
+		case "RCPT":
+		case "SAML":
+		case "SEND":
+		case "SOML":
+		case "SIZE":
+		case "TURN":
+		case "VERB":
+		case "VRFY":
+		case "8BITMIME":
+		case "CHUNKING":
+		case "SUBMITTER":
+		case "BINARYMIME":
+		case "CHECKPOINT":
+		case "PIPELINING":
+		case "NO-SOLICITING":
+		case "ENHANCEDSTATUSCODES":
+			
+			//
+			// This is SMTP Request
+			// Format: Command <SP> Parameters <CRLF>
+			//
+			[SMTPPayloadSummary = FormatString("Cmd %s, %d bytes",
+											  SMTPRequest.CommandParameter  ? SMTPRequest.toString
+																			: SMTPRequest.Command.ToString,
+											  FrameLength - FrameOffset)]
+			struct SMTPRequest = Command + " " + CommandParameter
+			{
+				AsciiStringTerm(" ") Command = SMTPCommandTable(this);
+				AsciiStringTerm("\r\n") CommandParameter;
+				While SmtpData[FrameOffset < FrameLength]
+				{
+					AsciiStringTerm("\r\n") Data;
+				}
+			};
+		default:
+			switch (AsciiStringTerm(FrameData, FrameOffset, "\r\n"))
+			{
+				case "DATA":
+				case "QUIT":
+				case "RSET":
+				case "STARTTLS":
+					//
+					// This is SMTP Request
+					// Format: Command <CRLF>
+					//
+					[SMTPPayloadSummary = FormatString("Cmd %s", Command.ToString)]
+					AsciiStringTerm("\r\n") Command = SMTPCommandTable(this);
+				default:
+					switch
+					{
+						case ( FrameNumber > Conversation.SSLStartFrame ||
+							   IsSslRecordTable(Property.SslRcdByte, Property.SslProtoWord) ):
+							[Conversation.SSLStartFrame = IsValueNone(Conversation.SSLStartFrame) ? FrameNumber : Conversation.SSLStartFrame]
+							SSL SslOnSmtp;
+						case (FrameLength - FrameOffset == 2) &&
+							UINT16(FrameData, FrameOffset) == 0x0D0A:
+								//
+								// SMTP Command completed, Format: CRLF
+								//
+								[SMTPPayloadSummary = FormatString("Cmd completed, 2Bytes")]
+								AsciiString Command = "Completed";
+						
+						case (UINT8( Framedata, Offset ) >= 0x31 && UINT8( Framedata, Offset ) <= 0x35)
+							&& (UINT8( Framedata, Offset + 1 ) >= 0x30 && UINT8( Framedata, Offset + 1 ) <= 0x35)
+							&& (UINT8( Framedata, Offset + 2 ) >= 0x30 && UINT8( Framedata, Offset + 2 ) <= 0x39)
+							&& (
+							 UINT16(FrameData, FrameOffset + 3) == 0x0D0A ||
+							 UINT8( Framedata, Offset + 3 ) == 0x20 ||
+							 UINT8( Framedata, Offset + 3 ) == 0x2D
+							):
+								//
+								// This is SMTP Reply
+								// ReplyCode Format: xyz x:1~5 y:0~5 z:0~9
+								//
+								[SMTPPayloadSummary = FormatString("Rsp %s, %d bytes", this.toString, FrameLength - FrameOffset)]
+								struct Response = FormatString("%s %s", ReplyCode, ReplyMessage.ToString)
+								{
+									//Reply-line = Reply-code [ SP text ] CRLF
+									AsciiString(3) ReplyCode = SMTPReplyCodeTable(this, UINT24(FrameData, FrameOffset));
+									
+									AsciiStringTerm("\r\n") ReplyMessage = FormatString("%s",
+																			UINT16(FrameData,FrameOffset) == 0x0D0A ? "CRLF" :
+																			NLMPAuthentication ? "NLMP Authentication Data": ReplyMessage)
+									{
+										while [UINT8(FrameData, FrameOffset) == 0x20]
+										{
+											CHAR WhiteSpace;
+										};
+										switch(AsciiString(FrameData, FrameOffset, 10))
+										{
+											case "TlRMTVNTUA":
+												AsciiStringTerm("\r\n") NLMPAuthentication
+												{
+													[NTLMSSPAuthentication = TRUE]
+													NLMP NLMP;
+												};
+											default:
+												AsciiStringTerm("\r\n") Message;
+										}
+									};
+									
+									While Conditions[FrameOffset < FrameLength]
+									{
+										AsciiStringTerm("\r\n") ReplyMessage;
+									}
+								};
+						default:
+							switch
+							{
+								case FrameLength - FrameOffset > 0:
+									//
+									// This is SMTP Data Payload
+									//
+									[SMTPPayloadSummary = FormatString("Data Payload, %d bytes", FrameLength - FrameOffset)]
+									_struct DataPayLoad
+									{
+										switch(AsciiString(FrameData, FrameOffset, 10))
+										{
+											case "TlRMTVNTUA":
+												AsciiStringTerm("\r\n") NLMPAuthenticationData
+												{
+													[NTLMSSPAuthentication = TRUE, SMTPPayloadSummary = SMTPPayloadSummary + ", Using NLMP Authentication"]
+													NLMP NLMP;
+												};
+											default:
+												[SmtpReplication = FALSE, SmtpMime = FALSE]
+												While Headers[FrameOffset < FrameLength && !(UINT16(FrameData, FrameOffset) == 0x0D0A) && !SmtpMime]
+												{
+													[
+														Post.SmtpReplication = SmtpReplication ? TRUE : Contains(Data, "_IsmService"),
+														Post.Smtpsrpl = Smtpsrpl ? TRUE : Contains(Data, "Subject: Intersite message for NTDS Replication:")
+
+													]
+													AsciiStringTerm("\r\n") Data
+													{
+														While[UINT8(FrameData, FrameOffset) == 0x20]
+														{
+															UINT8 WhiteSpace;
+														}
+														DynamicSwitch AsciiStringTerm(":")
+														{
+															case "MIME-Version":
+																[MimeVersion, SmtpMime = TRUE]
+																AsciiStringTerm("\r\n") MimeVersion;
+															default:
+																AsciiStringTerm("\r\n") DefaultName;
+														}
+													};
+												}
+										}
+										switch
+										{
+											case FrameOffset < FrameLength:
+												switch
+												{
+													case SmtpMime:
+														MIME Mime;
+													default:
+														AsciiString(FrameLength - FrameOffset) Data;
+												}
+										}
+									}//End of struct DataPayLoad 
+							}
+					}
+			}
+	}
+}
+
+//http://www.iana.org/assignments/mail-parameters
+Table SMTPCommandTable(Command)
+{
+	switch(Command)
+	{
+		case "DSN"                : "DSN, Delivery Status Notification";
+		case "ATRN"               : "ATRN, Authenticated TURN";
+		case "AUTH"               : "AUTH, Authentication mechanism to the server";
+		case "BDAT"               : "BDAT, Binary data";
+		case "EHLO"               : "EHLO, Extended Hello";
+		case "ETRN"               : "ETRN, Extended Turn";
+		case "DATA"               : "DATA, Begins message composition";
+		case "EXPN"               : "EXPN, Returns names on the specified mail list";
+		case "HELO"               : "HELO, Returns identity of mail server";
+		case "HELP"               : "HELP, Returns information on the specified command";
+		case "LHLO"               : "LHLO, Local Mail";
+		case "MAIL"               : "MAIL, Initiates a mail session from host";
+		case "MTRK"               : "MTRK, Message Tracking";
+		case "NOOP"               : "NOOP, Causes no action, except acknowledgement from server";
+		case "ONEX"               : "ONEX, One message transaction only";
+		case "QUIT"               : "QUIT, Terminates the mail session";
+		case "RCPT"               : "RCPT, Designates who receives mail";
+		case "RSET"               : "RSET, Resets mail connection";
+		case "SAML"               : "SAML, Sends mail to user terminal and mailbox";
+		case "SEND"               : "SEND, Sends mail to user terminal";
+		case "SOML"               : "SOML, Sends mail to user terminal or mailbox";
+		case "SIZE"               : "SIZE, Message size declaration";
+		case "TURN"               : "TURN, Switches role of receiver and sender";
+		case "VERB"               : "VERB, Verbose";
+		case "VRFY"               : "VRFY, Confirm the argument identifies a user or mailbox";
+		case "8BITMIME"           : "8BITMIME, Use 8-bit data";
+		case "CHUNKING"           : "CHUNKING, Chunking";
+		case "STARTTLS"           : "STARTTLS, Server is currently able to negotiate the use of TLS";
+		case "SUBMITTER"          : "SUBMITTER, SMTP Responsible Submitter";
+		case "BINARYMIME"         : "BINARYMIME, Binary MIME";
+		case "CHECKPOINT"         : "CHECKPOINT, Checkpoint/Restart";
+		case "PIPELINING"         : "PIPELINING, Command Pipelining";
+		case "NO-SOLICITING"      : "NO-SOLICITING, Notification of no soliciting";
+		case "ENHANCEDSTATUSCODES": "ENHANCEDSTATUSCODES, Enhanced Status Codes";
+		default                   : Command;
+	}
+}
+
+Table SMTPReplyCodeXTable(code)
+{
+	switch(code)
+	{
+		case 0x31: FormatString("%c Positive Preliminary reply", code);
+		case 0x32: FormatString("%c Positive Completion reply", code);
+		case 0x33: FormatString("%c Positive Intermediate reply", code);
+		case 0x34: FormatString("%c Transient Negative Completion reply", code);
+		case 0x35: FormatString("%c Permanent Negative Completion reply", code);
+		default  : FormatString("%c", code);
+	}
+}
+
+Table SMTPReplyCodeYTable(code)
+{
+	switch(code)
+	{
+		case 0x30: FormatString("%c Syntax errors", code);
+		case 0x31: FormatString("%c Information", code);
+		case 0x32: FormatString("%c Connections", code);
+		case 0x33: FormatString("%c Unspecified", code);
+		case 0x34: FormatString("%c Unspecified", code);
+		case 0x35: FormatString("%c Mail system", code);
+		default  : FormatString("%c", code);
+	}
+}
+
+Table SMTPReplyCodeTable(ReplyCode, code)
+{
+	switch (ReplyCode)
+	{
+		case "211": FormatString("%s, System status, or system help reply", ReplyCode);
+		case "214": FormatString("%s, Help message", ReplyCode);
+		case "220": FormatString("%s, Domain service ready, or Ready to start TLS", ReplyCode);
+		case "221": FormatString("%s, Domain service closing transmission channel", ReplyCode);
+		case "235": FormatString("%s, Ok", ReplyCode);
+		case "250": FormatString("%s, OK, queuing for node node started, or Requested mail action okay, completed", ReplyCode);
+		case "251": FormatString("%s, OK, no messages waiting for node node, or User not local, will forward to forwardpath", ReplyCode);
+		case "252": FormatString("%s, OK, pending messages for node node started, or Cannot VRFY user, but will take message for this user and attempt delivery", ReplyCode);
+		case "253": FormatString("%s, OK, messages pending messages for node node started", ReplyCode);
+		case "354": FormatString("%s, Start mail input; end with <CRLF>.<CRLF>", ReplyCode);
+		case "355": FormatString("%s, Octet-FrameOffset is the transaction FrameOffset", ReplyCode);
+		case "421": FormatString("%s, Domain service not available, closing transmission channel", ReplyCode);
+		case "432": FormatString("%s, A password transition is needed", ReplyCode);
+		case "450": FormatString("%s, Requested mail action not taken: mailbox unavailable, or ATRN request refused", ReplyCode);
+		case "451": FormatString("%s, Requested action aborted: local error in processing, or Unable to process ATRN request now", ReplyCode);
+		case "452": FormatString("%s, Requested action not taken: insufficient system storage", ReplyCode);
+		case "453": FormatString("%s, You have no mail", ReplyCode);
+		case "454": FormatString("%s, TLS not available due to temporary reason, or Encryption required for requested authentication mechanism", ReplyCode);
+		case "458": FormatString("%s, Unable to queue messages for node node", ReplyCode);
+		case "459": FormatString("%s, Node node not allowed: reason", ReplyCode);
+		case "500": FormatString("%s, Command not recognized, or Syntax error", ReplyCode);
+		case "501": FormatString("%s, Syntax error, no parameters allowed", ReplyCode);
+		case "502": FormatString("%s, Command not implemented", ReplyCode);
+		case "503": FormatString("%s, Bad sequence of commands", ReplyCode);
+		case "504": FormatString("%s, Command parameter not implemented", ReplyCode);
+		case "521": FormatString("%s, Machine does not accept mail", ReplyCode);
+		case "530": FormatString("%s, Must issue a STARTTLS command first, or Encryption required for requested authentication mechanism", ReplyCode);
+		case "534": FormatString("%s, Authentication mechanism is too weak", ReplyCode);
+		case "535": FormatString("%s, access restriction or permission denied", ReplyCode);
+		case "538": FormatString("%s, Encryption required for requested authentication mechanism", ReplyCode);
+		case "550": FormatString("%s, Requested action not taken: mailbox unavailable", ReplyCode);
+		case "551": FormatString("%s, User not local; please try forwardpath", ReplyCode);
+		case "552": FormatString("%s, Requested mail action aborted: exceeded storage allocation", ReplyCode);
+		case "553": FormatString("%s, Requested action not taken: mailbox name not allowed", ReplyCode);
+		case "554": FormatString("%s, Transaction failed or No SMTP service here", ReplyCode);
+		default   : FormatString("%s (x=%s,y=%s,z=%c) ",ReplyCode,SMTPReplyCodeXTable(code[2]), SMTPReplyCodeYTable(code[1]),code[0]);
+	}
+}
+

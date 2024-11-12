@@ -1,0 +1,1754 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Group Policy: Registry Extension Encoding
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-GPREG]: Group Policy: Registry Extension Encoding (6.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 11/18/2009
+//#                          Minor, 3/11/2009
+//#
+//####
+
+[ RegisterBefore( FileTypeContent.FileData, GPREG, Contains(property.SmbFileName, "admx"))]
+[ RegisterBefore( FileTypeContent.FileData, GPREG, Contains(property.SmbFileName, "adm"))]
+[ RegisterBefore( FileTypeContent.FileData, GPREG, Contains(property.SmbFileName, "cmtx"))]
+[ RegisterBefore( FileTypeContent.FileData, GPREG, Contains(property.SmbFileName, "cmtl"))]
+[ RegisterBefore( FileTypeContent.FileData, GPREG, Contains(property.SmbFileName, "Registry.pol"))]
+[DataTypeByteOrder = LittleEndian]
+Protocol GPREG = FormatString("%s",property.SmbFileName)
+{
+	switch
+	{
+		case !Conversation.GPREG.id:
+			[BuildConversationWithParent]
+			struct{}
+	}
+	Switch
+	{
+		case Contains(property.SmbFileName, "admx") || Contains(property.SmbFileName, "adml"):
+			Switch
+			{
+				case UINT64(FrameData, Offset) == 0x6576206C6D783F3C || UINT64(FrameData, Offset) == 0x6C6D783F3CBFBBEF:
+					Struct ADMXFile
+					{
+						GPREGXMLDeclaration XMLDeclaration;
+						Switch
+						{
+							case Contains(property.SmbFileName, "admx"):
+								GPREGpdPolicyDefinitionsElement PolicyDefinition;
+							case Contains(property.SmbFileName, "adml"):
+								GPREGpdPolicyDefinitionResourcesElement PolicyDefinitionResources;
+						}
+					}
+				default:
+					blob(framelength - frameoffset) ContinualData;
+			};
+		case AsciiString(FrameData, FrameOffset, 4) == "PReg":
+			GPREGRegistryPolicyFile RegistryPolicyFile;
+		case Contains(Property.SmbFileName, "cmtx") || Contains(Property.SmbFileName, "cmtl"):
+			[DataFieldByteOrder = BigEndian]
+			XMLparser CmtxAndCmtlFile ;
+		case Contains(property.SmbFileName, "adm") && !Contains(property.SmbFileName, "admx") && !Contains(property.SmbFileName, "adml"):
+			Blob(FrameLength - FrameOffSet) AdmFile;
+	}
+	
+}
+
+Struct GPREGRegistryPolicyFile = "Signature = " + AsciiString(FrameData, FrameOffset, 4)
+{
+	UINT32 Signature = MustbeSetToTable(this, "0x67655250");
+	UINT32 Version = MustbeSetToTable(this, "0x1");
+	While[FrameOffset < FrameLength]
+	{
+		GPREGRegistryPolicyFileBody RegistryPolicyFileBody;
+	}
+}
+
+Struct GPREGRegistryPolicyFileBody = property.RegKeyPath
+{
+	UINT16 IdCharacterStart = MustbeSetToTable(this, "0x5b");
+	GPEFSInstruction Instruction;
+	UINT16 IdCharacterEnd = MustbeSetToTable(this, "0x5d");
+}
+
+[DatatypeByteorder = BigEndian]
+Struct GPREGXMLDeclaration
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false : XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	switch(UINT32(FrameData, FrameOffset))
+	{
+		case 0x0000FEFF: 
+			[Property.XMLEncoding = UTF32_BEN, Property.XMLCharLen = 4]
+			Struct
+			{
+				UINT32 BOM = XMLBOMTable(Property.XMLEncoding);
+			}
+		case 0xFFFE0000: 
+			[Property.XMLEncoding = UTF32_LEN, Property.XMLCharLen = 4]
+			Struct
+			{
+				UINT32 BOM = XMLBOMTable(Property.XMLEncoding);
+			}
+		default:
+			switch(UINT24(FrameData, FrameOffset))
+			{
+				case 0xEFBBBF: 
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					Struct
+					{
+						UINT24 BOM = XMLBOMTable(Property.XMLEncoding);
+					}
+				default:
+					switch(UINT16(FrameData, FrameOffset))
+					{
+						case 0xFEFF: 
+							[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+							Struct
+							{
+								UINT16 BOM = XMLBOMTable(Property.XMLEncoding);
+							}
+						case 0xFFFE: 
+							[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+							Struct
+							{
+								UINT16 BOM = XMLBOMTable(Property.XMLEncoding);
+							}
+					}
+			}
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	Struct
+	{
+		//
+		//	XML document type declaration 
+		//
+		switch
+		{
+			case String(FrameData, FrameOffset, Property.XMLEncoding, 5) == "<?xml" 
+				&& String(FrameData, FrameOffset, Property.XMLEncoding, 16) != "<?xml-stylesheet":
+				XmlElement(true) XMLDecl;
+		}
+
+		//
+		//	XMLEncoding and XMLCharLen will be set when this XML is start with space(s)
+		//
+		switch
+		{
+			case UnicodeString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+				[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+					Struct{};
+				case AsciiString(FrameData, FrameOffset, 1) == Property.XMLSpace:
+					[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+					Struct{};
+		}
+
+		// Consume white spaces, and hide in UI
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+		{
+			DynamicSwitch String(Property.XMLEncoding, 1)
+			{
+				default: Struct{}
+			};
+		}
+		
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlElement(True) Comment;
+		}
+
+		//
+		// links the XML file to the XSLT file
+		//
+		while [ String(FrameData, FrameOffset, Property.XMLEncoding, 16) == "<?xml-stylesheet" ]
+		{
+			XmlElement(true) XMLStyleSheet;
+		}
+
+		switch
+		{
+			case framelength - frameoffset > 0 
+				&& AsciiString(FrameData, FrameOffset, 1) != "<" 
+				&& UnicodeString(FrameData, FrameOffset, 1) != "<" :
+					Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+		} 
+
+		while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlElement(True) Comment;
+		}
+	}
+}
+
+
+//
+// ComplexType Localization
+//
+Struct GPREGpdLocalization
+{
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "stringTable") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			//
+			// Embedded ComplexType 
+			//
+			struct stringTable = this.STag.ToString
+			{
+				[Post.Local.stringTable_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("stringTable") STag;
+				switch
+				{
+					Case !Local.stringTable_IsEmpty:
+						struct
+						{
+							While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+							{
+								while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+								{
+									XmlElement(True) Comment;
+								}
+								struct String = this.STag.ToString
+								{
+									[Post.Local.String_IsEmpty = Property.IsXmlEmptyElement]
+									XmlTag("string") STag;
+									switch
+									{
+										Case !Local.String_IsEmpty:
+											struct
+											{
+												StringTerm(Property.XMLEncoding, "<", true, false, false) BaseType;
+												XmlTag("string") ETag;
+											}
+									}
+								}
+								
+							}
+							XmlTag("stringTable") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "presentationTable") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			//
+			// Embedded ComplexType 
+			//
+			struct presentationTable = this.STag.ToString
+			{
+				[Post.Local.presentationTable_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("presentationTable") STag;
+				switch
+				{
+					Case !Local.presentationTable_IsEmpty:
+						struct
+						{
+							While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+							{
+								while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+								{
+									XmlElement(True) Comment;
+								}
+								struct Presentation = this.STag.ToString
+								{
+									[Post.Local.Presentation_IsEmpty = Property.IsXmlEmptyElement]
+									XmlTag("presentation") STag;
+									switch
+									{
+										Case !Local.Presentation_IsEmpty:
+											struct
+											{
+												GPREGpdPolicyPresentation Presentation;
+												XmlTag("presentation") ETag;
+											}
+									}
+								}
+								
+							}
+							XmlTag("presentationTable") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType PolicyList
+//
+Struct GPREGpdPolicyList
+{
+	While [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+	{
+		XmlElement(True) Comment;
+	}
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Policy = this.STag.ToString
+		{
+			[Post.Local.Policy_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("policy") STag;
+			switch
+			{
+				Case !Local.Policy_IsEmpty:
+					struct
+					{
+						GPREGpdPolicyDefinition Policy;
+						XmlTag("policy") ETag;
+					}
+			}
+		}
+		While [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlElement(True) Comment;
+		}
+	}
+}
+
+//
+// ComplexType SupportedOnTable
+//
+Struct GPREGpdSupportedOnTable
+{
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "products") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Products = this.STag.ToString
+			{
+				[Post.Local.Products_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("products") STag;
+				switch
+				{
+					Case !Local.Products_IsEmpty:
+						struct
+						{
+							GPREGpdSupportedProducts Products;
+							XmlTag("products") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "definitions") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Definitions = this.STag.ToString
+			{
+				[Post.Local.Definitions_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("definitions") STag;
+				switch
+				{
+					Case !Local.Definitions_IsEmpty:
+						struct
+						{
+							GPREGpdSupportedOnDefinitions Definitions;
+							XmlTag("definitions") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType CategoryList
+//
+Struct GPREGpdCategoryList
+{
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Category = this.STag.ToString
+		{
+			[Post.Local.Category_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("category") STag;
+			switch
+			{
+				Case !Local.Category_IsEmpty:
+					struct
+					{
+						GPREGpdBaseDescriptiveGroup Category;
+						XmlTag("category") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType PolicyNamespaces
+//
+Struct GPREGpdPolicyNamespaces
+{
+	struct Target = this.STag.ToString
+	{
+		[Post.Local.Target_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("target") STag;
+		switch
+		{
+			Case !Local.Target_IsEmpty:
+				struct
+				{
+					XmlTag("target") ETag;
+				}
+		}
+	}
+	
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "using") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Using = this.STag.ToString
+		{
+			[Post.Local.Using_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("using") STag;
+			switch
+			{
+				Case !Local.Using_IsEmpty:
+					struct
+					{
+						XmlTag("using") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType PolicyDefinitions
+//
+Struct GPREGpdPolicyDefinitions
+{
+	struct PolicyNamespaces = this.STag.ToString
+	{
+		[Post.Local.PolicyNamespaces_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("policyNamespaces") STag;
+		switch
+		{
+			Case !Local.PolicyNamespaces_IsEmpty:
+				struct
+				{
+					GPREGpdPolicyNamespaces PolicyNamespaces;
+					XmlTag("policyNamespaces") ETag;
+				}
+		}
+	}
+	
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "supersededAdm") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct SupersededAdm = this.STag.ToString
+		{
+			[Post.Local.SupersededAdm_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("supersededAdm") STag;
+			switch
+			{
+				Case !Local.SupersededAdm_IsEmpty:
+					struct
+					{
+						XmlTag("supersededAdm") ETag;
+					}
+			}
+		}
+		
+	}
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "annotation") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Annotation = this.STag.ToString
+		{
+			[Post.Local.Annotation_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("annotation") STag;
+			switch
+			{
+				Case !Local.Annotation_IsEmpty:
+					struct
+					{
+						XmlElement(true) OtherElement;
+						XmlTag("annotation") ETag;
+					}
+			}
+		}
+		
+	}
+	struct Resources = this.STag.ToString
+	{
+		[Post.Local.Resources_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("resources") STag;
+		switch
+		{
+			Case !Local.Resources_IsEmpty:
+				struct
+				{
+					GPREGpdLocalization GpdLocalization;
+					XmlTag("resources") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "supportedOn") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct SupportedOn = this.STag.ToString
+			{
+				[Post.Local.SupportedOn_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("supportedOn") STag;
+				switch
+				{
+					Case !Local.SupportedOn_IsEmpty:
+						struct
+						{
+							GPREGpdSupportedOnTable SupportedOn;
+							XmlTag("supportedOn") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "categories") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Categories = this.STag.ToString
+			{
+				[Post.Local.Categories_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("categories") STag;
+				switch
+				{
+					Case !Local.Categories_IsEmpty:
+						struct
+						{
+							GPREGpdCategoryList Categories;
+							XmlTag("categories") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "policies") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Policies = this.STag.ToString
+			{
+				[Post.Local.Policies_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("policies") STag;
+				switch
+				{
+					Case !Local.Policies_IsEmpty:
+						struct
+						{
+							GPREGpdPolicyList Policies;
+							XmlTag("policies") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType PolicyDefinitionResources
+//
+Struct GPREGpdPolicyDefinitionResources
+{
+	struct DisplayName = this.DisplayName
+	{
+		[Post.Local.DisplayName_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("displayName") STag;
+		switch
+		{
+			Case !Local.DisplayName_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) DisplayName;
+					XmlTag("displayName") ETag;
+				}
+		}
+	}
+	
+	struct Description = this.Description
+	{
+		[Post.Local.Description_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("description") STag;
+		switch
+		{
+			Case !Local.Description_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Description;
+					XmlTag("description") ETag;
+				}
+		}
+	}
+	
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "annotation") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Annotation = this.STag.ToString
+		{
+			[Post.Local.Annotation_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("annotation") STag;
+			switch
+			{
+				Case !Local.Annotation_IsEmpty:
+					struct
+					{
+						XmlElement(true) OtherElement;
+						XmlTag("annotation") ETag;
+					}
+			}
+		}
+		
+	}
+	struct Resources = this.STag.ToString
+	{
+		[Post.Local.Resources_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("resources") STag;
+		switch
+		{
+			Case !Local.Resources_IsEmpty:
+				struct
+				{
+					GPREGpdLocalization Resources;
+					XmlTag("resources") ETag;
+				}
+		}
+	}
+	
+}
+
+//
+// Element policyDefinitions
+//
+struct GPREGpdPolicyDefinitionsElement = this.STag.ToString
+{
+	[Post.Local.GPREGpdPolicyDefinitionsElement_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("policyDefinitions") STag;
+	switch
+	{
+		Case !Local.GPREGpdPolicyDefinitionsElement_IsEmpty:
+			struct
+			{
+				GPREGpdPolicyDefinitions PolicyDefinitions;
+				XmlTag("policyDefinitions") ETag;
+			}
+	}
+}
+
+//
+// Element policyDefinitionResources
+//
+struct GPREGpdPolicyDefinitionResourcesElement = this.STag.ToString
+{
+	[Post.Local.GPREGpdPolicyDefinitionResourcesElement_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("policyDefinitionResources") STag;
+	switch
+	{
+		Case !Local.GPREGpdPolicyDefinitionResourcesElement_IsEmpty:
+			struct
+			{
+				GPREGpdPolicyDefinitionResources PolicyDefinitionResources;
+				XmlTag("policyDefinitionResources") ETag;
+			}
+	}
+}
+
+//
+// ComplexType LongDecimalElement
+//
+Struct GPREGpdLongDecimalElement
+{
+}
+
+//
+// ComplexType BooleanElement
+//
+Struct GPREGpdBooleanElement
+{
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "trueValue") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct TrueValue = this.STag.ToString
+			{
+				[Post.Local.TrueValue_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("trueValue") STag;
+				switch
+				{
+					Case !Local.TrueValue_IsEmpty:
+						struct
+						{
+							GPREGpdValue TrueValue;
+							XmlTag("trueValue") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "falseValue") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct FalseValue = this.STag.ToString
+			{
+				[Post.Local.FalseValue_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("falseValue") STag;
+				switch
+				{
+					Case !Local.FalseValue_IsEmpty:
+						struct
+						{
+							GPREGpdValue FalseValue;
+							XmlTag("falseValue") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "trueList") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct TrueList = this.STag.ToString
+			{
+				[Post.Local.TrueList_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("trueList") STag;
+				switch
+				{
+					Case !Local.TrueList_IsEmpty:
+						struct
+						{
+							GPREGpdValueList TrueList;
+							XmlTag("trueList") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "falseList") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct FalseList = this.STag.ToString
+			{
+				[Post.Local.FalseList_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("falseList") STag;
+				switch
+				{
+					Case !Local.FalseList_IsEmpty:
+						struct
+						{
+							GPREGpdValueList FalseList;
+							XmlTag("falseList") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType EnumerationElement
+//
+Struct GPREGpdEnumerationElement
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "item") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		//
+		// Embedded ComplexType 
+		//
+		struct item = this.STag.ToString
+		{
+			[Post.Local.item_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("item") STag;
+			switch
+			{
+				Case !Local.item_IsEmpty:
+					struct
+					{
+						struct Value = this.STag.ToString
+						{
+							[Post.Local.Value_IsEmpty = Property.IsXmlEmptyElement]
+							XmlTag("value") STag;
+							switch
+							{
+								Case !Local.Value_IsEmpty:
+									struct
+									{
+										GPREGpdValue Value;
+										XmlTag("value") ETag;
+									}
+							}
+						}
+						
+						Switch
+						{
+							Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "valueList") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+								struct ValueList = this.STag.ToString
+								{
+									[Post.Local.ValueList_IsEmpty = Property.IsXmlEmptyElement]
+									XmlTag("valueList") STag;
+									switch
+									{
+										Case !Local.ValueList_IsEmpty:
+											struct
+											{
+												GPREGpdValueList ValueList;
+												XmlTag("valueList") ETag;
+											}
+									}
+								}
+								
+						}
+						
+						XmlTag("item") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+
+
+//
+// ComplexType Value
+//
+Struct GPREGpdValue
+{
+	Switch
+	{
+		Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "delete"):
+			//
+			// Embedded ComplexType 
+			//
+			struct delete = this.STag.ToString
+			{
+				[Post.Local.delete_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("delete") STag;
+				switch
+				{
+					Case !Local.delete_IsEmpty:
+						struct
+						{
+							XmlTag("delete") ETag;
+						}
+				}
+			}
+			
+		Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "decimal"):
+			//
+			// Embedded ComplexType 
+			//
+			struct decimal = this.STag.ToString
+			{
+				[Post.Local.decimal_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("decimal") STag;
+				switch
+				{
+					Case !Local.decimal_IsEmpty:
+						struct
+						{
+							XmlTag("decimal") ETag;
+						}
+				}
+			}
+			
+		Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "string"):
+			//
+			// Embedded ComplexType 
+			//
+			struct string = this.STag.ToString
+			{
+				[Post.Local.string_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("string") STag;
+				switch
+				{
+					Case !Local.string_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "</", true, false, false) Value;
+							XmlTag("string") ETag;
+						}
+				}
+			}
+			
+		Default:
+			Switch
+			{
+				case Framedata > offset:
+				ReportParserError("ParserErrorProtocolClassWindows", "GPREG", "There is no such choice") ChoiceError;
+			}
+	}
+	
+}
+
+//
+// ComplexType ValueList
+//
+Struct GPREGpdValueList
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "item") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Item = this.STag.ToString
+		{
+			[Post.Local.Item_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("item") STag;
+			switch
+			{
+				Case !Local.Item_IsEmpty:
+					struct
+					{
+						GPREGpdValueItem Item;
+						XmlTag("item") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType ValueItem
+//
+Struct GPREGpdValueItem
+{
+	struct Value = this.STag.ToString
+	{
+		[Post.Local.Value_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("value") STag;
+		switch
+		{
+			Case !Local.Value_IsEmpty:
+				struct
+				{
+					GPREGpdValue Value;
+					XmlTag("value") ETag;
+				}
+		}
+	}
+	
+}
+
+//
+// ComplexType DataElementContent
+//
+[Property.ChildType = Property.XmlElemAttrValues$["type"]]
+Struct GPREGpdDataElementContent
+{
+	StringTerm(Property.XMLEncoding, "<", true, false, false) BaseType;
+}
+
+//
+// ComplexType TextBox
+//
+Struct GPREGpdTextBox
+{
+	struct Label = this.Label
+	{
+		[Post.Local.Label_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("label") STag;
+		switch
+		{
+			Case !Local.Label_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Label;
+					XmlTag("label") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "defaultValue") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct DefaultValue = this.DefaultValue
+			{
+				[Post.Local.DefaultValue_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("defaultValue") STag;
+				switch
+				{
+					Case !Local.DefaultValue_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) DefaultValue;
+							XmlTag("defaultValue") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType ComboBox
+//
+Struct GPREGpdComboBox
+{
+	struct Label = this.Label
+	{
+		[Post.Local.Label_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("label") STag;
+		switch
+		{
+			Case !Local.Label_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Label;
+					XmlTag("label") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "default") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Default = this.Default
+			{
+				[Post.Local.Default_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("default") STag;
+				switch
+				{
+					Case !Local.Default_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) Default;
+							XmlTag("default") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "suggestion") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Suggestion = this.Suggestion
+		{
+			[Post.Local.Suggestion_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("suggestion") STag;
+			switch
+			{
+				Case !Local.Suggestion_IsEmpty:
+					struct
+					{
+						StringTerm(Property.XMLEncoding, "<", true, false, false) Suggestion;
+						XmlTag("suggestion") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType ListBox
+//
+Struct GPREGpdListBox
+{
+	GPREGpdDataElementContent BaseType;
+}
+
+//
+// ComplexType PolicyPresentation
+//
+Struct GPREGpdPolicyPresentation
+{
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		Switch
+		{
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "text"):
+				struct text = this.Text
+				{
+					[Post.Local.text_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("text") STag;
+					switch
+					{
+						Case !Local.text_IsEmpty:
+							struct
+							{
+								StringTerm(Property.XMLEncoding, "<", true, false, false) Text;
+								XmlTag("text") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "decimalTextBox"):
+				struct decimalTextBox = this.STag.ToString
+				{
+					[Post.Local.decimalTextBox_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("decimalTextBox") STag;
+					switch
+					{
+						Case !Local.decimalTextBox_IsEmpty:
+							struct
+							{
+								GPREGpdDataElementContent DecimalTextBox;
+								XmlTag("decimalTextBox") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "textBox"):
+				struct textBox = this.STag.ToString
+				{
+					[Post.Local.textBox_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("textBox") STag;
+					switch
+					{
+						Case !Local.textBox_IsEmpty:
+							struct
+							{
+								GPREGpdTextBox TextBox;
+								XmlTag("textBox") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "checkBox"):
+				struct checkBox = this.STag.ToString
+				{
+					[Post.Local.checkBox_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("checkBox") STag;
+					switch
+					{
+						Case !Local.checkBox_IsEmpty:
+							struct
+							{
+								GPREGpdDataElementContent CheckBox;
+								XmlTag("checkBox") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "comboBox"):
+				struct comboBox = this.STag.ToString
+				{
+					[Post.Local.comboBox_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("comboBox") STag;
+					switch
+					{
+						Case !Local.comboBox_IsEmpty:
+							struct
+							{
+								GPREGpdComboBox ComboBox;
+								XmlTag("comboBox") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "dropdownList"):
+				struct dropdownList = this.STag.ToString
+				{
+					[Post.Local.dropdownList_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("dropdownList") STag;
+					switch
+					{
+						Case !Local.dropdownList_IsEmpty:
+							struct
+							{
+								GPREGpdDataElementContent DropdownList;
+								XmlTag("dropdownList") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "listBox"):
+				struct listBox = this.STag.ToString
+				{
+					[Post.Local.listBox_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("listBox") STag;
+					switch
+					{
+						Case !Local.listBox_IsEmpty:
+							struct
+							{
+								GPREGpdListBox ListBox;
+								XmlTag("listBox") ETag;
+							}
+					}
+				}
+				
+		}
+		
+	}
+}
+
+//
+// ComplexType BaseDescriptiveGroup
+//
+Struct GPREGpdBaseDescriptiveGroup
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "annotation") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Annotation = this.STag.ToString
+		{
+			[Post.Local.Annotation_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("annotation") STag;
+			switch
+			{
+				Case !Local.Annotation_IsEmpty:
+					struct
+					{
+						XmlElement(true) OtherElement;
+						XmlTag("annotation") ETag;
+					}
+			}
+		}
+		
+	}
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "parentCategory") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct ParentCategory = this.STag.ToString
+			{
+				[Post.Local.ParentCategory_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("parentCategory") STag;
+				switch
+				{
+					Case !Local.ParentCategory_IsEmpty:
+						struct
+						{
+							XmlTag("parentCategory") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "seeAlso") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct SeeAlso = this.SeeAlso
+		{
+			[Post.Local.SeeAlso_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("seeAlso") STag;
+			switch
+			{
+				Case !Local.SeeAlso_IsEmpty:
+					struct
+					{
+						StringTerm(Property.XMLEncoding, "<", true, false, false) SeeAlso;
+						XmlTag("seeAlso") ETag;
+					}
+			}
+		}
+		
+	}
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "keywords") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Keywords = this.Keywords
+			{
+				[Post.Local.Keywords_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("keywords") STag;
+				switch
+				{
+					Case !Local.Keywords_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) Keywords;
+							XmlTag("keywords") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType SupportedProducts
+//
+Struct GPREGpdSupportedProducts
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "product") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Product = this.STag.ToString
+		{
+			[Post.Local.Product_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("product") STag;
+			switch
+			{
+				Case !Local.Product_IsEmpty:
+					struct
+					{
+						GPREGpdSupportedProduct Product;
+						XmlTag("product") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType SupportedProduct
+//
+Struct GPREGpdSupportedProduct
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "majorVersion") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct MajorVersion = this.STag.ToString
+		{
+			[Post.Local.MajorVersion_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("majorVersion") STag;
+			switch
+			{
+				Case !Local.MajorVersion_IsEmpty:
+					struct
+					{
+						GPREGpdSupportedMajorVersion MajorVersion;
+						XmlTag("majorVersion") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType SupportedMajorVersion
+//
+Struct GPREGpdSupportedMajorVersion
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "minorVersion") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct MinorVersion = this.STag.ToString
+		{
+			[Post.Local.MinorVersion_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("minorVersion") STag;
+			switch
+			{
+				Case !Local.MinorVersion_IsEmpty:
+					struct
+					{
+						XmlTag("minorVersion") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType SupportedAndCondition
+//
+Struct GPREGpdSupportedAndCondition
+{
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		Switch
+		{
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "range"):
+				struct range = this.STag.ToString
+				{
+					[Post.Local.range_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("range") STag;
+					switch
+					{
+						Case !Local.range_IsEmpty:
+							struct
+							{
+								XmlTag("range") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "reference"):
+				struct reference = this.STag.ToString
+				{
+					[Post.Local.reference_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("reference") STag;
+					switch
+					{
+						Case !Local.reference_IsEmpty:
+							struct
+							{
+								XmlTag("reference") ETag;
+							}
+					}
+				}
+				
+		}
+		
+	}
+}
+
+//
+// ComplexType SupportedOrCondition
+//
+Struct GPREGpdSupportedOrCondition
+{
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		Switch
+		{
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "range"):
+				struct range = this.STag.ToString
+				{
+					[Post.Local.range_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("range") STag;
+					switch
+					{
+						Case !Local.range_IsEmpty:
+							struct
+							{
+								XmlTag("range") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "reference"):
+				struct reference = this.STag.ToString
+				{
+					[Post.Local.reference_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("reference") STag;
+					switch
+					{
+						Case !Local.reference_IsEmpty:
+							struct
+							{
+								XmlTag("reference") ETag;
+							}
+					}
+				}
+				
+		}
+		
+	}
+}
+
+//
+// ComplexType SupportedOnDefinition
+//
+Struct GPREGpdSupportedOnDefinition
+{
+	While [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+	{
+		XmlElement(True) Comment;
+	}
+	Switch
+	{
+		Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "or"):
+			struct or = this.STag.ToString
+			{
+				[Post.Local.or_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("or") STag;
+				switch
+				{
+					Case !Local.or_IsEmpty:
+						struct
+						{
+							GPREGpdSupportedOrCondition Or;
+							XmlTag("or") ETag;
+						}
+				}
+			}
+			
+		Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "and"):
+			struct and = this.STag.ToString
+			{
+				[Post.Local.and_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("and") STag;
+				switch
+				{
+					Case !Local.and_IsEmpty:
+						struct
+						{
+							GPREGpdSupportedAndCondition And;
+							XmlTag("and") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType SupportedOnDefinitions
+//
+Struct GPREGpdSupportedOnDefinitions
+{
+	While [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+	{
+		XmlElement(True) Comment;
+	}
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "definition") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		Struct Definition = this.STag.ToString
+		{
+			[Post.Local.Definition_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("definition") STag;
+			switch
+			{
+				Case !Local.Definition_IsEmpty:
+					struct
+					{
+						GPREGpdSupportedOnDefinition Definition;
+						XmlTag("definition") ETag;
+					}
+			}
+		}
+		While [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+		{
+			XmlElement(True) Comment;
+		}
+	}
+}
+
+//
+// ComplexType PolicyDefinition
+//
+Struct GPREGpdPolicyDefinition
+{
+	GPREGpdBaseDescriptiveGroup BaseDescriptiveGroup;
+	struct SupportedOn = this.STag.ToString
+	{
+		[Post.Local.SupportedOn_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("supportedOn") STag;
+		switch
+		{
+			Case !Local.SupportedOn_IsEmpty:
+				struct
+				{
+					XmlTag("supportedOn") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "enabledValue") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct EnabledValue = this.STag.ToString
+			{
+				[Post.Local.EnabledValue_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("enabledValue") STag;
+				switch
+				{
+					Case !Local.EnabledValue_IsEmpty:
+						struct
+						{
+							GPREGpdValue EnabledValue;
+							XmlTag("enabledValue") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "disabledValue") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct DisabledValue = this.STag.ToString
+			{
+				[Post.Local.DisabledValue_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("disabledValue") STag;
+				switch
+				{
+					Case !Local.DisabledValue_IsEmpty:
+						struct
+						{
+							GPREGpdValue DisabledValue;
+							XmlTag("disabledValue") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "enabledList") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct EnabledList = this.STag.ToString
+			{
+				[Post.Local.EnabledList_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("enabledList") STag;
+				switch
+				{
+					Case !Local.EnabledList_IsEmpty:
+						struct
+						{
+							GPREGpdValueList EnabledList;
+							XmlTag("enabledList") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "disabledList") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct DisabledList = this.STag.ToString
+			{
+				[Post.Local.DisabledList_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("disabledList") STag;
+				switch
+				{
+					Case !Local.DisabledList_IsEmpty:
+						struct
+						{
+							GPREGpdValueList DisabledList;
+							XmlTag("disabledList") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "elements") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Elements = this.STag.ToString
+			{
+				[Post.Local.Elements_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("elements") STag;
+				switch
+				{
+					Case !Local.Elements_IsEmpty:
+						struct
+						{
+							GPREGpdPolicyElements Elements;
+							XmlTag("elements") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType PolicyElements
+//
+Struct GPREGpdPolicyElements
+{
+	While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		Switch
+		{
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "boolean"):
+				struct boolean = this.STag.ToString
+				{
+					[Post.Local.boolean_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("boolean") STag;
+					switch
+					{
+						Case !Local.boolean_IsEmpty:
+							struct
+							{
+								GPREGpdBooleanElement Boolean;
+								XmlTag("boolean") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "decimal"):
+				struct decimal = this.STag.ToString
+				{
+					[Post.Local.decimal_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("decimal") STag;
+					switch
+					{
+						Case !Local.decimal_IsEmpty:
+							struct
+							{
+								XmlTag("decimal") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "text"):
+				struct text = this.STag.ToString
+				{
+					[Post.Local.text_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("text") STag;
+					switch
+					{
+						Case !Local.text_IsEmpty:
+							struct
+							{
+								XmlTag("text") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "enum"):
+				struct enum = this.STag.ToString
+				{
+					[Post.Local.enum_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("enum") STag;
+					switch
+					{
+						Case !Local.enum_IsEmpty:
+							struct
+							{
+								GPREGpdEnumerationElement Enum;
+								XmlTag("enum") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "list"):
+				struct list = this.STag.ToString
+				{
+					[Post.Local.list_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("list") STag;
+					switch
+					{
+						Case !Local.list_IsEmpty:
+							struct
+							{
+								XmlTag("list") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "longDecimal"):
+				struct longDecimal = this.STag.ToString
+				{
+					[Post.Local.longDecimal_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("longDecimal") STag;
+					switch
+					{
+						Case !Local.longDecimal_IsEmpty:
+							struct
+							{
+								GPREGpdLongDecimalElement LongDecimal;
+								XmlTag("longDecimal") ETag;
+							}
+					}
+				}
+				
+			Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "multiText"):
+				struct multiText = this.STag.ToString
+				{
+					[Post.Local.multiText_IsEmpty = Property.IsXmlEmptyElement]
+					XmlTag("multiText") STag;
+					switch
+					{
+						Case !Local.multiText_IsEmpty:
+							struct
+							{
+								XmlTag("multiText") ETag;
+							}
+					}
+				}
+				
+		}
+		
+	}
+}

@@ -1,0 +1,272 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Real-time Transport Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3550
+//#  Microsoft References:   [MS-RTSP]: Real-Time Streaming Protocol (RTSP) Windows Media Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+[
+	Global.RTSPContentTypeTable$[FrameNumber] = Global.RTSPCurrentContentType$[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress,DestinationNetworkAddress) : MakeByteArray(DestinationNetworkAddress,SourceNetworkAddress)],
+	property.RTSPContentType = Global.RTSPContentTypeTable$[FrameNumber]
+]
+Protocol RTP = FormatString("PayloadType = %s, SSRC = %u, Seq = %d, TimeStamp = %u%s",
+							RTPPayloadTypeTable(PayloadType),
+							SyncSourceId,
+							SequenceNumber,
+							Timestamp,
+							Marker ? ", Mark" : ""
+							)
+{
+	[Global.RTCPPort$[MakeByteArray(SourceNetworkAddress, SourcePort + 1)] = true]
+	[Global.RTCPPort$[MakeByteArray(DestinationNetworkAddress, DestinationPort + 1)] = true]
+	UINT16 Version:2 = FormatString("    (%s) %s", this.ToBitString, this);
+	UINT16 Padding:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Contains additional padding bytes at the end" : "No padding bytes at the end");
+	UINT16 Extension:1 = FormatString("  (%s) %s", this.ToBitString, this ? "The fixed header is followed by exactly one header extension" : "No header extension");
+	UINT16 CSRCCount:4 = FormatString("  (%s) %s", this.ToBitString, this);
+	UINT16 Marker:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Marker set" : "Marker not set");
+	[property.RTPPayloadType]
+	UINT16 PayloadType:7 = FormatString("(%s) %s", this.ToBitString, RTPPayloadTypeTable(this));
+	UINT16 SequenceNumber;
+	UINT32 Timestamp;
+	UINT32 SyncSourceId;
+	switch
+	{
+		case CSRCCount > 0:
+			struct ContributingSourceList
+			{
+				UINT32 ContributingSource[CSRCCount];
+			}
+	}
+	switch
+	{
+		case Extension == 1:
+			RTPHeaderExtension HeaderExtension;
+	}
+	[property.RTPPayloadLength = Padding ? ( FrameLength - FrameOffset - UINT8(FrameData, FrameLength - 1)) : (FrameLength - FrameOffset)]
+	switch
+	{
+		case property.RTPPayloadLength > 0:
+			switch
+			{
+				
+				default:
+				_struct RTPPayloadNotEncrypted
+				{	
+					switch
+					{
+						case Global.SDPMediaType$[property.RTPPayloadType, "x-asf-pf/1000\r\n"] :
+							// asf payload
+							struct AsfPayload
+							{
+								MSRTSPRtpPayloadFormatHeader RtpPayloadFormatHeader;
+								switch(RtpPayloadFormatHeader.L)
+								{
+									case 1:
+										[local.HeaderLen = 4 + (RtpPayloadFormatHeader.R + RtpPayloadFormatHeader.D + RtpPayloadFormatHeader.I) * 4]
+										[DatafieldFramelength = FrameOffset + property.RTPPayloadLength - local.HeaderLen]
+										AsfDataPackets AsfData;
+									case 0:
+										[local.HeaderLen = 4 + (RtpPayloadFormatHeader.R + RtpPayloadFormatHeader.D + RtpPayloadFormatHeader.I) * 4]
+										Blob(property.RTPPayloadLength - local.HeaderLen) AsfContinue;
+								}
+							}
+						case Timestamp == 0
+							&& (UINT32(FrameData, FrameOffset) & 0x7FFFFFFF) == 0
+							&& Global.SDPMediaType$[property.RTPPayloadType, "x-wms-rtx/1000\r\n"]:
+							// rtx payload
+						case property.RTSPContentType.Contains("x-rtsp-udp-packetpair"):
+							struct RTPRTXPayload
+							{
+								MSRTSPRtpTransmittingPacketPairData RtpTransmittingPacketPairData;
+								Blob(property.RTPPayloadLength - 4) RTXData;
+							}
+						case Global.SDPMediaType$[property.RTPPayloadType, "x-wms-fec/1000\r\n"]:
+							// fec payload
+							struct FECPayload
+							{
+								MSRTSPRtpPacketHeaderFecExtension RtpPacketHeaderFecExtension;
+								Blob(property.RTPPayloadLength - 16) FECData;
+							}
+						default:
+							Blob(property.RTPPayloadLength) Payload;
+					}      
+				}
+			}
+	}
+	
+	switch
+	{
+		case Padding == 1:
+			RTPPadding(FrameLength) PaddingData;
+	}
+}
+Table MSRTPPayloadTypeTable(value)
+{
+	switch value
+	{
+		//case 0:	"Audio, Codec: G.711 ¦Ì-Law, ClockRate: 8000, P-Times: 20,40,60, Channels: 1";
+		//case 3:	"Audio, Codec: GSM 6.10, ClockRate: 8000, P-Times: 20,40,60, Channels: 1";
+		//case 4: "Audio, Codec: G.723.1, ClockRate: 8000, P-Times: 30,60,90, Channels: 1";
+		//case 8: "Audio, Codec: G.711 A-Law, ClockRate: 8000, P-Times: 20,40,60, Channels: 1";
+		case 111:	"Audio, Codec: Siren, ClockRate: 16000, P-Times: 20,40,60,100,200, Channels: 1";
+		case 112:	"Audio, Codec: G.722.1, ClockRate: 16000, P-Times: 20,40,60, Channels: 1";
+		case 114: "Audio, Codec: RT Audio, ClockRate: 16000, P-Times: 20,40,60, Channels: 1";
+		case 115: "Audio, Codec: RT Audio, ClockRate: 8000, P-Times: 20,40,60, Channels: 1";
+		case 116:	"Audio, Codec: G.726, ClockRate: 8000, P-Times: 20,40,60, Channels: 1";
+	
+		//case 34:	"Video, Codec: H.263, ClockRate: 90000";
+		case 121:	"Video, Codec: RT Video, ClockRate: 90000";
+		
+		default:	"dynamic";
+	}
+}
+
+Table RTPPayloadTypeTable(value)
+{
+	switch
+	{
+		case  value ==   0:"PCMU Audio, 8000Hz [1 Channel]";
+		case  value ==   1:"1016 Audio, 8000Hz [1 Channel]";
+		case  value ==   2:"G721 Audio, 8000Hz [1 Channel]";
+		case  value ==   3:"GSM Audio, 8000Hz [1 Channel]";
+		case  value ==   4:"G723 Audio, 8000Hz [1 Channel]";
+		case  value ==   5:"DVI4 Audio, 8000Hz [1 Channel]";
+		case  value ==   6:"DVI4 Audio, 16000Hz [1 Channel]";
+		case  value ==   7:"LPC Audio, 8000Hz [1 Channel]";
+		case  value ==   8:"PCMA Audio, 8000Hz [1 Channel]";
+		case  value ==   9:"G722 Audio, 8000Hz [1 Channel]";
+		case  value ==  10:"L16 Audio, 44100Hz [2 Channels]";
+		case  value ==  11:"L16 Audio, 44100Hz [1 Channel]";
+		case  value ==  12:"QCELP Audio, 8000Hz [1 Channel]";
+		case  value ==  13:"CN Audio, 8000Hz [1 Channel]";
+		case  value ==  14:"MPA Audio, 90000Hz [? Channels]";
+		case  value ==  15:"G728 Audio, 8000Hz [1 Channel]";
+		case  value ==  16:"DVI4 Audio, 11025Hz [1 Channel]";
+		case  value ==  17:"DVI4 Audio, 22050Hz [1 Channel]";
+
+		case  value ==  18:"G729 Audio, 8000Hz [1 Channel]";
+		case  value ==  19:"Reserved";
+
+		case  value ==  25:"CellB Video, 90000Hz";
+		case  value ==  26:"JPEG Video, 90000Hz";
+		case  value ==  28:"nv Video, 90000Hz";
+
+		case  value ==  31:"H261 Video, 90000Hz";
+		case  value ==  32:"MPV Video, 90000Hz";
+		case  value ==  33:"MP2T Audio/Video, 90000Hz";
+		case  value ==  34:"H263 Video, 90000Hz";
+
+		case  value >=  72 &&
+			  value <=  76:"Reserved";
+		case  value >=  96 &&
+			  value <= 127:
+			  MSRTPPayloadTypeTable(value);
+		default           :"Unhandled RTP Type";
+	}
+}
+
+//#RFC 3550 page 19
+struct RTPHeaderExtension
+{
+	UINT16 DefinedByProfile;
+	UINT16 Length = FormatString("%d bytes", this*4);
+	Blob(Length*4) HeaderExtension;
+}
+
+//#RFC 3550 page 19
+//# If the padding bit is set, the packet contains one or more
+//# additional padding octets at the end which are not part of the
+//# payload.  The last octet of the padding contains a count of how
+//# many padding octets should be ignored, including itself.
+//#Usage:
+//# PaddingEndOffset is the end offset of the RTPPadding structure
+struct RTPPadding(PaddingEndOffset) = FormatString("%d bytes", this.PaddingData.PaddingLength)
+{
+	switch
+	{
+		case !(UINT8(FrameData, PaddingEndOffset - 1) == (PaddingEndOffset - FrameOffset)):
+			ReportParserError(ParserErrorProtocolClassWindows, "RTP/RTCP", "Padding error" ) RTPPaddingError;
+		default:
+			_struct PaddingData
+			{
+				BLOB(UINT8(FrameData, PaddingEndOffset - 1)) Padding;
+				UINT8 PaddingLength;
+			}
+	}
+}
+
+
+
+[DataFieldByteOrder = BigEndian]
+struct MSRTSPRtpTransmittingPacketPairData
+{
+	UINT8 S:1 = FormatString("  (%s) %s", this.ToBitString, this? "First packet-pair" : "Not first packet-pair");
+	UINT8 L:1 = FormatString("  (%s) %s", this.ToBitString,MustBeSetToTable(this, "1"));
+	UINT8 R:1 = FormatString("  (%s) %s", this.ToBitString,MustBeSetToTable(this, "0"));
+	UINT8 D:1 = FormatString("  (%s) %s", this.ToBitString,MustBeSetToTable(this, "0"));
+	UINT8 I:1 = FormatString("  (%s) %s", this.ToBitString,MustBeSetToTable(this, "0"));
+	UINT8 RES:3 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+	UINT24 Length;
+}
+
+[DataFieldByteOrder = BigEndian]
+struct MSRTSPRtpPacketHeaderFecExtension
+{
+	UINT16 SNBase;
+	UINT16 LengthRecovery;
+	UINT8 E:1 = MustBeSetToTable(this, "0");
+	UINT8 PTRecovery:7;
+	UINT24 Mask;
+	UINT32 TSRecovery;
+	UINT8 Padding1:3;
+	UINT8 FecIndex:5;
+	UINT8 Padding2:3;
+	UINT8 FecPktSpan:5;
+	UINT8 Padding3:3;
+	UINT8 ExFlags:5 = MustBeSetToTable(this, "0");
+	
+		
+	UINT8 Reserved = MUSTBeSetToTable(this, "0x0000");
+}
+
+[DataFieldByteOrder = BigEndian]
+struct MSRTSPRtpPayloadFormatHeader
+{
+	UINT8 S:1 = FormatString("  (%s) %s", this.ToBitString, this? "Contains Key-Frame" : "");
+	UINT8 L:1 = FormatString("  (%s) %s", this.ToBitString, this? "Data length field present" : "Data offset field present");
+	UINT8 R:1 = FormatString("  (%s) %s", this.ToBitString, this? "Relative Timestamp field is present" : "");
+	UINT8 D:1 = FormatString("  (%s) %s", this.ToBitString, this? "Duration field is present" : "");
+	UINT8 I:1 = FormatString("  (%s) %s", this.ToBitString, this? "LocationId field is present" : "");
+	UINT8 RES:3 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+		
+	switch
+	{
+		case L == 1:
+			UINT24 Length;
+		case L == 0:
+			UINT24 Offset;
+	}
+	switch
+	{
+		case R == 1:
+			UINT32 RelativeTimestamp;
+	}
+	switch
+	{
+		case D == 1:
+			UINT32 Duration;
+	}
+	switch
+	{
+		case I == 1:
+			UINT32 LocationId;
+	}
+}

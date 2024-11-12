@@ -1,0 +1,334 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NetBIOS Name Service Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1002 [4.2]
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+// [RFC 1002    Page 10    4.2.1.3.  RESOURCE RECORD]
+struct  NbtNsResourceRecord
+{
+	[NbtNsSummary = NbtNsReqRes ? NbtNsSummary + " for " + this.ToString : NbtNsSummary]
+	NbtName  RRName;
+	UINT16  ResourceType = NbtNsQuestionTypeTable( this );
+	UINT16  ResourceClass = NbtNsQuestionClassTable( this );
+	UINT32 TimeToLive;
+
+	UINT16  ResourceDataLength;
+	
+	switch
+	{
+		// [RFC 1002    Page 23    4.2.15.  REDIRECT NAME QUERY RESPONSE]
+		case ResourceType == 2:     NbtName  AuthoritativeNameServer;
+		
+		// [RFC 1002    Page 22    4.2.14.  NEGATIVE NAME QUERY RESPONSE]
+		case ResourceType == 10 && ResourceDataLength > 0:  AsciiString(ResourceDataLength) NullRData;
+		
+		
+		// [RFC 1002    Page 24    4.2.16.  WAIT FOR ACKNOWLEDGEMENT (WACK) RESPONSE]
+		case ResourceType == 32 &&
+			ResourceDataLength == 2:
+				UINT16  Flag
+				{
+
+					UINT16 R:1 = FormatString("       (%s) %s",
+										this.ToBitString, this ? "Response" : "Request"
+										);
+
+					UINT16 OPCode:4   = FormatString("  (%s) %s",  this.ToBitString , NbtNsOPCodeTable( this ));
+					UINT16 AA:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Authorized answer" : "Non-authorized answer"
+										);
+
+					UINT16 TC:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Datagram truncated" : "Datagram not truncated"
+										);
+					UINT16 RD:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Recursion desired" : "Recursion not desired"
+										);
+					UINT16 RA:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Recursion available" : "Recursion not available"
+										);
+					UINT16 Reserved:2 =   FormatString("(%s)",this.ToBitString);
+					UINT16 B:1        = FormatString("       (%s) %s",
+										this.ToBitString, this ? "Broadcast" : "Not a broadcast packet"
+										);
+					UINT16 Unused:4 = FormatString("  (%s)",this.ToBitString);
+				};
+
+	// [RFC 1002    Page 21    4.2.13.  POSITIVE NAME QUERY RESPONSE]
+	case ResourceType == 32 &&
+		ResourceDataLength >= 6: NbtNsResouceRecordData(RRName.Name)  ResouceRecordData[ResourceDataLength/6];
+	
+	// [RFC 1002    Page 26    4.2.18.  NODE STATUS RESPONSE]
+	case ResourceType==33:  NbtNaNBSTAT  NbtNaNBSTATData;
+	};
+}
+
+// [RFC 1002    Page 8    4.2.1.1.  HEADER]
+Table NbtNsOPCodeTable( value )
+{
+	switch( value )
+	{
+		case  0:"Query";
+		case  5:"Registration";
+		case  6:"Release";
+		case  7:"WACK";
+		case  8:"Refresh";
+		case  9:"Refresh";
+		case 15:"Multi-Homed Name Registration";
+		default:"Unknown Operation";
+	}
+}
+
+Table  NbtNsRCodeTable( value )
+{
+	switch( value )
+	{
+		case  0:"Success";
+		case  1:"Request was invalidly formatted.";
+		case  2:"Server failure";
+		case  3:"Requested name doesn't exist";
+		case  4:"Unsupported request error";
+		case  5:"Name Refused error.";
+		case  6:"Name Active error.";
+		case  7:"Name in Conflict error.";
+		default:FormatString("Undefined(%d)",value);
+	}
+}
+
+// [RFC 1002    Page 9    4.2.1.1.  HEADER]
+Table NbtNsQuestionTypeTable( value )
+{
+	switch( value )
+	{
+		case  1:"IP Address";
+		case  2:"Name Server";
+		case 10:"Null";
+		case 32:"NetBIOS General Name Service";
+		case 33:"Node Status Request";
+		default:FormatString("Undefined %d(%#x)",value,value);
+	}
+}
+
+// [RFC 1002    Page 10    4.2.1.2.  QUESTION SECTION]
+Table NbtNsQuestionClassTable( value )
+{
+	switch( value )
+	{
+		case  1:FormatString("Internet Class %d(%#x)",value,value);
+		default:FormatString("Undefined %d(%#x)",value,value);
+	}
+}
+
+Table NbtNsONTTable( value )
+{
+	switch( value )
+	{
+		case  0:"B node";
+		case  1:"P node";
+		case  2:"M node";
+		case  3:"H node";
+	}
+}
+
+struct NbtName = FormatString("%s %s", Local.NbtNameValue, NETBIOSNamePostfixTable(NbtType))
+{
+	[
+		Local.NbtOffset = UINT8(FrameData, FrameOffset) == 0xC0 ? (ProtocolOffset + UINT8(FrameData, FrameOffset + 1)) : FrameOffset,
+		NbtType = ((UINT8(FrameData, Local.NbtOffset + UINT8(FrameData, Local.NbtOffset) - 1) - 0x41) << 4)
+			| (UINT8(FrameData, Local.NbtOffset + UINT8(FrameData, Local.NbtOffset)) - 0x41)
+	]
+	switch 
+	{
+	 case UINT8(FrameData, FrameOffset) < 0xC0:
+    [Local.NbtNameValue]
+    NbtString Name;
+	 Default:
+    Struct
+    {
+      UINT16 PointerIndicater:2;
+      [Local.NbtNameValue = this.ToString]
+      UINT16 NamePointer:14 = NbtString(FrameData, Local.NbtOffset);
+    }
+	}
+}
+
+// [RFC 1002    Page 6    4.2.  NAME SERVICE PACKETS]
+//[DefaultTimeOut = NBTNSConversationTimeout]
+Protocol NbtNs = NbtNsSummary
+{
+	//# RFC 1002, page 7
+	//# 4.2.1.  GENERAL FORMAT OF NAME SERVICE PACKETS
+	//# If Name Service packets are sent over a TCP connection they are
+	//# preceded by a 16 bit unsigned integer representing the length of the
+	//# Name Service packet.
+	switch
+	{
+		case NbtNsOnTCP: UINT16 TCPLength;
+	}
+	UINT16 TransactionId;
+	[
+		Post.NbtNsSummary = NbtNsOPCodeTable(Flag.OPCode),
+		Post.NbtNsSummary = Flag.R ? NbtNsSummary + " Response" : NbtNsSummary + " Request",
+		Post.NbtNsSummary = Flag.R ? NbtNsSummary + ", " + NbtNsRCodeTable(Flag.RCode) : NbtNsSummary
+	]
+	UINT16 Flag
+	{
+
+		[NbtNsReqRes]
+	
+		UINT16 R:1 = FormatString("       (%s) %s",
+										this.ToBitString, this ? "Response" : "Request"
+										);
+		[NbtNsOpCode]
+		UINT16 OPCode:4   = FormatString("  (%s) %s",  this.ToBitString , NbtNsOPCodeTable( this ));
+		UINT16 AA:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Authorized answer" : "Non-authorized answer"
+										);
+
+		UINT16 TC:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Datagram truncated" : "Datagram not truncated"
+										);
+		UINT16 RD:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Recursion desired" : "Recursion not desired"
+										);
+		UINT16 RA:1       = FormatString("      (%s) %s",
+										this.ToBitString, this ? "Recursion available" : "Recursion not available"
+										);
+		UINT16 Reserved:2 =      FormatString("(%s)",this.ToBitString);
+		UINT16 B:1        = FormatString("       (%s) %s",
+										this.ToBitString, this ? "Broadcast" : "Not a broadcast packet"
+										);
+		UINT16 RCode:4    =     FormatString("   (%s) %s", this.ToBitString , NbtNsRCodeTable( this ));
+	};
+//	[
+//		BuildConversation ( NbtNsReqRes ? MakeByteArray(DestinationNetworkAddress, TransactionID)
+//										: MakeByteArray(SourceNetworkAddress, TransactionID)
+//							),
+//		Post.Conversation.ConversationDescription = FormatString("(%s, TransactID:%d) ConvID = %d", NbtNsOPCodeTable(NbtNsOpCode), TransactionID, ConvID)
+//	]
+	UINT16 QuestionCount;
+	UINT16 AnswerCount;
+	UINT16 NameServiceCount;
+	UINT16 AdditionalCount;
+	
+	NbtNsQuestionSection  NbtNsQuestionSectionData[ QuestionCount ];
+	NbtNsResourceRecord   AnswerRecord[ AnswerCount ];
+	NbtNsResourceRecord   NameService[ NameServiceCount ];
+	NbtNsResourceRecord   AdditionalRecord[ AdditionalCount ];
+	//RFC 1002 page 21
+	//4.2.14.  NEGATIVE NAME QUERY RESPONSE
+	switch
+	{
+		case Flag.R == 1 &&
+			QuestionCount == 0 &&
+			AnswerCount == 0 &&
+			NameServiceCount == 0 &&
+			AdditionalCount == 0 : NbtNsResourceRecord NegativeNMQueryRecord;
+	}
+	switch
+	{
+		case FrameOffset < FrameLength:
+			BLOB(FrameLength - FrameOffset) DataLeft;
+	}
+}
+
+// [RFC 1002    Page 10    4.2.13.  POSITIVE NAME QUERY RESPONSE]
+struct NbtNsResouceRecordData(Name)
+{
+	[IsGroupName = (NBFlags & 0x8000) == 0x8000 ? TRUE : FALSE]
+	UINT16 NBFlags
+	{
+		// [RFC 1002    Page 12]
+		UINT16 G:1  = FormatString("  (%s) %s", this.ToBitString, this ? "Group NetBIOS Name" : "Unique NetBIOS Name" );
+		UINT16 ONT:2  = FormatString("(%s) %s", this.ToBitString, NbtNsONTTable(this));
+		UINT16 Rsv:13 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+	[
+		NbtNsSummary = NbtNsSummary + ", " + this.ToString,
+		Global.NameTable$[NBAddress] = IsGroupName ? Global.NameTable$[NBAddress] : Name
+	]
+	IPv4Address NBAddress;
+}
+
+// [RFC 1002    Page 9    4.2.1.2.  QUESTION SECTION]
+struct  NbtNsQuestionSection
+{
+	[NbtNsSummary = NbtNsReqRes == 0 ? NbtNsSummary + " for " + this.ToString : NbtNsSummary]
+	NbtName  QuestionName;
+	UINT16 QuestionType = NbtNsQuestionTypeTable( this );
+	UINT16 QuestionClass = NbtNsQuestionClassTable( this );
+}
+
+// [RFC 1002    Page 26    4.2.18.  NODE STATUS RESPONSE]
+struct NbtNsNameModeEntry = Name.ToString + " " + NameFlag.ToString
+{
+	NetBiosName Name;
+	UINT16  NameFlag = FormatString("%s, %s, %s",
+									NbtNsONTTable(ONT),
+									G ? "Group" : "Unique",
+									ACT ? "Active" : "Not Active"
+									)
+	{
+
+		UINT16  G:1   = FormatString("  (%s) %s",
+										this.ToBitString, this ? "Group NetBIOS Name" : "Unique NetBIOS Name"
+										);
+
+		UINT16  ONT:2 =      FormatString("(%s) %s", this.ToBitString, NbtNsONTTable( this ));
+		UINT16  DRG:1 = FormatString("(%s) %s",
+										this.ToBitString, this ? "Name is being Deregistered" : "Not Deregistering"
+										);
+		UINT16  CNF:1 = FormatString("(%s) %s",
+										this.ToBitString, this ? "Name is in Conflict" : "Name is not in Conflict"
+										);
+		UINT16  ACT:1 = FormatString("(%s) %s",
+										this.ToBitString, this ? "Active Name" : "Non-Active Name"
+										);
+		UINT16  PRM:1 =FormatString("(%s) %s",
+										this.ToBitString, this ? "Permanent" : "Non-Permanent"
+										);
+		UINT16 Rsv:9 = FormatString(" (%s)", this.ToBitString);
+	};
+}
+	
+// [RFC 1002    Page 26    4.2.18.  NODE STATUS RESPONSE]
+struct NbtNsStatics
+{	
+	MacAddress  UnitID;
+	UINT8   Jumpers;
+	UINT8   TestResult;
+	UINT16  VersionNumber;
+	UINT16  PeriodOfStatistics;
+	UINT16  NumberOfCRCs;
+	UINT16  NumberAlignmentErrors;
+	UINT16  NumberOfCollisions;
+	UINT16  NumberSendAborts;
+	UINT32  NumberGoodSends;
+	UINT32  NumberGoodReceives;
+	UINT16  NumberRetransmits;
+	UINT16  NumberNoResponseConditions;
+	UINT16  NumberFreeCommandBlocks;
+	UINT16  TotalNumberCommandBlocks;
+	UINT16  MaxTotalNumberCommandBlocks;
+	UINT16  NumberPendingSessions;
+	UINT16  MaxNumberPendingSessions;
+	UINT16  MaxTotalSessionsPossible;
+	UINT16  SessionDataPacketSize;
+}
+
+// [RFC 1002    Page 26    4.2.18.  NODE STATUS RESPONSE]
+struct  NbtNaNBSTAT
+{
+	UINT8  Num;
+	NbtNsNameModeEntry  NameMode[ Num ];
+	NbtNsStatics  NbtNsStaticsData;
+}

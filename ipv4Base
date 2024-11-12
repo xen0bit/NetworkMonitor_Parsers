@@ -1,0 +1,484 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Protocol version 4
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 781, 791, 1108, 1063, 1122, 1393, 1475, 1770, 2113
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/23/2010
+//#
+//####
+
+[DefaultTimeOut = IPv4ConversationTimeout]
+Protocol IPv4 = FormatString("%s%sSrc = %s, Dest = %s, Next Protocol = %s, Packet ID = %d, Total IP Length = %d",
+							property.IPTruncated ? FormatString("[Truncated to %u bytes]",FrameLength - FrameOffset) : "",
+							this.FragmentFlags.Offset > 0 ? FormatString("[Fragment, Offset = %u] ", this.FragmentFlags.Offset * 8) : "",
+							SourceAddress.ToString,
+							DestinationAddress.ToString,
+							ProtocolTypeAbbreviationTable(this.NextProtocol),
+							this.Identification,
+							this.TotalLength
+							)
+{
+	UINT8 Versions = FormatString("%s; Header Length = %d", IPVersionTable(Version), IPHeaderLength)
+	{
+		UINT8 Version:4 = FormatString("     (%s) %s",this.ToBitString, IPVersionTable(this));
+		[IPHeaderLength = this * 4]
+		UINT8 HeaderLength:4 = FormatString("(%s) %u bytes (%#x)", this.ToBitString, this*4, this);
+	};
+
+	[DSCP = (UINT8(FrameData, FrameOffset) & 0xFC)>>2]
+	UINT8 DifferentiatedServicesField = FormatString("DSCP: %d, ECN: %d", DSCP, this & 0x03)
+	{
+		UINT8 DSCP:6 = FormatString("(%s) %s %d", this.ToBitString, "Differentiated services codepoint",this);
+		UINT8 ECT:1 = FormatString(" (%s) %s", this.ToBitString, this?"ECN-Capable Transport set":"ECN-Capable Transport not set");
+		UINT8 CE:1 = FormatString("  (%s) %s", this.ToBitString, this?"ECN-CE set":"ECN-CE not set");
+	};
+
+	[IPPayloadLength = this - IPHeaderLength, IPTotalLength]
+	UINT16 TotalLength;
+	UINT16 Identification;
+
+	UINT16 FragmentFlags
+	{
+		UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 DF:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Do not fragment":"Fragment if necessary");
+		[Local.IPv4Fragment = Property.IPFragment]
+		[Property.IPv4FragmentMoreFrag, Property.IPFragment]
+		UINT16 MF:1 = FormatString("      (%s) %s", this.ToBitString, this ? "More fragments follow this fragment":"This is the last fragment");
+		[IPContinuation = (this > 0) ? TRUE : FALSE]
+		UINT16 Offset:13 = FormatString("  (%s) %d", this.ToBitString, this);
+	};
+
+	UINT8 TimeToLive;
+	
+	[Property.IPNextProtocol]
+	UINT8 NextProtocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	
+	UINT16 Checksum;
+
+	[
+		Pair = Address, 
+		Property.SourceIPv4Alias = Global.AliasTable$[this],
+		Property.SourceName = Global.NameTable$[this],
+		Property.Source = Property.OverIP ? Property.Source
+				: Property.SourceIPv4Alias ? Property.SourceIPv4Alias
+				: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+				: Property.SourceName ? Property.SourceName
+				: this.ToDataTypeString,
+		Property.SourceNetworkAddress,
+		Property.SourceNetworkAddressString = this.ToDataTypeString
+	]
+	IPv4Address SourceAddress;
+
+	[
+		Pair = Address,
+		Property.DestinationIPv4Alias = Global.AliasTable$[this],
+		Property.DestinationName = Global.NameTable$[this],
+		Property.Destination = Property.OverIP ? Property.Destination
+				: Property.DestinationIPv4Alias ? Property.DestinationIPv4Alias
+				: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+				: Property.DestinationName ? Property.DestinationName
+				: this.ToDataTypeString, 
+		Property.NetworkDirection = Property.OverIP ? Property.NetworkDirection
+				: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+		Property.DestinationNetworkAddress,
+		Property.DestinationNetworkAddressString = this.ToDataTypeString
+	]
+	IPv4Address DestinationAddress;
+
+	while Options[ CurrentProtocolOffset < Property.IPHeaderLength]
+	{
+		switch
+		{
+			//check if the length of the remain data is enough to parse the option data
+			case ( UINT8( Framedata, Offset ) <= 1 ) || /* EOOL or NOP */
+				 ( UINT8( Framedata, Offset ) > 1 && Property.IPHeaderLength - CurrentProtocolOffset >= UINT8( Framedata, Offset + 1 )):
+				switch(UINT8( Framedata, Offset ))
+				{
+					case 0x00: IPOptionsEndOfOptionList end;
+					case 0x01: IPOptionsNoOperation noOperation;
+					case 0x82: IPOptionsSecurity security;
+					case 0x83: IPOptionsLooseSourceRoute looseSourceRoute;
+					case 0x44: IPOptionsTimeStamp timeStamp;
+					case 0x85: IPOptionsExtendedSecurity extendSecurity;
+					//case 0x86:
+					case 0x07: IPOptionsRecordRoute recordRoute;
+					case 0x88: IPOptionsStreamID streamID;
+					case 0x89: IPOptionsStrictSourceRoute strictSourceRoute;
+					//case 0xA:
+					case 0x0B: IPOptionsMTUProbe MTUProbe;
+					case 0x0C: IPOptionsMTUReply MTUReply;
+					//case 0xCD:
+					//case 0x8E:
+					//case 0x0F:
+					//case 0x90:
+					//case 0x91:  //RFC1385
+					case 0x52: IPOptionsTraceRoute traceRoute;
+					case 0x93: IPOptionsAddressExtension addressExtension;
+					case 0x94: IPOptionsRouterAlert routerAlert;
+					case 0x95: IPOptionsSDBM SDBM;
+					//case 0x96:
+					//case 0x97:
+					//case 0x98:
+					/*case 0xFF:
+						struct IPOptionsPaddingOpration
+						{
+							UINT8 Options = this.Option.ToString
+							{
+								UINT8 C:1 = this ? "Copy this option to all fragments"
+												 : "Copy this option to the first fragment only";
+								UINT8 Class:2 = IPOptionsClassTable(this);
+								UINT8 Option:5 = IPOptionsNumberTable(this);
+							};
+							switch
+							{
+								case Property.IPHeaderLength - CurrentProtocolOffset >0:
+									BLOB(Property.IPHeaderLength - CurrentProtocolOffset) OptionPadding;
+							};
+						}*/
+					default:   IPOptionsDefault defaultOption;
+				};
+			//when the option's length is larger than the header data left
+			default:
+				struct MalformedOption
+				{
+					IPOption option;
+					switch
+					{
+						case Property.IPHeaderLength - CurrentProtocolOffset > 0:
+							BLOB(Property.IPHeaderLength - CurrentProtocolOffset) Padding = FormatString("%d bytes", Property.IPHeaderLength - CurrentProtocolOffset);
+					};
+				}
+		}
+	}//while
+
+	[
+		Property.OverIP = true,
+		Property.IPTruncated = IsValueNone(Local.IPv4Fragment) || Local.IPv4Fragment == 0 ? 
+								((Property.IPPayloadLength > FrameLength - FrameOffset) ? true : false) : Property.IPTruncated,
+		BuildConversationWithParent(SourceAddress < DestinationAddress ?
+			MakeByteArray(SourceAddress,DestinationAddress) :
+			MakeByteArray(DestinationAddress,SourceAddress)),
+		Conversation.ConversationDescription = Conversation.IPv4.ConversationDescription.IsValueNone() ? 
+							FormatString("(%s - %s) ConvID = %d", Property.SourceNetworkAddressString, Property.DestinationNetworkAddressString,ConvID) : Conversation.IPv4.ConversationDescription,
+		DataFieldFrameLength = IPTotalLength == 0 ? FrameLength: frameOffset + IPPayloadLength,
+		PayloadStart(
+			Property.NetworkDirection, /* direction */
+			Identification, /* id */
+			FragmentFlags.Offset * 8, /* sequence token */
+			FragmentFlags.Offset * 8 + TotalLength - IPHeaderLength, /* next sequence token */
+			0, /* total payload length */
+			(FragmentFlags.Offset == 0), /* is first */
+			(FragmentFlags.MF == 0), /* is last */
+			RssmblyIndStartBit+RssmblyIndEndBit+RssmblySequenceBit,
+			0x0404,
+			SourceAddress,
+			0x0404,
+			DestinationAddress
+		)
+	]
+	//
+	// This switch statement determines and invokes the protocol that follows IPv4. The IPv4 protocol use the NextProtocol field to determine
+	// which protocol follows IPv4
+	//
+
+	switch
+	{
+		case frameOffset < frameLength && FragmentFlags.Offset == 0:
+		struct
+		{
+			switch(NextProtocol)
+			{
+				case 0x06: TCP Tcp;
+				case 0x11: UDP Udp;
+				case 0x32: ESP Esp;
+				case 0x01: ICMP Icmp;
+				case 0x02: IGMP Igmp;
+				case 0x04: IPv4 IPinIP; //rfc2003
+				case 0x25: DDP Ddp;
+				case 0x29: IPv6 Ipv6;
+				case 0x2E: RSVP Rsvp;
+				case 0x2F: GRE Gre;
+				case 0x33: AH Ah;
+				case 0x59: OSPF Ospf;
+				case 0x5A: SunRPC SunRPC;
+				case 0x5B: ARP LocusARP;
+				case 0x5E: IPv4 IPwhithinIP;
+				case 0x6F: IPX Ipx;
+				case 0x71: PGM Pgm;
+			}
+			switch
+			{
+				case FrameOffset < FrameLength: BLOB(FrameLength - Offset) UnparsedData;
+			}
+		}
+		case FragmentFlags.Offset > 0:
+			BLOB(IPPayloadLength) FragmentData;
+	}
+	struct{} // to avoid self-recursive issue
+}
+Table IPOptionsClassTable (value)
+{
+	switch (value)
+	{
+		case  0:FormatString("Datagram or Network Control");
+		case  1:FormatString("Reserved");
+		case  2:FormatString("Debugging and measurement");
+		case  3:FormatString("Reserved");
+		default:FormatString("UNHANDLED IP Option Class",value);
+	}
+}
+
+Table IPOptionsNumberTable (value)
+{
+	switch (value)
+	{
+		case  0:FormatString("EOOL - End of Option list");
+		case  1:FormatString("NOP - No Operation");
+		case  2:FormatString("SEC - Security");
+		case  3:FormatString("LSR - Loose Source Routing");
+		case  4:FormatString("TS - Internet Timestamp");
+		case  5:FormatString("E-SEC - Extended Security");
+		case  6:FormatString("CIPSO - Commercial Security");
+		case  7:FormatString("RR - Record Route");
+		case  8:FormatString("SID - Stream ID");
+		case  9:FormatString("SSR - Strict Source Routing");
+		case 10:FormatString("ZSU - Experimental Measurement");
+		case 11:FormatString("MTUP - MTU Probe");
+		case 12:FormatString("MTUR - MTU Reply");
+		case 13:FormatString("FINN - Experimental Flow Control");
+		case 14:FormatString("VISA - Expermental Access Control");
+		case 15:FormatString("ENCODE - ???? ");
+		case 16:FormatString("IMITD - IMI Traffic Descriptor");
+		case 17:FormatString("EIP - Extended Internet Proto");
+		case 18:FormatString("TR - Traceroute");
+		case 19:FormatString("ADDEXT - Address Extention");
+		case 20:FormatString("RTRALT - Router Alert.");
+		case 21:FormatString("SDBM - Selective Directed Broadcast Mode");
+		case 22:FormatString("NSAPA - NSAP Addresses.");
+		case 23:FormatString("DPS - Dynamic Packet State");
+		case 24:FormatString("UMP - Upstream Multicast Packet");
+		default:FormatString("Unknown option");
+	}
+}
+
+//rfc791 page17
+Table IPOptionsSecurityTable (value)
+{
+	switch (value)
+	{
+		case 0x0000:FormatString("Unclassified (%#x)",value);
+		case 0xF135:FormatString("Confidential (%#x)",value);
+		case 0x789A:FormatString("EFTO (%#x)",value);
+		case 0xBC4D:FormatString("MMMM (%#x)",value);
+		case 0x5E26:FormatString("PROG (%#x)",value);
+		case 0xAF13:FormatString("Restricted (%#x)",value);
+		case 0xD788:FormatString("Secret (%#x)",value);
+		case 0x6BA8:FormatString("Top Secret (%#x)",value);
+		default    :FormatString("Undefined, Value= (%#x)",value);
+	}
+}
+
+Table IPOptionsTimeStampFlagTable (value)
+{
+	switch (value)
+	{
+		case  0:FormatString("Timestamp contains only Time fields (%#x)",value);
+		case  1:FormatString("Timestamp contains IP address and Time fields (%#x)",value);
+		case  3:FormatString("Record timestamps for prespecified IP addresses (%#x)",value);
+		default:FormatString("Unknown Timestamp type (%#x)",value);
+	}
+}
+
+Table IPOptionsRouterAlertValueTable (value)
+{
+	switch (value)
+	{
+		case  0:FormatString("Router shall examine packet (%#x)",value);
+		default:FormatString("Reserved (%#x)",value);
+	}
+}
+
+struct IPOption = IPOptionsNumberTable(this.Option)
+{
+	UINT8 C:1 = FormatString("     (%s) Copy this option to %s", this.ToBitString, this ? "all fragments" : "the first fragment only");
+	UINT8 Class:2 = FormatString(" (%s) %s", this.ToBitString, IPOptionsClassTable(this));
+	UINT8 Option:5 = FormatString("(%s) %s", this.ToBitString, IPOptionsNumberTable(this));
+};
+
+struct IPOptionsSecurity
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 Security = IPOptionsSecurityTable(this);
+	UINT16 Compartments;
+	UINT16 HandlingRestrictions;
+	UINT24 TransmissionControlCode;
+}
+
+//#? dev note 2005-6-9
+// rfc 791 page 18
+// The third octet is the pointer into the route data
+// indicating the octet which begins the next source address to be
+// processed. The pointer is relative to this option, and the
+// smallest legal value for the pointer is 4.
+struct IPOptionsLooseSourceRoute
+{
+	IPOption option;
+	UINT8 Length;
+	UINT8 Pointer;
+	struct [(Length-3)/4]
+	{
+		IPv4Address Route = this ? FormatString( "%u.%u.%u.%u", this[3], this[2], this[1], this[0]) : " - ";
+	};
+}
+
+struct IPOptionsTimeStamp
+{
+	IPOption option;
+	UINT8 Length;
+	UINT8 Pointer;
+	UINT8 Flags
+	{
+		UINT8 Overflow:4 = FormatString("%d of IP modules that cannot register timestamps due to lack of space",this);
+		UINT8 Flag:4 = FormatString("(%s) %s",this.ToBitString, IPOptionsTimeStampFlagTable(this));
+	};
+	switch
+	{
+		case Length > 0 && FLags.Flag == 0:
+			struct [(Length-4)/4]
+			{
+				UINT32 Timestamp;
+			};
+		case Length > 0 && (FLags.Flag == 1 || FLags.Flag == 3):
+			struct [(Length-4)/8]
+			{
+				IPv4Address IPAddress = this ? FormatString( "%u.%u.%u.%u", this[3], this[2], this[1], this[0]) : " - ";
+				UINT32 Timestamp;
+			};
+		case Length > 0:
+			struct [(Length-4)/4]
+			{
+				UINT32 Timestamp;
+			};
+	}
+}
+
+struct IPOptionsExtendedSecurity
+{
+	IPOption option;
+	UINT8 Length;
+	UINT8 FormatCode;
+	BLOB(Length-3) AdditionalInfo;
+}
+
+struct IPOptionsRecordRoute
+{
+	IPOption option;
+	UINT8 Length;
+	UINT8 Pointer;
+	struct [(Length-3)/4]
+	{
+		IPv4Address Route = this ? FormatString( "%u.%u.%u.%u", this[3], this[2], this[1], this[0]) : " - ";
+	}
+}
+
+struct IPOptionsStreamID
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 StreamID;
+}
+
+struct IPOptionsStrictSourceRoute
+{
+	IPOption option;
+	UINT8 Length;
+	UINT8 Pointer;
+	struct [(Length-3)/4]
+	{
+		IPv4Address Route = this ? FormatString( "%u.%u.%u.%u", this[3], this[2], this[1], this[0]) : " - ";
+	}
+}
+
+struct IPOptionsMTUProbe
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 MTUValue;
+}
+
+struct IPOptionsMTUReply
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 MTUValue;
+}
+
+struct IPOptionsTraceRoute
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 IDNumber;
+	UINT16 OutboundHopCount;
+	UINT16 ReturnHopCount;
+	IPv4Address OriginateorIP;
+}
+
+struct IPOptionsAddressExtension
+{
+	IPOption option;
+	UINT8 Length;
+	UINT24 SourceIPv7Address;
+	UINT8 Source7thByte;
+	UINT24 DestinationIPv7Address;
+	UINT8 Destination7thByte;
+}
+
+struct IPOptionsRouterAlert
+{
+	IPOption option;
+	UINT8 Length;
+	UINT16 RouterAlertValue = IPOptionsRouterAlertValueTable(this);
+}
+
+struct IPOptionsSDBM
+{
+	IPOption option;
+	UINT8 Length;
+	struct [(Length-2)/4]
+	{
+		IPv4Address IPAddress = this ? FormatString( "%u.%u.%u.%u", this[3], this[2], this[1], this[0]) : " - ";
+	};
+}
+
+struct IPOptionsDefault
+{
+	IPOption option;
+	UINT8 Length;
+	switch
+	{
+		case Length > 2: BLOB(Length-2) Data;
+	}
+}
+
+struct IPOptionsNoOperation
+{
+	IPOption option;
+}
+
+
+
+struct IPOptionsEndOfOptionList
+{
+	IPOption option;
+	switch
+	{
+		case Property.IPHeaderLength - CurrentProtocolOffset > 0:
+			BLOB(Property.IPHeaderLength - CurrentProtocolOffset) Padding = FormatString("%d bytes", Property.IPHeaderLength - CurrentProtocolOffset);
+	};
+}

@@ -1,0 +1,237 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Audio Output Virtual Channel Extension
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEA]: Remote Desktop Protocol: Audio Output Virtual Channel Extension (3.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/10/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEA = FormatString("%s",RDPPacketType)
+{
+	switch (UINT8(FrameData, FrameOffset))
+	{
+		case 0:
+			_struct DataTrans
+			{
+				[RDPPacketType = "Wave PDU"]
+				UINT32 bPad;
+				BLOB(FrameLength - FrameOffset) Data;
+			}
+		case 10:
+		case 11:
+			[RDPEASndPrologType, RDPPacketType = "Sound - " + RDPEASndPrologTypeTable(PrologType)]
+			UINT8 PrologType = RDPEASndPrologTypeTable(this);
+		default:
+			RDPEASndProlog RDPEASndProlog;
+	}
+	switch(RDPEASndPrologType)
+	{
+		//case 1: None structure
+		case 2:
+			RDPEASndWavInfo RDPEASndWavInfo;
+		case 3:
+			RDPEASndVol RDPSndVol;
+		case 4:
+			RDPEASndPitch RDPSndPitch;
+		case 5:
+			RDPEASndWavConfirm RDPEASndWavConfirm;
+		case 6:
+			RDPEASndTraining RDPEASndTraining;
+		case 7:
+			RDPEAClientAudioVersionAndFormats RDPEAClientAudioVersionAndFormats;
+		case 8:
+			RDPEASndCryp RDPEASndCryp;
+		case 9:
+			RDPEASndWavCrypt RDPEASndWavCrypt;
+		case 10:
+			RDPEASndUdpWave RDPEASndUdpWave;
+		case 11:
+			RDPEASndWaveCrypt RDPEASndWaveCrypt;
+		//case 12:Quality Mode PDU,client to server message always encrypted
+	}
+}
+
+Table RDPEASndPrologTypeTable(code)
+{
+	switch (code)
+	{
+		case 0: "None";
+		case 1: "SNDC_CLOSE: Device Close";
+		case 2: "SNDC_WAVE: Wave Data";
+		case 3: "SNDC_SETVOLUME: Set Volume";
+		case 4: "SNDC_SETPITCH: Set Pitch";
+		case 5: "SNDC_WAVECONFIRM: Wave Confirmation";
+		case 6: "SNDC_TRAINING: Training";
+		case 7: "SNDC_FORMATS: Formats List";
+		case 8: "SNDC_CRYPTKEY: Crypto Key";
+		case 9: "SNDC_WAVEENCRYPT: Encrypted Audio";
+		case 10: "UDP Wave Fragment";
+		case 11: "Last in order UDP Fragment";
+		//case 12: Quality Mode PDU,client to server message always encrypted
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+//Header
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndProlog = RDPEASndPrologTypeTable(MsgType)
+{
+	[RDPEASndPrologType, RDPPacketType = "Sound - " + RDPEASndPrologTypeTable(MsgType)]
+	UINT8 MsgType = RDPEASndPrologTypeTable(this);
+	UINT8 bPad;
+	[RDPEAPacketSize]
+	UINT16 BodySize;
+}
+
+Table RDPEASndWaveChannelTable(code)
+{
+	switch(code)
+	{
+		case 1: "Monoaural data";
+		case 2: "Stereo data";
+		default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEAAudioFormat = FormatString("FormatTag = %u", wFormatTag)
+{
+	UINT16 wFormatTag;
+	UINT16 nChannels = RDPEASndWaveChannelTable(this);
+	UINT32 nSamplesPerSec;
+	UINT32 nAvgBytesPerSec;
+	UINT16 nBlockAlign;
+	UINT16 wBitsPerSample;
+	UINT16 cbSize;
+	BLOB(cbSize) extraAttribute;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEAClientAudioVersionAndFormats = FormatString("Version = %u, DgramPort = %u", Version, DgramPort) //7
+{
+	UINT32 Flags = (SoundAvailable ? "Sound " : "") + (VolumeControlAvailable ? "Volume " : "") + (PitchControlAvailable ? "Pitch " : "")
+	{
+		UINT32 SoundAvailable:1 = FormatString("        (%s) %s",this.ToBitString,this ? "Sound Available" : "Sound Not Available");
+		UINT32 VolumeControlAvailable:1 = FormatString("(%s) %s",this.ToBitString,this ? "Volume Control Available" : "Volume Control Not Available");
+		UINT32 PitchControlAvailable:1 = FormatString(" (%s) %s",this.ToBitString,this ? "Pitch Control Available" : "Pitch Control Not Available");
+		UINT32 Reserved:29 = FormatString("              (%s)",this.ToBitString);
+	};
+	UINT32 Volume;
+	UINT32 Pitch;
+	[DataFieldByteOrder = BigEndian]
+	UINT16 DgramPort;
+	UINT16 NumFormats;
+	UINT8 LastBlockConfirmed;
+	[RDPEAVersion]
+	UINT16 Version;
+	UINT8 Padding;
+	RDPEAAudioFormat RDPEAAudioFormat[NumFormats];
+}
+
+[DataTypeByteOrder = LittleEndian] //8
+struct RDPEASndCryp = FormatString("Seed = %#X", Seed)
+{
+	UINT32 Reserved;
+	Blob (32) Seed;
+}
+
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndTraining = FormatString("PacketSize = %u", wPacketSize) //6
+{
+	UINT16 wTimeStamp;
+	UINT16 wPacketSize;
+	switch
+	{
+		case wPacketSize > 8:
+			Blob(wPacketSize - 8) Data;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndWavInfo = FormatString("BlockNo = %u", cBlockNo)  //2 9
+{
+	UINT16 wTimeStamp;
+	UINT16 wFormatNo;
+	UINT8 cBlockNo;
+	UINT24 bPad;
+	UINT32 Data;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndWavCrypt = FormatString("BlockNo = %u", BlockNo)  //2 9
+{
+	UINT16 TimeStamp;
+	UINT16 FormatNo;
+	UINT8 BlockNo;
+	UINT24 bPad;
+	switch//TD Version need to be make sure
+	{
+		case RDPEAVersion >= 5:
+			UINT64 Signature;
+	}
+	switch
+	{
+		case RDPEAPacketSize > 0:
+			switch
+			{
+				case RDPEAVersion >= 5:
+					BLOB(RDPEAPacketSize - 20) EncryptHighData;
+				default:
+					BLOB(RDPEAPacketSize - 16) EncryptLowData;
+			}
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndWavConfirm = FormatString("BlockNo = %u", cConfirmedBlockNo) //5
+{
+	UINT16 wTimeStamp;
+	UINT8 cConfirmedBlockNo;
+	UINT8 bPad;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndPitch = FormatString("Pitch = %u", Pitch) //4
+{
+	UINT32 Pitch;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndVol = FormatString("Vloume = %u", Vloume) //3
+{
+	UINT32 Vloume;
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndWaveCrypt //11
+{
+	UINT16 wTotalSize;
+	UINT16 wTimeStamp;
+	UINT16 wFormatNo;
+	UINT8 cBlockNo;
+	UINT24 bPad;
+	INT64 Signature;
+	BLOB(FrameLength - FrameOffset) Data;	
+}
+
+[DataTypeByteOrder = LittleEndian]
+struct RDPEASndUdpWave //10
+{
+	UINT8 cBlockNo;
+	switch
+	{
+		case UINT8(FrameData,FrameOffset) >= 0x80:UINT16 FragNo;
+		default: UINT8 cFragNo;
+	}
+	INT64 Signature;
+	BLOB(FrameLength - FrameOffset) Data;
+}
+

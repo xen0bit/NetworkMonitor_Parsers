@@ -1,0 +1,108 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  DNS Security Extensions
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 4033, 4034, 4035, 5011
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/16/2009
+//#
+//####
+
+[RegisterBefore( DNSResourceRecord.AdditionalResourceData,DNSSECDS, 43)]
+[RegisterBefore( DNSResourceRecord.AdditionalResourceData,DNSSECRRSIG, 46)]
+[RegisterBefore( DNSResourceRecord.AdditionalResourceData,DNSSECNSEC, 47)]
+[RegisterBefore( DNSResourceRecord.AdditionalResourceData,DNSSECDNSKEY, 48)]
+Struct DNSSEC = formatstring("Resource Type: %s", DNSTypeTable(Property.DNSResourceType))
+{
+	Switch(Property.DNSResourceType)
+	{
+		//#rfc 4034
+		case 43:
+			struct DSRData
+			{
+				UINT16 KeyTag;
+				UINT8 Algorithm = DNSSECAlgorithemTable(this);
+				UINT8 DigestType = DNSSECDigestTypeTable(this);
+				BLOB(DNSRREndOffset - FrameOffset) Digest;
+			}
+		//#rfc 4034
+		case 46:
+			struct RRSIGRData
+			{
+				UINT16 TypeCovered;
+				UINT8 Algorithm = DNSSECAlgorithemTable(this);
+				UINT8 Labels;
+				UINT32 OriginalTTL;
+				UNIXTIMESTAMP SignatureExpiration;
+				UNIXTIMESTAMP SignatureInception;
+				UINT16 KeyTag;
+				DNSString SignerName;
+				BLOB(DNSRREndOffset - FrameOffset) Signature;						
+			}
+		//#rfc 4034
+		case  47:
+			struct NSECRData
+			{
+				DNSString NXTDomainName;
+				// BLOB(DNSRREndOffset - offset) TypeBitMap;
+				while [DNSRREndOffset > FrameOffset]
+				{
+					struct TypeBitMap
+					{
+						UINT8 BlockNo;
+						UINT8 BitmapLength;
+						BLOB(BitmapLength) Bitmap;
+					}
+				}
+			};
+		//#rfc 4034
+		case 48:
+			struct DNSKEYRData
+			{
+				UINT16 Flags
+				{
+					UINT16 Reserved1:7 = FormatString("(%s)", this.ToBitString);
+					UINT16 ZoneKey:1 = FormatSTring("  (%s) %s", this.ToBitString, this? "DNS Zone Key": "");
+					UINT16 Reserved2:7 = FormatString("(%s)", this.ToBitString);
+					UINT16 SecEntry:1 = FormatSTring(" (%s) %s", this.ToBitString, this? "Secure Entry Point": "");
+				};
+				UINT8 Protocol = FormatString("%d (Must set to 3)", this);
+				UINT8 Algorithem = DNSSECAlgorithemTable(this);
+				BLOB(DNSRREndOffset - FrameOffset) PublicKey;						
+			}
+	}
+}
+
+table DNSSECDigestTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "SHA-1";
+		default:
+			FormatString("Unassigned Algorithm: %d", value);
+	}
+}
+
+table DNSSECAlgorithemTable(value)
+{
+	switch(value)
+	{
+		case     0:   "reserved";
+		case     1:   "RSA/MD5 [RSAMD5]";
+		case     2:   "Diffie-Hellman [DH]";
+		case     3:   "DSA/SHA-1 [DSA]";
+		case     4:   "Elliptic Curve [ECC]";
+		case     5:   "RSA/SHA-1 [RSASHA1]";
+		case   252:   "Indirect [INDIRECT]";
+		case   253:   "Private [PRIVATEDNS]";
+		case   254:   "Private [PRIVATEOID]";
+		case   255:   "reserved";
+		default:
+			FormatString("Unknown value: %d", value);
+	}	
+}

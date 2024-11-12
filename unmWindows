@@ -1,0 +1,343 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  User Name Mapping Service Protocol
+//#
+//#  Details:                rides on RPC Program Number 351455
+//#
+//#  Microsoft References:   [MS-UNMP]: User Name Mapping Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/17/2009
+//#
+//####
+
+Protocol UNM = FormatString("%s %s",
+							UNMCallTable(conversation.ProcedureNumber),
+							SunRPCMsgTypeTable(Property.SunRPCMessageType)
+							)
+{
+	switch( Property.SunRPCMessageType )
+	{
+		case  0:
+			switch( conversation.ProcedureNumber )
+			{
+				case 1: UNMUnixAccount UnixUser;
+				case 2: UNMWindowsAccount WindowsUserAccountName;
+				case 3: UNMUnixUserAuth UnixUserAuth;
+				case 4: 
+				case 6: 
+				case 10:
+				case 11:UNMDumpMapReq EnumCursor;
+				case 5: UNMSequenceNumber SequenceNumber;
+				case 7: UNMUnixAccount UnixGroupAccount;
+				case 8: UNMWindowsAccount WindowsGroupAccountName;
+				case 9: 
+				case 17:UNMSid Sid;
+				case 12:UNMUnixAccountW UnixUserW;
+				case 13:UNMWindowsAccountW WindowsUserAccountNameW;
+				case 14:UNMUnixUserAuthW UnixUserAuthW;
+				case 15:UNMUnixAccountW UnixGroupAccountW;
+				case 16:UNMWindowsAccountW WindowsGroupAccountNameW;
+			};
+			
+		case  1:
+			switch
+			{
+				case Property.SunRPCReplyStatus == 0:
+					switch( conversation.ProcedureNumber )
+					{
+						case 1: 
+						case 7: UNMWindowsCreds WindowsCreds;
+						case 2: 
+						case 3: 
+						case 8: 
+						case 9: UNMUnixCreds UnixCreds;
+						case 4: UNMMapping Mapping;
+						case 5: UNMSequenceNumber SequenceNumber;
+						case 6: UNMMaps Maps;
+						case 10:UNMMappingW MappingW;
+						case 11:UNMMapsW MapsW;
+						case 12:
+						case 15:UNMWindowsCredsW WindowsCredsW;
+						case 13:
+						case 14:
+						case 16:
+						case 17:UNMUnixCredsW UnixCredsW;
+					}
+			};
+	}
+}
+
+struct MapSvrMBCSNameString = MapSvrMBCSNameString
+{
+	XDRString MapSvrMBCSNameString;
+}
+
+struct MapSvrUnicodeNameString = MapSvrUnicodeNameString
+{
+	XDRUnicodeString MapSvrUnicodeNameString;
+}
+
+struct UNMWindowsName = UNMWindowsName.ToString
+{
+	XDRString UNMWindowsName;
+}
+
+struct UNMWindowsNameW = UNMWindowsNameW.ToString
+{
+	XDRUnicodeString UNMWindowsNameW;
+}
+
+struct UNMMapString = UNMMap
+{
+	XDRUnsignedInteger Length;
+	AsciiString(Length) UNMMap
+	{
+		AsciiStringTerm(":") MapType = FormatString("%s - %s",this,UNMMapType(this));
+		AsciiStringTerm(":") WindowsAccountName;
+		AsciiStringTerm(":") AuthType = FormatString("%s - %s",this,UNMAuthType(this));
+		AsciiStringTerm(":") UNIXDomain;
+		AsciiStringTerm(":") UNIXServer;
+		AsciiStringTerm(":") UNIXAccountName;
+		AsciiStringTerm(":") UNIXPassword;
+		AsciiStringTerm(":") UID;
+		AsciiStringTerm(":") GIDArrayPrimary;
+		switch
+		{
+			case FrameOffset < FrameLength:
+				AsciiString GIDArraySupplementary;
+		}
+	};
+	switch 
+	{
+		case Length % 4:
+			BLOB(4 - (Length % 4)) Padding;
+	}
+}
+
+Table UNMMapType
+{
+	switch
+	{
+		case value.contains("*"): "The map is primary map.";
+		case value.contains("^"): "The map is advanced map.";
+		case value.contains("-"): "The map is single map.";
+		default: "Unknown map type.";
+	}
+}
+
+Table UNMAuthType
+{
+	switch
+	{
+		case value.contains("0"): "AUTH_FILE - The map was obtained from a service-maintained database local to the User Name Mapping Protocol server.";
+		case value.contains("1"): "AUTH_NIS - The map was obtained from an NIS service on the network.";
+		default: "Unknown auth type";
+	}
+}
+
+struct UNMMapStringW = UNMMap
+{
+	XDRUnsignedInteger Length;
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString(Length/2) UNMMap
+	{
+		UnicodeStringTerm(":") MapType = FormatString("%s - %s",this,UNMMapType(this));
+		UnicodeStringTerm(":") WindowsAccountName;
+		UnicodeStringTerm(":") AuthType = FormatString("%s - %s",this,UNMAuthType(this));
+		UnicodeStringTerm(":") UNIXDomain;
+		UnicodeStringTerm(":") UNIXServer;
+		UnicodeStringTerm(":") UNIXAccountName;
+		UnicodeStringTerm(":") UNIXPassword;
+		UnicodeStringTerm(":") UID;
+		UnicodeStringTerm(":") GIDArrayPrimary;
+		switch
+		{
+			case FrameOffset < FrameLength:
+				UnicodeString GIDArraySupplementary;
+		}
+	};
+	switch 
+	{
+		case Length % 4:
+			BLOB(4 - (Length % 4)) Padding;
+	}
+}
+
+struct UNMSequenceNumber
+{
+	XDRInteger CurrentVersionTokenLowPart;
+	XDRInteger CurrentVersionTokenHighPart;
+}
+
+Table UNMSearchOptionTable(code)
+{
+	switch (code)
+	{
+		case 0x00000001: "UnixAccountName is valid";
+		case 0x00000002: "ID is valid";
+		case 0x00000003: "UnixAccountName and ID are both valid";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+struct UNMUnixAccount 
+{
+	XDRInteger SearchOption = UNMSearchOptionTable(this);
+	XDRInteger Reserved = MUSTBeSetToTable(this, "0x00000000");
+	XDRInteger ID;
+	MapSvrMBCSNameString UnixAccountName;		
+}
+
+struct UNMUnixAccountW 
+{
+	XDRInteger SearchOption = UNMSearchOptionTable(this);
+	XDRInteger Reserved = MUSTBeSetToTable(this, "0x00000000");
+	XDRInteger ID;
+	MapSvrUnicodeNameString UnixAccountName;
+}
+
+struct UNMUnixUserAuth 
+{
+	MapSvrMBCSNameString UnixUserAccountName;
+	MapSvrMBCSNameString UnixUserAccountPassword;
+}
+
+struct UNMunixuserauthW 
+{
+	MapSvrUnicodeNameString UnixUserAccountName;
+	MapSvrUnicodeNameString UnixUserAccountPassword;
+}
+
+struct UNMWindowsCreds 
+{
+	XDRInteger Status;
+	XDRInteger Reserved = MUSTBeSetToTable(this, "0x00000000");
+	UNMWindowsName WindowsAccountName;
+}
+
+struct UNMWindowsCredsW 
+{
+	XDRInteger Status;
+	XDRInteger Reserved = MUSTBeSetToTable(this, "0x00000000");
+	UNMWindowsNameW WindowsAccountName;
+}
+
+struct UNMWindowsAccount 
+{
+	MapSvrMBCSNameString WindowsAccountName;
+}
+
+struct UNMWindowsAccountW 
+{
+	MapSvrUnicodeNameString WindowsAccountName;
+}
+
+struct UNMUnixCreds 
+{
+	MapSvrMBCSNameString UnixAccountName;
+	XDRInteger ID;
+	XDRInteger GidCount;
+	switch
+	{
+		case GidCount > 0:
+			XDRInteger GID[GidCount];
+	}
+}
+
+struct UNMUnixCredsW 
+{
+	MapSvrUnicodeNameString UnixAccountName;
+	XDRInteger ID;
+	XDRInteger GIDCount;
+	switch
+	{
+		case GidCount > 0:
+			XDRInteger GID[GidCount];
+	}
+}
+
+Table UNMPrincipalTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00000001: "Enumerate user account mappings";
+		case 0x00000002: "Enumerate group account mappings";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+} 
+
+struct UNMDumpMapReq 
+{
+	XDRInteger PrincipalType = UNMPrincipalTypeTable(this);
+	XDRInteger MapRecordIndex;
+}
+
+struct UNMMappingRecord 
+{
+	MapSvrMBCSNameString WindowsAccountName;
+	MapSvrMBCSNameString UnixAccountName;
+	XDRInteger ID;
+}
+
+struct UNMMapping 
+{
+	UNMSequenceNumber Token;
+	XDRInteger MappingRecordCount;
+	XDRInteger TotalMappingRecordCount;
+	switch
+	{
+		case MappingRecordCount > 0:
+			UNMMappingRecord Map[MappingRecordCount];
+	}
+}
+
+struct UNMMaps = FormatString("Count = %u", TotalMappingRecordCount)
+{
+	UNMSequenceNumber Token;
+	XDRInteger MappingRecordCount;
+	XDRInteger TotalMappingRecordCount;
+	switch
+	{
+		case MappingRecordCount > 0:
+			UNMMapString Map[MappingRecordCount];
+	}
+}
+
+struct UNMSid 
+{
+	XDRInteger Sidlength;
+	AsciiString(Sidlength) SID;
+}
+
+struct UNMMappingRecordW {
+	MapSvrUnicodeNameString WindowsAccountName;
+	MapSvrUnicodeNameString UnixAccountName;
+	XDRInteger ID;
+}
+
+struct UNMMappingW 
+{
+	UNMSequenceNumber Token;
+	XDRInteger MappingRecordCount;
+	XDRInteger TotalMappingRecordCount;
+	switch
+	{
+		case MappingRecordCount > 0:
+			UNMMappingRecordW Map[MappingRecordCount];
+	}
+}
+
+struct UNMMapsW 
+{
+	UNMSequenceNumber Token;
+	XDRInteger MappingRecordCount;
+	XDRInteger TotalMappingRecordCount;
+	switch
+	{
+		case MappingRecordCount > 0:
+			UNMMapStringW Map[MappingRecordCount];
+	}
+}
+

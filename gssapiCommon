@@ -1,0 +1,105 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                   Generic Security Service Application Program Interface
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2743 Generic Security Service Application Program Interface Version 2, Update 1
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 12/02/2009
+//#
+//####
+
+/*
+History of the GSSAPI
+July 1991: IETF Common Authentication Technology (CAT) Working Group meets in Atlanta, led by John Linn 
+September 1993: GSSAPI version 1 (RFC 1508, RFC 1509) 
+May 1995: Windows NT 3.51 released, includes SSPI 
+June 1996: Kerberos mechanism for GSSAPI (RFC 1964) 
+January 1997: GSSAPI version 2 (RFC 2078) 
+October 1997: SASL published, includes GSSAPI mechanism (RFC 2222) 
+January 2000: GSSAPI version 2 update 1 (RFC 2743, RFC 2744) 
+August 2004: KITTEN working group meets to continue CAT activities 
+May 2006: Secure Shell use of GSSAPI standardised (RFC 4462) 
+*/
+
+[DataTypeByteOrder=BigEndian, DataTypeEncoding = GssApiBase64 ? 1 : 0]
+[Conversation.GssAPISupportedMechTable$[FrameNumber] = Conversation.GssAPISupportedMech]
+[Property.GssAPISupportedMech = Conversation.GssAPISupportedMechTable$[FrameNumber]]
+[Post.Conversation.GssAPISupportedMech = Property.GssAPISupportedMech]
+struct GssAPI
+{
+	switch (UINT8( Framedata, Offset ))
+	{
+		case 0x60:
+			GssAPIInitialContextToken InitialContextToken;
+		case 0xA0:
+		case 0xA1:
+			SpnegoNegotiationToken NegotiationToken;
+		default:
+			switch 
+			{
+				case Property.GssAPISupportedMech:
+					AsnBerAnyByOid(Property.GssAPISupportedMech) Token;
+				// MS-SPNG Windows Behavior <9>
+				// it accepts raw Kerberos messages that are based on 
+				// [RFC4121] and [RFC4120], and it accepts raw NTLM messages 
+				// that are not embedded in [RFC4178] SPNEGO messages.
+				case AsciiString(FrameData, FrameOffset, 7) == "NTLMSSP":	// Raw NLMP
+				case AsciiString(FrameData, FrameOffset,10) == "TlRMTVNTUA":// Need work around with Netmon engine for a right prefetched value when base64 encoding is used.
+					[Property.GssAPISupportedMech = "1.3.6.1.4.1.311.2.2.10"]
+					NLMP_struct NLMP;
+				default:
+					// Fallback logic for conversation off/filtered capture
+					GssAPIGuessToken GuessToken;
+			}
+	}
+}
+
+struct GssAPIGuessToken = "Warning: GssAPIMechanism is not found. The following is by message signature."
+{
+	ReportParserWarning("GssAPINego", "GssAPIMechanism is not found, possibly caused by hard-coded mechanism, conversation off or filtering or wrong parser set. Loading full parser set may solve the problem. See the \"How Do I Change Parser Set Options(Version 3.3 or before) or Configure Parser Profile (Version 3.4)\" help topic for tips on loading this parser set.") ParserWarning;
+	switch 
+	{
+		case ByteOrder == BigEndian && UINT32(FrameData, FrameOffset) == 0x01000000 || ByteOrder == LittleEndian && UINT32(FrameData, FrameOffset) == 0x00000001:
+			NLMPMessageSignature NtlmSignature;
+		case UINT8( Framedata, Offset )== 0xA0 || UINT8( Framedata, Offset ) == 0xA1:
+			SpnegoNegotiationToken SpnegoNegotiationToken;
+		case AsciiString(FrameData,Offset,7)=="Ntlmssp":
+		case AsciiString(FrameData, FrameOffset,10) == "TlRMTVNTUA":
+			NLMP_struct NLMP;
+		default:
+			GssapiKrb5 KerberosToken;
+	}
+}
+
+/*
+      InitialContextToken ::=
+       -- option indication (delegation, etc.) indicated within
+       -- mechanism-specific token
+       [APPLICATION 0] IMPLICIT SEQUENCE {
+               thisMech MechType,
+               innerContextToken ANY DEFINED BY thisMech
+                  -- contents mechanism-specific
+                  -- ASN.1 structure not required
+               }
+
+*/
+[DataTypeByteOrder=BigEndian]
+struct GssAPIInitialContextToken	// Starts with 0x60
+{
+	AsnBerInfo ApplicationHeader;
+	[GssAPISeal = GssAPISeal ? GssAPISeal : 0xFFFF,
+	 GssAPIEndOffset = frameOffset + property.Lengthvalue]
+	[Property.AuthSummary = ThisMech.ToString]
+	// Store the mech id, except the one for SPNEGO
+	[Post.Property.GssAPISupportedMech = Property.AsnOid != "1.3.6.1.5.5.2" ? Property.AsnOid : Property.GssAPISupportedMech]
+	GSSAPIMechType ThisMech;
+	AsnBerAnyByOid(property.AsnOid) InnerContextToken;
+}
+
+struct GssapiMechType = MechType.toString {
+	AsnBerObjectIdentifier MechType;
+}

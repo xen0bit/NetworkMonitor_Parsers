@@ -1,0 +1,671 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Abstract Syntax Notation One, Packed encoding rules (PER)
+//#
+//#  Details:                
+//#
+//#  Public References:      X.690 - ASN.1 Encoding Rules
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeBitAlign]
+struct AsnPerExtensibleConstrainedInteger(RootMinValue, RootMaxValue)
+{
+    UINT8 ExtensionBit:1;
+    switch
+    {
+        case ExtensionBit:
+             _struct ExtensionInteger
+             {
+                 AsnPerLengthDeterminant Length;
+                 [PERExtensibleConstrainedInteger]
+                 Integer(PERLengthValue) Value;
+             };
+        default:
+            _struct NoneExtensionInteger
+            {
+                [post.PERExtensibleConstrainedInteger = ConstrainedValue]
+                AsnPerConstrainedInteger(RootMinValue,RootMaxValue) Value;
+            };
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerExtensibleBitString(RootMinValue, RootMaxValue) = FormatString("%d", PERBitStringValue)
+{
+    UINT8 ExtensionBit:1;
+    switch
+    {
+        case ExtensionBit:
+             _struct SemiConstrainedLength
+             {
+                 [post.TotalBitCount = PERLengthValue]
+                 AsnPerLengthDeterminant DeterminantLength;
+                 AsnPerAlign Align;
+                 switch
+                 {
+                     case TotalBitCount >= 8: 
+                     [PERBitStringValue]
+                     UINT8 ByteValue[TotalBitCount/8];
+                 }
+                 [ConsumeBitCount = 0]
+                 while [ ConsumeBitCount < TotalBitCount%8 ]
+                 {
+                     [ConsumeBitCount = ConsumeBitCount + 1, PERBitStringValue = 2 * PERBitStringValue + this]
+                     UINT8 BitValue:1 = FormatString("(%s)", this.ToBitString);
+                 }
+             };
+        default:
+             _struct NoneExtensionBitString
+             {
+                 AsnPerBitString(RootMinValue, RootMaxValue) Value;
+             };
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerSemiConstrainedReal(MinValue) = PerSemiConstrainedInteger
+{
+    AsnPerLengthDeterminant Length;
+    [post.PERSemiConstrainedInteger = this + MinValue]
+    Integer(PERLengthValue) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerSemiConstrainedInteger(MinValue) = PerSemiConstrainedInteger
+{
+    AsnPerLengthDeterminant Length;
+    [post.PERSemiConstrainedInteger = this + MinValue]
+    Integer(PERLengthValue) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerEnumerated( RootMaxIndex, Extension ) = FormatString("Index:%d",EnumeratedIndex)
+{
+    [EnumeratedExt = 0]
+    switch
+    {
+        case Extension:
+        _struct ExtensionBitExist
+        {
+            [EnumeratedExt]
+            UINT8 ExtensionBit:1;
+            switch
+            {
+                case ExtensionBit: 
+                [post.EnumeratedIndex = PerSmallNumber]
+                AsnPerNormallySmallNonnegativeWholeNumber ExtensionIndex;
+                default:
+                [post.EnumeratedIndex = ConstrainedValue]
+                AsnPerConstrainedInteger(0,RootMaxIndex) RootIndex;
+            }
+        };
+        default: 
+        [post.EnumeratedIndex = ConstrainedValue]
+        AsnPerConstrainedInteger(0,RootMaxIndex) RootIndex;
+    }
+}
+
+Table AsnPerExternalEncodingTypeTable( Value )
+{
+    switch( Value )
+    {
+        case 0: "Single ASN1 type (0)";
+        case 1: "Octet Aligned (1)";
+        case 2: "Arbitrary (2)";
+        default: FormatString("Unknown (%d)", Value);
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerExternal
+{
+    UINT8 DirectReferencePresent:1;
+    UINT8 IndirectReferencePresent:1;
+    UINT8 DataValueDescriptorPresent:1;
+    switch
+    {
+        case DirectReferencePresent: AsnPerObjectIdentifier DirectReference;
+    }
+    switch
+    {
+        case IndirectReferencePresent: AsnPerInteger IndirectReference;
+    }
+    switch
+    {
+        case DataValueDescriptorPresent: AsnPernObjectDescriptor(-1,-1) DataValueDescriptor;
+    }
+    AsnPerConstrainedInteger(0,2) Encoding = AsnPerExternalEncodingTypeTable( ConstrainedValue );
+}
+
+[DataTypeBitAlign]
+struct AsnPernObjectDescriptor( MinLen, MaxLen )
+{
+    [post.PERObjectDescriptor = PerGraphicStringValue]
+    AsnPerGraphicString( MinLen, MaxLen ) ObjectDescriptor;
+}
+
+[DataTypeBitAlign]
+struct AsnPerGraphicString( MinLen, MaxLen )
+{
+    switch
+    {
+        case MaxLen == -1: 
+        [post.GraphicStringLength = PERLengthValue]
+        AsnPerLengthDeterminant Length;
+        default: 
+        [post.GraphicStringLength = ConstrainedValue]
+        AsnPerConstrainedInteger( MinLen, MaxLen ) ConstrainedLength;
+    }
+    [PERGraphicStringValue]
+    BLOB(GraphicStringLength) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerGeneralizedTime
+{
+    AsnPerAlign Align;
+    UINT8 TimeLength;
+    [PERGeneralizedTimeValue]
+    BLOB(TimeLength) TimeValue;
+}
+
+[DataTypeBitAlign]
+struct AsnPerReal( MinLen, Maxlen )
+{
+    switch
+    {
+        case MaxLen == -1: 
+        [post.RealLength = PERLengthValue]
+        AsnPerLengthDeterminant Length;
+        default: 
+        [post.RealLength = ConstrainedValue]
+        AsnPerConstrainedInteger( MinLen, MaxLen ) ConstrainedLength;
+    }
+    [PERRealValue]
+    BLOB(RealLength) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerGeneralString
+{
+    AsnPerLengthDeterminant Length;
+    [PERGeneralStringValue]
+    BLOB(PERLengthValue) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerInteger = Value.ToString
+{
+    AsnPerLengthDeterminant Length;
+    [PERIntegerValue]
+    Integer(PERLengthValue) Value;
+}
+
+[DataTypeBitAlign]
+struct AsnPerBitString( MinLen, MaxLen ) = FormatString("%s", MaxLen ? "" + PERBitStringValue : "No value is encoded")
+{
+    [TotalBitCount = MaxLen, PERBitStringValue = 0]
+    switch
+    {
+        case MinLen == MaxLen &&
+             MaxLen >= 0:
+            _struct FixLength
+            {
+                switch
+                {
+                    case MaxLen == 0:
+                         _struct NoValueEncoded
+                         {
+                         };
+                    case MinLen <= 16 :
+                         _struct FixLengthLess16
+                         {
+                             [ConsumeBitCount = 0]
+                             while [ ConsumeBitCount < MinLen ]
+                             {
+                                 [ConsumeBitCount = ConsumeBitCount + 1, PERBitStringValue = 2 * PERBitStringValue + this]
+                                 UINT8 BitValue:1 = FormatString("(%s)", this.ToBitString);
+                             }
+                         };
+                    case MinLen < 65536:
+                         _struct FixLengthLess65536
+                         {
+                             AsnPerAlign Align;
+                             [PERBitStringValue]
+                             UINT8 ByteValue[MinLen/8];
+                             [ConsumeBitCount = 0]
+                             while [ ConsumeBitCount < MinLen%8 ]
+                             {
+                                 [ConsumeBitCount = ConsumeBitCount + 1, PERBitStringValue = 2 * PERBitStringValue + this]
+                                 UINT8 BitValue:1 = FormatString("(%s)", this.ToBitString);
+                             }
+                         };
+                    default:ReportParserError(ParserErrorProtocolClassWindows,"ASN PER Encoding","Unhandled ASN PER BitString Type") ParserError;
+                }
+            }
+        case MinLen != MaxLen &&
+             MinLen >= 0 &&
+             MaxLen > 0:
+             _struct ConstrainedLength
+             {
+                 [post.TotalBitCount = ConstrainedValue]
+                 AsnPerConstrainedInteger(MinLen,MaxLen) ConstrainedLength;
+                 AsnPerAlign Align;
+                 switch
+                 {
+                     case TotalBitCount >= 8: 
+                     [PERBitStringValue]
+                     UINT8 ByteValue[TotalBitCount/8];
+                 }
+                 [ConsumeBitCount = 0]
+                 while [ ConsumeBitCount < TotalBitCount%8 ]
+                 {
+                     [ConsumeBitCount = ConsumeBitCount + 1, PERBitStringValue = 2 * PERBitStringValue + this]
+                     UINT8 BitValue:1 = FormatString("(%s)", this.ToBitString);
+                 }
+             }
+             // the MinLen == -1 is equal with the MinLen == 0. If the lower bundary is not set, it has the value zero.
+        case ( ( MinLen >= 0 ) || ( MinLen == -1 ) )&&   
+             MaxLen == -1:
+             [PERBitStringMinLen = MinLen > 0 ? MinLen : 0]
+             _struct SemiConstrainedLength
+             {
+                 [post.TotalBitCount = PERLengthValue + PERBitStringMinLen]
+                 AsnPerLengthDeterminant DeterminantLength;
+                 AsnPerAlign Align;
+                 switch
+                 {
+                     case TotalBitCount >= 8: 
+                     [PERBitStringValue]
+                     UINT8 ByteValue[TotalBitCount/8];
+                 }
+                 [ConsumeBitCount = 0]
+                 while [ ConsumeBitCount < TotalBitCount%8 ]
+                 {
+                     [ConsumeBitCount = ConsumeBitCount + 1, PERBitStringValue = 2 * PERBitStringValue + this]
+                     UINT8 BitValue:1 = FormatString("(%s)", this.ToBitString);
+                 }
+             };
+        default: ReportParserError(ParserErrorProtocolClassWindows,"ASN PER Encoding","Unhandled ASN PER BitString Type") ParserError;
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerObjectIdentifier = ASNOID 
+{
+    AsnPerAlign Align;                  
+    UINT8 ProtocolIdentifierLength;
+	  [ASNOIDEnd = Offset + ProtocolIdentifierLength,
+	   ASNOID = first<80 ? FormatString("%d.%d",(first/40), first%40) :
+	  	FormatString("%d.%d",2, first-80)]
+	  UINT8 First;
+	  // The outer loop reads a single decimal number at each pass
+	  while bytes[Offset<ASNOIDEnd] {
+	  	[ASNOIDNum = 0]
+	  	// The inner loop reads each sequence of 7 bits
+	  	// in the extended bytes of the number
+	  	while num[UINT8(FrameData,Offset)&0x80] {
+	  		[ASNOIDNum = (ASNOIDNum<<7) + (part&0x7f)]
+	  		UINT8 Part;
+	  	}
+	  	// finally save the whole number 
+	  	// and add it to the formatted OID string
+	  	[ASNOIDNum = (ASNOIDNum<<7) + Final, 
+	  		Post.ASNOID = ASNOID + FormatString(".%d",ASNOIDNum)]
+	  	UINT8 Final;
+	  }
+}
+
+[DataTypeBitAlign]
+struct AsnPerNormallySmallNonnegativeWholeNumber = FormatString("%d", PERSmallNumber)
+{
+    UINT8 SingleBit:1 = FormatString("(%s)", this.ToBitString);
+    switch( SingleBit )
+    {
+        case 0: [PERSmallNumber] UINT8 Value:6 = FormatString("(%s) %s", this.ToBitString, this);
+	      case 1: [post.PERSmallNumber = PERSemiConstrainedInteger] AsnPerSemiConstrainedInteger(0) SemiConstrainedValue;
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerLengthDeterminant = FormatString("%d",PERLengthValue)
+{
+    AsnPerAlign Align;
+    switch
+    {
+        case (UINT8( Framedata, Offset ) & 0x80) == 0:
+		         _struct LengthType1
+		         {
+		             [PERLengthValue]
+		             UINT8 Length = FormatString("%d",this);
+		         };
+        case (UINT8( Framedata, Offset ) & 0xC0) == 0X80:
+		         _struct LengthType2
+		         {
+		             [PERLengthValue = this & 0x3FFF]
+		             UINT16 Length = FormatString("%d",this & 0x3FFF);
+		         };
+		case (UINT8( Framedata, Offset ) & 0xC0) == 0xC0:
+				_struct LengthType3
+				{
+					[PERLengthValue = (this & 0x07) * 16 * 1024]
+					UINT8 Length = FormatString("%d", (this & 0x07) * 16 * 1024);
+				};
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerPadding(BitNumber)
+{
+    switch
+    {
+        case BitNumber >= 8: UINT8 BYTEPadding[ BitNumber/8 ];
+    }
+    switch( BitNumber%8 )
+    {
+		    case 1: UINT8 Padding1:1 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 2: UINT8 Padding2:2 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 3: UINT8 Padding3:3 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 4: UINT8 Padding4:4 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 5: UINT8 Padding5:5 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 6: UINT8 Padding6:6 = FormatString("(%s) %s", this.ToBitString, this);
+		    case 7: UINT8 Padding7:7 = FormatString("(%s) %s", this.ToBitString, this);
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerIA5String( MinLen, MaxLen ) = OctetStringValue 
+{
+    [post.PERIA5StringValue = PEROctetStringValue]
+    AsnPerOctetString(MinLen,MaxLen) Ia5String;
+}
+
+//MaxLen (-1) stands for no maximum Length. 
+[DataTypeBitAlign]
+struct AsnPerOctetString(MinLen,MaxLen) = OctetStringValue
+{
+    [OCTETSTRINGLENGTH = MinLen]
+    switch
+    {
+        // Firstly parse the Value which Length is fixed
+        case ( MaxLen == MinLen ) &&
+             ( MaxLen >= 0 ):
+             _struct FixedLengthValue
+             {
+                 switch
+                 {
+                     case MaxLen == 0:
+                          _struct NoValueEncoded
+                          {
+                          };
+                     case MaxLen <= 2:
+                          _struct LengthLess3
+                          {
+                              [octetstringValue = FormatString("length: %d",OCTETSTRINGLENGTH), PEROctetStringValue = MaxLen == 1 ? UINT8( Framedata, Offset ) : INT16(FrameData,FrameOffset), OctetStringStartOffset = FrameOffset]
+                              UINT8 Value[MaxLen];
+                          };
+                     case ( MaxLen > 2 ) &&
+                          ( MaxLen < 65536 ):
+                           _struct LengthLess65536
+                           {
+                               AsnPerAlign Align;
+                               [octetstringValue = FormatString("length: %d",MaxLen), PEROctetStringValue , OctetStringStartOffset = FrameOffset]
+                               BLOB(MaxLen) Value;
+                           };
+                     default: ReportParserError(ParserErrorProtocolClassWindows,"ASN PER Encoding","Unhandled ASN PER OctetString Type") ParserError;
+                 }
+             };
+        // then parse the Value which has a variable Length
+        case ( MaxLen == -1 ) ||
+             ( MinLen != MaxLen ):
+             [PEROctetStringMinLen = MinLen > 0 ? MinLen : 0] 
+             _struct  VariableLengthValue
+             {
+                 // Firstly get the Length
+                 switch
+                 {
+                     case MinLen >= 0 &&
+                          MaxLen > 0: 
+                     [post.OCTETSTRINGLENGTH = ConstrainedValue] 
+                     AsnPerConstrainedInteger(MinLen,MaxLen) ConstrainedLength;
+                     default: 
+                     [post.OCTETSTRINGLENGTH = PERLengthValue + PEROctetStringMinLen] 
+                     AsnPerLengthDeterminant DeterminantLength;
+                 }
+                 // then parse the value according to the length
+                 AsnPerAlign Align;
+                 [octetstringValue = FormatString("length: %d",OCTETSTRINGLENGTH) , PEROctetStringValue , OctetStringStartOffset = FrameOffset]
+                 BLOB(OCTETSTRINGLENGTH) Value;
+             };
+        default: ReportParserError(ParserErrorProtocolClassWindows,"ASN PER Encoding","Unhandled ASN PER OctetString Type") ParserError;
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerTextString(MinLen,MaxLen) = BmpStringValue
+{
+    AsnPerBMPString(MinLen,MaxLen) TextString;
+}
+
+[DataTypeBitAlign]
+struct AsnPerBMPString(MinLen,MaxLen) = BmpStringValue
+{
+    [BMPSTRINGLENGTH = MaxLen]
+    switch
+    {
+        case ( MinLen == MaxLen ) && ( MinLen == -1 ): 
+             [post.BMPSTRINGLENGTH = PERLengthValue] 
+             AsnPerLengthDeterminant DeterminantLength;
+             
+        case MaxLen > MinLen: 
+             [post.BMPSTRINGLENGTH = ConstrainedValue]
+             AsnPerConstrainedInteger(MinLen,MaxLen) ConstrainedLength;
+    }
+    switch
+    {
+        case BMPSTRINGLENGTH <= 1024:  BMPString(BMPSTRINGLENGTH) String;
+    }
+}
+
+[DataTypeBitAlign]
+struct BMPString( StringLength ) = BmpStringValue
+{
+    [ConsumeLength = 0, BmpStringValue = ""]
+    while [ ConsumeLength < StringLength ]
+    {
+        [ConsumeLength = ConsumeLength + 1, 
+        BmpStringValue = BmpStringValue + FormatString("%s", this < 256 ? this.ToString : ".")]
+        WCHAR Value;
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerBoolean(Extension) = FormatString("%s", BooleanValue ? "True" : "False")
+{
+    switch( Extension )
+    {
+        case 0: [BooleanValue]
+                UINT8 Value:1 = this ? "True " + this.ToBitString
+                                           : "False " + this.ToBitString;
+        case 1: _struct ExtensionBoolean
+                {
+                    AsnPerLengthDeterminant Length;
+                    [BooleanValue]
+                    UINT8 Value:1 = this ? "True " + this.ToBitString
+                                               : "False " + this.ToBitString;
+                    AsnPerPadding(PERLengthValue * 8 - 1) Padding;
+                };
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerConstrainedInteger( MinValue, MaxValue ) = FormatString("%d", ConstrainedValue)
+{
+    switch
+    {
+        case ( MaxValue - MinValue + 1) <= 2: _struct Range1
+                                              {
+                                                  [ConstrainedValue = this + MinValue]
+                                                  UINT8 Value:1 = FormatString("(%s) %s", this.ToBitString, this);
+                                              };
+        case ( MaxValue - MinValue + 1 ) <= 4: _struct Range2
+                                               {
+                                                   [ConstrainedValue = this + MinValue]
+                                                   UINT8 Value:2 = FormatString("(%s) %s", this.ToBitString, this);
+                                               };
+        case ( MaxValue - MinValue + 1 ) <= 8: _struct Range3
+                                               {
+                                                   [ConstrainedValue = this + MinValue]
+                                                   UINT8 Value:3 = FormatString("(%s) %s", this.ToBitString, this); 
+                                               };
+        case ( MaxValue - MinValue + 1 ) <= 16: _struct Range4
+                                                {
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value:4 = FormatString("(%s) %s", this.ToBitString, this);
+                                                };
+        case ( MaxValue - MinValue + 1 ) <= 32: _struct Range5
+                                                {
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value:5 = FormatString("(%s) %s", this.ToBitString, this);
+                                                };
+        case ( MaxValue - MinValue + 1 ) <= 64: _struct Range6
+                                                {
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value:6 = FormatString("(%s) %s", this.ToBitString, this);
+                                                };
+        case ( MaxValue - MinValue + 1 ) <= 128: _struct Range7
+                                                 {
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value:7 = FormatString("(%s) %s", this.ToBitString, this);
+                                                 };
+        case ( MaxValue - MinValue + 1 ) <= 255: _struct Range8
+                                                 {
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value:8 = FormatString("(%s) %s", this.ToBitString, this);
+                                                 };
+        case ( MaxValue - MinValue + 1 ) == 256: _struct RangeSingleByte
+                                                 {
+                                                    AsnPerAlign Align;
+                                                    [ConstrainedValue = this + MinValue]
+                                                    UINT8 Value;
+                                                 };
+        case ( MaxValue - MinValue + 1 ) <= 65536: _struct RangeWord
+                                                   {
+                                                       AsnPerAlign Align;
+                                                       [ConstrainedValue = this + MinValue]
+                                                       UINT16 Value;
+                                                   };
+        default: _struct IndefiniteLength
+                 {
+                     UINT8 NumberBytes:2 = FormatString("(%s) %s", this.ToBitString, this);
+                     AsnPerAlign Align;
+                     [ConstrainedValue = this + MinValue]
+                     Integer( NumberBytes + 1 ) Value;
+                 };
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerAlign = (FrameBitOffset % 8) ? FormatString("Pad %u Bits", 8 - FrameBitOffset % 8) : "No Padding"
+{
+	switch (8 - FrameBitOffset % 8)
+	{
+		case 1: UINT8 Padding1:1 = FormatString("(%s) %s", this.ToBitString, this);
+		case 2: UINT8 Padding2:2 = FormatString("(%s) %s", this.ToBitString, this);
+		case 3: UINT8 Padding3:3 = FormatString("(%s) %s", this.ToBitString, this);
+		case 4: UINT8 Padding4:4 = FormatString("(%s) %s", this.ToBitString, this);
+		case 5: UINT8 Padding5:5 = FormatString("(%s) %s", this.ToBitString, this);
+		case 6: UINT8 Padding6:6 = FormatString("(%s) %s", this.ToBitString, this);
+		case 7: UINT8 Padding7:7 = FormatString("(%s) %s", this.ToBitString, this);
+	}
+}
+
+[DataTypeBitAlign]
+struct AsnPerNumericString(MinLen,MaxLen) = FinalRestrictedStr
+{
+    AsnPerRestrictedString(MinLen,MaxLen,11) NumericString;
+}
+
+[DataTypeBitAlign]
+struct AsnPerRestrictedString(MinLen,MaxLen,AlphabetLength) = FinalRestrictedStr
+{
+    switch
+    {
+        case (MaxLen == MinLen) &&
+             (MaxLen != -1):
+             _struct FixLength
+             {
+                 switch
+                 {
+                     case MaxLen > 2: AsnPerAlign Align;
+                 }
+                 RestrictedString(MaxLen, AlphabetLength) Restrictedstr;
+             };
+        case MaxLen != MinLen:
+             _struct RangeLength
+             {
+                 switch
+                 {
+                     case MaxLen >= 2: AsnPerAlign Align;
+                 }
+                 AsnPerConstrainedInteger(MinLen, MaxLen) Length;
+                 RestrictedString(ConstrainedValue, AlphabetLength) Restrictedstr;
+             };
+        case MaxLen == -1:
+             _struct VariableLength
+             {
+                 AsnPerLengthDeterminant Length;
+                 RestrictedString(PERLengthValue, AlphabetLength) RestrictedStr;
+             };
+    }
+}
+
+[DataTypeBitAlign]
+struct RestrictedString( Length, AlphabetLength ) = FinalRestrictedStr
+{
+    [ConsumeStrLen = 0, FinalRestrictedStr = ""]
+    while [ ConsumeStrLen < Length ]
+    {
+        [ ConsumeStrLen = ConsumeStrLen + 1 ]
+        switch
+        {
+            case AlphabetLength <= 2: 
+            [ FinalRestrictedStr = FinalRestrictedStr + FormatString("%d",this) ]
+            UINT8 SingleBit:1 = FormatString("(%s)", this.ToBitString);
+            
+            case AlphabetLength <= 4: 
+            [ FinalRestrictedStr = FinalRestrictedStr + FormatString("%d",this) ]
+            UINT8 TwoBits:2 = FormatString("(%s) %s", this.ToBitString, this);
+            
+            case AlphabetLength <= 16: 
+            [ FinalRestrictedStr = FinalRestrictedStr + FormatString("%d",this) ]
+            UINT8 FourBits:4 = FormatString("(%s) %s", this.ToBitString, this);
+            
+            default: 
+            [ FinalRestrictedStr = FinalRestrictedStr + this.ToString ]
+            CHAR SingleByte;
+        }
+    }
+}
+
+[DataTypeBitAlign]
+struct AsnPerGUID = PERGUID
+{
+    AsnPerAlign Align;
+    [PERGUID = this.ToString]
+    GUID(0) Guid;
+}
+
+[DataTypeBitAlign]
+struct AsnPerNULL(Extension) = "NULL"
+{
+    switch
+    {
+        case Extension: AsnPerLengthDeterminant Length;
+    }
+}

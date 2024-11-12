@@ -1,0 +1,721 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Payload Protocol
+//#
+//#  Details:                Parses the artificial payload protocol part of the frame
+//#                          (for frames that were built by Reassembly.) The contained
+//#                          protocol field determines which protocol follows.
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/2/2010
+//#
+//####
+
+
+Protocol PayloadHeader = FormatString("Reassembled Protocol=%s, FrameCount=%u,Length=%u",
+								ReassembledProtocol,
+								FrameCount, 
+								PayloadLength)
+{
+	//
+	// Fixed Header elements
+	//
+	[ReassemblyVersion]
+	UINT16 Version = FormatString( "0x%X - %s",this,(this==0x0200)?"":((this==0x8200)?"Debuging Version":"Mismatched Payload.npl version"));
+	UINT16 HeaderLength;
+	[IsReassembledPayload = (this == 0x01) ? TRUE : FALSE]
+	PayloadType Type;
+
+	//
+	// Reassembled Protocol
+	//
+	[HighestReassembledProtocol,DataFieldByteOrder = LittleEndian]
+	UnicodeString ReassembledProtocol;
+
+	//
+	// Reassembly status
+	//
+	UINT32 RStatus = FormatString (" %s(%d)", ReassemblyStatusStringTable(this) ,this);
+
+	//
+	// Protocol parameters
+	//
+	UINT8 LowerProtocolCount;
+	ProtocolBlock LowerProtocol[LowerProtocolCount];
+
+	//
+	// Frame list
+	//
+	[property.ReassembledPayloadFrameCount]
+	UINT16 FrameCount;
+	/*
+		DEBUG section start, comment till end of this section to turn off
+		[TrailerStartOffset = 0]
+		switch(ReassemblyVersion)
+		{
+		case 0x8200:
+				[TrailerStartOffset = UINT16(FrameData, FrameLength - 2)]
+				_struct EmptyHolder
+				{
+				}
+		}
+		DEBUG section end
+	*/
+
+	//
+	// Payload Length
+	//
+	[property.ReassembledPayloadLength]
+	UINT32 PayloadLength = FormatString ("%d (0x%X)", this ,this );
+
+	//
+	// The Contained Protocol Name
+	//
+	[ContainedProtocol, DataFieldByteOrder = LittleEndian]
+	[Property.TCPNextSeqNumber = (ContainedProtocol == "SIP" && ReassembledProtocol == "SIP") ? Property.TCPSeqNumber + PayloadLength : Property.TCPNextSeqNumber]
+	UnicodeString ContainedProtocol;
+
+	//
+	// The actual payload's protocol
+	//
+
+	[Local.PayloadEndOffset = FrameOffset + PayloadLength]
+	[DataFieldFrameLength = FrameOffset + PayloadLength]	
+	struct
+	{
+		switch(Property.IPNextProtocol)
+		{
+			case 0x2B: 
+			case 0x3C: 
+			case 0x87: 
+				IPV6ExtHeaders IPV6ExtHeaders;
+		}
+		
+		switch
+		{
+			case offset < frameLength:
+				[DataFieldByteOrder = Property.IsMSRPC ? Property.MSRPCByteOrder : BigEndian]
+				switch(ContainedProtocol)
+				{
+					case "LLC":  LLC LLC;
+					case "POP3": POP3 Pop3;
+					case "IMAP": IMAP Imap;
+					//
+					// IP payloads
+					//
+					case "ICMP": ICMP Icmp;
+					case "ICMPv6": ICMPv6 Icmpv6;
+					case "IGMP": IGMP Igmp;
+					case "IPv4": IPv4 IPinIP;
+					case "TCP": TCP Tcp;
+					case "UDP": UDP Udp;
+					case "DDP": DDP Ddp;
+					case "IPv6": IPv6 Ipv6;
+					case "RSVP": RSVP Rsvp;
+					case "GRE": GRE Gre;
+					case "ESP": ESP Esp;
+					case "AH": AH Ah;
+					case "OSPF": OSPF Ospf;
+					case "SunRPC": SunRPC SunRPC;
+					case "ARP": ARP LocusARP;
+					case "IPX": IPX Ipx;
+					case "PGM": PGM Pgm;
+					//
+					// TCP payloads
+					//
+					case "WinsRpl":
+						WinsRpl WinsRpl;
+					case "FTP": FTP FtpControl;
+					case "TELNET": TELNET Telnet;
+					case "SMTP": SMTP Smtp;
+					case "DNSOverTCP": DNSOverTCP DNSOverTcp;
+					case "SNMP": SNMP Snmp;
+					case "Finger": Finger Finger;
+					case "HTTP":
+					case "PhoneBookDL":
+						HTTP Http;
+					case "KerberosV5":
+						[KerberosOnTCP=TRUE]
+						KerberosV5 Kerberos;
+					case "MMS":
+						[MMSOnTCP = TRUE]
+						MMS Mms;
+					case "MSBD": MSBD Msbd;
+					case "MSRPC": 
+					while[FrameLength - offset > 0]
+					{
+						MSRPC msrpc;
+					}
+					case "NNS": NNS NNS;
+					case "NNTP": NNTP Nntp;
+					case "NbtNs": [NbtNsOnTCP = TRUE] NbtNs Nbtns;
+					case "NbtDS": NbtDS Nbtds;
+					case "NbtSS": 
+						[NbtSsOnTCP = TRUE]
+						while NbtSSWhile [FrameOffset < FrameLength]
+						{
+							NbtSS Nbtss;
+						}
+					case "LDAP": LDAP Ldap;
+					case "RTSP": RTSP Rtsp;
+					case "RDP": RDP RDP;
+					case "SMB": SMB Smb;
+					case "SMB2": SMB2 Smb2;
+					case "SSLVersionSelector":
+						[
+							Property.IsLDAPOverSSL = ( SourcePort == 636 || DestinationPort == 636 )? TRUE : FALSE,
+							Property.IsLDAPGlobalCatalogOverSSL = ( SourcePort == 3269 || DestinationPort == 3269 ) ? TRUE : FALSE
+						]
+						SSLVersionSelector TLSSSLData;
+					case "SSL": SSL Ssl;
+					case "LPR": LPR Lpr;
+					case "PPTP": PPTP Pptp;
+					case "iSCSI": iSCSI iScsi;
+					case "SIP":
+						SIP SIP;
+					case "dotNetRemotingTCPChannel": dotNetRemotingTCPChannel dotNetRemotingTCPChannel;
+					case "ASPNET": ASPNET Aspnet;
+					case "NLMP": NLMP NLMP;
+					case "DirectPlay4": DirectPlay4 DirectPlay4;
+					case "MQQB":
+						[MQQBPort = 1801, MQQBOnTcp = TRUE]
+						MQQB MQQB;
+					case "MSMQHTTP": MSMQHTTP Msmqhttp;
+					case "Wusp": Wusp WindowsUpdate;
+						// switch
+						// {
+						// 	case Contains( AsciiStringTerm( FrameData, FrameOffset, "\r\n", FALSE ), "createexe" ): WebPNP WebPNPReq;
+						//	case Contains( AsciiStringTerm( FrameData, FrameOffset, "<head>", FALSE ), ".webpnp" ): WebPNP WebPNPRes;
+						// };
+					case "SMBOverTCP":
+						SMBOverTCP SMBOverTCP;
+					case "FileTypeContent":FileTypeContent FileTypeContent;
+					case "SunRPCOverTCP": SunRPCOverTCP SunRPCOverTCP;
+					// Self registered
+					//	case "RWS":
+					//	[SocketIndex = (SourceNetworkAddress < DestinationNetworkAddress)
+					//			  ? MakeByteArray(SourceNetworkAddress,SourcePort,DestinationNetworkAddress,DestinationPort)
+					//			  : MakeByteArray(DestinationNetworkAddress,DestinationPort,SourceNetworkAddress,SourcePort)]
+					//	RWS Rws;
+					case "WSP":
+						[WspOnTcp = TRUE]
+						[SslRcdByte = UINT8(FrameData, FrameOffset)]
+						[SslProtoWord = UINT16(FrameData, FrameOffset + 1)]
+						[SocketIndex = (SourceNetworkAddress < DestinationNetworkAddress)
+								  ? MakeByteArray(SourceNetworkAddress,SourcePort,DestinationNetworkAddress,DestinationPort)
+								  : MakeByteArray(DestinationNetworkAddress,DestinationPort,SourceNetworkAddress,SourcePort)]
+						WSP Wsp;
+					case "TLS": TLS TLS;
+					case "NMF": NMF NMF;
+					//
+					// UDP payloads
+					//
+					case "PNRP": PNRP PNRP;
+					//
+					// MSRPC payloads
+					//
+					case "ATSVC": TSCH AtSvc;
+					case "BKRP": BKRP BKRP;
+					case "BRWSA": BRWSA brwsa;
+					case "CONV": CONV Conv;
+					case "CMRP": CMRP cmrp;
+					case "DCOM": DCOM DCOM;
+					case "DLT": DLT Dlt;
+					case "DRSR": DRSR Drsr;
+					case "DSSETUP": DSSETUP DsSetup;
+					case "EFSR": EFSR EFSR;
+					case "EPM": EPM Epm;
+					case "EVEN": EVEN EventLog;
+					case "EVEN6": EVEN6 EventLog6; 
+					case "FAX": FAX Fax;
+					case "ICPR": ICPR ICPR;
+					case "IMSAdminBaseW": IMSAdminBaseW IMSAdminBaseW;
+					case "INETINFO": INETINFO InetInfo;
+					case "NRPC": NRPC NRPC;
+					case "LSAD": LSAD LSAD;
+					case "LSAT": LSAT LSAT;
+					case "MSGSVC": MSGSVC MsgSvc;
+					case "MSGSVCSend": MSGSVCSend MsgSvcSend;
+					case "MQDS": MQDS Mqds;
+					case "MQMP": MQMP Mqmp;
+					case "MQQP": MQQP Mqqp;
+					case "MQRR": MQRR Mqrr;
+					case "MQMR": MQMR Mqmr;
+					case "PNPR": PNPR PNPR;
+					case "RPCL": RPCL RPCL;
+					case "RXDS": RXDS Rxds;
+					case "SAMR": SAMR Samr;
+					case "SASEC": TSCH SaSec;
+					case "SRVS": SRVS Srvs;
+					case "SCMR": SCMR Scmr;				
+					case "TRP": TRP Trp;
+					case "W32T": W32T W32T;
+					case "RRP": RRP Rrp;
+					case "RRASM": RRASM Rrasm;
+					case "RPRN": RPRN RPRN;
+					case "PAR": PAR Par;
+					case "PrintANot": PrintANot PrintANot;
+					case "WKST": WKST WKST;
+					case "SMP":
+					case "TDS":
+						while [FrameOffset + 8 <= FrameLength]
+						{
+							switch
+							{
+								case UINT8( Framedata, Offset ) == 0x53:
+									SMP SMP;
+								default:
+									TDS TDS;
+							}
+						}
+					case "TSGU": TSGU TSGU;
+					case "NSPI": NSPI NSPI;
+					case "TSTS": TSTS TSTS;
+					
+					//
+					// SMB Fragment payloads
+					//
+					case "CIS": CIS Cis;
+					case "CISSerializedPropertyValue": CISSerializedPropertyValue CISSerializedPropertyValue;
+					case "SMBFsctlSrvenumErateSnapShots": SMBFsctlSrvenumErateSnapShots SMBFsctlSrvenumErateSnapShots;
+					case "MSWSP": MSWSP MSWSP;
+					
+					//
+					// IKE Fragment payloads
+					//
+					case "IKE": IKE Ike;
+					case "AuthIP": AuthIP AuthIP;
+					//
+					// ISOT Fragment payloads
+					//
+					case "TPKT":
+					case "ISOTS": ISOTS Isots;
+					
+					//
+					// T125 Fragment payloads
+					//
+					case "NetMeeting": NetMeeting NetMeeting;
+					
+					//
+					// RDP Fastpath output
+					//
+					case "RDPBCGR": RDPBCGR RDPBCGR;
+					case "RDPBCGRTsFpUpdateData": RDPBCGRTsFpUpdateData RDPBCGRTsFpUpdateData;
+					case "RDPBCGRVirtualChannelData": RDPBCGRVirtualChannelData RDPBCGRVirtualChannelData;
+					
+					//
+					// RDP Virtual Channel
+					//
+					case "RDPEFS": RDPEFS RDPEFS;
+					case "RDPECLIP": RDPECLIP RDPECLIP;
+					case "RDPEA": RDPEA RDPEA;
+					case "RDPERP": RDPERP RDPERP;
+					case "RA": RA RA;
+					case "RDPEDYC": RDPEDYC RDPEDYC;
+					case "RDPEMC": RDPEMC RDPEMC;
+					case "RDPBCGRCompressedVirtualChannelData": RDPBCGRCompressedVirtualChannelData RDPBCGRCompressedVirtualChannelData;
+					case "RDPEAI": RDPEAI RDPEAI;
+
+					//
+					// RDP Dynamic Channel
+					//
+					case "RdpePnpDeviceInfo": RdpePnpDeviceInfo RdpePnpDeviceInfo;
+					case "RdpePnpDeviceIO": RdpePnpDeviceIO RdpePnpDeviceIO;
+					case "RdpEXPSPrintTicket": RdpEXPSPrintTicket RdpEXPSPrintTicket;
+					case "RdpEXPSPrintDriver": RdpEXPSPrintDriver RdpEXPSPrintDriver;
+					case "RDPCr": RDPCr RDPCr;
+					case "RDPCR2": RDPCR2 RDPCR2;
+					//
+					//XML Payload
+					//
+					case "XmlParser": XmlParser XmlParser;
+					case "DIME": DIME DIME;
+					
+					/*
+						If you are adding a new protocol which reassembles its payload,
+						then add cases in a section above here to handle those protocols it can hand off to.
+					*/
+					case "DataBlob": Blob(PayloadLength) PayloadBlob;
+					
+					Default: ReportParserError(ParserErrorProtocolClassPublic, "Payload", "Unhooked Containing Protocol" ) ParserError;
+				}			
+		}
+	}
+	
+	switch 
+	{
+		case Local.PayloadEndOffset > FrameOffset:
+			blob(Local.PayloadEndOffset - FrameOffset) UnparsedData;
+	}
+	
+	//
+	// Following is the Reassembly Trailor for debugging fragment list
+	//
+	/*
+	DEBUG section start, uncomment out till end of this section to turn on
+	switch(ReassemblyVersion)
+	{
+		case 0x8200:
+			struct
+			{
+				switch
+				{
+					case frameOffset < FrameLength:
+						FrameSource FrameSource[FrameCount];
+				}
+				
+				switch
+				{
+					case frameOffset < FrameLength:
+						[DataFieldByteOrder = LittleEndian]
+						UnicodeString FullStatusString;
+				}
+				
+				switch
+				{
+					case frameOffset < FrameLength:
+						UINT32 ReassemblyTrailerOffset = FormatString ("%s%d", "Trailer Offset = ", this);
+				}
+			}
+	}
+	DEBUG section end
+	*/
+}
+
+UnsignedNumber PayloadType
+{
+	size = 1,
+	DisplayFormat = FormatString("%s",
+								(this & 0x01)?" Re-assembled":"")
+}
+
+//
+// Cumulative has higher priority than Update flag.
+//
+UnsignedNumber PropertyDescriptor
+{
+	size = 2,
+	DisplayFormat = FormatString((this & 0x0004)?"%s%s%s:%d%s bytes":"%s%s%s%s%s",
+						(this & 0x0001)?"Cumulative":"Not cumulative",
+						(this & 0x0002)?", Number little endian":", number big endian",
+						(this & 0x0004)?", Length given":"",
+						(this & 0x0004)?(this & 0xFF00)>>8:"",
+						(this & 0x0008)?", Update with the latest":"")
+}
+
+/* 
+//This struct was used to debug
+struct FrameSource = FormatString("Frame %u (%u bytes contributed to payload)",
+							this.FrameNumber,
+							FramePayloadLength)
+{
+	UINT32 FrameNumber;
+	UINT32 FramePayloadLength;
+}
+*/
+
+TABLE ReassemblyStatusStringTable(value)
+{
+	switch(value)
+	{
+		case 0: "Complete successfully ";
+		case 1: "Failed: unrecognized contained protocol ";
+		case 2: "Failed: disconnected conversations ";
+		case 3: "Failed: lack of resources ";
+		case 4: "Failed: missing fragments ";
+		case 5: "Failed: reassembly timed out ";
+		case 6: "Non cumulative property changed ";
+		default: "Tick Count for performance analysis ";
+	}
+}
+
+struct ProtocolBlock = FormatString("%s", (ProtocolName[0]!=0)?ProtocolName:"Unknown Protocol")
+{
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString ProtocolName = FormatString("%s",
+												(this[0]!=0)?this:"Unknown Protocol"
+												);
+	UINT32 ConversationKeyLength;
+	UINT8  ConversationKey[ConversationKeyLength];
+	[ProxyBuildConversationWithParent(ProtocolName, ConversationKey)]
+	UINT16 PropertyBlockLength;
+	
+	[DataFieldFrameLength = FrameOffset + PropertyBlockLength]
+	switch
+	{
+		case (PropertyBlockLength > 0):
+			switch (ProtocolName)
+			{
+				case "WiFi":
+					struct WiFiProperties = FormatString("WiFiType = %s, WiFiSubType = %s", WiFiTypeTable(WiFiType), WiFiSubTypeTable(WiFiSubType, WiFiType))
+					{
+						PropertyDescriptor SupportQosDescriptor;
+						[WiFiSupportQos]
+						UINT64 SupportQos;
+						
+						PropertyDescriptor DSDescriptor;
+						[WiFiDS]
+						UINT64 DS;
+						
+						PropertyDescriptor TypeDescriptor;
+						[WiFiType]
+						UINT64 Type;
+						
+						PropertyDescriptor SubTypeDescriptor;
+						[WiFiSubType]
+						UINT64 SubType;
+						
+						PropertyDescriptor EncryptedDescriptor;
+						[WiFiEncrypted]
+						UINT64 Encrypted;
+					};
+			
+				case "XNS":
+					struct XNSProperties = FormatString("SourceXNSAddress = %s, DestinationXNSAddress = %s", SrcXNSAddress, DstXNSAddress)
+					{
+						PropertyDescriptor SourceNetworkNumberDescriptor;
+						XNSNetworkNumber SourceNetworkNumber;
+
+						PropertyDescriptor SourceHostNumberDescriptor;
+						UINT64 SourceHostNumber;
+						PropertyDescriptor SourceSocketNumberDescriptor;
+						[
+							SrcXNSAddress = FormatString("%X.%I64X.%X", SourceNetworkNumber, SourceHostNumber, this),
+							Post.Source = SrcXNSAddress
+						]
+						UINT16 SourceSocketNumber;
+						PropertyDescriptor DestinationNetworkNumberDescriptor;
+						XNSNetworkNumber DestinationNetworkNumber;
+						PropertyDescriptor DestinationHostNumberDescriptor;
+						UINT64 DestinationHostNumber;
+						PropertyDescriptor DestinationSocketNumberDescriptor;
+						[
+							DstXNSAddress = FormatString("%X.%I64X.%X", DestinationNetworkNumber, DestinationHostNumber, this),
+							Post.Destination = DstXNSAddress
+						]
+						UINT16 DestinationSocketNumber;
+					};
+			
+				case "IPv4":
+				[Post.Property.OverIP = true]
+					struct IPv4Properties = FormatString("Source Address = %s, Destination Address = %s", Property.SourceNetworkAddressString, Property.DestinationNetworkAddressString)
+					{
+					PropertyDescriptor SourceAddressDescriptor;
+					[
+						Property.SourceIPv4Alias = Global.AliasTable$[this],
+						Property.SourceName = Global.NameTable$[this],
+						Property.Source = Property.OverIP ? Property.Source
+								: Property.SourceIPv4Alias ? Property.SourceIPv4Alias
+								: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+								: Property.SourceName ? Property.SourceName
+								: this.ToDataTypeString,
+						Property.SourceNetworkAddress,
+						Property.SourceNetworkAddressString = this.ToDataTypeString
+					]
+					IPv4Address SourceAddress;
+					
+					PropertyDescriptor DestinationAddressDescriptor;
+					[
+						Property.DestinationIPv4Alias = Global.AliasTable$[this],
+						Property.DestinationName = Global.NameTable$[this],
+						Property.Destination = Property.OverIP ? Property.Destination
+								: Property.DestinationIPv4Alias ? Property.DestinationIPv4Alias
+								: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+								: Property.DestinationName ? Property.DestinationName
+								: this.ToDataTypeString, 
+						Property.NetworkDirection  = Property.OverIP ? Property.NetworkDirection
+								: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+						Property.DestinationNetworkAddress,
+						Property.DestinationNetworkAddressString = this.ToDataTypeString
+					]
+					IPv4Address DestinationAddress;
+					};
+
+				case "IPv6":
+				[Post.Property.OverIP = true]
+					struct IPv6Properties = FormatString("Source Address = %s, Destination Address = %s", Property.SourceNetworkAddressString, Property.DestinationNetworkAddressString)
+					{
+						PropertyDescriptor SourceAddressDescriptor;
+						[
+							DataFieldByteOrder = LittleEndian,
+							Property.SourceName = Global.NameTable$[this], 
+							Property.SourceIPv6Alias = Global.AliasTable$[this],
+							Property.Source = Property.OverIP ? Property.Source
+										: Property.SourceIPv6Alias ? Property.SourceIPv6Alias
+										: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+										: Property.SourceName ?  Property.SourceName
+										: this.ToDataTypeString,
+							Property.SourceNetworkAddress,
+							Property.SourceNetworkAddressString = SourceAddress.ToDataTypeString
+						]
+					IPv6Address SourceAddress;
+					
+					PropertyDescriptor DestinationAddressDescriptor;
+					[
+						DataFieldByteOrder = LittleEndian,
+						Property.DestinationName = Global.NameTable$[this], 
+						Property.DestinationIPv6Alias = Global.AliasTable$[this],
+						Property.Destination = Property.OverIP ? Property.Destination
+									: Property.DestinationIPv6Alias ? Property.DestinationIPv6Alias
+									: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+									: Property.DestinationName ?  Property.DestinationName
+									: this.ToDataTypeString,
+						Property.NetworkDirection = Property.OverIP ? Property.NetworkDirection
+									: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+						Property.DestinationNetworkAddress,
+						Property.DestinationNetworkAddressString = this.ToDataTypeString,
+					]
+					IPv6Address DestinationAddress;
+					PropertyDescriptor NextHeaderDescriptor;
+					[Property.IPNextProtocol]
+					UINT8 NextHeader = ProtocolTypeTable(this);
+					};
+			
+				case "TCP":
+					struct TCPProperties = FormatString("Source Port = %d, Destination Port = %d", SourcePort, DestinationPort)
+					{
+						PropertyDescriptor SourcePortDescriptor;
+						[Pair = Port, SourcePort]
+						UINT64 SourcePort;
+						PropertyDescriptor DestinationPortDescriptor;
+						[
+							Pair = Port,
+							Post.DestinationPort,
+							Post.TcpDirection = (SourceNetworkAddress>DestinationNetworkAddress)?1:(SourceNetworkAddress<DestinationNetworkAddress)?-1:(SourcePort>DestinationPort)?1:(SourcePort<DestinationPort)?-1:0
+						]
+						UINT64 DestinationPort;
+						PropertyDescriptor SeqNumberDescriptor;
+						[TCPSeqNumber]
+						UINT64 SeqNumber;
+						PropertyDescriptor NextSeqNumberDescriptor;
+						[TCPNextSeqNumber]
+						UINT64 NextSeqNumber;
+						PropertyDescriptor TcpFlagsDescriptor;
+						[Property.TcpFlagFin = TcpFlags & 0x01]
+						UINT64 TcpFlags;
+					};
+			
+				case "T125":
+					struct T125Properties = FormatString("MCSChannel = %u", MCSChannel)
+					{
+						PropertyDescriptor MCSChannelDescriptor;
+						[MCSChannel]
+						UINT64 MCSChannel;
+					};
+			
+				case "MSRPC":
+					[IsMSRPC = True]
+					struct MSRPCProperties = FormatString( "uuid = %s, opnum = %x, ptype = %x", Uuid, Opnum, PType)
+					{
+						PropertyDescriptor UuidDescriptor;
+						[MSRPCIfUuid]
+						[DataFieldByteOrder = LittleEndian]
+						UnicodeString Uuid;
+						PropertyDescriptor OpnumDescriptor;
+						[MSRPCOpnum]
+						UINT64 Opnum;
+						PropertyDescriptor PTypeDescriptor;
+						[MSRPCPType]
+						UINT64 PType;
+						PropertyDescriptor EncryptedDescriptor;
+						[MSRPCEncrypted]
+						UINT64 Encrypted;
+						PropertyDescriptor StubDataLenDescriptor;
+						[MSRPCStubDataLen]
+						UINT64 StubDataLen;
+						PropertyDescriptor FromServerDescriptor;
+						[MSRPCFromServer]
+						UINT64 FromServer;
+						PropertyDescriptor PackedDrepDescriptor;
+						[MSRPCByteOrder = this & 0x10 ? LittleEndian : BigEndian]
+						UINT64 PackedDrep;
+						PropertyDescriptor Ndr64Descriptor;
+						[Property.MSRPCNdr64]
+						UINT64 Ndr64;
+						PropertyDescriptor CallIDDescriptor;
+						[Property.MSRPCCallId]
+						UINT64 CallID;
+						PropertyDescriptor PContIdDescriptor;
+						[Property.MSRPCPContId]
+						UINT64 PContId;
+					};
+			
+				case "SMB":
+					struct SMBProperties = FormatString("SMB%s",SMBResponse ? "Response":"Request")
+					{
+						PropertyDescriptor SMBResponseDescriptor;
+						[SMBResponse]
+						UINT64 SMBResponse;
+						PropertyDescriptor SMBFileNameDescriptor;
+						[DataFieldByteOrder = LittleEndian]
+						[Property.SMBFileName]
+						UnicodeString SMBFileName;
+					};
+			
+				case "TDS":
+					struct TDSProperties
+					{
+						PropertyDescriptor TDSDescriptor;
+						[TDSPacketType]
+						UINT64 TDSPacketType;
+					};
+					
+				case "RDPBCGR":
+					struct RDPBCGRProperties
+					{
+						switch 
+						{
+							case PropertyBlockLength == 10:
+								struct
+								{
+									PropertyDescriptor RDPBCGRTsFpUpdateTypeDescriptor;
+									[Property.RDPBCGRTsFpUpdateType]
+									UINT64 RDPBCGRTsFpUpdateType;
+								}
+						}
+					};
+				case "PNRP":
+					Struct PNRPProperties
+					{
+						// FieldID
+						PropertyDescriptor TDSDescripto1r;
+						[Property.PNRPHeaderFieldID]
+						UINT64 PNRPHeaderFieldID;
+						// VersionMajor
+						PropertyDescriptor TDSDescriptor2;
+						[Property.PNRPHeaderVersionMajor]
+						UINT64 PNRPHeaderVersionMajor;
+						// VersionMinor
+						PropertyDescriptor TDSDescriptor3;
+						[Property.PNRPHeaderVersionMinor]
+						UINT64 PNRPHeaderVersionMinor;
+						// MessageType
+						PropertyDescriptor TDSDescriptor4;
+						[Property.PNRPHeaderMessageType]
+						UINT64 PNRPHeaderMessageType;
+						// MessageID
+						PropertyDescriptor TDSDescriptor5;
+						[Property.PNRPHeaderMessageId]
+						UINT64 PNRPHeaderMessageId;
+					}
+				/*
+					 If you are adding a new protocol which reassembles its payload and it carries properies with it,
+					 then add a case above here to handle those properties.
+				*/
+				case "SMB2":
+					struct SmbReadFileContentProperties = FormatString("SMB %s, SMBFileName = %s",SMBResponse ? "Response":"Request", Property.SMBFileName)
+					{
+						PropertyDescriptor SMBResponseDescriptor;
+						[SMBResponse]
+						UINT64 SMBResponse;
+						PropertyDescriptor SMBFileNameDescriptor;
+						[DataFieldByteOrder = LittleEndian]
+						[Property.SMBFileName]
+						UnicodeString SMBFileName;
+					};
+				default:
+					BLOB(PropertyBlockLength) PropertyBlockBlob;
+			}
+		}
+}

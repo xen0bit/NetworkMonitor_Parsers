@@ -1,0 +1,207 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Plug'N'Play Devices Virtual Channel
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEPNP]: Remote Desktop Protocol: Plug and Play devices Virtual Channel Extension (4.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/2/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEPNPDeviceInfo = PnpHeader.ToString
+{
+	[property.RDPEDYCServerManager = property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress? false: true]
+	RDPEPNPInfoHeader PnpHeader;
+	switch
+	{
+		//server & client
+		case PnpHeader.PacketID == 0x00000065:
+			struct VersionMessage
+			{
+				UINT32 MajorVersion;
+				UINT32 MinorVersion;
+				UINT32 Capabilities = this == 0x00000001? "Supports dynamic addition of devices": "None";
+			}
+		//server
+		case PnpHeader.PacketID == 0x00000067 && property.RDPEDYCServerManager:
+			struct AuthenticatedMessage = "(Empty)"
+			{
+			}
+		//case PnpHeader.PacketID == 0x00000066 && property.RDPEDYCServerManager == false:DeviceAdditionMessage, client to server, always encrypted
+			
+		//case PnpHeader.PacketID == 0x00000068 && property.RDPEDYCServerManager == false:DeviceRemovalMessage, client to server, always encrypted
+			
+	}
+}
+
+[DataTypeByteOrder = LittleEndian]
+[post.conversation.RDPEPNPRequestIdTable$[MakeByteArray(FrameNumber, conversation.RDPEPNPRequestId)] = conversation.RDPEPNPFunctionId]
+Protocol RDPEPNPDeviceIO = "Server Request, " + RDPEPNPIORequestHeaderFunctionIdTable(RDPEPNPDeviceIO.IORequest.RequestHeader.FunctionId)
+{
+	[property.RDPEDYCServerManager = property.SourceNetworkAddress == Conversation.TCP.ClientNetworkAddress? false: true]
+	switch(property.RDPEDYCServerManager)
+	{
+		// server request
+		case true:
+			// status infomation
+			_struct IORequest
+			{
+				RDPEPNPIORequestHeader RequestHeader;
+				[conversation.RDPEPNPFunctionId = RequestHeader.FunctionId]
+				[conversation.RDPEPNPRequestId = RequestHeader.RequestId]
+
+				switch(RequestHeader.FunctionId)
+				{
+					// Server Capabilities Request Message
+					case 0x00000005:
+						struct CapabilitiesRequest = "Version = " + Version.ToString
+						{
+							UINT16 Version;
+						}
+					// CreateFile Request Message
+					case 0x00000004:
+						struct CreateFileRequest = CreationDisposition.ToString
+						{
+							UINT32 DeviceId;
+							UINT32 DesiredAccess;
+							UINT32 ShareMode
+							{
+								UINT32 Read:1 = FormatString("    (%s) %s", this.ToBitString, this? "FILE_SHARE_READ": "");
+								UINT32 Write:1 = FormatString("   (%s) %s", this.ToBitString, this? "FILE_SHARE_WRITE": "");
+								UINT32 Reserved:30 = FormatString("(%s)", this.ToBitString);
+							}
+							UINT32 CreationDisposition = RDPEPNPIOHeaderCreationDispositionTable(this);
+							UINT32 FlagsAndAttributes
+							{
+								UINT32 Reserved1:4 = FormatString("      (%s)", this.ToBitString);
+								UINT32 Directory:1 = FormatString("      (%s) %s", this.ToBitString, this? "FILE_ATTRIBUTE_DIRECTORY": "");
+								UINT32 Archive:1 = FormatString("        (%s) %s", this.ToBitString, this? "FILE_ATTRIBUTE_ARCHIVE": "");
+								UINT32 Device:1 = FormatString("         (%s) %s", this.ToBitString, this? "FILE_ATTRIBUTE_DEVICE": "");
+								UINT32 Normal:1 = FormatString("         (%s) %s", this.ToBitString, this? "FILE_ATTRIBUTE_NORMAL": "");
+								UINT32 Reserved2:11 = FormatString("      (%s)", this.ToBitString);
+								UINT32 FirstPipe:1 = FormatString("      (%s) %s", this.ToBitString, this? "FILE_FLAG_FIRST_PIPE_INSTANCE": "");
+								UINT32 NoRecall:1 = FormatString("       (%s) %s", this.ToBitString, this? "FILE_FLAG_OPEN_NO_RECALL": "");
+								UINT32 ReparsePoint:1 = FormatString("   (%s) %s", this.ToBitString, this? "FILE_FLAG_OPEN_REPARSE_POINT":"");
+								UINT32 Reserved3:2 = FormatString("      (%s)", this.ToBitString);
+								UINT32 PosixSemantics:1 = FormatString(" (%s) %s", this.ToBitString, this? "FILE_FLAG_POSIX_SEMANTICS":"");
+								UINT32 BackupSemantics:1 = FormatString("(%s) %s", this.ToBitString, this? "FILE_FLAG_BACKUP_SEMANTICS":"");
+								UINT32 DeleteOnClose:1 = FormatString("  (%s) %s", this.ToBitString, this? "FILE_FLAG_DELETE_ON_CLOSE":"");
+								UINT32 SequentialScan:1 = FormatString(" (%s) %s", this.ToBitString, this? "FILE_FLAG_SEQUENTIAL_SCAN":"");
+								UINT32 RandomAccess:1 = FormatString("   (%s) %s", this.ToBitString, this? "FILE_FLAG_RANDOM_ACCESS":"");
+								UINT32 NoBuffering:1 = FormatString("    (%s) %s", this.ToBitString, this? "FILE_FLAG_NO_BUFFERING":"");
+								UINT32 Overlapped:1 = FormatString("     (%s) %s", this.ToBitString, this? "FILE_FLAG_OVERLAPPED":"");
+								UINT32 WriteThrough:1 = FormatString("   (%s) %s", this.ToBitString, this? "FILE_FLAG_WRITE_THROUGH":"");
+							}
+
+						}
+					// Read Request Message
+					case 0x00000000:
+						struct ReadRequest = "Bytes Read = " + BytesToRead.ToString
+						{
+							UINT32 BytesToRead = FormatString("%d byte(s)", this);
+							UINT32 OffsetHigh;
+							UINT32 OffsetLow;
+						}
+					// Write Request Message
+					case 0x00000001:
+						struct WriteRequest = "Bytes Write = " + BytesToWrite.ToString
+						{
+							UINT32 BytesToWrite = FormatString("%d byte(s)", this);
+							UINT32 OffsetHigh;
+							UINT32 OffsetLow;
+							BLOB(BytesToWrite) DataWrite;
+							UINT8 Pad;
+						}
+					// IoControl Request Message
+					case 0x00000002:
+						struct IoCOntrolRequest = "IO Code = " + IoCode.ToString
+						{
+							UINT32 IoCode;
+							UINT32 InputBufferSize = FormatString("%d byte(s)", this);
+							UINT32 OutputBufferSize = FormatString("%d byte(s)", this);
+							BLOB(InputBufferSize) InputData;
+							UINT8 Pad;
+						}
+					// Generic IoCancel Request Message
+					case 0x00000003:
+						struct GenericIoCancelRequest = "(Empty)"
+						{
+						}
+					// Specific IoCancel Request Message
+					case 0x00000006:
+						struct SpecificIoCancelRequest = "ID = " + IdToCancel.ToString
+						{
+							UINT8 Pad;
+							UINT24 IdToCancel;
+						}
+				}
+			}
+		
+		//default: Client reply to server, always encrypted
+	}
+}
+
+table RDPEPNPInfoHeaderPacketIDTable(value)
+{
+	switch(value)
+	{
+		case 0x00000065: "Client or Server Version Message";
+		case 0x00000066: "Client Device Addition Message";
+		case 0x00000067: "Authenticated Client Message";
+		case 0x00000068: "Client Device Removal Message";
+		default:
+			"Unknwon value";
+	}
+}
+
+struct RDPEPNPInfoHeader = FormatString("Size = %s, PacketID = %s", Size.ToString, PacketID.ToString)
+{
+	UINT32 Size;
+	UINT32 PacketID = RDPEPNPInfoHeaderPacketIDTable(this);
+}
+
+
+// ----------- RDPEPNP Device IO (FileRedirectorChannel)----------------
+
+table RDPEPNPIORequestHeaderFunctionIdTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "READ_REQUEST";
+		case 0x00000001: "WRITE_REQUEST";
+		case 0x00000002: "IOCONTROL_REQUEST";
+		case 0x00000003: "GENERIC_IOCANCEL_REQUEST";
+		case 0x00000004: "CREATE_FILE_REQUEST";
+		case 0x00000005: "CAPABILITIES_REQUEST";
+		case 0x00000006: "SPECIFIC_IOCANCEL_REQUEST";
+		default:
+			"Unknwon value";
+	}
+}
+
+struct RDPEPNPIORequestHeader = FunctionId.ToString
+{
+	UINT8 Pad;
+	UINT24 RequestId;
+	UINT32 FunctionId = RDPEPNPIORequestHeaderFunctionIdTable(this);
+}
+
+
+table RDPEPNPIOHeaderCreationDispositionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "CREATE_NEW";
+		case 0x00000002: "CREATE_ALWAYS";
+		case 0x00000003: "OPEN_EXISTING";
+		case 0x00000004: "OPEN_ALWAYS";
+		case 0x00000005: "TRUNCATE_EXISTING";
+		default:
+			"Unknown value";
+	}
+}

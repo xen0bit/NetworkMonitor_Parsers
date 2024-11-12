@@ -1,0 +1,95 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Peer Content Caching and Retrieval: Content Identification
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PCCRC]: Peer Content Caching and Retrieval: Content Identification (0.1.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/6/2009
+//#                          Minor, 7/24/2009
+//#
+//####
+[DataTypeByteOrder= UINT8(FrameData, FrameOffset) ? BigEndian : LittleEndian]
+Struct PCCRCContentInformation = FormatString("Contains %u Segments", cSegments)
+{
+	Struct Version = FormatString("%u.%u",MajorVersion, MinorVersion)
+	{
+		Switch(UINT8(FrameData, FrameOffset))
+		{
+			case 0x00:
+				struct
+				{
+					UINT8 MinorVersion;
+					UINT8 MajorVersion;
+				}
+			case 0x01:
+				struct
+				{
+					UINT8 MajorVersion;
+					UINT8 MinorVersion;
+				}
+		}
+	}
+	[Property.PCCRCdwHashAlgo]
+	UINT32 dwHashAlgo = PCCRCDwHashAlgoTable(this);
+	UINT32 dwOffsetInFirstSegment;
+	UINT32 dwReadBytesInLastSegment;
+	[Property.PCCRCSegmentsCount]
+	UINT32 cSegments;
+	[Property.PCCRCSegmentCountLocal = Property.PCCRCSegmentsCount]
+	while [ Property.PCCRCSegmentCountLocal > 0]
+	{
+		[Property.PCCRCSegmentCountLocal = Property.PCCRCSegmentCountLocal - 1]
+		PCCRCSegmentDescription PCCRCSegmentDescription;
+	}
+	[Property.PCCRCBlockCountLocal = Property.PCCRCSegmentsCount]
+	while [ Property.PCCRCBlockCountLocal > 0]
+	{
+		[Property.PCCRCBlockCountLocal = Property.PCCRCBlockCountLocal - 1]
+		PCCRCSegmentContentBlocks PCCRCSegmentContentBlocks;
+	}
+}
+
+Table PCCRCDwHashAlgoTable(value)
+{
+	switch(value)
+	{
+		case 0x0000800c : "SHA-256 hash algorithm";
+		case 0x0000800D : "SHA-384 hash algorithm.";
+		case 0x0000800E : "SHA-512 hash algorithm.";
+		default : "Undefined algorithm";
+	}
+}
+
+Table PCCRCHashData(value)
+{
+	switch(value)
+	{
+		case 0x0000800c : 32;
+		case 0x0000800D : 48;
+		case 0x0000800E : 64;
+	}
+}
+
+Struct PCCRCSegmentDescription = FormatString("The %u Segment", Property.PCCRCSegmentsCount - Property.PCCRCBlockCountLocal)
+{
+	UINT64 ullOffsetInContent;
+	UINT32 cbSegment;
+	UINT32 cbBlockSize;
+	BLOB(PCCRCHashData(Property.PCCRCdwHashAlgo)) Hash_SegmentHashOfData = FormatString( "%X",this) ;
+	BLOB(PCCRCHashData(Property.PCCRCdwHashAlgo)) Hash_SegmentSecret = FormatString( "%X",this);
+}
+
+Struct PCCRCSegmentContentBlocks = FormatString("Contains %u Blocks", cBlocks)
+{
+	UINT32 cBlocks;
+	[Property.PCCRCBlockhashCountLocal = cBlocks]
+	While [Property.PCCRCBlockhashCountLocal > 0]
+	{
+		[Property.PCCRCBlockhashCountLocal = Property.PCCRCBlockhashCountLocal - 1]
+		BLOB(PCCRCHashData(Property.PCCRCdwHashAlgo)) HashData = FormatString( "%X",this);
+	}
+}

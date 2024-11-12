@@ -1,0 +1,204 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Secure Socket Tunneling Protocol
+//#
+//#  Details:                rides on HTTPS
+//#
+//#  Microsoft References:   [MS-SSTP]: Secure Socket Tunneling Protocol (SSTP) Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//#######################################################################################
+
+Protocol SSTP = FormatString("Version = %s, PacketType = %s, %sLength = %s", 
+				Version.ToString,
+				PacketType.C? "Control Packet" : "Data Packet",
+				PacketType.C? FormatString("Messagetype = %s, ",SSTPMessageTypeTable(ControlPacket.MessageType)):"",
+				SSTPPacketLength.toString)
+{
+	UINT8 Version = FormatString("%d.%d", MajorVersion, MinorVersion)
+	{
+		UINT8 MajorVersion:4 = FormatString("%d(%s)", this, this.toBitString);
+		UINT8 MinorVersion:4 = FormatString("%d(%s)", this, this.toBitString);
+	};
+	UINT8 PacketType = FormatString("%s",C.toString)
+	{
+		UINT8 Unused:7 = FormatString("(%s)", this.toBitString);
+		UINT8 C:1 = FormatString(     "(%s) %s (%d)", this.toBitString,this ? "SSTP Control Packet" : "SSTP Data Packet",this);
+	}
+	UINT16 SSTPPacketLength = FormatString("%d Bytes",PacketLength)
+	{
+		UINT16 Reserved:4  = FormatString("   (%s) %s",this.toBitString,this ? "Wrong Value, This must be set to 0" : "");
+		UINT16 PacketLength:12 =FormatString("(%s) %d",this.toBitString,this);
+	}
+	switch(PacketType.C)
+	{
+		case 0:
+			PPP Ppp;
+		case 1:
+			SSTPControlPacket ControlPacket;
+	}
+}
+
+Table SSTPMessageTypeTable(code)
+{
+	switch(code)
+	{
+		case 1:"SSTP_MSG_CALL_CONNECT_REQUEST";
+		case 2:"SSTP_MSG_CALL_CONNECT_ACK";
+		case 3:"SSTP_MSG_CALL_CONNECT_NAK";
+		case 4:"SSTP_MSG_CALL_CONNECTED";
+		case 5:"SSTP_MSG_CALL_ABORT";
+		case 6:"SSTP_MSG_CALL_DISCONNECT";
+		case 7:"SSTP_MSG_CALL_DISCONNECT_ACK";
+		case 8:"SSTP_MSG_ECHO_REQUEST";
+		case 9:"SSTP_MSG_ECHO_RESPONSE";
+		default:FormatString("Wrong MessageType (0x%x)",code);
+	}
+}
+
+Table SSTPAttributeIDTable(code)
+{
+	switch(code)
+	{
+		case 1:"SSTP_ATTRIB_ENCAPSULATED_PROTOCOL_ID";
+		case 2:"SSTP_ATTRIB_STATUS_INFO";
+		case 3:"SSTP_ATTRIB_CRYPTO_BINDING";
+		case 4:"SSTP_ATTRIB_CRYPTO_BINDING_REQUEST";
+		default:FormatString("Invalid AttribID (0x%x)",code);
+	}
+}
+
+Table SSTPHashProtocolTable(code)
+{
+	switch(code)
+	{
+		case 1: "CERT_HASH_PROTOCOL_SHA1";
+		case 2: "CERT_HASH_PROTOCOL_SHA256";
+		default:FormatString("Wrong Value (0x%x)",code);
+	}
+}
+
+Table SSTPProtocolIDTable(code)
+{
+	switch(code)
+	{
+		case 1: "SSTP_ENCAPSULATED_PROTOCOL_PPP";//Now the version only support ppp Protocol
+		default: FormatString("Not Supported (0x%x)",code);
+	}
+}
+
+Table SSTPStatusTable(code)
+{
+	switch(code)
+	{
+		case 0:  "ATTRIB_STATUS_NO_ERROR";
+		case 1:  "ATTRIB_STATUS_DUPLICATE_ATTRIBUTE";
+		case 2:  "ATTRIB_STATUS_UNRECOGNIZED_ATTRIBUTE";
+		case 3:  "ATTRIB_STATUS_INVALID_ATTRIB_VALUE_LENGTH";
+		case 4:  "ATTRIB_STATUS_VALUE_NOT_SUPPORTED";
+		case 5:  "ATTRIB_STATUS_UNACCESSED_FRAME_RECEIVED";
+		case 6:  "ATTRIB_STATUS_RETRY_COUNT_EXCEEDED";
+		case 7:  "ATTRIB_STATUS_INVALID_FRAME_RECEIVED";
+		case 8:  "ATTRIB_STATUS_NEGOTIATION_TIMEOUT";
+		case 9:  "ATTRIB_STATUS_ATTRIB_NOT_SUPPORTED_IN_MSG";
+		case 10: "ATTRIB_STATUS_REQUIRED_ATTRIBUTE_MISSING";
+		case 11: "ATTRIB_STATUS_STATUS_INFO_NOT_SUPPORTED_IN_MSG";
+		default:FormatString("Invalid Status (0x%x)",code);
+	}
+}
+
+struct SSTPAttribute = FormatString("%s",AttributeID.toString)
+{
+	UINT8 Reserved;
+	UINT8 AttributeID = FormatString("%s (0x%x)",SSTPAttributeIDTable(this),this);
+	UINT16 AttributeLength = FormatString("%d bytes", Length)
+	{
+		UINT16 Reserved:4  = FormatString("(%s) %s",this.toBitString,this.toString);
+		UINT16 Length:12 = FormatString("  (%s) %d Bytes",this.toBitString,this);
+	}
+	switch(AttributeID)
+	{
+		case 1:
+			UINT16 ProtocolID = FormatString("%s (0x%x)",SSTPProtocolIDTable(this),this);
+		case 2:
+			_struct StausInfo
+			{
+				UINT24 Reserved;
+				UINT8 AttribID = FormatString("%s (0x%x)",SSTPAttributeIDTable(this),this);
+				UINT32 Status = FormatString("%s (0x%x)",SSTPStatusTable(this),this);
+				BLOB(AttributeLength.Length-12) AttributeValue;			
+			}
+		case 3:
+			_struct Cryptobinding
+			{
+				UINT24 Reserved;
+				UINT8 HashProtocol = FormatString("%s (0x%x)",SSTPHashProtocolTable(this),this);
+				BLOB(32) HashNonce;	
+				switch(HashProtocol)
+				{
+					case 1:
+						BLOB(20) CertHash1;
+					case 2:
+						BLOB(32) CertHash2;
+				}
+				switch(HashProtocol)
+				{
+					case 1:
+						BLOB(12) Padding;
+				}
+				switch(HashProtocol)
+				{
+					case 1:
+						BLOB(20) CompoundMAC1;
+					case 2:
+						BLOB(32) CompoundMAC2;
+				}
+				switch(HashProtocol)
+				{
+					case 1:
+						BLOB(12) Padding1;
+				}
+			}
+		case 4:
+			_struct Request
+			{
+				UINT24 Reserved;
+				UINT8 HashProtocolBitMask 
+				{
+					UINT8 Unuse:6 = FormatString("                (%s) %s (0x%x)",this.toBitString,this.toString,this);
+					UINT8 ProtocolBitMaskSHA256:1 = FormatString("(%s) %s (0x%x)",this.toBitString,this?"CERT_HASH_PROTOCOL_SHA256":"Not Used",this);
+					UINT8 ProtocolBitMaskSHA1:1 = FormatString("  (%s) %s (0x%x)",this.toBitString,this?"CERT_HASH_PROTOCOL_SHA1":"Not used",this);
+				};
+				BLOB(32) HashNonce;
+			}
+		default:
+			BLOB(AttributeLength.Length-4) UnknowAttributeValue;
+	}
+			
+}
+
+
+struct SSTPControlPacket = FormatString("Type= %s ",MessageType.toString)
+{
+	UINT16 MessageType = FormatString("%s (0x%x)",SSTPMessageTypeTable(this),this);
+	UINT16 NumAttribute;
+	switch
+	{
+		case NumAttribute > 0:
+			SSTPAttribute Attribute[NumAttribute];
+	}
+}
+
+[RegisterAfter(HTTPPayloadData.XML, SstpPayloads, Conversation.SSTPCommand)]
+struct SSTPPayloads = FormatString("%d SSTP Packet%s", Property.SstpPacketCount, Property.SstpPacketCount > 1 ? "s" : "")
+{
+	[Property.SstpPacketCount = 0]
+	While [FrameOffset < FrameLength]
+	{
+		[Post.Property.SstpPacketCount = SstpPacketCount + 1]
+		SSTP Sstp;
+	}	
+}

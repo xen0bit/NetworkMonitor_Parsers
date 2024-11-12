@@ -1,0 +1,1554 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Dynamic Host Configuration Protocol (for IPv4)
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1533, 2131, 2132, 2241, 2242, 2485, 2563, 2610, 2855, 2937,
+//#                          RFC 3011, 3046, 3118, 3203, 3361, 3397, 3442, 3495, 3594, 3634,
+//#                          RFC 3825, 3925, 4039
+//#  Microsoft References:   [MS-DHCPN]: Dynamic Host Configuration Protocol (DHCP) Extensions for Network Access Protection (NAP) (4.2.6)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/10/2009
+//#                          Minor, 2/25/2010
+//#
+//####
+
+[DefaultTimeOut = DHCPConversationTimeout]
+Protocol DHCP = FormatString("%s, %s TransactionID = 0x%08X%s",
+							DHCPOpCodeTable(OpCode),
+							Property.DHCPMessageType ? "MsgType = " + DHCPMessageTypeTable(Property.DHCPMessageType) + ","
+													 :"",
+							TransactionID, 
+							Property.SoHSummary ? ", SOH:" + Property.SoHSummary : "")
+{
+	UINT8 OpCode = FormatString("%s, %d(0x%02X)",DHCPOpCodeTable(this), this, this);
+	UINT8 Hardwaretype = HardwareTypeTable(this);
+	UINT8 HardwareAddressLength;
+	UINT8 HopCount;
+	[
+		BuildConversation ( TransactionID),
+		Post.Conversation.ConversationDescription = FormatString("(TransactID: %u) ConvID = %d", TransactionID,ConvID)
+	]
+	UINT32 TransactionID;
+	UINT16 Seconds;
+	UINT16 Flags
+	{
+		UINT16 Broadcast:1 = FormatString("(%s) %s",this.ToBitString,this ? "Broadcast" : "No Broadcast");
+		UINT16 Reserved :15 = FormatString("(%s)",this.ToBitString);
+	};
+	IPv4Address ClientIP;
+	IPv4Address YourIP;
+	IPv4Address ServerIP;
+	IPv4Address RelayAgentIP;
+	BLOB(16) ClientHardwareAddress = DHCPCHAddress
+	{
+		switch
+		{
+			case Hardwaretype == 1 && HardwareAddressLength == 6:
+				[DHCPCHAddress = this.ToString]
+				MacAddress EthernetAddress;
+			default:
+				[DHCPCHAddress = FormatString("%I64X", this)]
+				BLOB(16) HardwareAddress;
+		}
+	};
+	AsciiStringTerm("\0x00", FALSE, 64) ServerHostName;
+	AsciiStringTerm("\0x00", FALSE, 128) BootFileName;
+	IPv4Address MagicCookie;
+	
+	//DHCPOptions
+	while [ !(UINT8( Framedata, Offset ) == 0xFF) ]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			//RFC 2132
+			case   0: 
+				struct Pad
+				{
+					while [UINT8( Framedata, Offset ) == 0]
+					{
+						DHCPOptionsPad PadByte;
+					}
+				}
+			case   1: DHCPOptionsServers SubnetMask;
+			case   2: DHCPOptionsTimeOffset TimeOffset;
+			case   3: DHCPOptionsServers Router;
+			case   4: DHCPOptionsServers TimeServer;
+			case   5: DHCPOptionsServers NameServer;
+			case   6: DHCPOptionsServers DomainNameServer;
+			case   7: DHCPOptionsServers LogServer;
+			case   8: DHCPOptionsServers QuoteServer;
+			case   9: DHCPOptionsServers LPRServer;
+			case  10: DHCPOptionsServers ImpressServer;
+			case  11: DHCPOptionsServers ResourceLocationServer ;
+			case  13: DHCPOptionsBootFileSize BootFileSize;
+			case  14: DHCPOptionsName MeritDumpFile;
+			case  15: DHCPOptionsName DomainName;
+			case  16: DHCPOptionsServers SwapServer;
+			case  17: DHCPOptionsName RootPath;
+			case  18: DHCPOptionsName ExtensionsPath;
+			case  19: DHCPOptionsIPForward IPForward;
+			case  20: DHCPOptionsNonLocalSourceRouting NonLocalSourceRouting;
+			case  21: DHCPOptionsPolicyFilter PolicyFilter;
+			case  22: DHCPOptionsMaxDataReassemblySize MaxDataReassemblySize;
+			case  23: DHCPOptionsByte DefaultIPTimeToLive;
+			case  24: DHCPOptionsPathMTUAgingTimeout PathMTUAgingTimeout;
+			case  25: DHCPOptionsMTU PathMTUPlateau;
+			case  26: DHCPOptionsMTU InterfaceMTU;
+			case  27: DHCPOptionsAllSubnetsLocal AllSubnetsLocal;
+			case  28: DHCPOptionsServers broadcastAddress;
+			case  29: DHCPOptionsPerformMaskDiscovery PerformMaskDiscovery;
+			case  30: DHCPOptionsMaskSupplier MaskSupplier;
+			case  31: DHCPOptionsPerformRouterDiscovery PerformRouterDiscovery;
+			case  32: DHCPOptionsServers RouterSolicitationAddress;
+			case  33: DHCPOptionsStaticRoute StaticRoute;
+			case  34: DHCPOptionsTrailerEncapsulation TrailerEncapsulation;
+			case  35: DHCPOptionsTimeOut ARPcachetimeout;
+			case  36: DHCPOptionsEthernetEncapsulation EthernetEncapsulation;
+			case  37: DHCPOptionsByte TCPDefaultTTL;
+			case  38: DHCPOptionsTimeOut TCPkeepaliveinterval;
+			case  39: DHCPOptionsTCPKeepaliveGarbage TCPKeepaliveGarbage;
+			case  40: DHCPOptionsName NetworkInformationServicedomain;
+			case  41: DHCPOptionsServers NetworkInformationServers;
+			case  42: DHCPOptionsServers NTPServers;
+			case  44: DHCPOptionsServers NBOverTCPIPNameServer;
+			case  45: DHCPOptionsServers NBOverTCPIPDataDisServer;
+			case  46: DHCPOptionsNodeType NodeType;
+			case  48: DHCPOptionsServers XWinSysFontServer;
+			case  49: DHCPOptionsServers XWinSysDisplayManager;
+			case  50: DHCPOptionsServers RequestedIPAddress;
+			case  51: DHCPOptionsTimeOut IPAddressLeaseTime;
+			case  52: DHCPOptionsOverload Overload;
+			case  53: DHCPMessageType MessageType;
+			case  54: DHCPOptionsServers ServerIdentifier;
+			case  55: DHCPOptionsParameterRequestList ParameterRequestList;
+			case  56: DHCPOptionsName Message;
+			case  57: DHCPOptionsMaxDHCPMessageSize MaxDHCPMessageSize;
+			case  58: DHCPOptionsTimeOut RenewTimeValue;
+			case  59: DHCPOptionsTimeOut RebindingTimeValue;
+			case  61: DHCPOptionsClientID clientID;
+			//RFC 2242
+			case  62: DHCPOptionsName NetWareIPDomainName;
+			//RFC 2132
+			case  64: DHCPOptionsName NetInforServicePlusDomain;
+			case  65: DHCPOptionsServers NetInforServicePlusServers;
+			//RFC 2132 [26], AsciiString??
+			case  66: DHCPOptionsName TFTPServerName;
+			case  67: DHCPOptionsName Bootfilename;
+			//RFC 2132
+			case  68: DHCPOptionsServers MobIPHomeAgent;
+			case  69: DHCPOptionsServers SMTPServer;
+			case  70: DHCPOptionsServers POPServer;
+			case  71: DHCPOptionsServers NNTPServer;
+			case  72: DHCPOptionsServers DefaultWWWServer;
+			case  73: DHCPOptionsServers DefaultFingerServer;
+			case  74: DHCPOptionsServers DefaultIRCServer;
+			case  75: DHCPOptionsServers StreetTalkServer;
+			case  76: DHCPOptionsServers StreetTalkDirectoryAssistanceServer;
+			//RFC 2610
+			case  78: DHCPSLPDirectoryAgent SLPDirectoryAgent;
+			//RFC 2241
+			case  85: DHCPOptionsServers NDSServers;
+			//RFC 2480                                                
+			case  88:DHCPBCMCSControllerDomainNamelist DomainNamelist;
+			//RFC 2480                                                
+			case  89:DHCPBCMCSControllerServerAddress ServerAddress; 
+			//RFC 3118
+			case  90: DHCPAuthentication Authentication;
+			//RFC 2485 can be parsed futher
+			case  98: DHCPOpenGroupUserAuthentication OpenGroupUserAuthentication;
+			//RFC 4776 
+			case  99: DHCPOverallFormat OverallFormat;	
+			//RFC 2563
+			case 116: DHCPOptionsAutoConfigure AutoConfigure;
+			//RFC 3011
+			case 118: DHCPOptionsServers SubnetSelection;
+			
+			//# up finished!!!!
+			
+			//****************************************************************//
+			//RFC 2610 [3] Scope-List String is encoded using UTF-8 [5] characters
+			//can be parsed further
+			case  79: DHCPSLPServiceScope SLPServiceScope;
+			//RFC 2241 can be parsed further
+			case  86: DHCPNDSTreeName NDSTreeName;
+			case  87: DHCPNDSContext NDSContext;
+			//# up UTF-8 string included
+			
+			//*****************************************************************//
+			// these are nested TLV options
+			//RFC 2242  , page 2
+			case  63: DHCPOptionsNWIPInfor NetWareIPInformation;
+			//RFC 3046 [5]
+			case  82: DHCPOptionsRelayAgentInfo RelayAgentInfo;
+			//RFC 3442
+			case 121: DHCPEClasslessStaticRoute ClasslessStaticRoute1;
+			//****************************************************************//
+			
+			//RFC 1001/1002. See [19], [20], and [8] for character-set restrictions
+			//case 47:DHCPOptionsName Scope;
+			
+			//RFC 3397  [2,3]
+			//Searchstring can be parsed further!
+			//see Domain Names - Implementation And Specification [RFC1035].
+			case 117: DHCPOptionsNameServiceSearch NameServiceSearch;
+			case 119: DHCPOptionsGeneral DomainSearch;
+			
+			//RFC 3361  DomainName can be parsed further!
+			case 120: DHCPSIPServers SIPservers;
+			case 122: DHCPCableLabsClientConfiguration CableLabsClientConfiguration;
+			case 123: DHCPLocationConfigurationInformation LocationConfigurationInformation;
+			case 124: DHCPVendorIdentifyingVendorClass VendorIdentifyingVendorClass;
+			case 125: DHCPVendorIdentifyingVendorSpecific VendorIdentifyingVendorSpecific;
+			
+			// Tentatively assigned
+			
+			//case 128: Etherboot signature. 6 bytes: E4:45:74:68:00:00	
+			//case 128: DOCSIS "full security" server IP address	
+			//case 128: TFTP Server IP address (for IP Phone software load)	
+			
+			//case 129: Kernel options. Variable length string	
+			//case 129: Call Server IP address 	
+			
+			//case 130: Ethernet interface. Variable length string.	
+			//case 130: Discrimination string (to identify vendor)	
+			
+			case 131: DHCPOptionRemotestatisticsserverIPAddress RemotestatisticsserverIPAddress;
+			case 132: DHCPOptionVLANID VLANID;
+			case 133: DHCPOptionL2Priority L2Priority;
+			case 134: DHCPOptionDiffservCodePoint DiffservCodePoint;
+			case 135: DHCPOptionHTTPProxyForPhoneSpecApps HTTPProxyForPhoneSpecApps;
+                
+			//case 150: TFTP server address (Tentatively Assigned - 23 Jun 2005)
+			//case 150: Etherboot	
+			//case 150: GRUB configuration path name	
+                
+			case 175: DHCPOptionEtherboot Etherboot;
+			case 176: DHCPOptionIPTelephone IPTelephone;
+			//case 177: Etherboot (Tentatively Assigned - 23 Jun 2005)
+			//case 177: PacketCable and CableHome (replaced by 122)	
+                
+			// http://www.iana.org/assignments/bootp-dhcp-parameters
+			case 208: DHCPOptionsPxelinuxMagic PxelinuxMagic;
+			case 209: DHCPOptionsPxelinuxConfigfile PxelinuxConfigfile;
+			case 210: DHCPOptionsPxelinuxPathprefix PxelinuxPathprefix;
+			case 211: DHCPOptionsPxelinuxReboottime PxelinuxReboottime;
+			
+			// http://tools.ietf.org/wg/dhc/draft-ietf-dhc-subnet-alloc/draft-ietf-dhc-subnet-alloc-03.txt
+			case 220: DHCPOptionsSubnetAllocation SubnetAllocation;
+			
+			// http://www3.ietf.org/proceedings/05nov/IDs/draft-ietf-dhc-vpn-option-05.txt
+			case 221: DHCPOptionsVirtualSubnetSelection VirtualSubnetSelection;
+		
+			case 252: DHCPOptionsWpad WPAD;
+			
+			default : DHCPOptionsGeneral Generaloption;
+		};
+	}
+
+	switch
+	{
+		case offset < FrameLength && UINT8( Framedata, Offset ) == 0xFF:
+			DHCPOptionsEnd End;
+	}
+	
+	switch
+	{
+		case framelength > frameoffset:
+			Blob(framelength - frameoffset) Padding;
+	}
+}
+//rfc3118, page 3
+Table DHCPAuthenticationProtocolTable(value)
+{
+	switch(value)
+	{
+		case  0: "Configuration Token";
+		case  1: "Delayed Authentication";
+		default: "Unknown";
+	}
+}
+
+Table DHCPAuthenticationAlgorithmTable(value,code)
+{
+	switch
+	{
+		case value == 1 && code == 1: "HMAC_MD5";
+		default						: "Unknown";
+	}
+}
+
+Table DHCPOpCodeTable(value)
+{
+	switch(value)
+	{
+		case  1:   "Request";
+		case  2:   "Reply";
+		default:   "UNHANDLED DHCP OpCode";
+	}
+}
+
+// http://www.iana.org/assignments/bootp-dhcp-parameters
+Table DHCPOptionCodeTable(value)
+{
+	switch(value)
+	{
+		case   0: "Pad";
+		case   1: "Subnet Mask";
+		case   2: "Time Offset";
+		case   3: "Router";
+		case   4: "Time Server";
+		case   5: "Name Server";
+		case   6: "Domain Name Server";
+		case   7: "Log Server";
+		case   8: "Cookie Server";
+		case   9: "LPR Server";
+		case  10: "Impress Server";
+		case  11: "Resource Location Server";
+		case  12: "Host Name";
+		case  13: "Boot File Size";
+		case  14: "Merit Dump File";
+		case  15: "Domain Name";
+		case  16: "Swap Server";
+		case  17: "Root Path";
+		case  18: "Extensions Path";
+		case  19: "IP Forwarding Enable/Disable";
+		case  20: "Non-Local Source Routing Enable/Disable";
+		case  21: "Policy Filter";
+		case  22: "Maximum Datagram Reassembly Size";
+		case  23: "Default IP Time-to-live";
+		case  24: "Path MTU Aging Timeout";
+		case  25: "Path MTU Plateau Table";
+		case  26: "Interface MTU";
+		case  27: "All Subnets are Local";
+		case  28: "Broadcast Address";
+		case  29: "Perform Mask Discovery";
+		case  30: "Mask Supplier";
+		case  31: "Perform Router Discovery";
+		case  32: "Router Solicitation Address";
+		case  33: "Static Route";
+		case  34: "Trailer Encapsulation";
+		case  35: "ARP Cache Timeout";
+		case  36: "Ethernet Encapsulation";
+		case  37: "TCP Default TTL";
+		case  38: "TCP Keepalive Interval";
+		case  39: "TCP Keepalive Garbage";
+		case  40: "Network Information Service Domain";
+		case  41: "Network Information Servers";
+		case  42: "Network Time Protocol Servers";
+		case  43: "Vendor specific information";
+		case  44: "NetBIOS over TCP/IP Name Server";
+		case  45: "NetBIOS over TCP/IP Datagram Distribution Server";
+		case  46: "NetBIOS over TCP/IP Node Type";
+		case  47: "NetBIOS over TCP/IP Scope";
+		case  48: "X Window System Font Server";
+		case  49: "X Window System Display Manager";
+		case  50: "Requested IP Address";
+		case  51: "IP Address Lease Time";
+		case  52: "Option Overload";
+		case  53: "DHCP Message Type";
+		case  54: "Server Identifier";
+		case  55: "Parameter Request List";
+		case  56: "Message";
+		case  57: "Maximum DHCP Message Size";
+		case  58: "Renewal (T1) Time Value";
+		case  59: "Rebinding (T2) Time Value";
+		case  60: "Class-identifier";
+		case  61: "Client-identifier";
+		case  62: "NetWare/IP Domain Name";
+		case  63: "NetWare/IP Information";
+		case  64: "Network Information Service+ Domain";
+		case  65: "Network Information Service+ Servers";
+		case  66: "TFTP Server Name";
+		case  67: "Bootfile Name";
+		case  68: "Mobile IP Home Agent";
+		case  69: "Simple Mail Transport Protocol Server";
+		case  70: "Post Office Protocol Server";
+		case  71: "Network News Transport Protocol Server";
+		case  72: "Default World Wide Web Server";
+		case  73: "Default Finger Server";
+		case  74: "Default Internet Relay Chat Server";
+		case  75: "StreetTalk Server";
+		case  76: "StreetTalk Directory Assistance Server";
+		case  77: "User Class Information";
+		case  78: "SLP Directory Agent";
+		case  79: "SLP Service Scope";
+		case  81: "Fully Qualified Domain Name";
+		case  82: "Agent Circuit ID";
+		case  85: "NDS servers";
+		case  86: "NDS tree name";
+		case  87: "NDS context";
+		case  88: "BCMCS Domain Name";
+		case  89: "BCMCS SERVER Address";
+		case  90: "Authentication";
+		case  93: "Client System";
+		case  94: "Client Network Device Interface";
+		case  95: "Lightweight Directory Access Protocol";
+		case  97: "UUID/GUID based Client Identifier";
+		case  98: "Open Group's User Authentication";
+		case  99: "Overall Format";
+		case 109: "Autonomous System Number";
+		case 112: "NetInfo Parent Server Address";
+		case 113: "NetInfo Parent Server Tag";
+		case 114: "URL";
+		case 116: "Auto-Configure";
+		case 117: "Name Service Search";
+		case 118: "Subnet Selection";
+		case 119: "DNS domain search list";
+		case 120: "SIP Servers DHCP Option";
+		case 121: "Classless Static Route Option";
+		case 122: "CableLabs Client Configuration";
+		case 123: "GeoConf";
+		case 124: "Vendor-Identifying Vendor Class";
+		case 125: "Vendor-Identifying Vendor-Specific";
+		case 126: "Extension";
+		case 127: "Extension";
+		case 249: "Classless Static Route";
+		case 250: "Continuation Option";
+		case 252: "Web Proxy Auto Detection (WPAD)";
+		case 255: "End of Options";
+		default : "UNHANDLED DHCP OPTION CODE";
+	}
+}
+
+Table DHCPMessageTypeTable(value)
+{
+	switch(value)
+	{
+		case  1: "DISCOVER";
+		case  2: "OFFER";
+		case  3: "REQUEST";
+		case  4: "DECLINE";
+		case  5: "ACK";
+		case  6: "NAK";
+		case  7: "RELEASE";
+		case  8: "INFORM";
+		default: "Unknown";
+	}
+}
+
+Table DHCPV4CAtypeTable( type)
+{
+	switch( type )
+	{
+		case 0: "language";
+		case 1: "national subdivisions (state, canton, region, province, prefecture) ";
+		case 2: "county, parish, gun (JP), district (IN)";
+		case 3: "city, township, shi (JP)";
+		case 4: "city division, borough, city district, ward, chou (JP)";
+		case 5: "neighborhood, block";
+		case 6: "group of streets below the neighborhood level";
+		case 16: "leading street direction";
+		case 17: "trailing street suffix";
+		case 18: "street suffix or type";
+		case 19: "house number";
+		case 20: "house number suffix";
+		case 21: "landmark or vanity address";
+		case 22: "additional location information";
+		case 23: "name (residence and office occupant)";
+		case 24: "postal/zip code";
+		case 25: "building (structure)";
+		case 26: "unit (apartment, suite)";
+		case 27: "floor";
+		case 28: "room";
+		case 29: "type of place";
+		case 30: "postal community name";
+		case 31: "post office box (P.O.Box)";
+		case 32: "additional code";
+		case 33: "seat (desk, cubicle,workstation)";
+		case 34: "primary road name";
+		case 35: "road section";
+		case 36: "branch road name";
+		case 37: "sub-branch road name";
+		case 38: "street name pre-modifier";
+		case 39: "street name post-modifier";
+		case 128: "script";
+		case 255: "Reserved";
+		default: FormatString("Unknown value: %d",type);
+	}
+}
+
+//http://wpad.org/draft-ietf-wrec-wpad-01.txt
+struct DHCPOptionsWpad = URL + FormatString(" - Type %u", OpCode)
+{
+	UINT8 OpCode = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length;
+	AsciiString(Length) URL;
+};
+
+struct DHCPMessageType = DHCPMessageTypeTable(value) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	[DHCPMessageType]
+	UINT8 Value = Formatstring("%s, %d(%#x)",DHCPMessageTypeTable(this),this,this);
+}
+
+struct DHCPOptionsGeneral = DHCPOptionCodeTable(Code) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	AsciiString(Length) Value;
+}
+
+struct DHCPOptionsPad
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+}
+
+struct DHCPOptionsEnd
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+}
+
+struct DHCPOptionsTimeOffset = TimeOffset + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT32 TimeOffset;
+}
+
+struct DHCPOptionsPathMTUAgingTimeout = TimeOut.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT32 TimeOut = this!=0xFFFFFFFF ? FormatString ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+													this < 0 ? 49709 + this/(86400) : this/(86400),
+													this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+													this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+													this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+															 : "Infinty";
+}
+
+struct DHCPOptionsTimeOut = DHCPOptionCodeTable(this) + ": " + Timeout.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//# 0xFFFFFFFF % 86400 = 23295
+	//# 0xFFFFFFFF % 3600 = 1695
+	//# 0xFFFFFFFF % 60 = 15
+	//# 15 + 1 =16
+	UINT32 Timeout = this!=0xFFFFFFFF ? FormatString ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+													this < 0 ? 49709 + this/(86400) : this/(86400),
+													this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+													this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+													this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+															 : "Infinty";
+}
+
+struct DHCPOptionsServers = IpAddress.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	IPv4Address IpAddress[Length/4];
+}
+
+// RFC 2132 [Page 29]
+struct DHCPOptionsName = Name.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	AsciiString(Length) Name;
+}
+
+struct DHCPOptPolicyFilterAddressMaskPair = "IpAddress: " + IPAddress.ToString + " (SubnetMask: " + SubnetMask.ToString + ")"
+{
+	IPv4Address IPAddress;
+	IPv4Address SubnetMask;
+}
+
+struct DHCPOptionsPolicyFilter = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	DHCPOptPolicyFilterAddressMaskPair AddressMaskPair[ Length/8 ];
+}
+
+Table DHCPOptionAutoConfigureTable(value)
+{
+	switch(value)
+	{
+		case  1:   FormatString("Auto Configure  (%d)", value);
+		case  0:   FormatString("Do Not Auto Configure  (%d)", value);
+		default:   FormatString("UNHANDLED DHCP Option Auto Configure Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsAutoConfigure = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionAutoConfigureTable(this);
+};
+
+struct DHCPOptionsClientID = FormatString("(Type %d)",Type) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Type = this ? FormatString("HardwareAddress(%u)", this) : "OtherIdentifier(0)";
+	BLOB(Length - 1) ClientID;
+};
+
+struct DHCPSLPDirectoryAgent = IpAddress.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Mandatory;
+	IPv4Address IpAddress[(Length - 1)/4];
+}
+
+struct DHCPSLPServiceScope = ScopeList.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Mandatory;
+	//RFC 2610 [3] Scope-List String is encoded using UTF-8 [5] characters
+	MbcString(length-1) ScopeList;
+}
+
+
+struct DHCPNDSTreeName = NDSTreeName.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//NDS tree names are 16-bit Unicode strings,For
+	//transmission in the NDS Tree Name Option, an NDS tree name is
+	//transformed into octets using UTF-8.
+	MbcString(Length) NDSTreeName;
+}
+
+struct DHCPNDSContext  = NDSContext.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//NDS Context are 16-bit Unicode strings,For
+	//transmission in the NDS Tree Name Option, an NDS Context is
+	//transformed into octets using UTF-8.
+	MbcString(Length) NDSContext;
+}
+
+struct DHCPAuthentication = FormatString(" - Type %u", Code)             
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 ProtocolField = FormatString("%s, %d(0x%02X)",DHCPAuthenticationProtocolTable(this),this,this);
+	UINT8 Algorithm = FormatString("%s, %d(0x%02X)",DHCPAuthenticationAlgorithmTable(ProtocolField,this),this,this);
+	UINT8 RDM = this==0  ? FormatString("Monotonically Increasing Counter, %d(0x%X)",this,this)
+						: FormatString("Unknown, %d(0x%X)",this,this) ;
+	AsciiString(8) ReplayDetection;
+	switch
+	{
+		case ProtocolField == 1 && Algorithm == 1:
+			struct
+			{
+				UINT32 SecretID;
+				AsciiString(16) HMACMD5; // rfc 3118  page 7
+			}
+		default:
+			struct
+			{
+				AsciiString(Length - 11) AuthenticationInformation;
+			}
+	}
+}
+
+struct DHCPOpenGroupUserAuthentication = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[DHCPUrlListEndOffset = offset + 1 + this]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//A list of one or more URLs separated by the ASCII space character (0x20)
+	//can be parsed further!
+	While UrlList[offset <= DHCPUrlListEndOffset]
+	{
+		AsciiStringterm(" ") Url;
+	}
+}
+
+Table DHCPOptionsPerformMaskDiscoveryTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("The client should perform mask discovery (%d)", value);
+		case  0:FormatString("The client should not perform mask discovery (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Perform Mask Discovery Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsPerformMaskDiscovery = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsPerformMaskDiscoveryTable(this);
+}
+
+Table DHCPOptionsMaskSupplierTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("The client should respond (%d)", value);
+		case  0:FormatString("The client should not respond (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Mask Supplier Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsMaskSupplier = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsMaskSupplierTable(this);
+}
+
+Table DHCPOptionsPerformRouterDiscoveryTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("The client should perform router discovery (%d)", value);
+		case  0:FormatString("The client should not perform router discovery (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Perform Router Discovery Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsPerformRouterDiscovery = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsPerformRouterDiscoveryTable(this);
+}
+
+Table DHCPOptionsTrailerEncapsulationTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("Attempt to use trailers (%d)", value);
+		case  0:FormatString("Do not attempt to use trailers (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Trailer Encapsulation Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsTrailerEncapsulation = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsTrailerEncapsulationTable(this);
+}
+
+Table DHCPOptionsEthernetEncapsulationTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("Client should use IEEE 802.3 (RFC 1042 [16]) encapsulation (%d)", value);
+		case  0:FormatString("Client should use Ethernet Version 2 (RFC 894 [15]) encapsulation (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Ethernet Encapsulation Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsEthernetEncapsulation = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsEthernetEncapsulationTable(this);
+}
+
+Table DHCPOptionsTCPKeepaliveGarbageTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("A garbage octet should be sent (%d)", value);
+		case  0:FormatString("A garbage octet should not be sent (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option TCP Keep alive Garbage Value(%d)", value);
+	}
+}
+
+struct DHCPOptionsTCPKeepaliveGarbage = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsTCPKeepaliveGarbageTable(this);
+}
+
+Table DHCPSIPServersEncTable(code)
+{
+	switch(code)
+	{
+		case  0:FormatString("Domain Name List %d(%#x)", code, code);
+		case  1:FormatString("IPv4 Address List %d(%#x)", code, code);
+		default:FormatString("UNHANDLED SIPServersEnc List %d(%#x)", code, code);
+	}
+}
+struct DHCPSIPServers = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	
+	UINT8 Enc = DHCPSIPServersEncTable(this);
+	switch(Enc)
+	{
+		case  0:
+			[Property.DHCPDomainName = "DomainName: "]
+			[Local.DHCPDomainNameFirst = true]
+			struct DomainNameList = Property.DHCPDomainName
+			{
+				
+				While [ !(UINT8( Framedata, Offset ) == 0) ]
+				{
+					UINT8 NameLength;
+					[ Property.DHCPDomainName = Property.DHCPDomainName + (Local.DHCPDomainNameFirst == true ? "" : ".") + This.Tostring]
+					[ Post.Local.DHCPDomainNameFirst = false]
+					AsciiString(NameLength) DomainName;
+				}
+				UINT8 NameEnd;
+			};
+		case  1:
+			struct IPv4AddressList
+			{
+				IPv4Address Address[(Length - 1)/4];
+			};
+		default:
+			struct UnknownList
+			{
+				AsciiString(Length - 1) Unknown;
+			}
+	}
+}
+
+struct DHCPOptionsByte = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 TTL[Length];
+}
+
+struct DHCPOptionsMaxDataReassemblySize = Size.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT16 Size = FormatString("%d UINT8(s) %s",this,this < 576 ? "(ERROR: The minimum legal value is 576)" : "");
+}
+
+struct DHCPOptionsMaxDHCPMessageSize = LengthValue.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT16 LengthValue = FormatString("%d UINT8(s) %s",this,this < 576 ? "(ERROR: The minimum legal value is 576)" : "");
+}
+
+struct DHCPOptionsBootFileSize = Size.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT16 Size = FormatString("%d(%d UINT8(s))",this,this*512);
+}
+
+struct DHCPOptionsMTU = MTU.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT16 MTU[Length / 2] = FormatString("%d UINT8(s) %s",this,this < 68 ? "(ERROR: The minimum legal value for the MTU is 68)" : "");
+}
+
+//RFC 2132
+Table DHCPOptionsIPForwardTable(value)
+{
+	switch(value)
+	{
+		case  0: "Disable IP forwarding";
+		case  1: "Enable IP forwarding";
+		default: "UNHANDLED DHCP Option IPForward value";
+	}
+}
+
+struct DHCPOptionsIPForward = FormatString("%s",DHCPOptionsIPForwardTable(Value)) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = FormatString("%s, %d(0x%02X)",DHCPOptionsIPForwardTable(this),this,this);
+}
+
+//RFC 2132
+Table DHCPOptionsNonLocalSourceRoutingTable(value)
+{
+	switch(value)
+	{
+		case  0:FormatString("Disable Non-Local Source Routing (%d)", value);
+		case  1:FormatString("Enable Non-Local Source Routing (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option Non Local Source Routing value (%d)", value);
+	}
+}
+
+struct DHCPOptionsNonLocalSourceRouting = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsNonLocalSourceRoutingTable(this);
+}
+
+//RFC 2132
+Table DHCPOptionsAllSubnetsLocalTable(value)
+{
+	switch(value)
+	{
+		case  0:FormatString("Some subnets of the directly connected network may have smaller MTUs (%d)", value);
+		case  1:FormatString("All subnets share the same MTU (%d)", value);
+		default:FormatString("UNHANDLED DHCP Option All Subnets Local value (%d)", value);
+	}
+}
+struct DHCPOptionsAllSubnetsLocal = Value.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Value = DHCPOptionsAllSubnetsLocalTable(this);
+}
+
+struct DHCPOptionsStaticRouteEntry = "Dest: " + Destination.ToString + ", Router: " + Router.ToString
+{
+	IPv4Address Destination;
+	IPv4Address Router;
+}
+
+struct DHCPOptionsStaticRoute = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	DHCPOptionsStaticRouteEntry StaticRouteEntry[Length / 8];
+}
+
+Table DHCPOptionsNodeTypeTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("B-node (%d)", value);
+		case  2:FormatString("P-node (%d)", value);
+		case  4:FormatString("M-node (%d)", value);
+		case  8:FormatString("H-node (%d)", value);
+		default:FormatString("UNHANDLED NodeType (%d)", value);
+	}
+}
+
+struct DHCPOptionsNodeType = NodeType.ToString + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 NodeType = DHCPOptionsNodeTypeTable(this);
+}
+
+//RFC2132 [26]
+//#? dev note 2005-5-30
+//#? we can not go back to reconsume a field("file" and "sname") we already consumed
+Table DHCPOptionsOverloadTable(value)
+{
+	switch(value)
+	{
+		case  1:"The 'file' field is used to hold options";
+		case  2:"The 'sname' field is used to hold options";
+		case  3:"Both fields are used to hold options";
+		default:"UNHANDLED DHCP Option Overload value";
+	}
+}
+
+struct DHCPOptionsOverload = DHCPOptionsOverloadTable(NodeType) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 NodeType = FormatString("%s, %d(0x%02X)",DHCPOptionsOverloadTable(this),this,this);
+}
+
+struct DHCPOptionsParameterRequestList = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[DHCPOptParameterListEnd = offset + 1 + this]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	while parameterList[offset < DHCPOptParameterListEnd]
+	{
+		UINT8 Parameter = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	}
+}
+
+Table DHCPRelayAgentSubOptCodeTable(code)
+{
+	switch(code)
+	{
+		case  1:"Agent Circuit ID Sub-option";
+		case  2:"Agent Remote ID Sub-option";
+		default:"Unhandled DHCP Relay Agent Sub-option";
+	}
+}
+
+struct DHCPRelayAgentSubOption
+{
+	UINT8 SubOptCode = FormatString("%s, %d(0x%02X)", DHCPRelayAgentSubOptCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	switch
+	{
+		case Length > 0 && SubOptCode == 1:AsciiString(Length) CircuitID;
+		case Length > 0 && SubOptCode == 2:AsciiString(Length) AgentRemoteID;
+		case Length > 0                   :AsciiString(Length) UnhandledSubOptData;
+	}
+}
+
+//RFC 3046 page 5
+struct DHCPOptionsRelayAgentInfo = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		DHCPRelayAgentSubOption SubOption;
+	}
+}
+
+Table DHCPNameServiceTable(value)
+{
+	switch(value)
+	{
+		case  6:FormatString("Domain Name Server Option, %d(0x%X)",value,value);
+		case 41:FormatString("Network Information Servers Option, %d(0x%X)",value,value);
+		case 44:FormatString("NetBIOS over TCP/IP Name Server Option, %d(0x%X)",value,value);
+		case 65:FormatString("Network Information Service+ Servers Option, %d(0x%X)",value,value);
+		default:FormatString("Unknown, %d(0x%X)",value,value);
+	}
+}
+
+struct DHCPOptionsNameServiceSearch = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		UINT16 NameService = DHCPNameServiceTable(this);
+	}
+}
+
+Table DHCPCLCCSubOptionCodeTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("TSP's Primary DHCP Server Address, %d(0x%X)",value,value);
+		case  2:FormatString("TSP's Secondary DHCP Server Address, %d(0x%X)",value,value);
+		case  3:FormatString("TSP's Provisioning Server Address, %d(0x%X)",value,value);
+		case  4:FormatString("TSP's AS-REQ/AS-REP Backoff and Retry, %d(0x%X)",value,value);
+		case  5:FormatString("TSP's AP-REQ/AP-REP Backoff and Retry, %d(0x%X)",value,value);
+		case  6:FormatString("TSP's Kerberos Realm Name, %d(0x%X)",value,value);
+		case  7:FormatString("TSP's Ticket Granting Server Utilization, %d(0x%X)",value,value);
+		case  8:FormatString("TSP's Provisioning Timer Value, %d(0x%X)",value,value);
+		case  9:FormatString("Security Ticket Control, %d(0x%X)",value,value);
+		case 10:FormatString("Key Distribution Center IP Address, %d(0x%X)",value,value);
+		default:FormatString("Reserved for future extensions, %d(0x%X)",value,value);
+	}
+}
+
+struct DHCPPrimaryServerAddress = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	IPv4Address PrimaryServerAddress;
+}
+
+struct DHCPSecondaryServerAddress = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	IPv4Address SecondaryServerAddress;
+}
+
+Table DHCPProvisioningServerAddressTypeTable(value)
+{
+	switch(value)
+	{
+		case  1:FormatString("IPv4Address, %d(0x%X)",value,value);
+		case  0:FormatString("FQDN, %d(0x%X)",value,value);
+		default:FormatString("Unknown, %d(0x%X)",value,value);
+	}
+}
+
+struct DHCPProvisioningServerAddress = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	UINT8 Type = DHCPProvisioningServerAddressTypeTable(this);
+	switch(Type)
+	{
+		case  1: IPv4Address ProvisioningServerAddress;
+		case  0: AsciiString(Length-1) FQDN;
+		default: AsciiString(Length-1) UnknownAddress;
+	}
+}
+
+struct DHCPAStoREQorREPBackoffRetry = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	UINT32 NomTimeOUT = this!=0xFFFFFFFF ? FormatString ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+														this < 0 ? 49709 + this/(86400) : this/(86400),
+														this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+														this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+														this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+										: "Infinty";
+	UINT32 MaxtimeOUT = this!=0xFFFFFFFF ? FormatString ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+														this < 0 ? 49709 + this/(86400) : this/(86400),
+														this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+														this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+														this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+										: "Infinty";
+	UINT32 MaxRetryCount;
+}
+
+struct DHCPAPtoREQorREPBackoffRetry = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	UINT32 NomTimeOUT = this!=0xFFFFFFFF ? FormatString  ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+														  this < 0 ? 49709 + this/(86400) : this/(86400),
+														  this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+														  this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+														  this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+										 : "Infinty";
+	UINT32 MaxtimeOUT = this!=0xFFFFFFFF ? FormatString  ("%d day(s),%d hour(s) %d minute(s) %d second(s)",
+														  this < 0 ? 49709 + this/(86400) : this/(86400),
+														  this < 0 ? ((this % 86400 + 86400 + 23295) % 86400)/3600 : (this % 86400)/3600,
+														  this < 0 ? ((this % 3600 + 3600 + 1695) % 3600)/60 : (this % 3600)/60,
+														  this < 0 ? (this %60 + 60 + 16) % 60 : this %60)
+										 : "Infinty";
+	UINT32 MaxRetryCount;
+}
+
+struct DHCPKerberosRealmName = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	AsciiString(Length) KerberosRealmName;
+}
+
+struct DHCPTicketGrantingServerUtilization = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	UINT8 Flag = this ? FormatString("An MTA should utilize a TGT, %d(0x%X)",this,this)
+					  : FormatString("An MTA should not utilize a TGT, %d(0x%X)",this,this);
+}
+
+struct DHCPProvisioningTimerValue = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	UINT8 Value = this>0 && this<255 ? FormatString("%d(0x%X)",this,this)
+									 : this==0 ? FormatString("The timer MUST be disabled, %d(0x%X)",this,this)
+											   : FormatString("Invaild Value,%d(0x%X)",this,this);
+}
+
+struct DHCPSecurityTicketControl = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	//# I'am not very sure of the bits explaintions below
+	//# RFC 3594,Page 3
+	UINT16 TCM
+	{	
+		UINT16 Reserved:14;
+		UINT16 GroupPacketCable:1=FormatString("(%s) %s",this.ToBitString,
+							this ? "The group of all PacketCable Call Management Servers used by the CCD."
+						   : "The group of all PacketCable Call Management Servers not used by the CCD.");
+		UINT16 PacketCableProv:1=FormatString(" (%s) %s",this.ToBitString,
+							this ? "The PacketCable Provisioning Server used by the CCD"
+						   : "The PacketCable Provisioning Server not used by the CCD");
+		UINT16 Rsv:14 = FormatString("           (%s)", this.ToBitString);
+	};
+}
+
+struct DHCPKeyDistributionCenterIPAddress = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	IPv4Address KeyDistributionCenterIPAddress[Length/4];
+}
+
+struct DHCPCLCCSubOptionGeneraloption = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPCLCCSubOptionCodeTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	AsciiString(Length) Value;
+}
+struct DHCPCableLabsClientConfiguration = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case  1:DHCPPrimaryServerAddress PrimaryDHCPServerAddress;
+			case  2:DHCPSecondaryServerAddress SecondaryServerAddress;
+			case  3:DHCPProvisioningServerAddress ProvisioningServerAddress;
+			case  4:DHCPAStoREQorREPBackoffRetry AStoREQorREPBackoffRetry;
+			case  5:DHCPAPtoREQorREPBackoffRetry APtoREQorREPBackoffRetr;
+			case  6:DHCPKerberosRealmName KerberosRealmName;
+			case  7:DHCPTicketGrantingServerUtilization TicketGrantingServerUtilization;
+			case  8:DHCPProvisioningTimerValue ProvisioningTimerValue;
+			case  9:DHCPSecurityTicketControl SecurityTicketControl;
+			case 10:DHCPKeyDistributionCenterIPAddress KeyDistributionCenterIPAddress;
+			default:DHCPCLCCSubOptionGeneraloption CLCCSubOptionGeneraloption;
+		}
+	}
+}
+
+Table DHCPLCDatumTable( value )
+{
+	switch( value )
+	{
+		case  1:"WGS 84";
+		case  2:"NAD83";
+		case  3:"NAD83";
+		default:FormatString("%d(0x%#X)",value, value);
+	}
+}
+
+Table DHCPAltitudeTypeTable(AltitudeType)
+{
+	switch(AltitudeType)
+	{
+		case  1:"Meters";
+		case  2:"Floors";
+		default:"Unknown";
+	}
+}
+
+struct DHCPLocationConfigurationInformation = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	//Liam :the Las and Log may be improved if the engine improved
+	//LaRes is 6 bits and Latitude is 34 bit
+	// rfc3825  page 5	
+	INT40 Latitude:34 = FormatString("    (%s) %d",this.ToBitString,this);
+	INT40 LaRes:6 = FormatString("       (%s) %d",this.ToBitString,this);
+	INT40 Longitude:34 = FormatString("   (%s) %d",this.ToBitString,this);
+	INT40 LoRes:6 = FormatString("       (%s) %d",this.ToBitString,this);
+	INT40 AltitudeType:4 = FormatString("(%s) %s",this.ToBitString,DHCPAltitudeTypeTable(this));
+	INT40 Altitude:30 = FormatString("    (%s) %d",this.ToBitString,this);
+	INT40 AltRes:6 = FormatString("      (%s) %d",this.ToBitString,this);
+	UINT8 Datum = DHCPLCDatumTable( this );
+}
+
+struct DHCPVendorIdentifyingVendorClass = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	while Option[offset - Property.BeginOffset < Length ]
+	{
+		UINT16 EnterpriseNumberN;
+		UINT8 DataLen;
+		AsciiString(DataLen) VendorClassData;
+	}
+}
+
+struct DHCPVendorIdentifyingVendorSpecific = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)",this);
+	while Option[offset - Property.BeginOffset < Length ]
+	{
+		UINT16 EnterpriseNumberN;
+		UINT8 DataLen;
+		AsciiString(DataLen) OptionData;
+	}
+}
+
+struct DHCPOptionRemotestatisticsserverIPAddress = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	IPV4Address IPAddress;
+}
+
+struct DHCPOptionVLANID = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//#? 12bits
+	BLOB(Length) VLANID;
+}
+
+struct DHCPOptionL2Priority = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	//#? 3bits
+	BLOB(Length) L2Priority;
+}
+
+struct DHCPOptionDiffservCodePoint = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	BLOB(Length) Data;
+}
+
+struct DHCPOptionHTTPProxyForPhoneSpecApps = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	BLOB(Length) Data;
+}
+
+struct DHCPOptionEtherboot = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	BLOB(Length) Data;
+}
+
+struct DHCPOptionIPTelephone = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	BLOB(Length) Data;
+}
+
+struct DHCPOptionsPxelinuxMagic = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT32 Magic = "Set to 0xF100747E";
+}
+
+struct DHCPOptionsPxelinuxConfigfile = ConfigFileName + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	AsciiString(Length) ConfigFileName;
+}
+
+struct DHCPOptionsPxelinuxPathprefix = Pathprefix + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	AsciiString(Length) Pathprefix;
+}
+
+struct DHCPOptionsPxelinuxReboottime = FormatString("%u", Reboottime) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT32 Reboottime;
+}
+
+Table DHCPOptionsSubnetAllocationSubOptTable(code)
+{
+	switch(code)
+	{
+		case  1: "Request";
+		case  2: "Subnet Information";
+		case  3: "Subnet Name";
+		case  4: "Subnet Suggested Lease Time";
+		default: FormatString("Undefined SubOption (%d)",code);
+	}
+}
+
+struct DHCPOptionsSubnetAllocation = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = FrameOffset + 2]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Flags;
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		struct SubOption = DHCPOptionsSubnetAllocationSubOptTable(UINT8(FrameData, FrameOffset))
+		{
+			UINT8 SubOptionType = DHCPOptionsSubnetAllocationSubOptTable(this);
+			[SubOptionBeginOffset = FrameOffset + 1]
+			UINT8 Len;
+			switch (SubOptionType)
+			{
+				case  1: 
+					_struct Request
+					{
+						UINT8 Flags
+						{
+							UINT8 Unused:6 = FormatString("(%s)", this.ToBitString);
+							UINT8 i:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Client is seeking information about previously allocated subnets" : "Client is seeking a new subnet allocation");
+							UINT8 h:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Client will be allocating addresses from this subnet" : "Client will be relaying DHCP requests to the Server from this subnet");
+						}
+						UINT8 Prefix;
+					}
+				case  2: 
+					struct SubnetInfo
+					{
+						UINT8 Flags
+						{
+							UINT8 Unused:6 = FormatString("(%s)", this.ToBitString);
+							UINT8 c:1 = FormatString("(%s) %s", this.ToBitString, this ? "In response to a Client request for information from the Server as to what subnet(s) have been allocated" : "Not in response to a Client request for information from the Server as to what subnet(s) have been allocated");
+							UINT8 s:1 = FormatString("(%s) %s", this.ToBitString, this ? "Server has additional subnet information for the Client" : "Server does NOT have additional subnet information for the Client");
+						}
+						while [ offset - Property.SubOptionBeginOffset - 1 < Len ]
+						{
+							IPV4Address Addr;
+							UINT8 Prefix;
+							UINT8 Flags
+							{
+								UINT8 Unused:6 = FormatString("(%s)", this.ToBitString);
+								UINT8 h:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Deprecate this subnet" : "Not deprecate this subnet");
+								UINT8 d:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Client is seeking information about previously allocated subnets" : "Client is seeking a new subnet allocation");
+							}
+							[StatBeginOffset = FrameOffset + 1]
+							UINT8 StatLen;
+							while [ offset - Property.StatBeginOffset < StatLen ]
+							{
+								UINT16 HighWater;
+								UINT16 CurrentlyInUse;
+								UINT16 Unusable;
+							}
+						}
+					}
+				case  3:
+					AsciiString(Len) SubnetName;
+				case  4: 
+					_struct SubnetSuggestedLeaseTime 
+					{
+						UINT8 T1;
+						UINT8 T2;
+						UINT8 T3;
+						UINT8 T4;
+					}
+				default: BLOB(Len) UnkownSubOption;
+			}
+		}
+	}
+}
+
+Table DHCPOptionsVirtualSubnetSelectionTypeTable(code)
+{
+	switch(code)
+	{
+		case 0: "NVT ASCII VPN identifier";
+		case 1: "RFC2685 VPN-ID";
+		default: "Not Allowed";
+	}
+}
+
+// RFC2685
+struct VSSInformation
+{
+	UINT24 VPNOUI;
+	UINT32 VPNIndex;
+}
+
+struct DHCPOptionsVirtualSubnetSelection = DHCPOptionsVirtualSubnetSelectionTypeTable(Type) + FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 Type = DHCPOptionsVirtualSubnetSelectionTypeTable(this);
+	switch(Type)
+	{
+		case 0: 
+			AsciiString(Length - 1) NVTVSSInformation;
+		case 1:
+			VSSInformation VPNIDVSSInformation;
+	}
+	
+}
+
+Table DHCPOptNetWareIPInforSubOptTable(code)
+{
+	switch(code)
+	{
+		case  1: FormatString("NWIP_DOES_NOT_EXIST (%d)",code);
+		case  2: FormatString("NWIP_EXIST_IN_OPTIONS_AREA (%d)",code);
+		case  3: FormatString("NWIP_EXIST_IN_SNAME_FILE (%d)",code);
+		case  4: FormatString("NWIP_EXIST_BUT_TOO_BIG (%d)",code);
+		case  5: FormatString("NSQ_BROADCAST_SERVER (%d)",code);
+		case  6: FormatString("PREFERRED_DSS (%d)",code);
+		case  7: FormatString("NEAREST_NWIP_SERVER (%d)",code);
+		case  8: FormatString("AUTORETRIES (%d)",code);
+		case  9: FormatString("AUTORETRY_SECS (%d)",code);
+		case 10: FormatString("NWIP_1_1 (%d)",code);
+		case 11: FormatString("PRIMARY_DSS (%d)",code);
+		default: FormatString("UNHANDLED NWIP INFOR SUBOPTION (%d)",code);
+	}
+}
+
+struct DHCPOptionsNWIPInforSubOpt = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = DHCPOptNetWareIPInforSubOptTable(this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	switch(Code)
+	{
+		case  5: UINT8 Value = this ? "Client SHOULD perform a NetWare Nearest Server Query to find out its nearest NetWare/IP server" : "0";
+		case  6: IPv4Address DSSAddress[Length/4];
+		case  7: IPv4Address NWIPServerAddress[Length/4];
+		case  8: UINT8 Times = FormatString("Auto communicate with the DSS for %d times at startup", this);
+		case  9: UINT8 Delay = FormatString("Auto communicate with the DSS delay %d second(s)", this);
+		case 10: UINT8 Version = this ? "Client SHOULD support NetWare/IP Version 1.1" : "0";
+		case 11: IPv4Address PrimaryDSSAddress;
+		default:
+			switch
+			{
+				case Length > 0: 
+					BLOB(Length) UnknownOptData;
+			}
+	}
+}
+
+//RFC 2242 page 4
+struct DHCPOptionsNWIPInfor = FormatString(" - Type %u", Code)
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	[BeginOffset = offset + 1]
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	while Option[ offset - Property.BeginOffset < Length ]
+	{
+		DHCPOptionsNWIPInforSubOpt SubOpt;
+	}
+}
+
+//RFC 2480
+struct DHCPBCMCSControllerDomainNamelist
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	[local.Lencount = 0]
+	while namelist[local.Lencount < Length]
+	{
+			[local.Lencount = local.Lencount + UINT8( Framedata, Offset )+ 1]
+			UINT8 DomainNameLen;
+			Asciistring(DomainNameLen) DomainNamelist;
+	}
+}
+
+struct DHCPBCMCSControllerServerAddress
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	[local.Lencount = 0]
+	[IPv4addresscount = Length/4]
+	while namelist[local.Lencount < IPv4addresscount]
+	{
+		[local.Lencount = local.Lencount + 1]
+		IPv4Address BCMCSControllerIPv4address;
+	}
+}
+
+//RFC 4776
+struct DHCPV4CivicAddressElement
+{
+	UINT8 CAtype = DHCPV4CAtypeTable(this); 
+	UINT8 CAlength ;
+	AsciiString(CAlength) CAvalue;
+}
+
+struct DHCPOverallFormat
+{
+	UINT8 Code = FormatString("%s, %d(0x%02X)", DHCPOptionCodeTable(this), this, this);
+	UINT8 Length = FormatString("%d UINT8(s)", this);
+	UINT8 What;
+	AsciiString(2) countrycode;
+	DHCPV4CivicAddressElement civicaddresselements;
+}
+

@@ -1,0 +1,147 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Directory Replication Service (DRS) Protocol Extensions for SMTP
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SRPL]: Directory Replication Service (DRS) Protocol Extensions for SMTP (2.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/2/2009
+//#
+//####
+
+//
+//	[MS-SRPL] CURRENT_PROTOCOL_VERSION
+//
+const SRPLCurrentProtocolVersion = 0x0000000B;
+
+[DataTypeByteOrder = LittleEndian, DataTypeEncoding = 1]
+Protocol SRPL = FormatString( "MsgType = %s ",	SRPLMailRepMsgMsgVersionTable( UINT32(FrameData, FrameOffset + 28) ))
+{
+	switch(UINT32(FrameData, FrameOffset + 28))
+	{
+		case 0x000000001:
+		case 0x000000004:
+					SRPLMailRepMsgV1 SRPLMailRepMsgV1;
+		case 0x000000006:
+		case 0x000000007:
+					SRPLMailRepMsgV2 SRPLMailRepMsgV2;
+		default:
+			ReportParserWarning("SRPL", "invalid frame") ProtocolError;
+	}
+}
+
+
+
+Table DRSRCompressionVersionCallerTable(value)
+{
+	switch(value)
+	{
+		case 0:"DRS_COMP_ALG_NONE";
+		case 1:"DRS_COMP_ALG_UNUSED";
+		case 2:"DRS_COMP_ALG_MSZIP";
+		case 3:"DRS_COMP_ALG_WIN2K3";
+	}
+}
+
+//
+//	[MS-SRPL] MAIL_REP_MSG_V1
+//
+Struct SRPLMailRepMsgV1 = FormatString("MessageType = %s MessageVersion = %s",MsgType.ToString ,SRPLMailRepMsgMsgVersionTable( MsgVersion ))
+{
+	UINT32 CompressionVersionCaller = DRSRCompressionVersionCallerTable(this);
+	UINT32 ProtocolVersionCaller = FormatString("The field should %s",SRPLCurrentProtocolVersion);
+	UINT32 CbDataOffset;
+	UINT32 CbDataSize;
+	UINT32 CbUncompressedDataSize;
+	UINT32 CbUnsignedDataSize;
+	UINT32 MsgType
+	{
+		UINT32 Reserved1:5 = FormatString("   (%s) %s", this.ToBitString,this );
+		UINT32 SNSigned:1 = FormatString("    (%s) %s", this.ToBitString, this ? "this message is signed." : "this message is not signed.");
+		UINT32 SLSealed:1 = FormatString("    (%s) %s", this.ToBitString, this ? "this message is sealed." : "this message is not sealed." );
+		UINT32 CPCompressed:1 = FormatString("(%s) %s", this.ToBitString, this ? "this message is compressed." : "this message is not compressed.");
+		UINT32 Reserved2:16 = FormatString("  (%s) %s", this.ToBitString, this );
+		UINT32 RQRequest:1 = FormatString("   (%s) %s", this.ToBitString, this ? "this is a Request Message." : "this is not a Request Message.");
+		UINT32 RPResponse:1 = FormatString("  (%s) %s", this.ToBitString, this ? "this is a Response Message." : "this is not a Response Message.");
+		UINT32 Reserved3:6 = FormatString("   (%s) %s", this.ToBitString, this );
+	};
+	UINT32 MsgVersion = SRPLMailRepMsgMsgVersionTable( this );
+	PKCS7 PKCS7PayloadDataV1;
+}
+
+Table SRPLMailRepMsgMsgVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x000000001: "This message contains a V1 response.";
+		Case 0x000000004: "This message contains a V1 request.";
+		Case 0x000000006: "This message contains a V2 response.";
+		Case 0x000000007: "This message contains a V2 request.";
+		Default: "unknown Version";
+	}
+}
+
+//
+//	[MS-SRPL] MAIL_REP_MSG_V2
+//
+Struct SRPLMailRepMsgV2 = FormatString("MessageType = %s MessageVersion = %s",MsgType.ToString ,SRPLMailRepMsgMsgVersionTable( MsgVersion ))
+{
+	UINT32 CompressionVersionCaller = DRSRCompressionVersionCallerTable(this);
+	UINT32 ProtocolVersionCaller = FormatString("The field should %s",SRPLCurrentProtocolVersion);
+	UINT32 CbDataOffset;
+	UINT32 CbDataSize;
+	UINT32 CbUncompressedDataSize;
+	UINT32 CbUnsignedDataSize;
+	UINT32 MsgType
+	{
+		UINT32 Reserved1:5 = FormatString("   (%s) %s", this.ToBitString,this );
+		UINT32 SNSigned:1 = FormatString("    (%s) %s", this.ToBitString, this ? "this message is signed." : "this message is not signed.");
+		UINT32 SLSealed:1 = FormatString("    (%s) %s", this.ToBitString, this ? "this message is sealed." : "this message is not sealed." );
+		UINT32 CPCompressed:1 = FormatString("(%s) %s", this.ToBitString, this ? "this message is compressed." : "this message is not compressed.");
+		UINT32 Reserved2:16 = FormatString("  (%s) %s", this.ToBitString, this );
+		UINT32 RQRequest:1 = FormatString("   (%s) %s", this.ToBitString, this ? "this is a Request Message." : "this is not a Request Message.");
+		UINT32 RPResponse:1 = FormatString("  (%s) %s", this.ToBitString, this ? "this is a Response Message." : "this is not a Response Message.");
+		UINT32 Reserved3:6 = FormatString("   (%s) %s", this.ToBitString, this );
+	};
+	UINT32 MsgVersion = SRPLMailRepMsgMsgVersionTable( this );
+	UINT32 ExtFlags
+	{
+		UINT32 Reserved1:1 = FormatString("                      (%s) %s", this.ToBitString,this );
+		UINT32 ASDRSEXTASYNCREPL:1 = FormatString("              (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_REPADD_V2 and DRS_MSG_GETCHGREQ_V2." : "the DC doesn't support DRS_MSG_REPADD_V2 and DRS_MSG_GETCHGREQ_V2.");
+		UINT32 RMDRSEXTREMOVEAPI:1 = FormatString("              (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSRemoveDsServer and IDL_DRSRemoveDsDomain." : "the DC doesn't support IDL_DRSRemoveDsServer and IDL_DRSRemoveDsDomain." );
+		UINT32 MVDRSEXTMOVEREQV2:1 = FormatString("              (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_MOVEREQ_V2." : "the DC doesn't support DRS_MSG_MOVEREQ_V2.");
+		UINT32 DFDRSEXTGETCHGDEFLATE:1 = FormatString("          (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_GETCHGREPLY_V2." : "the DC doesn't support DRS_MSG_GETCHGREPLY_V2.");
+		UINT32 DCDRSEXTDCINFOV1:1 = FormatString("               (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSDomainControllerInfo." : "the DC doesn't support IDL_DRSDomainControllerInfo.");
+		UINT32 Reserved2:1 = FormatString("                      (%s) %s", this.ToBitString,this );
+		UINT32 AEDRSEXTADDENTRY:1 = FormatString("               (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSAddEntry." : "the DC doesn't support IDL_DRSAddEntry.");
+		UINT32 KEDRSEXTKCCEXECUTE:1 = FormatString("             (%s) %s", this.ToBitString,this ? "the DC supports IDL_DRSExecuteKCC." : "the DC doesn't support IDL_DRSExecuteKCC.");
+		UINT32 AE2DRSEXTADDENTRYV2:1 = FormatString("            (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_ADDENTRYREQ_V2." :"the DC doesn't support DRS_MSG_ADDENTRYREQ_V2.");
+		UINT32 LVRDRSEXTLINKEDVALUEREPLICATION:1 = FormatString("(%s) %s", this.ToBitString, this ? "the DC supports link value replication" : "the DC doesn't support link value replication" );
+		UINT32 DC2DRSEXTDCINFOV2:1 = FormatString("              (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_DCINFOREPLY_V2." : "the DC doesn't support DRS_MSG_DCINFOREPLY_V2.");
+		UINT32 Reserved3:1 = FormatString("                      (%s) %s", this.ToBitString, this );
+		UINT32 CBDRSEXTCRYPTOBIND:1 = FormatString("             (%s) %s", this.ToBitString, this ? "the security provider used for the connection supports session keys through RPC" : "the security doesn't provider used for the connection supports session keys through RPC");
+		UINT32 GRIDRSEXTGETREPLINFO:1 = FormatString("           (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSGetReplInfo." : "the DC doesn't support IDL_DRSGetReplInfo.");
+		UINT32 SEDRSEXTSTRONGENCRYPTION:1 = FormatString("       (%s) %s", this.ToBitString, this ? "the DC supports additional 128-bit encryption for passwords over the wire." : "the DC doesn't support additional 128-bit encryption for passwords over the wire.");
+		UINT32 DCFDRSEXTDCINFOVFFFFFFFF:1 = FormatString("       (%s) %s", this.ToBitString,this ? "the DC supports DRS_MSG_DCINFOREPLY_VFFFFFFFF." : "the DC doesn't support DRS_MSG_DCINFOREPLY_VFFFFFFFF..");
+		UINT32 TMDRSEXTTRANSITIVEMEMBERSHIP:1 = FormatString("   (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSGetMemberships." : "the DC doesn't support IDL_DRSGetMemberships.");
+		UINT32 SHDRSEXTADDSIDHISTORY:1 = FormatString("          (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSAddSidHistory." : "the DC doesn't support IDL_DRSAddSidHistory." );
+		UINT32 Reserved4:1 = FormatString("                      (%s) %s", this.ToBitString, this );
+		UINT32 GC5DRSEXTGETCHGREQV5:1 = FormatString("           (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_GETCHGREQ_V5." : "the DC doesn't support DRS_MSG_GETCHGREQ_V5.");
+		UINT32 GM2DRSEXTGETMEMBERSHIPS2:1 = FormatString("       (%s) %s", this.ToBitString, this ? "the DC supports IDL_DRSGetMemberships2." : "the DC doesn't support IDL_DRSGetMemberships2.");
+		UINT32 GC6DRSEXTGETCHGREQV6:1 = FormatString("           (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_GETCHGREQ_V6." : "the DC doesn't support DRS_MSG_GETCHGREQ_V6.");
+		UINT32 ANCDRSEXTNONDOMAINNCS:1 = FormatString("          (%s) %s", this.ToBitString, this ? "the DC supports application NCs." : "the DC doesn't support application NCs.");
+		UINT32 GC8DRSEXTGETCHGREQV8:1 = FormatString("           (%s) %s", this.ToBitString,this ? "the DC supports DRS_MSG_GETCHGREQ_V8." : "the DC doesn't support DRS_MSG_GETCHGREQ_V8.");
+		UINT32 GR5DRSEXTGETCHGREPLYV5:1 = FormatString("         (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_GETCHGREPLY_V5." : "the DC doesn't support DRS_MSG_GETCHGREPLY_V5.");
+		UINT32 GR6DRSEXTGETCHGREPLYV6:1 = FormatString("         (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_GETCHGREPLY_V6." : "the DC doesn't support DRS_MSG_GETCHGREPLY_V6." );
+		UINT32 WB3DRSEXTWHISTLERBETA3:1 = FormatString("         (%s) %s", this.ToBitString, this ? "the DC supports DRS_MSG_ADDENTRYREPLY_V3, DRS_MSG_REPVERIFYOBJ, and DRS_MSG_GETCHGREPLY_V7." : "the DC doesn't support DRS_MSG_ADDENTRYREPLY_V3, DRS_MSG_REPVERIFYOBJ, and DRS_MSG_GETCHGREPLY_V7.");
+		UINT32 DF2DRSEXTW2K3DEFLATE:1 = FormatString("           (%s) %s", this.ToBitString, this ? "the DC supports the W2K3 AD deflation library." : "the DC doesn't support the W2K3 AD deflation library.");
+		UINT32 Reserved5:3 = FormatString("                      (%s) %s", this.ToBitString, this );
+	};
+	UINT32 CbExtOffset;
+	DRSRDrsExtensionsInt ExtCapabilityVector;
+	Align8 Padding;
+	PKCS7 PKCS7PayloadDataV2;
+}

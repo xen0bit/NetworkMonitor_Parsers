@@ -1,0 +1,131 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Directory Service Discovery Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQSD]: Message Queuing (MSMQ): Directory Service Discovery Protocol Specification (6.2.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[ RegisterBefore( MQQB.MQQBUnknownData, MQSD, property.MQQBPort == 1801 && Property.MQQBOnTCP == False) ]
+[ RegisterBefore( MQQB.MQQBUnknownDataA, MQSD,Property.DstIPXSocket == 876 || Property.SrcIPXSocket == 876)]
+Protocol MQSD = FormatString("%s", Property.MQSDSummary)
+{
+	[Property.MQQBSummary = "Directory Service Discovery Protocol"]
+	Switch( UINT8( Framedata, Offset + 1 ) )
+	{
+		case 1: // Client Request.
+			[Property.MQSDSummary = "Discovery Request"]
+			MQSDTopologyClientRequest DiscoveryRequest;
+		case 2: // Server Reply.
+			[Property.MQSDSummary = "Discovery Response"]
+			MQSDTopologyServerReply DiscoveryResponse;
+	}
+}
+
+//===== STRUCTS ==============================================================================================
+struct MQSDTopologyPacketHeader
+{
+	UINT8 Version;
+	UINT8 Type = MQSDDirSvcDiscoveryTypeTable( this );
+	UINT16 Reserved;
+}
+
+struct MQSDTopologyClientRequest
+{
+	MQSDTopologyPacketHeader TopologyPacketHeader;
+	GUID(true) EnterpriseID;
+	GUID(true) RequestID;
+	GUID(true) SiteID;
+	switch( property.MQQBOnIPX )
+	{
+		case True:
+			struct
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT32 ipxnetworkcount;
+				[DataFieldByteOrder = LittleEndian]
+				UINT32 ipxnetworknumberarray[ ipxnetworkcount ];
+			}
+	}
+}
+
+struct MQSDTopologyServerReply
+{
+	MQSDTopologyPacketHeader TopologyPacketHeader;
+	GUID(true) CorrelationID;
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 ConnectedNetworkCount;
+	UINT32 ConnectedNetworkMask = MQSDSvrDscConnectedNetworkMaskTable( this );
+	[DataFieldByteOrder = LittleEndian]
+	UINT32 DirectoryServiceServerSize;
+	GUID(true) ConnectedNetworkArrayIDs[ ConnectedNetworkCount ];
+	switch
+	{
+		case DirectoryServiceServerSize > 0:
+			struct
+			{
+				GUID(true) RespondingSiteID;
+				while[ !(UINT16(FrameData, Offset) == 0)]
+				{
+					UnicodeStringTerm( "," ) DirectoryServiceServer;
+				}
+			}
+	}
+}
+
+//========= TABLES ========================================================================================================
+table MQSDDirSvcDiscoveryTypeTable( value )
+{
+	switch( value )
+	{
+		case 1: "Specifies a TopologyClientRequest";
+		case 2: "Specifies a TopologyServerReply";
+	}
+}
+
+//The count of 1-valued bit positions MUST equal the value contained in the ConnectedNetworkCount field
+table MQSDSvrDscConnectedNetworkMaskTable( value ) 
+{
+	switch( value )
+	{
+		case 0: "Using IP network protocol";
+		case 1: "1 IPX connected networks";
+		case 3: "2 IPX connected networks";
+		case 7: "3 IPX connected networks";
+		case 15: "4 IPX connected networks";
+		case 31: "5 IPX connected networks";
+		case 63: "6 IPX connected networks";
+		case 127: "7 IPX connected networks";
+		case 255: "8 IPX connected networks";
+		case 511: "9 IPX connected networks";
+		case 1023: "10 IPX connected networks";
+		case 2047: "11 IPX connected networks";
+		case 4095: "12 IPX connected networks";
+		case 8191: "13 IPX connected networks";
+		case 16383: "14 IPX connected networks";
+		case 32767: "15 IPX connected networks";
+		case 65535: "16 IPX connected networks";
+		case 131071: "17 IPX connected networks";
+		case 262143: "18 IPX connected networks";
+		case 524287: "19 IPX connected networks";
+		case 1048575: "20 IPX connected networks";
+		case 2097151: "21 IPX connected networks";
+		case 4194303: "22 IPX connected networks";
+		case 8388607: "23 IPX connected networks";
+		case 16777215: "24 IPX connected networks";
+		case 33554431: "25 IPX connected networks";
+		case 67108863: "26 IPX connected networks";
+		case 134217727: "27 IPX connected networks";
+		case 268435455: "28 IPX connected networks";
+		case 536870911: "29 IPX connected networks";
+		case 1073741823: "30 IPX connected networks";
+		case 2147483647: "31 IPX connected networks";
+		case 4294967295: "32 IPX connected networks";
+	}
+}

@@ -1,0 +1,698 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Link Layer Topology Discovery Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-LLTD]: Link Layer Topology Discovery (LLTD) Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/18/2009
+//#
+//####
+
+Protocol LLTD = FormatString("Service = %s, Function = %s,  %s = %u", LLTDServiceTable(LLTDService),  LLTDFunctionTable(LLTDService, LLTDFunction), LLTDService  > 0x01 ? "SequenceNumber":"XID" , LLTDIdentifier)
+{
+	LLTDDemuxHeader DemuxHeader;
+	LLTDBaseHeader(LLTDService) BaseHeader;
+	[Post.Conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d",LLTDRealSourceAddress,LLTDRealDestinationAddress, ConvID)]
+	switch (LLTDService)
+	{
+		case 0x00:
+			switch (LLTDFunction)
+			{
+				case 0x00:
+					LLTDDiscoverFrame Discover;
+				case 0x01:
+					LLTDHelloFrame Hello;
+				case 0x02:
+					LLTDEmitFrame Emit;
+				case 0x07:
+					LLTDQueryRespFrame QueryResp;
+				case 0x0A:
+					LLTDFlatFrame Flat;
+				case 0x0B:
+					[BuildConversationWithParent(LLTDRealSourceAddress < LLTDRealDestinationAddress ?
+					MakeByteArray(LLTDRealSourceAddress, LLTDRealDestinationAddress) :
+					MakeByteArray(LLTDRealDestinationAddress, LLTDRealSourceAddress))]
+					LLTDQueryLargeTlvFrame QueryLargeTlv;
+				case 0x0C:
+					[BuildConversationWithParent(LLTDRealSourceAddress < LLTDRealDestinationAddress ?
+					MakeByteArray(LLTDRealSourceAddress, LLTDRealDestinationAddress) :
+					MakeByteArray(LLTDRealDestinationAddress, LLTDRealSourceAddress))]
+					LLTDQueryLargeTlvRespFrame QueryLargeTlvResp;
+				default:
+					switch
+					{
+						case FrameLength - FrameOffset > 0:
+							Blob(FrameLength - FrameOffset) UnknownData;
+					}
+			}
+		case 0x01:
+			switch (LLTDFunction)
+			{
+				case 0x00:
+					LLTDDiscoverFrame Discover;
+				case 0x01:
+					LLTDHelloFrame Hello;
+				default:
+					switch
+					{
+						case FrameLength - FrameOffset > 0:
+							Blob(FrameLength - FrameOffset) UnknownData;
+					}
+			}
+		case 0x02:
+			switch (LLTDFunction)
+			{
+				case 0x00: 
+					LLTDQosInitializeSink QosInitializeSink;
+				case 0x01: 
+					LLTDQosReady QosReady;
+				case 0x02: 
+					LLTDQosProbe QosProbe;
+				case 0x04: 
+					LLTDQosQueryResp QosQueryResp;
+				case 0x06: 
+					LLTDQosError QosError;
+				case 0x08: 
+					LLTDQosCounterSnapshot QosCounterSnapshot;
+				case 0x09: 
+					LLTDQosCounterResult QosCounterResult;
+				default:
+					switch
+					{
+						case FrameLength - FrameOffset > 0:
+							Blob(FrameLength - FrameOffset) UnknownData;
+					}
+			}
+		default:
+			switch
+			{
+				case FrameLength - FrameOffset > 0:
+					Blob(FrameLength - FrameOffset) UnknownData;
+			}
+	}
+	
+	switch
+	{
+		case FrameLength - FrameOffset > 0:
+			Blob(FrameLength - FrameOffset) UnknownData;
+	}
+}
+
+Table LLTDServiceTable(Service)
+{
+	Switch (Service)
+	{
+		case 0x00 : "Topology Discovery"; 
+		case 0x01 : "Quick Discovery";
+		case 0x02 : "QoS Diagnostics";
+		default   : FormatString("Undefined (%#x)", Service); 
+	}
+}
+
+Table LLTDTopologyDiscoveryFunctionTable(Function)
+{
+	switch (Function)
+	{
+		case 0x00: "Discover (Topology Discovery)";
+		case 0x01: "Hello (Topology Discovery)";
+		case 0x02: "Emit";
+		case 0x03: "Train";
+		case 0x04: "Probe";
+		case 0x05: "Ack";
+		case 0x06: "Query";
+		case 0x07: "QueryResp";
+		case 0x08: "Reset";
+		case 0x09: "Charge";
+		case 0x0A: "Flat";
+		case 0x0B: "QueryLargeTlv";
+		case 0x0C: "QueryLargeTlvResp";
+		default: FormatString("Undefined (%#x)", Function); 
+	}
+}
+
+Table LLTDQuickDiscoveryFunctionTable(Function)
+{
+	switch (Function)
+	{
+		case 0x00: "Discover (Quick Discovery)";
+		case 0x01: "Hello (Quick Discovery)";
+		case 0x08: "Reset (Quick Discovery)";
+		default: FormatString("Undefined (%#x)", Function); 
+	}
+}
+
+Table LLTDQoSDiagnosticsFunctionTable(Function)
+{
+	switch (Function)
+	{
+		case 0x00: "QosInitializeSink";
+		case 0x01: "QosReady";
+		case 0x02: "QosProbe";
+		case 0x03: "QosQuery";
+		case 0x04: "QosQueryResp";
+		case 0x05: "QosReset";
+		case 0x06: "QosError";
+		case 0x07: "QosAck";
+		case 0x08: "QosCounterSnapshot";
+		case 0x09: "QosCounterResult";
+		case 0x0A: "QosCounterLease";
+		default: FormatString("Undefined (%#x)", Function); 
+	}
+}
+
+Table LLTDFunctionTable(Service, Function)
+{
+	switch (Service)
+	{
+		case 0x00: LLTDTopologyDiscoveryFunctionTable(Function);
+		case 0x01: LLTDQuickDiscoveryFunctionTable(Function);
+		case 0x02: LLTDQoSDiagnosticsFunctionTable(Function);
+		default: FormatString("Undefined (%#x, %#x)", Service, Function);
+	}
+}
+
+struct LLTDDemuxHeader = FormatString("Version: %d, Service: %s, Function: %s", Version, LLTDServiceTable(Service), LLTDFunctionTable(Service, Function))
+{
+	UINT8 Version;
+	[LLTDService]
+	UINT8 Service = LLTDServiceTable(this);
+	UINT8 Reserved;
+	[LLTDFunction]
+	UINT8 Function = LLTDFunctionTable(Service, this);
+}
+
+struct LLTDBaseHeader (Service) = FormatString("RealDestinationAddress: %s, RealSourceAddress:%s, %s = %d", RealDestinationAddress.toString, RealSourceAddress.toString, Service  > 0x01 ? "SequenceNumber":"XID", LLTDIdentifier)
+{
+	[LLTDRealDestinationAddress]
+	MacAddress RealDestinationAddress;
+	[LLTDRealSourceAddress]
+	MacAddress RealSourceAddress;
+	switch (Service)
+	{
+		case 0x00:
+		case 0x01:
+			[LLTDIdentifier]
+			UINT16 XID;
+		default:
+			[LLTDIdentifier]
+			UINT16 SequenceNumber;
+	}
+}
+
+struct LLTDStationList = FormatString("Number of Stations %u", NumberOfStations)
+{
+	UINT16 NumberOfStations;
+	MacAddress ResponderAddress[NumberOfStations];
+}
+
+struct LLTDDiscoverFrame = FormatString("GenerationNumber %u", GenerationNumber) 
+{
+	UINT16 GenerationNumber;
+	LLTDStationList StationList;
+}
+
+struct LLTDHelloFrame = FormatString("GenerationNumber %u, CurrentMapperAddress: %s, ApparentMapperAddress: %s", GenerationNumber, CurrentMapperAddress.toString, ApparentMapperAddress.toString) 
+{
+	UINT16 GenerationNumber;
+	MacAddress CurrentMapperAddress;
+	MacAddress ApparentMapperAddress;
+	while [FrameLength > FrameOffset]
+	{
+		LLTDTLV TLV;
+	}
+}
+
+Table LLTDEmiteeDescTable(Type)
+{
+	Switch (Type)
+	{
+		case 0x00 : FormatString("Train (%#x)", Type);
+		case 0x01 : FormatString("Probe (%#x)", Type);
+		default   : FormatString("Undefined (%#x)", Type);
+	}
+}
+struct LLTDEmiteeDesc = LLTDEmiteeDescTable(Type)
+{
+	UINT8 Type = LLTDEmiteeDescTable(this);
+	UINT8 Pause = FormatString("%d ms", this);
+	MacAddress SourceAddress;
+	MacAddress DestinationAddress;
+}
+
+struct LLTDEmitFrame = FormatString("Number of EmiteeDesc = %u", NumberOfDescs)
+{
+	UINT16 NumberOfDescs;
+	LLTDEmiteeDesc EmiteeDesc[NumberOfDescs];
+}
+
+Table LLTDRecveeDescTable(Type)
+{
+	Switch (Type)
+	{
+		case 0x00 : "Probe";
+		case 0x01 : "ARP/ICMPv6";
+		default   : FormatString("Undefined (%#x)", Type);
+	}
+}
+
+struct LLTDRecveeDesc = LLTDRecveeDescTable(Type)
+{
+	UINT16 Type = LLTDRecveeDescTable(this);
+	MacAddress RealSourceAddress;
+	MacAddress EthernetSourceAddress;
+	MacAddress EthernetDestinationAddress;
+}
+
+struct LLTDQueryRespFrame = FormatString("Count = %u %s%s", NumDescs, More ? "M" : ".", Error ? "E" : ".")
+{
+	UINT16 More:1 = FormatString("    (%s) %s", this.ToBitString, this ? "More" : "No More");
+	UINT16 Error:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Error" : "No Error");
+	UINT16 NumDescs:14 = FormatString("Number of RecveeDescss: %d", this);
+	LLTDRecveeDesc RecveeDesc[NumDescs];
+}
+
+struct LLTDFlatFrame = FormatString("CTCInUINT8s: %u, CTCInPackets: %u", CTCInUINT8s, CTCInPackets)
+{
+	UINT32 CTCInUINT8s;
+	UINT16 CTCInPackets;
+}
+
+Table LLTDLargeTLVTable(Type)
+{
+	Switch (Type)
+	{
+		case 0x0E: "Icon Image";
+		case 0x11: "Friendly name";
+		case 0x13: "Hardware ID";
+		case 0x16: "AP association table";
+		case 0x18: "Detailed icon image";
+		case 0x1A: "Component";
+		case 0x1C: "Repeater AP table";
+		default   : FormatString("{Undefined value (%d)", Type);
+	}
+}
+
+struct LLTDQueryLargeTlvFrame
+{
+	[Conversation.LargeTLVType$[LLTDIdentifier]]
+	UINT8 Type = LLTDLargeTLVTable(this);
+	UINT24 Offset = FormatString("Offset %d", this);
+}
+
+struct LLTDQueryLargeTlvRespFrame = FormatString("Length = %u %s", Length, More ? "M" : ".")
+{
+	UINT16 More:1 = FormatString("    (%s) %s", this.ToBitString, this ? "More" : "No More");
+	UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+	[LLTDQueryLargeTlvRespLength]
+	UINT16 Length:14 = FormatString("  (%s) %u", this.ToBitString, this);
+	switch (Conversation.LargeTLVType$[LLTDIdentifier])
+	{
+		case 0x0E: 
+			BLOB(LLTDQueryLargeTlvRespLength) IconImage;
+		case 0x11:
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString(LLTDQueryLargeTlvRespLength / 2) Friendlyname;
+		case 0x13:
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString(LLTDQueryLargeTlvRespLength / 2) HardwareID;
+		case 0x16: 
+			LLTDAPAssociationTable APAssociationTable;
+		case 0x18: 
+			BLOB(LLTDQueryLargeTlvRespLength) DetailedIconImage;
+		case 0x1A:
+			LLTDComponentTable(LLTDQueryLargeTlvRespLength) ComponentTable;
+		case 0x1C:
+			LLTDRepeaterAPTable RepeaterAPTable;
+		default:
+			BLOB(LLTDQueryLargeTlvRespLength) Data;
+	}
+}
+
+Table LLTDQoSInterruptModTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Disable interrupt moderation";
+		case 0x01: "Enable interrupt moderation";
+		case 0xFF: "Use existing interrupt moderation setting";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+struct LLTDQosInitializeSink = LLTDQoSInterruptModTable(InterruptMod)
+{
+	 UINT8 InterruptMod = LLTDQoSInterruptModTable(this);
+}
+
+struct LLTDQosReady = FormatString("SinkLinkSpeed : %s, PerformanceCounterFrequency : %u", SinkLinkSpeed.toString, PerformanceCounterFrequency)
+{
+	UINT32 SinkLinkSpeed = FormatString("%u bps", this * 100);
+	UINT64 PerformanceCounterFrequency;
+}
+
+Table LLTDQoSProbeTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Timed probe";
+		case 0x01: "Probegap originating from the controller";
+		case 0x02: "Probegap originating from the sink";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+struct LLTDQosProbe = LLTDQoSProbeTypeTable(Type)
+{
+	UINT64 ControllerTransmitTimestamp;
+	UINT64 SinkReceiveTimestamp;
+	UINT64 SinkTransmitTimestamp;
+	UINT8 TestType = LLTDQoSProbeTypeTable(this);
+	UINT8 PacketID;
+	UINT8 ValueOf8021P
+	{
+		UINT8 T:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Present" : "Not Present");
+		UINT8 Value:7 = FormatString("(%s) %u", this.ToBitString, this);
+	};
+	BLOB(5) Payload;
+}
+
+struct LLTDQosQueryResp = FormatString("NumEvents : %u", NumEvents)
+{
+	UINT16 R:1 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+	UINT16 E:1 = FormatString("(%s) %s", this.ToBitString, this ? "Error" : "No Error");
+	[LLTDQosQueryRespEventCount]
+	UINT16 NumEvents:14 = FormatString("(%s) %u", this.ToBitString, this);
+	while [LLTDQosQueryRespEventCount > 0]
+	{
+		[LLTDQosQueryRespEventCount = LLTDQosQueryRespEventCount - 1]
+		struct QosEventDesc = FormatString("PacketID : %u", PacketID)
+		{
+			UINT64 ControllerTransmitTimestamp;
+			UINT64 SinkReceiveTimestamp;
+			UINT8 PacketID;
+			UINT8 Reserved;
+		}
+	}
+}
+
+Table LLTDQoSErrorCodeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Insufficient resources";
+		case 0x01: "Busy";
+		case 0x02: "Interrupt moderation not available";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+struct LLTDQosError = LLTDQoSErrorCodeTable(ErrorCode)
+{
+	UINT16 ErrorCode = LLTDQoSErrorCodeTable(this);
+}
+
+struct LLTDQosCounterSnapshot = FormatString("HistorySize : %u", HistorySize)
+{
+	UINT8 HistorySize;
+}
+
+struct LLTDQosCounterResult = FormatString("HistorySize : %u", HistorySize)
+{
+	UINT8 SubsecondSpan;
+	UINT8 ByteScale;
+	UINT8 PacketScale;
+	[LLTDQosCounterResultHistorySize]
+	UINT8 HistorySize;
+	while [LLTDQosCounterResultHistorySize > 0]
+	{
+		[LLTDQosCounterResultHistorySize = LLTDQosCounterResultHistorySize - 1]
+		struct Snapshot = FormatString("BytesReceived : %u, PacketsReceived : %u, BytesSent : %u, PacketsSent : %u", BytesReceived, PacketsReceived, BytesSent, PacketsSent)
+		{
+			UINT16 BytesReceived;
+			UINT16 PacketsReceived;
+			UINT16 BytesSent;
+			UINT16 PacketsSent;
+		}
+	}
+}
+
+Table LLTDTLVPhysicalMediumTable(code)
+{
+	switch (code)
+	{
+		case 6:  "Ethernet";
+		case 71: "Wireless 802.11";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+Table LLTDTLVPWirelessModeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "IBSS or ad hoc mode";
+		case 0x01: "Infrastructure mode";
+		case 0x02: "Automatic mode";
+		default: FormatString("Undefined Value (%d)", code);
+	}
+}
+
+Table LLTDTLVPhysicalMedium80211Table(code)
+{
+	switch (code)
+	{
+		case 0x00: "Unknown";
+		case 0x01: "FHSS 2.4 GHz";
+		case 0x02: "DSSS 2.4 GHz";
+		case 0x03: "IR Baseband";
+		case 0x04: "OFDM 5 GHz";
+		case 0x05: "HRDSSS";
+		case 0x06: "ERP";
+		default: FormatString("Reserved for future use (%d)", code);
+	}
+}
+
+Table LLTDTLVTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "End-of-property list marker";
+		case 0x01: "Host ID";
+		case 0x02: "Characteristics";
+		case 0x03: "Physical medium";
+		case 0x04: "Wireless mode";
+		case 0x05: "802.11 Basic Service Set IDentifier (BSSID)";
+		case 0x06: "802.11 Service Set IDentifier (SSID)";
+		case 0x07: "IPv4 address";
+		case 0x08: "IPv6 address";
+		case 0x09: "802.11 maximum operational rate";
+		case 0x0A: "Performance counter frequency";
+		case 0x0C: "Link speed";
+		case 0x0D: "802.11 RSSI";
+		case 0x0E: "Icon image";
+		case 0x0F: "Machine name";
+		case 0x10: "Support information";
+		case 0x11: "Friendly name";
+		case 0x12: "Device universally unique identifier (UUID)";
+		case 0x13: "Hardware ID";
+		case 0x14: "QoS characteristics";
+		case 0x15: "802.11 physical medium";
+		case 0x16: "AP association table";
+		case 0x18: "Detailed icon image";
+		case 0x19: "Sees-list working set";
+		case 0x1A: "Component table";
+		case 0x1B: "Repeater AP lineage";
+		case 0x1C: "Repeater AP table";
+		default:      "Undefined TLV";
+	}
+}
+
+Table LLTDComponentTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Bridge";
+		case 0x01: "802.11 access point";
+		case 0x02: "Built-in switch";
+		default: FormatString("Undefined value (%u)", code);
+	}
+}
+
+Table LLTDBridgeComponentBehaviorTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Hub";
+		case 0x01: "Switch";
+		case 0x02: "Internal hub-switch";
+		default: FormatString("Undefined value (%u)", code);
+	}
+}
+
+Table LLTDWirelessRadioBandPHYTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "Unknown";
+		case 0x01: "FHSS 2.4 GHz";
+		case 0x02: "DSSS 2.4 GHz";
+		case 0x03: "IR Baseband";
+		case 0x04: "OFDM 5 GHz";
+		case 0x05: "HRDSSS";
+		case 0x06: "ERP";
+		default: FormatString("Undefined value (%u)", code);
+	}
+}
+
+struct LLTDComponentTable(TotalLength)
+{
+	[BaseOffset = FrameOffset]
+	UINT8 Version;
+	UINT8 Reserved;
+	while [FrameOffset - BaseOffset < TotalLength]
+	{
+		struct Component = LLTDComponentTypeTable(Type)
+		{
+			UINT8 Type = LLTDComponentTypeTable(this);
+			UINT8 Length;
+			switch (Type)
+			{
+				case 0x00: 
+					_struct Bridge
+					{
+						UINT8 Behavior = LLTDBridgeComponentBehaviorTable(this);
+					}
+				case 0x01: 
+					_struct AccessPointOf80211
+					{
+						UINT16 MaxOperRate = FormatString("%u Mbps", this*0.5);
+						UINT8 PHYType = LLTDTLVPhysicalMedium80211Table(this);
+						UINT8 Mode = LLTDTLVPWirelessModeTable(this);
+						MacAddress BSSID;
+
+					}
+				case 0x02: 
+					_struct BuiltInSwitch
+					{
+						 UINT32 LinkSpeed = FormatString("%u bps", this * 100);
+					}
+				default:
+					BLOB(Length) UnknwonComponent;
+			}
+		}
+	}
+}
+
+struct LLTDRepeaterAPTable
+{
+	MacAddress MACAddressOfHost;
+	MacAddress MacAddressOfNextHopAccessPoint;
+}
+struct LLTDAPAssociationTable
+{
+	MacAddress MACAddressOfWirelessHost;
+	UINT16 MaxOperRate = FormatString("%u Mbps",  this * 0.5);
+	UINT8 PHYType = LLTDTLVPhysicalMedium80211Table(this);
+	UINT8 Reserved;
+
+}
+
+struct LLTDTLV = FormatString ("%s%s", LLTDTLVTypeTable(Type), Local.Value ? (":  " + Local.Value)  : "")
+{
+	UINT8 Type = FormatString("%s, %d (0x%X)", LLTDTLVTypeTable(this), this, this);
+	switch
+	{
+		case Type > 0:
+				UINT8 Length;
+	}
+	switch (Type)
+	{
+		case 0x01:
+			[Local.Value = this.ToString]
+			MacAddress MacAddress;
+		case 0x02:
+			UINT32 Characteristics
+			{
+				UINT32 NP:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Interface is NAT-public side": "Interface is NOT NAT-public side");
+				UINT32 NX:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Interface is NAT-private side" : "Interface is NOT NAT-private side");
+				UINT32 FD:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Interface is in full duplex mode" : "Interface is NOT in full duplex mode");
+				UINT32 MW:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Device has management Web page accessible via HTTP protocol" : "Device has NOT management Web page accessible via HTTP protocol");
+				UINT32 LP:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Interface is looping back outbound packets" : "Interface is NOT looping back outbound packets");
+				UINT32 Reserved:27 = FormatString("(%s) Reserved", this.ToBitString);
+			};
+		case 0x03:
+			[Local.Value = this.ToString]
+			UINT32 PhysicalMedium = LLTDTLVPhysicalMediumTable(this);
+		case 0x04:
+			[Local.Value = this.ToString]
+			UINT8 Mode = LLTDTLVPWirelessModeTable(this);
+		case 0x05:
+			[Local.Value = this.ToString]
+			MacAddress BSSID;
+		case 0x06:
+			[Local.Value = this.ToString]
+			AsciiString(Length) SSIDString;
+		case 0x07:
+			[Local.Value = this.ToString]
+			IPV4Address IPv4Address;
+		case 0x08:
+			[Local.Value = this.ToString]
+			IPV6Address IPv6Address;
+		case 0x09:
+			[Local.Value = this.ToString]
+			UINT16 Rate = FormatString("%u Mbps", this * 0.5);
+		case 0x0A:
+			[Local.Value = this.ToString]
+			UINT64 PerformanceCounterFrequency;
+		case 0x0C:
+			[Local.Value = this.ToString]
+			UINT32 LinkSpeed = FormatString("%u bps", this * 100);
+		case 0x0D:
+			[Local.Value = this.ToString]
+			INT32 RSSI;
+		case 0x0F:
+			[Local.Value = this.ToString]
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString(Length / 2) MachineName;
+		case 0x10:
+			[Local.Value = this.ToString]
+			[DataFieldByteOrder = LittleEndian]
+			UnicodeString(Length / 2) SupportInformation;
+		case 0x12:
+			[Local.Value = this.ToString]
+			UUID(0) DeviceUUID;
+		case 0x14:
+			UINT32 QoSCharacteristics
+			{
+				UINT32 E:1 = FormatString("	       (%s) %s", this.ToBitString, this ? "NOT providing any layer 2 forwarding between segments on this link" : "providing  layer 2 forwarding between segments on this link");
+				UINT32 Q:1 = FormatString("	       (%s) %s", this.ToBitString, this ? "Interface supports 802.1q VLAN tagging" : "Interface does NOT support 802.1q VLAN tagging");
+				UINT32 P:1 = FormatString("	       (%s) %s", this.ToBitString, this ? "Interface supports 802.1p priority tagging": "Interface does NOT support 802.1p priority tagging");
+				UINT32 Reserved:29 = FormatString("(%s) Reserved", this.ToBitString);
+			};
+		case 0x15:
+			[Local.Value = this.ToString]
+			UINT8 PHYType = LLTDTLVPhysicalMedium80211Table(this);
+		case 0x19:
+			[Local.Value = this.ToString]
+			UINT16 MaxEntries;
+		case 0x1B:
+			struct RepeaterAPlineage
+			{
+				MacAddress ParentAPaddress;
+				While [FrameLength > FrameOffset + 6]
+				{
+					MacAddress OptionalGrandparentaddress;
+				}
+			}
+		default:
+			switch
+			{
+				case Length > 0:
+					BLOB(Length) UnknownValue;
+			}
+	}
+}

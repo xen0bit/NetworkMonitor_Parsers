@@ -1,0 +1,132 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Security Account Manager (SAM) Remote Protocol (Server-to-Server)
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SAMS]: Security Account Manager (SAM) Remote Protocol Specification (Server-to-Server) (4.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/4/2009
+//#                          Minor, 5/22/2009
+//#
+//####
+
+Table SAMSMessageTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "PasswordUpdate request";
+		case 0x00000001: "ResetBadPwdCount request";
+		case 0x00000002: "PasswordUpdateForward request";
+		case 0x00000003: "LastLogonTimeStampUpdatesForward request";
+		default: "Unknown value";
+	}
+}
+
+Struct SAMSOffsetLengthArrayStruct
+{
+	UINT32 FlagOffset;
+	[property.SAMSFlagLength.addtoproperty(FlagLength,0)]
+	UINT32 FlagLength;
+}
+
+Struct SAMSPasswordUpdateStruct
+{
+	UINT32 Flags
+	{
+		UINT32 Reserved:2 = FormatString(" (%s)", this.ToBitString);
+		[Flags.LM ? Property.SAMSArrayCount = 3 :0]
+		UINT32 LM:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_LM_HASH" : " ");
+		[Flags.NT ? Property.SAMSArrayCount = 4 :Property.SAMSArrayCount]
+		UINT32 NT:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_NT_HASH" : " ");
+		[Flags.UN ? Property.SAMSArrayCount = 5 :Property.SAMSArrayCount]
+		UINT32 UN:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_ACCOUNT_UNLOCKED" : " ");
+		[Flags.PE ? Property.SAMSArrayCount = 6 :Property.SAMSArrayCount]
+		UINT32 PE:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_MANUAL_PWD_EXPIRY" : " ");
+		UINT32 Reserved2:26 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 Size;
+	UINT32 AccountRid;
+	UINT8 PasswordExp;
+	Blob(3) Reserved;
+	SAMSOffsetLengthArrayStruct OffsetLengthArray[Property.SAMSArrayCount];
+	[Local.Count = 0]
+	while[local.Count < Property.SAMSArrayCount]
+	{
+		Switch
+		{
+			case property.SAMSFlagLength[Count] >0:
+				Blob(property.SAMSFlagLength[Count]) Data;
+		}
+		[local.Count = local.Count + 1]
+		Align2 Pad;
+	}
+}
+
+Struct SAMSResetBadPwdCountStruct
+{
+	Guid(true) Guid;
+}
+
+Struct SAMSPasswordUpdateForwardStruct
+{
+	UINT32 Flags
+	{
+		[Flags.AN ? Property.SAMSArrayCount = 1 :0]
+		UINT32 AN:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_ACCOUNT_NAME" : " ");
+		[Flags.CP ? Property.SAMSArrayCount = 2 :Property.SAMSArrayCount]
+		UINT32 CP:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FLAG_CLEAR_TEXT_PASSWORD" : " ");
+		UINT32 Reserved:30 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 Size;
+	UINT32 AccountRid;
+	UINT8 PasswordExp;
+	Blob(3) Reserved;
+	SAMSOffsetLengthArrayStruct OffsetLengthArray[Property.SAMSArrayCount];
+	[Local.Count = 0]
+	while[local.Count < Property.SAMSArrayCount]
+	{
+		Switch
+		{
+			case property.SAMSFlagLength[Count] >0:
+				UnicodeString(property.SAMSFlagLength[Count]/2) Data;
+		}
+		[local.Count = local.Count + 1]
+		Align2 Pad;
+	}
+}
+
+Struct SAMSLastLogonTimeStampUpdatesForwardStruct
+{
+	UINT32 Count;
+	SAMSLastLogonTimeStampUpdateStruct LastLogonTimeStampUpdate[Count];
+}
+
+Struct SAMSLastLogonTimeStampUpdateStruct
+{
+	UINT32 AccountRid;
+	UINT64 Timestamp;
+}
+
+[DataTypeByteOrder = LittleEndian]
+Struct SAMS = "MessageType:"+ SAMSMessageTypeTable(MessageHeader.MessageType) + " MessageSize:" + MessageHeader.MessageSize
+{
+	_struct MessageHeader
+	{
+		UINT32 MessageType = SAMSMessageTypeTable(this);
+		UINT32 MessageSize;
+	}
+	switch(MessageHeader.MessageType)
+	{
+		case 0x00000000: SAMSPasswordUpdateStruct						PasswordUpdate;
+		case 0x00000001: SAMSResetBadPwdCountStruct						ResetBadPwdCount;
+		case 0x00000002: SAMSPasswordUpdateForwardStruct				PasswordUpdateForward;
+		case 0x00000003: SAMSLastLogonTimeStampUpdatesForwardStruct		LastLogonTimeStampUpdatesForward;
+	}
+	switch
+	{
+		case FrameOffset < frameLength : BLOB(frameLength - FrameOffset) Pad;
+	}
+}

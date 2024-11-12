@@ -1,0 +1,396 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Video Redirection Virtual Channel
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEV]: Remote Desktop Protocol: Video Redirection Virtual Channel Extension (0.1.3)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 5/13/2009
+//#                          Minor, 12/23/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEV = SharedMessageHeader.ToString
+{
+	RDPEVSharedMessageHeader SharedMessageHeader;
+	
+	switch( SharedMessageHeader.InterfaceId.InterfaceIdValue )
+	{
+		case 0x00000000:
+			switch( SharedMessageHeader.FunctionId )
+			{
+				case 0x00000100:	RDPEVExchangeCapabilitiesReq ExchangeCapabilitiesReqMsg;
+				case 0x00000101:	RDPEVSetChannelParams SetChannelParamsMsg;
+				case 0x00000102:	RDPEVAddStream AddStreamMsg;
+				case 0x00000103:	RDPEVOnSample OnSampleMsg;
+				case 0x00000104:	RDPEVSetVideoMessage SetVideoMsg;
+				case 0x00000105:	RDPEVNewPresentation NewPresentationMsg;
+				case 0x00000106:	RDPEVShutdownPresention ShutdownPresentionMsg;
+				case 0x00000107:	RDPEVSetTopologyReq SetTopologyReqMsg;
+				case 0x00000108:	RDPEVCheckFormatSupportReq CheckFormatSupportReqMsg;
+				case 0x00000109:	RDPEVOnPlaybackStarted OnPlaybackStartedMsg;
+				case 0x0000010a:	RDPEVOnPlaybackPaused OnPlaybackPausedMsg;
+				case 0x0000010b:	RDPEVOnPlayackStopped OnPlayackStoppedMsg;
+				case 0x0000010c:	RDPEVOnPlaybackSeeked OnPlaybackSeekedMsg;
+				case 0x0000010d:	RDPEVOnPlaybackRateChanged OnPlaybackRateChangedMsg;
+				case 0x0000010e:	RDPEVOnFlush OnFlushMsg;
+				case 0x0000010f:	RDPEVOnStreamVolume OnStreamVolumeMsg;
+				case 0x00000110:	RDPEVOnChannelVolume OnChannelVolumeMsg;
+				case 0x00000111:	RDPEVOnEndOfStream OnEndOfStreamMsg;
+				case 0x00000112:	RDPEVSetAllocator SetAllocatorMsg;
+				case 0x00000113:	RDPEVNotifyPreroll NotifyPrerollMsg;
+				case 0x00000114:	RDPEVUpdateGeometryInfo UpdateGeometryInfoMsg;
+				case 0x00000115:	RDPEVRemoveStream RemoveStreamMsg;
+			}
+		case 0x00000001://client to server is encrypted
+			struct{};
+		case 0x00000002:
+			switch( SharedMessageHeader.FunctionId )
+			{
+				case 0x00000100: RDPEVRimExchangeCapabilityRequest RimExchangeCapabilityRequestMsg;
+			}
+	}
+	
+	switch 
+	{
+		case FrameOffset < FrameLength:
+			struct UnknownData
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "RDPEV", "Unknow Data" ) ParserError;
+				BLOB( frameLength - Offset ) Blob;
+			}
+	}
+}
+
+
+struct RDPEVSharedMessageHeader = FormatString("%s.%s", InterfaceId.ToString, FunctionId.ToString)
+{
+	UINT32 InterfaceId = InterfaceIdTable(InterfaceId.InterfaceIdValue)
+	{
+		UINT32 InterfaceIdValue:30 = FormatString("  (%s)", this.ToBitString);
+		UINT32 StreamIdProxy:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Indicates that the SHARED_MSG_HEADER is not being used in a response message." : "");
+		UINT32 StreamIdStub:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Indicates that the SHARED_MSG_HEADER is being used in a response message." : "");
+	}
+	UINT32 MessageId;
+	UINT32 FunctionId = FunctionIDTable(InterfaceId.InterfaceIdValue,this);
+}
+
+Table InterfaceIdTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:	"Server Data";
+		case 0x00000001:	"The Client Notifications";
+		case 0x00000002:	"Capabilities Negotiator";
+	}
+}
+
+Table FunctionIDTable(InterfaceId,FunctionId)
+{
+	switch
+	{
+		case FunctionId == 0x00000001: "RIMCALL_RELEASE";
+		case FunctionId == 0x00000002: "RIMCALL_QUERYINTERFACE";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000100: "EXCHANGE_CAPABILITIES_REQ";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000101: "SET_CHANNEL_PARAMS";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000102: "ADD_STREAM ";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000103: "ON_SAMPLE";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000104: "SET_VIDEO_WINDOW";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000105: "ON_NEW_PRESENTATION";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000106: "SHUTDOWN_PRESENTATION";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000107: "SET_TOPOLOGY_REQ";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000108: "CHECK_FORMAT_SUPPORT_REQ";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000109: "ON_PLAYBACK_STARTED";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010a: "ON_PLAYBACK_PAUSED";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010b: "ON_PLAYBACK_STOPPED";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010c: "ON_PLAYBACK_SEEKED";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010d: "ON_PLAYBACK_RATE_CHANGED";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010e: "ON_FLUSH";
+		case InterfaceId == 0x00000000 && FunctionId == 0x0000010f: "ON_STREAM_VOLUME";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000110: "ON_CHANNEL_VOLUME";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000111: "ON_END_OF_STREAM";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000112: "SET_ALLOCATOR";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000113: "NOTIFY_PREROLL";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000114: "UPDATE_GEOMETRY_INFO";
+		case InterfaceId == 0x00000000 && FunctionId == 0x00000115: "REMOVE_STREAM";
+		case InterfaceId == 0x00000001 && FunctionId == 0x00000100: "PLAYBACK_ACK";
+		case InterfaceId == 0x00000002 && FunctionId == 0x00000100: "RIM_EXCHANGE_CAPABILITY_REQUEST";
+		case InterfaceId == 0x00000002 && FunctionId == 0x00000101: "RIM_EXCHANGE_CAPABILITY_RESPONSE";
+		default: FormatString("Undefined Value (%u)", FunctionId);
+	}
+}
+
+struct RDPEVRimExchangeCapabilityRequest
+{
+	UINT32 CapabilityValue = MustBeSetToTable(this,"0x00000001");
+}
+
+struct RDPEVSetChannelParams
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+}
+
+Table RDPEVCapabilityTypeTable(value)
+{
+	switch(value)
+	{
+		case 1: "The version capability.";
+		case 2: "The platform support capability.";
+		default:"The value is invalid.";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+
+struct RDPEVTsmmCapabilitiesStructure = CapabilityType.ToString
+{
+	UINT32 CapabilityType = RDPEVCapabilityTypeTable(this);
+	UINT32 cbCapabilityLength;
+	switch
+	{
+		case cbCapabilityLength > 0: BLOB(cbCapabilityLength) pCapabilityData ;
+	}
+}
+
+struct RDPEVExchangeCapabilitiesReq
+{
+	UINT32 numHostCapabilities;
+	RDPEVTsmmCapabilitiesStructure pHostCapabilities[numHostCapabilities];
+}
+
+Table RDPEVTsmmPlatformCookieTable(value)
+{
+	switch(value)
+	{
+		case 0: "TSMM_PLATFORM_COOKIE_UNDEFINED";
+		case 1: "TSMM_PLATFORM_COOKIE_MF";
+		case 2: "TSMM_PLATFORM_COOKIE_DSHOW";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+
+struct RDPEVNewPresentation
+{
+	GUID(true) PresentationId;
+	UINT32 PlatformCookie = RDPEVTsmmPlatformCookieTable(this);
+}
+
+struct RDPEVTsAmMediaType
+{
+	GUID(true) MajorType;
+	GUID(true) SubType;
+	UINT32 FixedSizeSamples;
+	UINT32 TemporalCompression;
+	UINT32 SampleSize;
+	GUID(true) FormatType;
+	UINT32 cbFormat;
+	switch 
+	{
+		case cbFormat > 0:
+			BLOB(cbFormat) pbFormat;
+	}
+}
+
+struct RDPEVCheckFormatSupportReq = PlatformCookie.ToString
+{
+	UINT32 PlatformCookie = RDPEVTsmmPlatformCookieTable(this);
+	UINT32 NoRolloverFlags;
+	UINT32 numMediaType;
+	RDPEVTsAmMediaType pMediaType;
+}
+
+struct RDPEVAddStream
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+	UINT32 numMediaType;
+	RDPEVTsAmMediaType pMediaType;
+}
+
+struct RDPEVSetTopologyReq
+{
+	GUID(true) PresentationId;
+}
+
+struct RDPEVRemoveStream
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+}
+
+struct RDPEVShutdownPresention
+{
+	GUID(true) PresentationId;
+}
+
+struct RDPEVOnPlaybackStarted
+{
+	GUID(true) PresentationId;
+	UINT64 PlaybackStartOffset;
+	UINT32 OnPlaybackStartedMsg = this ? "The playback start message should be a seek." : "The playback start message should be a new playback.";
+}
+
+struct RDPEVOnPlaybackPaused
+{
+	GUID(true) PresentationId;
+}
+
+struct RDPEVOnPlaybackSeeked
+{
+	GUID(true) PresentationId;
+}
+
+struct RDPEVOnPlayackStopped
+{
+	GUID(true) PresentationId;
+}
+
+struct RDPEVOnPlaybackRateChanged
+{
+	GUID(true) PresentationId;
+	UINT32 NewRate;
+}
+
+struct RDPEVSetAllocator
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+	UINT32 cBuffers;
+	UINT32 cbBuffer;
+	UINT32 cbAlign;
+	UINT32 cbPrefix;
+}
+
+struct RDPEVNotifyPreroll
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+}
+
+struct RDPEVTsMmDataSampleStructure
+{
+	UINT64 SampleStartTime;
+	UINT64 SampleEndTime;
+	UINT64 ThrottleDuration;
+	UINT32 SampleFlags;
+	UINT32 SampleExtensions 
+	{
+		UINT32 TsmmSampleExtCleanpoint:1 = FormatString("        (%s)%s", this.ToBitString,this ? "The sample is a key frame and decoding can begin from this sample." : "");
+		UINT32 TsmmSampleExtDiscontinuity:1 = FormatString("     (%s)%s",this.ToBitString,this? "there was a discontinuity in the sample and this sample is the first to appear after the gap." : "");
+		UINT32 Unused1:5 = FormatString("                        (%s)",this.ToBitString);
+		UINT32 TsmmSampleExtHasNoTimestamps:1 = FormatString("   (%s)%s", this.ToBitString,this ? "No time stamp is set in the sample. " : "");
+		UINT32 TsmmSampleExtRelativeTimeStamps:1 = FormatString("(%s)%s", this.ToBitString,this ? "The time stamp that is set in the sample is a value relative to when the presentation started running. " : "");
+		UINT32 TsmmSampleExtAbsoluteTimeStamps:1 = FormatString("(%s)%s", this.ToBitString,this ? "The time stamp that is set in the sample is the absolute value returned by the reference clock." : "");
+		UINT32 Unused2:22 = FormatString("                        (%s)",this.ToBitString);
+	};
+	UINT32 cbData;
+	BLOB(cbData) pData;
+}
+
+struct RDPEVOnSample
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+	UINT32 numSample;
+	RDPEVTsMmDataSampleStructure pSample;
+}
+
+struct RDPEVOnFlush
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+}
+
+struct RDPEVOnEndOfStream
+{
+	GUID(true) PresentationId;
+	UINT32 StreamId;
+}
+
+struct RDPEVSetVideoMessage
+{
+	GUID(true) PresentationId;
+	UINT64 VideoWindowId;
+	UINT64 HwndParent;
+}
+
+Table RDPEVTsWndflagTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: "TS_WNDFLAG_NEW - Show the video window.";
+		case 0x00000002: "TS_WNDFLAG_DELETED - Hide the video window.";
+		case 0x00000100: "TS_WNDFLAG_VISRGN - The visible region of the video window changed.";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}
+
+struct RDPEVGeometryInfo(StructureSize) = FormatString("VideoWindowId:%d, VideoWindowState:%d", VideoWindowId, VideoWindowState)
+{
+	UINT64 VideoWindowId;
+	UINT32 VideoWindowState
+	{
+		UINT32 TsWndFlagNew:1 = FormatString("    (%s)%s", this.ToBitString,this ? "Show the video window." : "");
+		UINT32 TsWndFlagDeleted:1 = FormatString("(%s)%s", this.ToBitString,this ? "Hide the video window." : "");
+		UINT32 Unused1:6 = FormatString("         (%s)", this.ToBitString);
+		UINT32 TsWndFlagVisrgn:1 = FormatString(" (%s)%s", this.ToBitString,this ? "The visible region of the video window changed." : "");
+		UINT32 Unused2:23 = FormatString("         (%s)", this.ToBitString);
+	};
+	UINT32 Width;
+	UINT32 Height;
+	UINT32 Left;
+	UINT32 Top;
+	UINT64 Reserved;
+	UINT32 ClientLeft;
+	UINT32 ClientTop;
+	Switch
+	{
+		case StructureSize > 44 : UINT32 Padding = "MUST be ignored";
+	}
+}
+
+struct RDPEVTsRect = FormatString("Top:%s, Left:%s, Bottom:%s, Right:%s", Top.ToString, Left.ToString, Bottom.ToString, Right.ToString)
+{
+	UINT32 Top;
+	UINT32 Left;
+	UINT32 Bottom;
+	UINT32 Right;
+}
+
+struct RDPEVUpdateGeometryInfo
+{
+	GUID(true) PresentationId;
+	UINT32 numGeometryInfo;
+	RDPEVGeometryInfo(numGeometryInfo) PGeoInfo;
+	UINT32 cbVisibleRect;
+	RDPEVTsRect pVisibleRect[cbVisibleRect/16];
+}
+
+struct RDPEVOnStreamVolume
+{
+	GUID(true) PresentationId;
+	UINT32 NewVolume;
+	UINT32 bMuted;
+}
+
+struct RDPEVOnChannelVolume
+{
+	GUID(true) PresentationId;
+	UINT32 ChannelVolume;
+	UINT32 ChangedChannel;
+}
+
+Table RDPEVMmredirCapabilityPlatform(value)
+{
+	switch(value)
+	{
+		case 1: "MMREDIR_CAPABILITY_PLATFORM_MF - The MF platform";
+		case 2: "MMREDIR_CAPABILITY_PLATFORM_DSHOW - The DShow platform";
+		case 4: "MMREDIR_CAPABILITY_PLATFORM_OTHER - Other platform";
+		default: FormatString("Undefined Value (%u)", value);
+	}
+}

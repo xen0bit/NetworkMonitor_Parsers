@@ -1,0 +1,575 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - File System Virtual Channel Extension
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEFS]: Remote Desktop Protocol: File System Virtual Channel Extension (6.0.1)
+//#                          [MS-RDPESP]: Remote Desktop Protocol: Serial Port Virtual Channel Extension (1.4.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/20/2009
+//#
+//####
+
+//====================================Protocol=============================================
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPEFS = "Component = " + RDPEFSRdpdrHeaderComponentTypeTable(RdpdrHeader.Component) +
+					", PacketId = " + RDPEFSRdpdrHeaderPacketIdTable(RDPDrHeader.PacketId)
+{
+	RDPEFSRdpdrHeader RdpdrHeader;
+	switch (RdpdrHeader.PacketId)
+	{
+		case 0x496E:
+			[RDPPacketType = "RDPDrCoreServerAnnounceReq"]
+			RDPEFSDrCoreServerAnnounceReq DrCoreServerAnnounceReq;
+		case 0x4343:
+			[RDPPacketType = "RDPDrCoreServerAnnounceRsp"]
+			RDPEFSDrCoreServerAnnounceRsp DrCoreServerAnnounceRsp;
+		//case 0x434E: Client Name Request - Client to server message is encrypted
+		case 0x5350:
+			[RDPPacketType = "RDPDrServerCapabilitySet"]
+			RDPEFSDrCapabilitySet DrServerCapabilitySet;
+		//case 0x4350: Client Core Capability Response - Client to server message is encrypted
+		//case 0x4441: Client Devicelist Announce
+		case 0x4952:
+			[RDPPacketType = "RDPDrDeviceIORequest"]
+			RDPEFSDrDeviceIORequest DrCoreDeviceIORequest;
+		//case 0x4943: Client Device I/O Response - Client to server message is encrypted
+		case 0x6472:
+			[RDPPacketType = "RDPDrCoreDeviceAnnounceRsp"]
+			RDPEFSDrCoreDeviceAnnounceRsp DrCoreDeviceAnnounceRsp;
+		//case 0x444D: Client Drive Device List Remove - Client to server message is encrypted
+		case 0x554C:
+			[RDPPacketType = "RDPDrCoreUserLoggedOn"]
+			_struct RDPEFSDrCoreUserLoggedOn{};
+		
+		//RDPDR_CTYP_PRN msg
+		case 0x5043:
+			[RDPPacketType = "RDPDrPrnCacheData"]
+			RDPEFSDrPrnCacheData DrPrnCacheData;
+		case 0x5543:
+			_struct
+			{
+				[RDPPacketType = "RDPDrPrnUsingXPS"]
+				switch
+				{
+					case (FrameOffset < FrameLength) && (property.RDPBCGRPDUHeaderLength > 4):
+						RDPEPCServerPrinterSetXPSMode ServerPrinterSetXPSMode;
+				}
+			}
+		Default:
+			struct RDPEFSPacketIDError
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "RDPEFS", "Unknown function, PacketID:" + RdpdrHeader.PacketId) UnknownFunction;
+				Blob(property.RDPBCGRPDUHeaderLength - 4) UnknownMessage;
+			}
+	}
+}
+
+Table RDPEFSInformationClassTable(code)
+{
+	switch (code)
+	{
+		case 1: "FileFsVolumeInformation";
+		case 2: "FileFsLabelInformation";
+		case 3: "FileFsSizeInformation";
+		case 4: "FileFsDeviceInformation";
+		case 5: "FileFsAttributeInformation";
+		case 6: "FileFsControlInformation";
+		case 7: "FileFsFullSizeInformation";
+		case 8: "FileFsObjectIdInformation";
+		case 9: "FileFsDriverPathInformation";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPEFSRdpLockInfo
+{
+	INT32 LengthLow;
+	INT32 LengthHigh;
+	INT32 OffsetLow;
+	INT32 OffsetHigh;
+}
+
+
+Table RDPEFSRdpdrHeaderComponentTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x4472: "RDPDR_CTYP_CORE";
+		case 0x5052: "RDPDR_CTYP_PRN";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSRdpdrHeaderPacketIdTable(code)
+{
+	switch (code)
+	{
+		case 0x496E: "PAKID_CORE_SERVER_ANNOUNCE";
+		case 0x4343: "PAKID_CORE_CLIENTID_CONFIRM";
+		case 0x434E: "PAKID_CORE_CLIENT_NAME";
+		case 0x5350: "PAKID_CORE_SERVER_CAPABILITY";
+		case 0x4350: "PAKID_CORE_CLIENT_CAPABILITY";
+		case 0x4441: "PAKID_CORE_DEVICELIST_ANNOUNCE";
+		case 0x4952: "PAKID_CORE_DEVICE_IOREQUEST";
+		case 0x4943: "PAKID_CORE_DEVICE_IOCOMPLETION";
+		case 0x6472: "PAKID_CORE_DEVICE_REPLY";
+		case 0x444D: "PAKID_CORE_DEVICELIST_REMOVE";
+		case 0x5043: "PAKID_PRN_CACHE_DATA";
+		case 0x5543: "PAKID_PRN_USING_XPS";
+		case 0x554C: "PAKID_CORE_USER_LOGGEDON";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+struct RDPEFSRdpdrHeader = "Component = " + RDPEFSRdpdrHeaderComponentTypeTable(Component) +
+					", PacketId = " + RDPEFSRdpdrHeaderPacketIdTable(PacketId)
+{
+	UINT16 Component = RDPEFSRdpdrHeaderComponentTypeTable(this);
+	UINT16 PacketId = RDPEFSRdpdrHeaderPacketIdTable(this);
+}
+
+Table RDPEFSDrOsTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x00: "RDPDR_OS_TYPE_UNKNOWN";
+		case 0x01: "RDPDR_OS_TYPE_WIN9X";
+		case 0x02: "RDPDR_OS_TYPE_WINNT";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+
+Table RDPEFSDrCreateDispositionTable(code)
+{
+	switch (code)
+	{
+		case 0: "FILE_SUPERSEDE";
+		case 1: "FILE_OPEN";
+		case 2: "FILE_CREATE";
+		case 3: "FILE_OPEN_IF";
+		case 4: "FILE_OVERWRITE";
+		case 5: "FILE_OVERWRITE_IF";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSDrLocksOperationTable(code)
+{
+	switch (code)
+	{
+		case 2: "RDP_LOWIO_OP_SHAREDLOCK";
+		case 3: "RDP_LOWIO_OP_EXCLUSIVELOCK";
+		case 4: "RDP_LOWIO_OP_UNLOCK";
+		case 5: "RDP_LOWIO_OP_UNLOCK_MULTIPLE";
+		default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+
+
+
+
+//===========================================Table======================================
+Table RDPEFSDrPrnCacheDataEventIDTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "RDPDR_ADD_PRINTER_EVENT";
+		case 2: "RDPDR_UPDATE_PRINTER_EVENT";
+		case 3: "RDPDR_DELETE_PRINTER_EVENT";
+		case 4: "RDPDR_RENAME_PRINTER_EVENT";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSDrDeviceReplyResultCodeTable(code)
+{
+	switch (code)
+	{
+		case 0: "RDPDR_DEVICE_REPLY_SUCCESS";
+		case 1: "RDPDR_DEVICE_REPLY_REJECTED";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSDrMajorFunctionTable(code)
+{
+	switch (code)
+	{
+		case 0x0 : "IRP_MJ_CREATE";
+		case 0x2 : "IRP_MJ_CLOSE";
+		case 0x3 : "IRP_MJ_READ";
+		case 0x4 : "IRP_MJ_WRITE";
+		case 0x5 : "IRP_MJ_QUERY_INFORMATION";
+		case 0x6 : "IRP_MJ_SET_INFORMATION";
+		case 0x9 : "IRP_MJ_FLUSH_BUFFERS";
+		case 0x0a: "IRP_MJ_QUERY_VOLUME_INFORMATION";
+		case 0x0b: "IRP_MJ_SET_VOLUME_INFORMATION";
+		case 0x0c: "IRP_MJ_DIRECTORY_CONTROL";
+		case 0x0e: "IRP_MJ_DEVICE_CONTROL";
+		case 0x11: "IRP_MJ_LOCK_CONTROL";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSDrMinorFunctionTable(MajorCode, MinorCode)
+{
+	switch
+	{
+		case MajorCode == 0x0C && MinorCode == 0x01 : "IRP_MN_QUERY_DIRECTORY";
+		case MajorCode == 0x0C && MinorCode == 0x02 : "IRP_MN_NOTIFY_CHANGE_DIRECTORY";
+		case MajorCode == 0x0C                      : "Undefined value: " + FormatString("%d", MinorCode);
+		default: "Not used";
+	}
+}
+
+Table RDPEFSDrCapabilityTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x01: "RDPDR_GENERAL_CAPABILITY";
+		case 0x02: "RDPDR_PRINT_CAPABILITY";
+		case 0x03: "RDPDR_PORT_CAPABILITY";
+		case 0x04: "RDPDR_DRIVE_CAPABILITY";
+		case 0x05: "RDPDR_SMARTCARD_CAPABILITY";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table RDPEFSClientMinorVision(code)
+{
+	switch (code)
+	{
+		case 0x0002: "RDP Client 5.0";
+		case 0x0005:
+		case 0x0006: "RDP Client 5.1";
+		case 0x000A: "RDP Client 5.2";
+		case 0x000C: "RDP Client 6.0 and 6.1";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+//==========================================structure===================================
+struct RDPEFSDrVersion = FormatString("%u.%u", Major, Minor)
+{
+	UINT16 Major;
+	UINT16 Minor = RDPEFSClientMinorVision(Minor);
+}
+
+struct RDPEFSDrCoreServerAnnounceReq = FormatString("ClientID = %u", ClientID)
+{
+	RDPEFSDrVersion VersionInfo;
+	UINT32 ClientID;
+}
+
+struct RDPEFSDrCoreServerAnnounceRsp = FormatString("ClientID = %u", ClientID)
+{
+	RDPEFSDrVersion VersionInfo;
+	UINT32 ClientID;
+}
+
+struct RDPEFSDrCapabilityHeader = FormatString("CapabilityType = %s", RDPEFSDrCapabilityTypeTable(this))
+{
+	[Property.CapabilityType]
+	UINT16 CapabilityType = RDPEFSDrCapabilityTypeTable(this);
+	[Property.CapabilityLength]
+	UINT16 CapabilityLength;
+	UINT32 Version;
+}
+
+struct RDPEFSDrCapabilityMessage
+{
+	RDPEFSDrCapabilityHeader CapabilityHeader;
+	switch (Property.CapabilityType)
+	{
+		case 0x0001:
+			struct RDPDrGeneralCapability
+			{
+				UINT32 OsType = RDPEFSDrOsTypeTable(this);
+				UINT32 OsVersion;
+				UINT16 ProtocolMajorVersion;
+				UINT16 ProtocolMinorVersion = RDPEFSClientMinorVision(this);
+				UINT32 IoCode1
+				{
+					UINT32 Create:1 = FormatString("                (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_CREATE Packet":
+											"Not support RDPDR_IRP_MJ_CREATE Packet");
+					UINT32 CleanUp:1 = FormatString("               (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_CLEANUP Packet":
+											"Not support RDPDR_IRP_MJ_CLEANUP Packet");
+					UINT32 Close:1 = FormatString("                 (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_CLOSE Packet" :
+											"Not support RDPDR_IRP_MJ_CLOSE Packet");
+					UINT32 Read:1 = FormatString("                  (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_READ Packet" :
+											"Not support RDPDR_IRP_MJ_READ Packet");
+					UINT32 Write:1 = FormatString("                 (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_WRITE Packet" :
+											"Not support RDPDR_IRP_MJ_WRITE Packet");
+					UINT32 FlushBuffers:1 = FormatString("          (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_FLUSH_BUFFERS Packet" :
+											"Not support RDPDR_IRP_MJ_FLUSH_BUFFERS Packet");
+					UINT32 ShutDown:1 = FormatString("              (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_SHUTDOWN Packet" :
+											"Not support RDPDR_IRP_MJ_SHUTDOWN Packet");
+					UINT32 DeviceControl:1 = FormatString("         (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_DEVICE_CONTROL Packet" :
+											"Not support RDPDR_IRP_MJ_DEVICE_CONTROL Packet");
+					UINT32 QueryVolumeInformation:1 = FormatString("(%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_QUERY_VOLUME_INFORMATION Packet" :
+											"Not support RDPDR_IRP_MJ_QUERY_VOLUME_INFORMATION Packet");
+					UINT32 SetVolumeInformation:1 = FormatString("  (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_SET_VOLUME_INFORMATION Packet" :
+											"Not support RDPDR_IRP_MJ_SET_VOLUME_INFORMATION Packet");
+					UINT32 QueryInformation:1 = FormatString("      (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_QUERY_INFORMATION Packet" :
+											"Not support RDPDR_IRP_MJ_QUERY_INFORMATION Packet");
+					UINT32 SetInformation:1 = FormatString("        (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_SET_INFORMATION Packet" :
+											"Not support RDPDR_IRP_MJ_SET_INFORMATION Packet");
+					UINT32 DirectoryControl:1 = FormatString("      (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_DIRECTORY_CONTROL Packet" :
+											"Not support RDPDR_IRP_MJ_DIRECTORY_CONTROL Packet");
+					UINT32 LockControl:1 = FormatString("           (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_LOCK_CONTROL Packet" :
+											"Not support RDPDR_IRP_MJ_LOCK_CONTROL Packet");
+					UINT32 QuerySecurity:1 = FormatString("         (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_QUERY_SECURITY Packet" :
+											"Not support RDPDR_IRP_MJ_QUERY_SECURITY Packet");
+					UINT32 SetSecurity:1 = FormatString("           (%s) %s",this.ToBitString,this? "Support RDPDR_IRP_MJ_SET_SECURITY Packet" :
+											"Not support RDPDR_IRP_MJ_SET_SECURITY Packet");
+					UINT32 Reserved:16 = FormatString("             (%s)",this.ToBitString);
+				}
+				UINT32 IoCode2 = "Reserved";
+				UINT32 ExtendedPDU
+				{
+					UINT32 RemoveFlag:1 = FormatString("       (%s) %s",this.ToBitString,this? "Server can receive device remove packets" :
+											"Server can NOT receive device remove packets");
+					UINT32 DisplayNameFlag:1 = FormatString("  (%s) %s",this.ToBitString,this? "Server can receive client display name packets" :
+											"Server can NOT receive client display name packets");
+					UINT32 LogonNotification:1 = FormatString("(%s) %s",this.ToBitString,this? "Support for logon notification" :
+											"Not Support for logon notification");
+					UINT32 Reserved:29 = FormatString("         (%s)",this.ToBitString);
+				};
+				UINT32 ExtraFlags1 = FormatString("%s",this == 0x00000000 ? "ENABLE_ASYNCIO: Allows the server to send multiple simultaneous read or write requests on the same file from redirected file system" : "Unused");
+				UINT32 ExtraFlags2 = "Reserved";
+				UINT32 SpecialTypeDeviceCap;
+			}
+		case 0x0002:
+			_struct RDPDrPrinterCapability
+			{}
+		case 0x0003:
+			_struct RDPDrPortCapability
+			{}
+		case 0x0004:
+			_struct RDPDrDriveCapability
+			{}
+		case 0x0005:
+			_struct RDPDrSmartCardCapability
+			{}
+		default:
+			switch
+			{
+				case Property.CapabilityLength > 8:
+					BLOB(Property.CapabilityLength - 8) UndefinedCapability;
+			}
+	}
+}
+
+struct RDPEFSDrCapabilitySet = FormatString("CapabilityCount = %u", NumCapabilities)
+{
+	UINT16 NumCapabilities;
+	UINT16 Padding;
+	[CurrentCapability = 0]
+	while [CurrentCapability < NumCapabilities]
+	{
+		[CurrentCapability = CurrentCapability + 1]
+		RDPEFSDrCapabilityMessage CapabilityMessage = "Type = " + RDPEFSDrCapabilityTypeTable(Property.CapabilityType);
+	}
+}
+
+//RDPDrDeviceIORequest.DeviceId need to be used in MSRPCOnRDP
+struct RDPEFSDrDeviceIORequest = FormatString("%s, DeviceId = %u", RDPEFSDrMajorFunctionTable(MajorFunction), DeviceId)
+{
+	[RDOEFSIODeviceID]
+	UINT32 DeviceId;
+	UINT32 FileId;
+	UINT32 CompletionId;
+	[Property.ToResponsed$[CompletionId]]
+	UINT32 MajorFunction = RDPEFSDrMajorFunctionTable(this);
+	UINT32 MinorFunction = RDPEFSDrMinorFunctionTable (MajorFunction, this);
+	switch (MajorFunction)
+	{
+		case 0x00:
+			_struct DrCreateReq
+			{
+				SMB2AccessMask DesiredAccess;
+				UINT64 AllocationSize;
+				FSCCFileAttributes FileAttributes;
+				UINT32 SharedAccess
+				{
+					UINT32 FileShareRead:1 = FormatString("  (%s) %s", this.ToBitString, this ? "FileShareRead" : "Not FileShareRead");
+					UINT32 FileShareWrite:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FileShareWrite" : "Not FileShareWrite");
+					UINT32 FileShareDelete:1 = FormatString("(%s) %s", this.ToBitString, this ? "FileShareDelete" : "Not FileShareDelete");
+					UINT32 Unused:29 = FormatString("           (%s)", this.ToBitString);
+				};
+				UINT32 CreateDisposition = RDPEFSDrCreateDispositionTable(this);
+				SMB2CreateOptions CreateOptions;
+				UINT32 PathLength;
+				switch
+				{
+					case PathLength > 0:
+						UnicodeString(PathLength/2) Path;
+				}
+			}
+		case 0x02:
+			_struct DrCloseReq
+			{
+				BLOB(32) Padding;
+			}
+		case 0x03:
+		case 0x04:
+			_struct ReadWrite
+			{
+				UINT32 Length;
+				INT32 OffsetLow;
+				INT32 OffsetHigh;
+				BLOB(20) Padding;
+				switch
+				{
+					case FrameLength > FrameOffset:
+						BLOB(FrameLength - FrameOffset) WriteData;
+				}
+			}
+		case 0x0E:
+			_struct DrControlReq
+			{
+				UINT32 OutputBufferLength;
+				UINT32 InputBufferLength;
+				[Property.RDPEFSIoControlCode]
+				UINT32 IoControlCode;
+				BLOB(20) Padding;
+				switch(InputBufferLength > 0 && IoControlCode & 0xFFFF0000)
+				{
+					case 0x00090000:
+						RDPESC RDPESC;
+					default:
+						BLOB(InputBufferLength) UnknownReq;
+				}
+			}
+		case 0x0A:
+			_struct SetVolume
+			{
+				UINT32 FsInformationClass = RDPEFSInformationClassTable(this);
+				UINT32 Length;
+				BLOB(24) Padding;
+				switch
+				{
+					case Length > 0:
+						BLOB(Length) SetVolumeBuffer;
+				}
+			}
+		case 0x0B:
+			_struct QueryVolume
+			{
+				UINT32 FsInformationClass = RDPEFSInformationClassTable(this);
+				UINT32 Length;
+				BLOB(24) Padding;
+				switch
+				{
+					case Length > 0:
+						BLOB(Length) QueryVolumeBuffer;
+				}
+			}
+		case 0x5:
+			_struct QueryFile
+			{
+				UINT32 FileInformationClass = FSCCFileInforTable(this);
+				UINT32 Length;
+				BLOB(24) Padding;
+				switch
+				{
+					case Length > 0:
+						BLOB(Length) QueryBuffer;
+				}
+			}
+		case 0x6:
+			_struct SetFile
+			{
+				UINT32 FileInformationClass = FSCCFileInforTable(this);
+				UINT32 Length;
+				BLOB(24) Padding;
+				switch
+				{
+					case Length > 0:
+						BLOB(Length) SetBuffer;
+				}
+			}
+		case 0x0C:
+			switch (MinorFunction)
+			{
+				case 0x01:
+					_struct QueryDir
+					{
+						UINT32 FileInformationClass = FSCCFileInforTable(this);
+						UINT8 InitialQuery;
+						UINT32 PathLength;
+						BLOB(23) Padding;
+						switch
+						{
+							case PathLength > 0:
+								UnicodeString(PathLength/2) Path;
+						}
+					}
+				case 0x02:
+					_struct NotifyChangeDir
+					{
+						UINT8 WatchTree;
+						UINT32 CompletionFilter
+						{
+							UINT32 FileNotifyChangeFileName:1 = FormatString("   (%s) %s", this.ToBitString, this ? "FileNotifyChangeFileName" : "Not FileNotifyChangeFileName");
+							UINT32 FileNotifyChangeDirName:1 = FormatString("    (%s) %s", this.ToBitString, this ? "FileNotifyChangeDirName" : "Not FileNotifyChangeDirName");
+							UINT32 FileNotifyChangeAttributes:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FileNotifyChangeAttributes" : "Not FileNotifyChangeAttributes");
+							UINT32 FileNotifyChangeSize:1 = FormatString("       (%s) %s", this.ToBitString, this ? "FileNotifyChangeSize" : "Not FileNotifyChangeSize");
+							UINT32 FileNotifyChangeLastWrite:1 = FormatString("  (%s) %s", this.ToBitString, this ? "FileNotifyChangeLastWrite" : "Not FileNotifyChangeLastWrite");
+							UINT32 FileNotifyChangeLastAccess:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FileNotifyChangeLastAccess" : "Not FileNotifyChangeLastAccess");
+							UINT32 FileNotifyChangeCreation:1 = FormatString("   (%s) %s", this.ToBitString, this ? "FileNotifyChangeCreation" : "Not FileNotifyChangeCreation");
+							UINT32 FileNotifyChangeEa:1 = FormatString("         (%s) %s", this.ToBitString, this ? "FileNotifyChangeEa" : "Not FileNotifyChangeEa");
+							UINT32 FileNotifyChangeSecurity:1 = FormatString("   (%s) %s", this.ToBitString, this ? "FileNotifyChangeSecurity" : "Not FileNotifyChangeSecurity");
+							UINT32 FileNotifyChangeStreamName:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FileNotifyChangeStreamName" : "Not FileNotifyChangeStreamName");
+							UINT32 FileNotifyChangeStreamSize:1 = FormatString(" (%s) %s", this.ToBitString, this ? "FileNotifyChangeStreamSize" : "Not FileNotifyChangeStreamSize");
+							UINT32 FileNotifyChangeStreamWrite:1 = FormatString("(%s) %s", this.ToBitString, this ? "FileNotifyChangeStreamWrite" : "Not FileNotifyChangeStreamWrite");
+							UINT32 Unused2:20 = FormatString("                    (%s)", this.ToBitString);
+						};
+						BLOB(27) Padding;
+					}
+			}
+		case 0x11:
+			_struct RDPEFSDRDriveLockReq
+			{
+				UINT32 Operation = RDPEFSDrLocksOperationTable(this);
+				UINT32 SlFailImmediately:1 = FormatString("(%s) %s", this.ToBitString, this ? "SlFailImmediately" : "Not SlFailImmediately");
+				UINT32 Padding:31 = FormatString("          (%s)", this.ToBitString);
+				UINT32 NumLocks;
+				BLOB(20) Padding2;
+				RDPEFSRdpLockInfo LockInfoList[NumLocks];
+			}
+		Default:
+			struct RDPEFSPacketIDError
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "RDPEFS", "Unknown request function, MajorFunctionID:" + MajorFunction) UnknownFunction;
+				Blob(property.RDPBCGRPDUHeaderLength - 24) UnknownMessage;
+			}
+	}
+}
+
+struct RDPEFSDrCoreDeviceAnnounceRsp = FormatString("DeviceID = %u, ResultCode = %s", DeviceID, RDPEFSDrDeviceReplyResultCodeTable(ResultCode))
+{
+	UINT32 DeviceID;
+	UINT32 ResultCode = RDPEFSDrDeviceReplyResultCodeTable(this);
+}
+
+struct RDPEFSDrPrnCacheData = "EventID = " + RDPEFSDrPrnCacheDataEventIDTypeTable(EventID)
+{
+	UINT32 EventID = RDPEFSDrPrnCacheDataEventIDTypeTable(this);
+	switch(EventID)
+	{
+		case 0x0000001:
+			RDPEPCAddPrinterCachedata AddPrinterCachedata;
+		case 0x0000002:
+			RDPEPCUpdatePrinterCachedata UpdatePrinterCachedata;
+		case 0x0000003:
+			RDPEPCDeletePrinterCachedata DeletePrinterCachedata;
+		case 0x0000004:
+			RDPEPCRenamePrinterCacheData RenamePrinterCacheData;
+	}
+}

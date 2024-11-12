@@ -1,0 +1,1787 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Advanced Systems Format
+//#
+//#  Details:                
+//#
+//#  Public References:      ASF_Specification.doc v01.20.03
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/9/2010
+//#
+//####
+
+//********ASF HEADER EXTENDED********************************************************************
+const ASF_Bandwidth_Sharing_Exclusive = 0xE908D94FC000AFB611D25197AF6060AA;
+const ASF_Bandwidth_Sharing_Partial = 0xE908D94FC000AFB611D25197AF6060AB;
+
+const ASF_Mutex_Language = 0xBE4903C9A000349011D135DAD6E22A00;
+const ASF_Mutex_Bitrate = 0xBE4903C9A000349011D135DAD6E22A01;
+const ASF_Mutex_Unknown = 0xBE4903C9A000349011D135DAD6E22A02;
+
+const ASF_Payload_Extension_System_Timecode = 0x1E6CE74C8198DB8F4E2D8667399595EC;
+const ASF_Payload_Extension_System_File_Name = 0x9B8EE2D1CB25A7B445D719EDE165EC0E;
+const ASF_Payload_Extension_System_Content_Type = 0xDCA4F1FBBBF3F79C436C07BCD590DC20;
+const ASF_Payload_Extension_System_Pixel_Aspect_Ratio = 0xB8C4E4746B371A824BC8F9EA1B1EE554;
+const ASF_Payload_Extension_System_Sample_Duration = 0xAD33B72179C7A3834907867FC6BD9450;
+const ASF_Payload_Extension_System_Encryption_Sample_ID = 0x4DA4D7980A1CB2AE43300AFA6698B84E;
+
+//********ASF HEADER****************************************************************************
+const ASF_Audio_Media = 0x2B445C5F8000FDA811CF5B4DF8699E40;
+const ASF_Video_Media = 0x2B445C5F8000FDA811CF5B4DBC19EFC0;
+const ASF_Command_Media = 0xF64803C9A000ACA311D059E659DACFC0;
+const ASF_JFIF_Media = 0x2B445C5F8000FDA811CF5B4EB61BE100;
+const ASF_Degradable_JPEG_Media = 0x2B445C5F800017A911CFE41535907DE0;
+const ASF_File_Transfer_Media = 0x8501FC6BA85A6D8B497AF21C91BD222C;
+const ASF_Binary_Media = 0x43D3710DA9702CAC40F247EF3AFB65E2;
+
+const ASF_No_Error_Correction = 0x2B445C5F8000FDA811CF5B5520FB5700;
+const ASF_Audio_Spread = 0x20E2B400AA00B28B11CF618FBFC3CD50;
+
+const ASF_Web_Stream_Media_Subtype = 0xCC401CFFC77A818F41CBC627776257D4;
+const ASF_Web_Stream_Format = 0x0CF05B968E3898B340508359DA1E6B13;
+
+[DataTypeByteOrder=LittleEndian]
+Protocol ASF = "Advanced Systems Format"
+{
+	[ Local.BeginOffset = FrameOffset ]
+	while Fields[FrameLength > FrameOffset]
+	{
+		switch(BLOB(FrameData,FrameOffset,16))
+		{			
+			case 0x6CCE6200AA00D9A611CF668E75B22630:
+				[property.ASFHeader = "Header"]
+				ASFHeaderObject ASFHeader = property.ASFHeader;
+			case 0x6CCE6200AA00D9A611CF668E75B22636:
+				[property.ASFHeader = "Data"]
+				ASFDataObject ASFData = property.ASFHeader;
+			case 0xCB4903C9A000F48911CFE5B133000890:
+				[property.ASFHeader = "Simple Index"]
+				ASFSimpleIndexObject ASFSimpleIndex = property.ASFHeader;
+			case 0xBE4903C9A000349011D135DAD6E229D3:
+				[property.ASFHeader = "Index"]
+				ASFIndexObject ASFIndex = property.ASFHeader;
+			case 0x8CD47A2F1D2A0F844C6412ADFEB103F8:
+				[property.ASFHeader = "Media Object Index"]
+				ASFIndexObject ASFMediaObjectIndex = property.ASFHeader;
+			case 0x0C8F22B6F7ED3D9548030C4A3CB73FD0:
+				[property.ASFHeader = "Timecode Index"]
+				ASFTimecodeIndexObject ASFTimecodeIndex = property.ASFHeader;
+			default:
+				switch
+				{
+					case Property.SDPDataTypeEncoding == false && ((FrameLength - FrameOffset) < 16):
+					case Property.SDPDataTypeEncoding == true && ((FrameLength - (FrameOffset - Local.BeginOffset + 2)/3*4 - Local.BeginOffset) < 16):
+						BLOB(FrameLength - FrameOffset) PartialPayload = "May Need Reassemble";
+					default:
+						[Post.ASFHeader = "Unknown Object"]
+						struct UnknownObject = property.ASFHeader
+						{
+							GUID(True) ObjectID;
+							UINT64     ObjectSize;
+							BLOB(ObjectSize - 24) UnknowData;
+						}
+				}
+		}
+	}
+}
+
+//********ASF DATA*******************************************************************************
+Table ASFDataECObjectTypeTable(value)
+{
+	switch(value)
+	{
+		case  0: "The data is uncorrected";
+		case  1: "The type of error correction is XOR data";
+		case  2: "The type of error correction is parity data";
+		default: "";
+	}
+}
+
+Table ASFDataFlagLengthTypeTable(value)
+{
+	switch(value)
+	{
+		case "OIMOLength"   : "The Offset Into Media Object Length ";
+		case "MONLength"    : "The Media Object Number Length ";
+		case "PacketLength" : "The Packet Length ";
+		case "PaddingLength": "The Padding Length ";
+		case "PayloadLength": "The Payload Length ";
+		case "RDataLength"  : "The Replicated Data Length ";
+		case "Sequence"     : "The Sequence field ";
+		case "SNLength"     : "The Stream Number Length ";
+		default: "UnDefine Value";
+	}
+}
+
+Table ASFDataTypeLengthTable(value,type)
+{
+	switch(value)
+	{
+		case 0: ASFDataFlagLengthTypeTable(type) + "does not exist";
+		case 1: ASFDataFlagLengthTypeTable(type) + "is coded using a BYTE";
+		case 2: ASFDataFlagLengthTypeTable(type) + "is coded using a WORD";
+		case 3: ASFDataFlagLengthTypeTable(type) + "is coded using a DWORD";
+		default: "UnDefine Value";
+	}
+}
+
+[ASFDataNumberOfPayloads = 1]
+struct ASFDataMultiplePayloads = FormatString("NumberOfPayloads = %d",this.PayloadFlags.NumberOfPayloads)
+{
+	UINT8 PayloadFlags
+	{
+		[ASFDataNumberOfPayloads]
+		UINT8 NumberOfPayloads:6 = FormatString(" (%s) %d",this.tobitstring,this);
+		[ASFPayloadLengthType]
+		UINT8 PayloadLengthType:2 = FormatString("(%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"PayloadLength"));
+	}
+	ASFDataPayloadsData PayloadsData[ASFDataNumberOfPayloads];
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFDataObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) FileID;
+	[Property.ASFDataPacketslength = ObjectSize - 50]
+	UINT64     TotalDataPackets;
+	UINT16     Reserved = ShouldBeSetToTable(this,"0x0101");
+	switch
+	{
+		case ObjectSize > 50:
+			[DatafieldFramelength = FrameOffset + Property.ASFDataPacketslength]
+			struct
+			{
+				ASFDataPackets ASFData[TotalDataPackets];
+			}
+	}
+}
+
+struct ASFDataPayloadsData = FormatString("StreamNumber = %d MediaObjectNumber = %d", StreamNumberAndKeyFrameBit.StreamNumber, Property.MediaObjectNumber)
+{
+	UINT8 StreamNumberAndKeyFrameBit
+	{
+		UINT8 StreamNumber:7 = FormatString("(%s) %u", this.tobitstring, this);
+		UINT8 KeyFrameBit:1 = FormatString(" (%s) %s",this.tobitstring,this?"is KeyFrame":"is not KeyFrame");
+	}
+	switch
+	{
+		case property.ASFMONLengthType != 0:
+			[Property.MediaObjectNumber]
+			Integer(1<<(property.ASFMONLengthType - 1)) MediaObjectNumber;
+	}
+	
+	switch
+	{
+		case property.ASFRDataLengthType != 0 &&
+			 BLOB(FrameData,
+					FrameOffset+(1<<(property.ASFOIMOLengthType - 1)),
+					1<<(property.ASFRDataLengthType - 1)
+				 ) == 1:
+			[WMSASFDataType = WMSASFDataType + ",compressed payload data", ASFDataPayloadsDataType = "compressed payload data"]
+			_struct MultipleCompressed
+			{
+				switch
+				{
+					case property.ASFOIMOLengthType !=0:
+						Integer(1<<(property.ASFOIMOLengthType - 1)) PresentationTime;
+				}
+				switch
+				{
+					case property.ASFRDataLengthType != 0:
+						[POST.ReplicatedDataLength = ReplicatedDataLength]
+						Integer(1<<(property.ASFRDataLengthType - 1)) ReplicatedDataLength;
+				}
+				UINT8 PresentationTimeDelta;
+				switch
+				{
+					case property.ASFPayloadLengthType != 0:
+						[PayloadDataLen]
+						Integer(1<<(property.ASFPayloadLengthType - 1)) PayloadDataLength;
+				}
+				while Fields[FrameLength > FrameOffset && property.PayloadDataLen > 0]
+				{
+					struct SubPayloads
+					{
+						UINT8 SubPayloadsLen;
+						[POST.PayloadDataLen = PayloadDataLen - SubPayloadsLen - 1]
+						BLOB(SubPayloadsLen) SubPayloadsData;	
+					}
+				}
+			}
+		default:
+			_struct MultipleNoCompressed
+			{
+				switch
+				{
+					case property.ASFOIMOLengthType:
+						Integer(1<<(property.ASFOIMOLengthType - 1)) OffsetIntoMediaObject;
+				}
+				switch
+				{
+					case property.ASFRDataLengthType != 0:
+						[POST.ReplicatedDataLength = ReplicatedDataLength]
+						Integer(1<<(property.ASFRDataLengthType - 1)) ReplicatedDataLength;
+				}
+	
+				ASFDataReplicatedData ReplicatedData;
+				switch
+				{
+					case property.ASFPayloadLengthType != 0:
+						Integer(1<<(property.ASFPayloadLengthType - 1)) PayloadDataLength;
+				}
+				
+				switch
+				{
+					case PayloadDataLength != 0:
+						BLOB((PayloadDataLength > FrameLength - FrameOffset) ? (FrameLength - FrameOffset) : PayloadDataLength) PayloadData;
+				}
+			}
+	}
+}
+
+struct ASFDataPayloadParsingInformation
+{
+	UINT8 LengthTypeFlags
+	{
+		[ASFMultiplePayloadsPresent]
+		UINT8 MultiplePayloadsPresent:1 = FormatString("(%s) %s",this.tobitstring,"Whenever this flag is set, there will be data from multiple digital media stream samples in the Data Packet");
+		[ASFSequenceType]
+		UINT8 SequenceType:2 = FormatString("           (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"Sequence"));
+		[ASFPaddingLengthType]
+		UINT8 PaddingLengthType:2 = FormatString("      (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"PaddingLength"));
+		[ASFPacketLengthType]
+		UINT8 PacketLengthType:2 = FormatString("       (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"PacketLength"));
+		[ASFECPresent]
+		UINT8 ECPresent:1 = FormatString("              (%s) %s",this.tobitstring,this?"Present EC":"not Present EC");	
+	};
+	[ASFPayloadInfoPropertyFlags]
+	UINT8 PropertyFlags
+	{
+		[ASFRDataLengthType]
+		UINT8 RDataLengthType:2 = FormatString("(%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"RDataLength"));
+		[ASFOIMOLengthType]
+		UINT8 OIMOLengthType:2 = FormatString(" (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"OIMOLength"));
+		[ASFMONLengthType]
+		UINT8 MONLengthType:2 = FormatString("  (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"MONLength"));
+		[ASFSNLengthType]
+		UINT8 SNLengthType:2 = FormatString("   (%s) %s",this.tobitstring,ASFDataTypeLengthTable(this,"SNLength"));	
+	};
+
+	switch
+	{
+		case property.ASFPacketLengthType != 0:
+			[Property.ASFPacketLength]
+			Integer(1<<(property.ASFPacketLengthType - 1)) PacketLength;
+		default:
+			[Property.ASFPacketLength = 0]
+			struct{}
+	}
+
+	switch
+	{
+		case property.ASFSequenceType != 0:
+			Integer(1<<(property.ASFSequenceType - 1)) Sequence;
+	}
+
+	switch
+	{
+		case property.ASFPaddingLengthType != 0:
+			[Property.ASFPaddingLength]
+			Integer(1<<(property.ASFPaddingLengthType - 1)) PaddingLength;
+		default:
+			[Property.ASFPaddingLength = 0]
+			struct{}
+	}
+
+	UINT32 SendTime;
+	UINT16 Duration; 
+}
+
+struct ASFDataReplicatedData
+{
+	[ReplicatedDataOffset = Offset]
+	UINT32 MediaObjectSize;
+	UINT32 PresTime;
+	[Property.ASFDataCount = 0]
+	[Property.ASFPayloadExtensionSystemCount = Conversation.ASFPayloadExtensionSystemCount$[Property.ASFStreamNumber]]
+	while Extension[Property.ASFDataCount < Property.ASFPayloadExtensionSystemCount]
+	{
+		[Property.ASFDataCount = Property.ASFDataCount + 1]
+		[Property.ASFExtensionDataSize = Conversation.ASFExtensionDataSize$[MakeByteArray( Property.ASFStreamNumber, Property.ASFDataCount )]]
+		switch {
+			case Property.ASFExtensionDataSIze == 0xFFFF: 
+				[Property.ASFExtensionDataSize]
+				UINT16 ExtSysLen;
+		}
+		BLOB( Property.ASFExtensionDataSIze ) ExtensionData;
+	}
+	switch {
+		case Offset < Property.ReplicatedDataOffset + Property.ReplicatedDataLength:
+			BLOB( Property.ReplicatedDataOffset + Property.ReplicatedDataLength - Offset ) ReplicatedData;
+	}
+}
+
+[ASFDataPayloadsDataType = "",ASFDataPayloadsDataSequence = "",ASFDataNumberOfPayloads = 1]
+struct ASFDataSinglePayloads = property.ASFDataPayloadsDataSequence + property.ASFDataPayloadsDataType
+{
+	UINT8 StreamNumberAndKeyFrameBit
+	{
+		[Property.ASFStreamNumber]
+		UINT8 StreamNumber:7 = FormatString("(%s) %u", this.tobitstring, this);	
+		UINT8 KeyFrameBit:1 = FormatString(" (%s) %s",this.tobitstring,this?"is KeyFrame":"is not KeyFrame");	
+	}
+	switch
+	{
+		case property.ASFMONLengthType != 0:
+			[POST.ASFDataPayloadsDataSequence = FormatString("Number of Payload = %d",MediaObjectNumber)]
+			Integer(1<<(property.ASFMONLengthType - 1)) MediaObjectNumber;
+	}
+	
+	switch
+	{
+		case property.ASFOIMOLengthType != 0:
+			switch
+			{
+				case property.ASFRDataLengthType != 0 &&
+					 BLOB(FrameData,
+					 		FrameOffset+(1<<(property.ASFOIMOLengthType - 1)),
+					 		1<<(property.ASFRDataLengthType - 1)
+					 	) == 1:
+					[WMSASFDataType = WMSASFDataType + ",compressed payload data",
+					 WMSASFDataType = WMSASFDataType + ",compressed payload data", 
+					 ASFDataPayloadsDataType = "compressed payload data"
+					]
+					_struct SingleCompressed
+					{
+						Integer(1<<(property.ASFOIMOLengthType - 1)) PresentationTime;
+						switch
+						{
+							case property.ASFRDataLengthType != 0:
+								[ReplicatedDataLength = ReplicatedDataLength]
+								Integer(1<<(property.ASFRDataLengthType - 1)) ReplicatedDataLength;
+						}
+						UINT8 PresentationTimeDelta;
+						[SubPayloadsLength = property.ASFPacketLength
+										 - (FrameOffset - ASFFrameOffsetBegin)
+										 - property.ASFPaddingLength,
+						]
+						while Fields[FrameLength > FrameOffset && SubPayloadsLength > 0]
+						{
+							struct SubPayloads
+							{
+								UINT8 SubPayloadsLen;
+								[POST.SubPayloadsLength = SubPayloadsLength - SubPayloadsLen - 1]
+								BLOB(SubPayloadsLen) SubPayloadsData;
+							}
+						}
+					}
+				default:
+					_struct SingleNoCompressed
+					{
+						Integer(1<<(property.ASFOIMOLengthType - 1)) OffsetIntoMediaObject;
+						switch
+						{
+							case property.ASFRDataLengthType != 0:
+								[ReplicatedDataLength = ReplicatedDataLength]
+								Integer(1<<(property.ASFRDataLengthType - 1)) ReplicatedDataLength;
+						}
+						ASFDataReplicatedData ReplicatedData;
+						
+						BLOB(((FrameOffset - ASFFrameOffsetBegin )< Property.ASFDataPacketslength)
+							? ( 
+							Property.ASFDataPacketslength- (FrameOffset - ASFFrameOffsetBegin) - property.ASFPaddingLength)
+							: (FrameLength - FrameOffset - property.ASFPaddingLength)
+						) PayloadData;
+					}
+			}
+	}
+}
+//
+//remember to add DatafieldFramelength calculate when you invocate this struct.
+//
+[DataTypeByteOrder=LittleEndian]
+struct ASFDataPackets = property.WMSASFDataType + " ; " + FormatString("NumberOfPayloads = %d",ASFDataNumberOfPayloads)
+{
+	[ASFFrameOffsetBegin = FrameOffset]
+	switch(UINT8(FrameData,FrameOffset) & 0x80)
+	{
+		case 0x80:
+			struct ErrorCorrectionData = property.ASFDataErrorCorrectionType
+			{
+				UINT8 ECFlag
+				{
+					UINT8 ECDataLength:4 = FormatString("     (%s) %d - Valid only when Error Correction Length Type field is 00",this.tobitstring,this);
+					[ASFOpaqueDataPresent]
+					UINT8 OpaqueDataPresent:1 = FormatString("(%s) %s",this.tobitstring,this?"Followed Opaque Data":"The value of this field should be set to 0");
+					UINT8 ECLengthType:2 = FormatString("     (%s) Values other than 00 are reserved for future use" ,this.tobitstring);
+					UINT8 ECPresent:1 = FormatString("        (%s) %s",this.tobitstring,this?"present EC":"not present EC");		
+				};
+				struct ErrorCorrectionObject = property.ASFDataErrorCorrectionType
+				{
+					UINT8 Type
+					{
+						[POST.ASFDataErrorCorrectionType = ASFDataECObjectTypeTable(this)]
+						UINT8 Type:4 = FormatString("  (%s) %s",this.tobitstring,ASFDataECObjectTypeTable(this));
+						UINT8 Number:4 = FormatString("(%s) %d - %s",this.tobitstring,this,property.ASFDataErrorCorrectionType == "The data is uncorrected"?"This number shall be set to 0":"There is an Error Correction Object in the Header Object");	
+					};
+					UINT8 Cycle = FormatString("%u - %s", this,property.ASFDataErrorCorrectionType == "The data is uncorrected"?"This number shall be set to 0":"Specifies the cycle used by the error correction algorithm");
+				} 
+			}
+	}
+	
+	switch
+	{
+		case property.ASFOpaqueDataPresent == 1:
+			[WMSASFDataType = "OpaquePayloads",ASFDataNumberOfPayloads = 1]
+			BLOB(FrameLength - FrameOffset) OpaqueData;
+		default:
+			_struct NonOpaque 
+			{
+				ASFDataPayloadParsingInformation PayloadParsingInformation;
+	
+				struct PayloadData = FormatString("NumberOfPayloads = %d",ASFDataNumberOfPayloads)
+				{
+					switch(property.ASFMultiplePayloadsPresent)
+					{
+						case 0:
+							[WMSASFDataType = "SinglePayloads"]
+							ASFDataSinglePayloads SinglePayloads;
+						case 1:
+							[WMSASFDataType = "MultiplePayloads"]
+							ASFDataMultiplePayloads MultiplePayloads;
+					}
+				}
+	
+				switch 
+				{
+					case property.ASFPaddingLengthType != 0:
+						BLOB(property.ASFPaddingLength) PaddingData;
+				}
+			}
+	}
+}
+
+
+
+
+Table ASFExtendedBandwidthSharingObjectTable(value)
+{
+	switch(value)
+	{
+		case ASF_Bandwidth_Sharing_Exclusive: "ASF_Bandwidth_Sharing_Exclusive";
+		case ASF_Bandwidth_Sharing_Partial: "ASF_Bandwidth_Sharing_Partial";
+	}
+}
+
+Table ASFExtendedExtensionSystem(value)
+{
+	switch(value)
+	{
+		case ASF_Payload_Extension_System_Timecode: "ASF_Payload_Extension_System_Timecode";
+		case ASF_Payload_Extension_System_File_Name: "ASF_Payload_Extension_System_File_Name";
+		case ASF_Payload_Extension_System_Content_Type: "ASF_Payload_Extension_System_Content_Type";
+		case ASF_Payload_Extension_System_Pixel_Aspect_Ratio: "ASF_Payload_Extension_System_Pixel_Aspect_Ratio";
+		case ASF_Payload_Extension_System_Sample_Duration: "ASF_Payload_Extension_System_Sample_Duration";
+		case ASF_Payload_Extension_System_Encryption_Sample_ID: "ASF_Payload_Extension_System_Encryption_Sample_ID";
+		default: "UnDefine Value";
+	}
+}
+
+Table ASFExtendedIndexTypeTable(value)
+{
+	switch(value)
+	{
+		case 1  : "Nearest Past Data Packet";
+		case 2  : "Nearest Past Media Object";
+		case 3  : "Nearest Past Cleanpoint";
+		case 255: "Frame Number Offset";
+		default : "UnDefine Value";
+	}
+}
+
+Table ASFExtendedMetadataTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0000: "The data consists of a sequence of Unicode characters";
+		case 0x0001: "The type of data is implementation-specific";
+		case 0x0002: "BOOL-The data should be interpreted as 16-bit unsigned integer";
+		case 0x0003: "DWORD-The data should be interpreted as 32-bit unsigned integer";
+		case 0x0004: "QWORD-The data should be interpreted as 64-bit unsigned integer";
+		case 0x0005: "WORD-The data should be interpreted as 16-bit unsigned integer";
+		case 0x0006: "GUID-The data should be interpreted as 128-bit GUID";
+		default    : "UnDefine Value";
+	}
+}
+
+Table ASFExtendedMEOExclusionTypeTable(value)
+{
+	switch(value)
+	{
+		case ASF_Mutex_Language: "ASF_Mutex_Language";
+		case ASF_Mutex_Bitrate : "ASF_Mutex_Bitrate";
+		case ASF_Mutex_Unknown : "ASF_Mutex_Unknown";
+		default: "UnDefine Value";
+	}
+}
+
+struct ASFExtendedAdvancedContentEncryptionObject = FormatString("ContentEncryptionRecordsCount = %d",ContentEncryptionRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFExtendedContentEncryptionRecordsCount]
+	UINT16     ContentEncryptionRecordsCount;
+	while Field[ASFExtendedContentEncryptionRecordsCount > 0]
+	{
+		[ASFExtendedContentEncryptionRecordsCount = ASFExtendedContentEncryptionRecordsCount - 1]
+		struct ContentEncryptionRecord = FormatString("EncryptedObjectRecordCount = %d",EncryptedObjectRecordCount)
+		{
+			GUID(True) SystemID;
+			UINT32     SystemVersion;
+			[ASFExtendedEncryptedObjectRecordCount]
+			UINT16     EncryptedObjectRecordCount;
+			while Field2[EncryptedObjectRecordCount > 0]
+			{
+				[EncryptedObjectRecordCount = EncryptedObjectRecordCount - 1]
+				struct EncryptedObjectRecords
+				{
+					UINT16 EncryptedObjectIDType = FormatString("%u %s",this,this==0x0001?"Word-This value indicates that the Encrypted Object ID is an ASF stream number":"");
+					UINT16 EncryptedObjectIDLength;
+					switch
+					{
+						case EncryptedObjectIDLength != 0:
+							BLOB(EncryptedObjectIDLength) EncryptedObjectID;
+					}
+				}
+			}
+			UINT16     DataSize;
+			switch
+			{
+				case DataSize != 0:
+					BLOB(DataSize) Data;
+			}
+		}
+	}
+}
+
+struct ASFExtendedAdvancedMutualExclusionObject = FormatString("ExclusionType = %s",ASFExtendedMEOExclusionTypeTable(ExclusionType))
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) ExclusionType = FormatString("%s",ASFExtendedMEOExclusionTypeTable(this));
+	[ASFExtendedStreamNumbersCount]
+	UINT16     StreamNumbersCount;
+	while Field[ASFExtendedStreamNumbersCount > 0]
+	{
+		[ASFExtendedStreamNumbersCount = ASFExtendedStreamNumbersCount - 1]
+		UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+	}
+}
+
+struct ASFExtendedBandwidthSharingObject = FormatString("SharingType = %s",ASFExtendedBandwidthSharingObjectTable(SharingType))
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) SharingType = FormatString("%s",ASFExtendedBandwidthSharingObjectTable(this));
+	UINT32     DataBitrate;
+	UINT32     BufferSize;
+	[ASFExtendedStreamNumbersCount]
+	UINT16     StreamNumbersCount;
+	while Field[ASFExtendedStreamNumbersCount > 0]
+	{
+		[ASFExtendedStreamNumbersCount = ASFExtendedStreamNumbersCount - 1]
+		UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+	}
+}
+
+struct ASFExtendedCompatibilityObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT8      Profile = ShouldBeSetToTable(this,"2");
+	UINT8      Mode = ShouldBeSetToTable(this,"1");
+}
+
+struct ASFExtendedGroupMutualExclusionObject = FormatString("ExclusionType = %s ; RecordCount = %d",ASFExtendedMEOExclusionTypeTable(ExclusionType),RecordCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) ExclusionType = FormatString("%s",ASFExtendedMEOExclusionTypeTable(this));
+	[ASFExtendedRecordCount]
+	UINT16     RecordCount;
+	while Field[ASFExtendedRecordCount > 0]
+	{
+		[ASFExtendedRecordCount = ASFExtendedRecordCount - 1]
+		struct Records
+		{
+			[ASFExtendedStreamCount]
+			UINT16 StreamCount;
+			while Field[ASFExtendedStreamCount > 0]
+			{
+				[ASFExtendedStreamCount = ASFExtendedStreamCount - 1]
+				UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			}
+		}
+	}
+}
+
+struct ASFExtendedIndexParametersObject = FormatString("IndexSpecifierCount = %d",IndexSpecifiersCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     IndexEntryTimeInterval = FormatString("%u Specifies the time interval between index entries in milliseconds",this);
+	[ASFExtendedIndexSpecifiersCount]
+	UINT16     IndexSpecifiersCount;
+	while Field[ASFExtendedIndexSpecifiersCount > 0]
+	{
+		[ASFExtendedIndexSpecifiersCount = ASFExtendedIndexSpecifiersCount - 1]
+		struct IndexSpecifier
+		{
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 IndexType = FormatString("%u %s",this,ASFExtendedIndexTypeTable(this));
+		}
+	}
+}
+
+struct ASFExtendedLanguageListObject = FormatString("LanguageIDRecordsCount = %d ",LanguageIDRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFExtendedLanguageIDRecordsCount]
+	UINT16     LanguageIDRecordsCount;
+	while Field[ASFExtendedLanguageIDRecordsCount > 0]
+	{
+		[ASFExtendedLanguageIDRecordsCount = ASFExtendedLanguageIDRecordsCount - 1 , ASFExtendedLanguageListObjectItem = ""]
+		struct LanguageIDRecord =  ASFExtendedLanguageListObjectItem
+		{
+			UINT8 LanguageIDLength;
+			switch
+			{
+				case LanguageIDLength != 0:
+					[POST.ASFExtendedLanguageListObjectItem = "LanguageID = " + LanguageID]
+					UnicodeString(LanguageIDLength/2) LanguageID;
+			}
+		}
+	}
+}
+
+struct ASFExtendedMediaObjectIndexParametersObject = FormatString("IndexSpecifiersCount = %d",IndexSpecifiersCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     IndexEntryCountInterval = FormatString("%u Specifies the interval between each index entry by the number of media objects",this);
+	[ASFExtendedIndexSpecifiersCount]
+	UINT16     IndexSpecifiersCount;
+	while Field[ASFExtendedIndexSpecifiersCount > 0]
+	{
+		[ASFExtendedIndexSpecifiersCount = ASFExtendedIndexSpecifiersCount - 1]
+		struct IndexSpecifier
+		{
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 IndexType = FormatString("%u %s",this,ASFExtendedIndexTypeTable(this));
+		}
+	}
+}
+
+struct ASFExtendedMetadataObject = FormatString("DescriptionRecordsCount = %d ",DescriptionRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFExtendedDescriptionRecordsCount]
+	UINT16     DescriptionRecordsCount;
+	while Field[ASFExtendedDescriptionRecordsCount > 0]
+	{
+		[ASFExtendedDescriptionRecordsCount = ASFExtendedDescriptionRecordsCount - 1 , ASFExtendedMetadataObjectItem = ""]
+		struct DescriptionRecord = ASFExtendedMetadataObjectItem
+		{
+			UINT16 Reserved = ShouldBeSetToTable(this,"zero");
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 NameLength;
+			[POST.ASFExtendedMetadataObjectItem = "DataType = " + ASFExtendedMetadataTypeTable(DataType)]
+			UINT16 DataType = FormatString("%u %s",this,ASFExtendedMetadataTypeTable(this));
+			UINT32 DataLength;
+			switch
+			{
+				case NameLength != 0:
+					[POST.ASFExtendedMetadataObjectItem = ASFExtendedMetadataObjectItem + " ; Name = " + Name]
+					UnicodeString(NameLength/2) Name;
+			}
+			switch(DataType)
+			{
+				case 0x0000: 
+					[POST.ASFExtendedMetadataObjectItem = ASFExtendedMetadataObjectItem + " ; Data = " + DataUnicode]
+					UnicodeString(DataLength/2) DataUnicode;
+				case 0x0001: 
+					BLOB(DataLength) DataString;
+				case 0x0002: 
+					UINT16 DataBool = FormatString("%s",this == 0x0000?"FALSE":"TRUE");
+				case 0x0003: 
+					UINT32 DataDWord;
+				case 0x0004: 
+					UINT64 DataQWord;
+				case 0x0005: 
+					UINT16 DataWord;
+				default    : 
+					BLOB(DataLength) UnknownTypeData;
+			}
+		}
+	}
+}
+
+struct ASFExtendedMetadataLibraryObject = FormatString("DescriptionRecordsCount = %d",DescriptionRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFExtendedDescriptionRecordsCount]
+	UINT16     DescriptionRecordsCount;
+	while Field[ASFExtendedDescriptionRecordsCount > 0]
+	{
+		[ASFExtendedDescriptionRecordsCount = ASFExtendedDescriptionRecordsCount - 1,ASFExtendedMetadataLibraryObjectItem = ""]
+		struct DescriptionRecord = ASFExtendedMetadataLibraryObjectItem
+		{
+			UINT16 LanguageListIndex;
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 NameLength;
+			[POST.ASFExtendedMetadataLibraryObjectItem = "DataType = " + ASFExtendedMetadataTypeTable(DataType)]
+			UINT16 DataType = FormatString("%u %s",this,ASFExtendedMetadataTypeTable(this));
+			UINT32 DataLength;
+			switch
+			{
+				case NameLength != 0:
+					[POST.ASFExtendedMetadataLibraryObjectItem = ASFExtendedMetadataLibraryObjectItem +  " ; Name = " + Name]
+					UnicodeString(NameLength/2) Name;
+			}
+			switch(DataType)
+			{
+				case 0x0000: 
+					[POST.ASFExtendedMetadataLibraryObjectItem = ASFExtendedMetadataLibraryObjectItem + " ; Data = " + DataUnicode]
+					UnicodeString(DataLength/2) DataUnicode;
+				case 0x0001: 
+					BLOB(DataLength) DataString;
+				case 0x0002: 
+					UINT16 DataBool = FormatString("%s",this == 0x0000?"FALSE":"TRUE");
+				case 0x0003: 
+					UINT32 DataDWord;
+				case 0x0004: 
+					UINT64 DataQWord;
+				case 0x0005: 
+					UINT16 DataWord;
+				case 0x0006: 
+					GUID(True) DataGUID;
+				default    : 
+					BLOB(DataLength) UnknownTypeData;
+			}
+		}
+	}
+}
+
+struct ASFExtendedStreamPrioritizationObject = FormatString("PriorityRecordsCount = %d",PriorityRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFExtendedPriorityRecordsCount]
+	UINT16     PriorityRecordsCount;
+	while Field[ASFExtendedPriorityRecordsCount > 0]
+	{
+		[ASFExtendedPriorityRecordsCount = ASFExtendedPriorityRecordsCount - 1]
+		struct PriorityRecord
+		{
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 PriorityFlags
+			{
+				UINT16 MandatoryFlag:1 = FormatString(" (%s) %s",this.tobitstring,this?"The stream is mandatory":"The stream is not mandatory");
+				UINT16 ReservedFlags:15 = FormatString(" (%s) Shall be set to 0",this.tobitstring);
+			}
+		}
+	}
+}
+
+[ASFExtendedStreamPropertiesOffset = FrameOffset]
+struct ASFExtendedStreamPropertiesObject = FormatString("StreamNameCount = %d ; PayloadExtensionSystemCount = %d",StreamNameCount,PayloadExtensionSystemCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT64     StartTime;
+	UINT64     EndTime;
+	UINT32     DataBitrate = ShouldBeSetToTable(this,"non-zero");
+	UINT32     BufferSize;
+	UINT32     InitialBufferFullness;
+	UINT32     AlternateDataBitrate;
+	UINT32     AlternateBufferSize;
+	UINT32     AlternateInitialBufferFullness;
+	UINT32     MaximumObjectSize = FormatString("%u %s",this,this==0?"Unknown":"");
+	UINT32     Flags
+	{
+		UINT32 ReliableFlag:1 = FormatString("             (%s) %s",this.tobitstring,this?"This digital media stream must be Carried over a reliable data communications transport mechanism":"It's not Reliable");
+		UINT32 SeekableFlag:1 = FormatString("             (%s) %s",this.tobitstring,this?"The stream is seekable":"the stream is not seekable");
+		UINT32 NoCleanpointsFlag:1 = FormatString("        (%s) %s",this.tobitstring,this?"The stream does not contain any cleanpoints":"The stream contain some cleanpoints");
+		UINT32 ResendLiveCleanpointsFlag:1 = FormatString("(%s) %s",this.tobitstring,this?"The stream are coming from a live source":"The stream send only the data starting at the current time");
+		UINT32 ReservedFlags:28 = FormatString("            (%s) Shall be set to 0",this.tobitstring);
+	}
+	UINT16     StreamNumber = FormatString("%u %s",this,(this >= 1 && this <= 127) ? "" : " Not valid");
+	UINT16     StreamLanguageIDIndex;
+	UINT64     AverageTimePerFrame = FormatString("%u %s",this,this==0?"Frame is unknown or unimportant":"");
+	[ASFExtendedStreamNameCount]
+	UINT16     StreamNameCount;
+	[Conversation.ASFPayloadExtensionSystemCount$[StreamNumber]]
+	[ASFExtendedPayloadExtensionSystemCount]
+	UINT16     PayloadExtensionSystemCount;
+	while Field1[ASFExtendedStreamNameCount > 0]
+	{
+		[ASFExtendedStreamNameCount = ASFExtendedStreamNameCount - 1,StreamNameItem = ""]
+		struct StreamNames = StreamNameItem
+		{
+			UINT16 LanguageIDIndex;
+			UINT16 StreamNameLength;
+			switch
+			{
+				case StreamNameLength != 0:
+					[StreamNameItem = "StreamName = " + StreamName]
+					UnicodeString(StreamNameLength/2) StreamName;
+			}
+		}
+	}
+	[Property.ASFDataCount = 0]
+	while Field2[Property.ASFDataCount < ASFExtendedPayloadExtensionSystemCount]
+	{
+		[Property.ASFDataCount = Property.ASFDataCount + 1]
+		struct PayloadExtensionSystems = FormatString("%s",ASFExtendedExtensionSystem(ExtensionSystemID))
+		{
+			GUID(True) ExtensionSystemID;
+			[Conversation.ASFExtensionDataSize$[MakeByteArray( StreamNumber, Property.ASFDataCount )]]
+			UINT16 ExtensionDataSize = FormatString("%u %s",this,this==0xFFFF?"This extension system uses variable-size data":"");
+			UINT32 ExtensionSystemInfoLength;
+			switch
+			{
+				case ExtensionSystemInfoLength != 0:
+					BLOB(ExtensionSystemInfoLength) ExtensionSystemInfo;
+			}
+		}
+	}
+	switch(ObjectSize > FrameOffset - ASFExtendedStreamPropertiesOffset && Blob(FrameData,FrameOffset,16))
+	{
+		case 0x6553200CC000E68E11CFA9B7B7DC0791:
+				ASFHeaderStreamPropertiesObject StreamPropertiesObject;
+	}
+}
+
+struct ASFExtendedTimecodeIndexParametersObject = FormatString("IndexSpecifiersCount = %d",IndexSpecifiersCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     IndexEntryCountInterval;
+	[ASFExtendedIndexSpecifiersCount]
+	UINT16     IndexSpecifiersCount;
+	while Field[ASFExtendedIndexSpecifiersCount > 0]
+	{
+		[ASFExtendedIndexSpecifiersCount = ASFExtendedIndexSpecifiersCount - 1]
+		struct IndexSpecifier
+		{
+			UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+			UINT16 IndexType = FormatString("%u %s",this,ASFExtendedIndexTypeTable(this));
+		}
+	}
+}
+
+struct ASFExtendedObject
+{
+	while [FrameOffset < FrameLength]
+	{
+		switch(Blob(FrameData,FrameOffset,16))
+		{
+			
+			case 0x5A5B065269A999834332C67214E6A5CB:
+				ASFExtendedStreamPropertiesObject ExtendedStreamPropertiesObject;
+			case 0xCD667535356E168A46704775A08649CF:
+				ASFExtendedAdvancedMutualExclusionObject AdvancedMutualExclusionObject;
+			case 0x49C2D68F6BE31BB743385A79D1465A40:
+				ASFExtendedGroupMutualExclusionObject GroupMutualExclusionObject;
+			case 0x249E99455CEDF081454F88D3D4FED15B:
+				ASFExtendedStreamPrioritizationObject StreamPrioritizationObject;
+			case 0xE908D94FC000AFB611D2517BA69609E6:
+				ASFExtendedBandwidthSharingObject BandwidthSharingObject;
+			case 0x855C41DE3E3929B24BFCEFE07C4346A9:
+				ASFExtendedLanguageListObject LanguageListObject;
+			case 0xCA4CFA448CAA678448775BAFC5F8CBEA:
+				ASFExtendedMetadataObject MetadataObject;
+			case 0x5470454E131D41A149D1949844231C94:
+				ASFExtendedMetadataLibraryObject MetadataLibraryObject;
+			case 0xBE4903C9A000349011D135DAD6E229DF:
+				ASFExtendedIndexParametersObject IndexParametersObject;
+			case 0xA7CFE23D61D7A8AC48E43F116B203BAD:
+				ASFExtendedMediaObjectIndexParametersObject MediaObjectIndexParametersObject;
+			case 0x24FB9BFE4D608B8C4B5D9797F55E496D:
+				ASFExtendedTimecodeIndexParametersObject TimecodeIndexParametersObject;
+			//TDI 46709 Reference http://social.msdn.microsoft.com/Forums/en-IE/mediafoundationdevelopment/thread/82d71fc8-a23d-42f8-87fc-10bb712f7ece
+			case 0xC952041F650E5F9F47EC458426F18B5D:
+			case 0x6CCE6200AA00D9A611CF668E75B22630:
+				ASFExtendedCompatibilityObject CompatibilityObject;
+			case 0x8CD586CB12AD749B49E6698143058533:
+				ASFExtendedAdvancedContentEncryptionObject AdvancedContentEncryptionObject;
+			case 0x6553200CC000E48E11CFA9478CABDCA1:
+				ASFHeaderFilePropertiesObject FilePropertiesObject;
+			case 0x6553200CC000E68E11CFA9B7B7DC0791:
+				ASFHeaderStreamPropertiesObject StreamPropertiesObject;
+			case 0x6553200CC000E38E11CFA92E5FBF03B5:
+				ASFHeaderExtensionObject ExtensionObject;
+			case 0xF64803C9A000A4A311D0311D86D15240:
+				ASFHeaderCodecListObject CodecListObject;
+			case 0xF64803C9A0009BA311D00B621EFB1A30:
+				ASFHeaderScriptCommandObject ScriptCommandObject;
+			case 0x6553200CC000E68E11CFA951F487CD01:
+				ASFHeaderMarkerObject MarkerObject;
+			case 0xBE4903C9A000349011D135DAD6E229DC:
+				ASFHeaderBitrateMutualExclusionObject BitrateMutualExclusionObject;
+			case 0x6CCE6200AA00D9A611CF668E75B22635:
+				ASFHeaderErrorCorrectionObject ErrorCorrectionObject;
+			case 0x6CCE6200AA00D9A611CF668E75B22633:
+				ASFHeaderContentDescriptionObject ContentDescriptionObject;	
+			case 0x50A85EC9A000F09711D2E307D2D0A440:
+				ASFHeaderExtendedContentDescriptionObject ExtendedContentDescriptionObject;	
+			case 0xB2A2C9976000828D11D1468D7BF875CE:
+				ASFHeaderStreamBitratePropertiesObject StreamBitratePropertiesObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FA:
+				ASFHeaderContentBrandingObject ContentBrandingObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FB:
+				ASFHeaderContentEncryptionObject ContentEncryptionObject;
+			case 0x9C28E97EE0DA35B94C172622298AE614:
+				ASFHeaderExtendedContentEncryptionObject ExtendedContentEncryptionObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FC:
+				ASFHeaderDigitalSignatureObject DigitalSignatureObject;
+			case 0xE8AA96CBAB9ABAA44509CADF1806D474:
+				ASFHeaderPaddingObject PaddingObject;
+			case 0x6CCE6200AA00D9A611CF668E75B22636:
+				ASFDataObject DataObject;
+			default:
+				switch
+				{
+					case FrameLength - FrameOffset < 16:
+						BLOB(FrameLength - FrameOffset) PartialPayload = "May Need Reassemble";
+					default:
+						struct UnknownStruct
+						{
+							GUID(True) ObjectID;
+							UINT64     ObjectSize;
+							BLOB(ObjectSize - 24) UnknowData;
+						}
+				}
+		}
+	}
+}
+
+
+
+Table ASFHeaderBannerImageTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "No banner image data";
+		case 1: "The data represents a Bitmap";
+		case 2: "The data represents a JPEG";
+		case 3: "The data represents a GIF";
+		default: "UnDefine Value";
+	}
+}
+
+Table ASFHeaderCodecTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "Video codec";
+		case 0x0002: "Audio codec";
+		case 0xFFFF: "Unknown codec";
+		default    : "UnDefine Value";
+	}
+}
+
+Table ASFHeaderDescriptorValueDataType(value)
+{
+	switch(value)
+	{
+		case 0x0000: "Unicode string";
+		case 0x0001: "BYTE array";
+		case 0x0002: "BOOL";
+		case 0x0003: "DWORD";
+		case 0x0004: "QWORD";
+		case 0x0005: "WORD";
+		default    : "UnDefine Value";
+	}
+}
+
+Table ASFHeaderSPESystemTable(value)
+{
+	switch(value)
+	{
+		case ASF_Payload_Extension_System_Timecode: "ASF_Payload_Extension_System_Timecode";
+		case ASF_Payload_Extension_System_File_Name: "ASF_Payload_Extension_System_File_Name";
+	}
+}
+
+Table ASFHeaderStreamObjectTypeTable(value)
+{
+	switch(value)
+	{
+		case ASF_Audio_Media: "ASF_Audio_Media";
+		case ASF_Video_Media: "ASF_Video_Media";
+		case ASF_Command_Media: "ASF_Command_Media";
+		case ASF_JFIF_Media: "ASF_JFIF_Media";
+		case ASF_Degradable_JPEG_Media: "ASF_Degradable_JPEG_Media";
+		case ASF_File_Transfer_Media: "ASF_File_Transfer_Media";
+		case ASF_Binary_Media: "ASF_Binary_Media";
+		default: "UnDefine Type";
+		
+	}
+}
+
+Table ASFHeaderStreamObjectErrTypeTable(value)
+{
+	switch(value)
+	{
+		case ASF_No_Error_Correction: "ASF_No_Error_Correction";
+		case ASF_Audio_Spread: "ASF_Audio_Spread";
+		default: "UnDefine ErrType";
+	}
+}
+
+struct ASFHeaderBitrateMutualExclusionObject = FormatString("ExclusionType = %s",ASFExtendedMEOExclusionTypeTable(ExclusionType))
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) ExclusionType = FormatString("%s",ASFExtendedMEOExclusionTypeTable(this));
+	[ASFHeaderStreamNumbersCount]
+	UINT16     StreamNumbersCount;
+	while Field[ASFHeaderStreamNumbersCount > 0]
+	{
+		[ASFHeaderStreamNumbersCount = ASFHeaderStreamNumbersCount - 1]
+		UINT16 StreamNumbers = FormatString("%u %s", this, (this >= 1 && this <= 127) ? "" : " Not valid");
+	}
+}
+
+[ASFHeaderCodecListObjectItem = ""]
+struct ASFHeaderCodecListObject = FormatString("CodecEntriesCount = %d",CodecEntriesCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) Reserved2;
+	[ASFHeaderCodecEntriesCount]
+	UINT32     CodecEntriesCount;
+	while Field[ASFHeaderCodecEntriesCount > 0]
+	{
+		[ASFHeaderCodecEntriesCount = ASFHeaderCodecEntriesCount - 1]
+		struct CodecEntries = ASFHeaderCodecListObjectItem
+		{
+			UINT16 Type = FormatString("%u %s",this,ASFHeaderCodecTypeTable(this));
+			UINT16 CodecNameLength;
+			switch
+			{
+				case CodecNameLength != 0:
+					[POST.ASFHeaderCodecListObjectItem = "CodecName = " + CodecName + " ; "]
+					UnicodeString(CodecNameLength) CodecName;
+			}
+			UINT16 CodecDescriptionLength;
+			switch
+			{
+				case CodecDescriptionLength != 0:
+					[POST.ASFHeaderCodecListObjectItem = ASFHeaderCodecListObjectItem + "CodecDescription = " + CodecDescription]
+					UnicodeString(CodecDescriptionLength) CodecDescription;
+			}
+			UINT16 CodecInformationLength;
+			switch
+			{
+				case CodecInformationLength != 0:
+					BLOB(CodecInformationLength) CodecInformation;
+			}
+		} 
+	}
+}
+
+[ASFHeaderContentBrandingObjectItem = ""]
+struct ASFHeaderContentBrandingObject = FormatString("BannerImageType = %s",ASFHeaderBannerImageTypeTable(BannerImageType)) + ASFHeaderContentBrandingObjectItem
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     BannerImageType = FormatString("%u %s",this,ASFHeaderBannerImageTypeTable(this));
+	UINT32     BannerImageDataSize;
+	switch
+	{
+		case BannerImageDataSize != 0:
+			BLOB(BannerImageDataSize) BannerImageData;
+	}
+	UINT32     BannerImageURLLength;
+	switch
+	{
+		case BannerImageURLLength != 0:
+			[POST.ASFHeaderContentBrandingObjectItem = "BannerImageURL = " + BannerImageURL + " ; "]
+			AsciiString(BannerImageURLLength) BannerImageURL;
+	}
+	UINT32     CopyrightURLLength;
+	switch
+	{
+		case CopyrightURLLength != 0:
+			[POST.ASFHeaderContentBrandingObjectItem = ASFHeaderContentBrandingObjectItem + "CopyrightURL = " + CopyrightURL]
+			AsciiString(CopyrightURLLength) CopyrightURL;
+	}
+}
+
+[ASFHeaderContentDescriptionObjectItem = ""]
+struct ASFHeaderContentDescriptionObject = ASFHeaderContentDescriptionObjectItem
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT16     TitleLength;
+	UINT16     AuthorLength;
+	UINT16     CopyrightLength;
+	UINT16     DescriptionLength;
+	UINT16     RatingLength;
+	switch
+	{
+		case TitleLength != 0:
+			[POST.ASFHeaderContentDescriptionObjectItem = "Title = " + Title + " ; "]
+			UnicodeString(TitleLength/2) Title;
+	}
+	switch
+	{
+		case AuthorLength != 0:
+			[POST.ASFHeaderContentDescriptionObjectItem = ASFHeaderContentDescriptionObjectItem + "Author = " + Author + " ; "]
+			UnicodeString(AuthorLength/2) Author;
+	}
+	switch
+	{
+		case CopyrightLength != 0:
+			[POST.ASFHeaderContentDescriptionObjectItem = ASFHeaderContentDescriptionObjectItem + "Copyright = " + Copyright + " ; "]
+			UnicodeString(CopyrightLength/2) Copyright;
+	}
+	switch
+	{
+		case DescriptionLength != 0:
+			[POST.ASFHeaderContentDescriptionObjectItem = ASFHeaderContentDescriptionObjectItem + "Description = " + Description + " ; "]
+			UnicodeString(DescriptionLength/2) Description;
+	}
+	switch
+	{
+		case RatingLength != 0:
+			[POST.ASFHeaderContentDescriptionObjectItem = ASFHeaderContentDescriptionObjectItem + "Rating = " + Rating]
+			UnicodeString(RatingLength/2) Rating;
+	}
+}
+
+[ASFHeaderContentEncryptionObjectItem = ""]
+struct ASFHeaderContentEncryptionObject = ASFHeaderContentEncryptionObjectItem
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     SecretDataLength;
+	switch
+	{
+		case SecretDataLength != 0:
+			BLOB(SecretDataLength) SecretData;
+	}
+	UINT32     ProtectionTypeLength;
+	switch
+	{
+		case ProtectionTypeLength != 0:
+			AsciiString(ProtectionTypeLength) ProtectionType = FormatString("%s The value of this field shall be set to DRM",this);
+	}
+	UINT32     KeyIDLength;
+	switch
+	{
+		case KeyIDLength != 0:
+			[POST.ASFHeaderContentEncryptionObjectItem = "KeyID = " + KeyID + " ; "]
+			AsciiString(KeyIDLength) KeyID;
+	}
+	UINT32     LicenseURLLength;
+	switch
+	{
+		case LicenseURLLength != 0:
+			[POST.ASFHeaderContentEncryptionObjectItem = ASFHeaderContentEncryptionObjectItem + "LicenseURL = " + LicenseURL]
+			AsciiString(LicenseURLLength) LicenseURL;
+	}
+}
+
+struct ASFHeaderDigitalSignatureObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     SignatureType = ShouldBeSetToTable(this,"2");
+	UINT32     SignatureDataLength;
+	switch
+	{
+		case SignatureDataLength != 0:
+			BLOB(SignatureDataLength) SignatureData;
+	}
+}
+
+struct ASFHeaderErrorCorrectionObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) ErrorCorrectionType;
+	UINT32     ErrorCorrectionDataLength;
+	switch
+	{
+		case ErrorCorrectionDataLength != 0:
+			BLOB(ErrorCorrectionDataLength) ErrorCorrectionData;
+	}
+}
+
+struct ASFHeaderExtendedContentDescriptionObject = FormatString("ContentDescriptorsCount = %d",ContentDescriptorsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFHeaderContentDescriptorsCount]
+	UINT16     ContentDescriptorsCount;
+	while Filed[ASFHeaderContentDescriptorsCount > 0]
+	{
+		[ASFHeaderContentDescriptorsCount = ASFHeaderContentDescriptorsCount - 1,ContentDescriptorItem = ""]
+		struct ContentDescriptor = ContentDescriptorItem
+		{
+			UINT16 DescriptorNameLength;
+			[POST.ContentDescriptorItem = "DescriptorName = " + DescriptorName + " ; "]
+			UnicodeString(DescriptorNameLength/2) DescriptorName;
+			[POST.ContentDescriptorItem = ContentDescriptorItem + "DescriptorValueType = " + ASFHeaderDescriptorValueDataType(DescriptorValueDataType)]
+			UINT16 DescriptorValueDataType = FormatString("%u , %s",this,ASFHeaderDescriptorValueDataType(this));
+			UINT16 DescriptorValueLength;
+			switch(DescriptorValueDataType)
+			{
+				case 0x0000:
+					switch
+					{
+						case DescriptorValueLength != 0:
+							[POST.ContentDescriptorItem = ContentDescriptorItem + " ; DescriptorValue = " + DescriptorValueUniCode]
+							UnicodeString(DescriptorValueLength/2) DescriptorValueUniCode;
+					}
+				case 0x0001:
+					switch
+					{
+						case DescriptorValueLength != 0:
+							BLOB(DescriptorValueLength) DescriptorValue;
+					}
+				case 0x0002:
+					[POST.ContentDescriptorItem = ContentDescriptorItem + " ; DescriptorValue = " + DescriptorValueBool]
+					bool   DescriptorValueBool;
+				case 0x0003:
+					UINT32 DescriptorValueDWord;
+				case 0x0004:
+					UINT64 DescriptorValueQWord;
+				case 0x0005:
+					UINT16 DescriptorValueWord;
+				default    :
+					BLOB(DataLength) UnknownTypeData;
+			}
+		}
+	}
+}
+
+struct ASFHeaderExtendedContentEncryptionObject
+{
+	GUID(True)     ObjectID;
+	UINT64         ObjectSize;
+	UINT32         DataSize;
+	switch
+	{
+		case DataSize != 0:
+			BLOB(DataSize) Data;
+	}
+}
+
+struct ASFHeaderExtensionObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) ReservedField1;
+	UINT16     ReservedField2 = ShouldBeSetToTable(this,"6");
+	[ASFHeaderHeaderExtensionDataSize]
+	UINT32     HeaderExtensionDataSize = FormatString("%u It should also be equal to the Object Size field minus 46 bytes",this);
+	switch
+	{		
+		case HeaderExtensionDataSize > 0:
+			[DataFieldFrameLength = FrameOffset + ASFHeaderHeaderExtensionDataSize]
+			ASFExtendedObject HeaderExtensionData;
+	}
+}
+
+struct ASFHeaderFilePropertiesObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) FileID;
+	UINT64     FileSize;
+	UINT64     CreationDate;
+	UINT64     DataPacketsCount;
+	UINT64     PlayDuration;
+	UINT64     SendDuration;
+	UINT64     Preroll = FormatString("%u Specifies the amount of time to buffer data before starting to play the file, in millisecond units",this);
+	UINT32     Flags
+	{
+		UINT32 BroadcastFlag:1 = FormatString("(%s) %s",this.tobitstring,this?"File is in the process of being created,and thus that various values stored in the header objects are invalid":"");
+		UINT32 SeekableFlag:1 = FormatString(" (%s) %s",this.tobitstring,this?"Files containing a single audio stream and a Minimum Data Packet Size field equal to the Maximum Data Packet Size field"
+																			:"File contains a matching Simple Index Object for each regular video stream ");
+		UINT32 Reserved:30 = FormatString("     (%s) reserved flags shall be set to 0",this.tobitstring);
+	}
+	UINT32     MinDataPacketSize;
+	UINT32     MaxDataPacketSize;
+	UINT32     MaximumBitrate = FormatString("%u This shall equal the sum of the bit rates of the individual digital media streams",this);
+}
+
+[ASFHeaderMarkerObject = ""]
+struct ASFHeaderMarkerObject = ASFHeaderMarkerObject + FormatString("ASFHeaderMarkersCount = %d",ASFHeaderMarkersCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) Reserved4;
+	[ASFHeaderMarkersCount]
+	UINT32     MarkersCount;
+	UINT16     Reserved;
+	UINT16     NameLength;
+	[POST.ASFHeaderMarkerObject = "Name = " + Name + " ; "]
+	UnicodeString(NameLength/2) Name;
+	while Field[ASFHeaderMarkersCount > 0]
+	{
+		[ASFHeaderMarkersCount = ASFHeaderMarkersCount - 1,MarkerItem = ""]
+		struct Markers
+		{
+			UINT64 Offset;
+			UINT64 PresentationTime;
+			UINT16 EntryLength;
+			UINT32 SendTime;
+			UINT32 Flags = ShouldBeSetToTable(this,"zero");
+			UINT32 MarkerDescriptionLength;
+			switch
+			{
+				case MarkerDescriptionLength != 0:
+					[POST.MarkerItem = "MarkerDescription = " + MarkerDescription]
+					UnicodeString(MarkerDescriptionLength) MarkerDescription;
+			}
+		} 
+	}
+}
+
+struct ASFHeaderObjectHead = FormatString("Number Of Header Objects = %d",NumberOfHeaderObjects)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[Property.ASFNumberOfHeaderObjects]
+	UINT32     NumberOfHeaderObjects;
+	UINT8      Reserved1 = ShouldBeSetToTable(this,"0x01");
+	UINT8      Reserved2 = ShouldBeSetToTable(this,"0x02");
+}
+
+struct ASFHeaderPaddingObject
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	switch
+	{
+		case ObjectSize > 24 && (ObjectSize - 24) > FrameLength - FrameOffset:
+			Blob(FrameLength - FrameOffset) Pad;
+		default: 
+			BLOB(ObjectSize - 24) PaddingData;
+	}
+}
+
+struct ASFHeaderScriptCommandObject = FormatString("CommandsCount = %d ; CommandTypesCount = %d",CommandsCount,CommandTypesCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) Reserved3;
+	[ASFHeaderCommandsCount]
+	UINT16     CommandsCount;
+	[ASFHeaderCommandTypesCount]
+	UINT16     CommandTypesCount;
+	while Field1[ASFHeaderCommandTypesCount > 0]
+	{
+		[ASFHeaderCommandTypesCount = ASFHeaderCommandTypesCount - 1,CommandTypeItem = ""]
+		struct CommandType = CommandTypeItem
+		{
+			UINT16 CommandTypeNameLength;
+			switch
+			{
+				case CommandTypeNameLength != 0:
+					[POST.CommandTypeItem = "CommandTypeName = " + CommandTypeName]
+					UnicodeString(CommandTypeNameLength) CommandTypeName;
+			}
+		} 
+	}
+	while Field2[ASFHeaderCommandsCount > 0]
+	{
+		[ASFHeaderCommandsCount = ASFHeaderCommandsCount - 1,CommandItem = ""]
+		struct Commands = CommandItem
+		{
+			UINT32 PresentationTime;
+			UINT16 TypeIndex;
+			UINT16 CommandNameLength;
+			switch
+			{
+				case CommandNameLength != 0:
+					[POST.CommandItem = "CommandName = " + CommandName]
+					UnicodeString(CommandNameLength) CommandName;
+			}
+		} 
+	}
+}
+
+struct ASFHeaderStreamBitratePropertiesObject = FormatString("BitrateRecordsCount = %d",BitrateRecordsCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[ASFHeaderBitrateRecordsCount]
+	UINT16     BitrateRecordsCount = FormatString("%u Specifies the number of records listed in the Bitrate Records field",this);
+	while Fields[ASFHeaderBitrateRecordsCount > 0]
+	{
+		[ASFHeaderBitrateRecordsCount = ASFHeaderBitrateRecordsCount - 1]
+		struct BitrateRecords
+		{
+			UINT16  Flag
+			{
+				UINT16  StreamNumber:7 = FormatString("(%s) %u", this.tobitstring, this);
+				UINT16  Reserved:9 = FormatString("    (%s) These bits are reserved and should be set to 0",this.tobitstring);
+			}
+			UINT32  AverageBitrate = FormatString("%u Specifies the average bit rate of the stream in bits per second",this);
+		}
+	}
+}
+
+[ASFHeaderStreamPropertiesObjectItem = ""]
+struct ASFHeaderStreamPropertiesObject = ASFHeaderStreamPropertiesObjectItem
+{
+	[FramestartOffset = FrameOffset]
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	[POST.ASFHeaderStreamPropertiesObjectItem = "StreamType = " + ASFHeaderStreamObjectTypeTable(StreamType) + " ; "]
+	GUID(True) StreamType = FormatString("%s",ASFHeaderStreamObjectTypeTable(this));
+	[POST.ASFHeaderStreamPropertiesObjectItem = ASFHeaderStreamPropertiesObjectItem + "ErrorCorrectionType = " + ASFHeaderStreamObjectErrTypeTable(ErrorCorrectionType)]
+	GUID(True) ErrorCorrectionType = FormatString("%s",ASFHeaderStreamObjectErrTypeTable(this));
+	UINT64     TimeOffset;
+	UINT32     TypeSpecificDataLength = FormatString("%u Number of bytes in the Type-Specific Data field",this);
+	UINT32     ErrorCorrectionDataLength = FormatString("%u Number of bytes in the Error Correction Data field",this);
+	UINT16     Flags
+	{
+		UINT16 StreamNumber:7 = FormatString("        (%s) %u", this.tobitstring, this);
+		UINT16 Reserved:8 = FormatString("            (%s) These bits are reserved and should be set to 0",this.tobitstring);
+		UINT16 EncryptedContentFlag:1 = FormatString("(%s) %s",this.tobitstring,this?"this stream is encrypted":"this stream is not encrypted");
+	}
+	UINT32     Reserved;
+	switch(StreamType)
+	{
+		case ASF_Audio_Media:
+			ASFMediaAudioType AudioMediaData;
+		case ASF_Video_Media:
+			ASFMediaVideoType VideoMediaData;
+		case ASF_Command_Media:
+			_struct CommandMedia {};
+		case ASF_JFIF_Media:
+			ASFMediaJFIFJPEGType JFIFJPEGMediaData;
+		case ASF_Degradable_JPEG_Media:
+			ASFMediaDegradableJPEGType DegradableJPEGMediaData;
+		case ASF_File_Transfer_Media:
+		case ASF_Binary_Media:
+			ASFMediaFileTransferAndBinaryType FileTransferAndBinaryMediaData;
+	}
+	switch(ErrorCorrectionType)
+	{
+		case ASF_Audio_Spread:
+			ASFMediaErrorCorrectionDataType ErrorCorrectionData;
+		default:
+			Blob(ErrorCorrectionDataLength) ErrorCorrectionDatas;
+	}
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFHeaderObject
+{
+	ASFHeaderObjectHead HeaderObjectHead;
+	[Maxloopcount = Property.ASFNumberOfHeaderObjects]
+	while Fields[FrameLength > FrameOffset]
+	{
+		switch(Blob(FrameData,FrameOffset,16))
+		{
+			case 0x6553200CC000E48E11CFA9478CABDCA1:
+				ASFHeaderFilePropertiesObject FilePropertiesObject;
+			case 0x6553200CC000E68E11CFA9B7B7DC0791:
+				ASFHeaderStreamPropertiesObject StreamPropertiesObject;
+			case 0x6553200CC000E38E11CFA92E5FBF03B5:
+				ASFHeaderExtensionObject ExtensionObject;
+			case 0xF64803C9A000A4A311D0311D86D15240:
+				ASFHeaderCodecListObject CodecListObject;
+			case 0xF64803C9A0009BA311D00B621EFB1A30:
+				ASFHeaderScriptCommandObject ScriptCommandObject;
+			case 0x6553200CC000E68E11CFA951F487CD01:
+				ASFHeaderMarkerObject MarkerObject;
+			case 0xBE4903C9A000349011D135DAD6E229DC:
+				ASFHeaderBitrateMutualExclusionObject BitrateMutualExclusionObject;
+			case 0x6CCE6200AA00D9A611CF668E75B22635:
+				ASFHeaderErrorCorrectionObject ErrorCorrectionObject;
+			case 0x6CCE6200AA00D9A611CF668E75B22633:
+				ASFHeaderContentDescriptionObject ContentDescriptionObject;	
+			case 0x50A85EC9A000F09711D2E307D2D0A440:
+				ASFHeaderExtendedContentDescriptionObject ExtendedContentDescriptionObject;	
+			case 0xB2A2C9976000828D11D1468D7BF875CE:
+				ASFHeaderStreamBitratePropertiesObject StreamBitratePropertiesObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FA:
+				ASFHeaderContentBrandingObject ContentBrandingObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FB:
+				ASFHeaderContentEncryptionObject ContentEncryptionObject;
+			case 0x9C28E97EE0DA35B94C172622298AE614:
+				ASFHeaderExtendedContentEncryptionObject ExtendedContentEncryptionObject;
+			case 0x6EFC55C9A000B7B411D2BD232211B3FC:
+				ASFHeaderDigitalSignatureObject DigitalSignatureObject;
+			case 0xE8AA96CBAB9ABAA44509CADF1806D474:
+				ASFHeaderPaddingObject PaddingObject;
+			default:
+				switch
+				{
+					case FrameLength - FrameOffset < 16:
+						BLOB(FrameLength - FrameOffset ) PartialPayload = "May Need Reassemble";
+					default:
+						struct UnknownObject
+						{
+							GUID(True) ObjectID;
+							UINT64     ObjectSize;
+							BLOB(ObjectSize - 24) UnknowData;
+						}
+				}
+		}
+	}
+}
+
+//********ASF INDEX*****************************************************************************
+[DataTypeByteOrder=LittleEndian]
+struct ASFSimpleIndexObject = FormatString("IndexEntriesCount = %d",IndexEntriesCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	GUID(True) FileID;
+	UINT64     IndexEntryTimeInterval;
+	UINT32     MaximumPacketCount;
+	UINT32     IndexEntriesCount;
+	ASFIndexEntrie IndexEntrie[IndexEntriesCount];
+}
+
+struct ASFIndexEntrie = FormatString("PacketNumber = %d",PacketNumber)
+{
+	UINT32 PacketNumber;
+	UINT16 PacketCount;
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFIndexObject = FormatString("IndexSpecifiersCount = %d ; IndexBlocksCount = %d",IndexSpecifiersCount,IndexBlocksCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     IndexEntryTimeInterval;
+	UINT16     IndexSpecifiersCount;
+	UINT32     IndexBlocksCount;
+	ASFIndexSpecifier IndexSpecifier[IndexSpecifiersCount];
+	ASFIndexBlock IndexBlockCount[IndexBlocksCount];
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFTimecodeIndexObject = FormatString("IndexSpecifiersCount = %d ; IndexBlocksCount = %d",IndexSpecifiersCount,IndexBlocksCount)
+{
+	GUID(True) ObjectID;
+	UINT64     ObjectSize;
+	UINT32     Reserved;
+	UINT16     IndexSpecifiersCount;
+	UINT32     IndexBlocksCount;
+	ASFIndexSpecifier IndexSpecifier[IndexSpecifiersCount];
+	ASFTimecodeIndexBlock TimecodeIndexBlock[IndexBlocksCount];
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFIndexSpecifier
+{
+	UINT16 StreamNumber = FormatString("%u %s",this, (this >= 1 && this <= 127) ? "" : " Not valid");
+	UINT16 IndexType = FormatString("%u %s",this,ASFExtendedIndexTypeTable(this));
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFIndexBlock
+{
+	UINT32 IndexEntryCount;
+	UINT64 BlockPosition[ASFIndexObject.IndexSpecifiersCount];
+	UINT32 Offset[IndexEntryCount] = FormatString("%s %s",this,this==0xFFFFFFFF?"This indicates an invalid offset value":"");
+}
+
+[DataTypeByteOrder=LittleEndian]
+struct ASFTimecodeIndexBlock
+{
+	UINT32 IndexEntryCount;
+	UINT16 TimecodeRange;
+	UINT64 BlockPosition[ASFIndexObject.IndexSpecifiersCount];
+	UINT32 Offset[IndexEntryCount] = FormatString("%s %s",this,this==0xFFFFFFFF?"This indicates an invalid offset value":"");
+}
+
+//********ASF MEDIA*****************************************************************************
+Table ASFMediaAudioCodecTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0001: "WAVE FORMAT PCM";
+		case 0x0161: "Windows Media Audio Versions 7, 8, and 9 Series";
+		case 0x0162: "Windows Media Audio 9 Professional";
+		case 0x0163: "Windows Media Audio 9 Lossless";
+		case 0x7A21: "GSM-AMR Fixed bit rate, no SID";
+		case 0x7A22: "GSM-AMR Variable bit rate, including SID";
+		default    : "Unknown Type";
+	}
+}
+
+Table ASFMediaWebStreamTypeTable(value)
+{
+	switch(value)
+	{
+		case ASF_Web_Stream_Media_Subtype: "ASF_Web_Stream_Media_Subtype";
+		case ASF_Web_Stream_Format: "ASF_Web_Stream_Format";
+		default: "Unknown Type";
+	}
+}
+
+struct ASFMediaAudioType = FormatString("CodecType = %s",ASFMediaAudioCodecTypeTable(CodecID))
+{
+	UINT16 CodecID = FormatString("0x%X %s",this,ASFMediaAudioCodecTypeTable(this));
+	UINT16 NumberOfChannels;
+	UINT32 SamplesPerSecond;
+	UINT32 AverageNumberOfBytesPerSecond;
+	UINT16 BlockAlignment;
+	UINT16 BitsPerSample;
+	UINT16 CodecSpecificDataSize;
+	switch(CodecID)
+	{
+		case 0x161:
+		case 0x162:
+		case 0x163:
+			struct CodecAudioSpecificData
+			{
+				UINT32 dwSamplesPerBlock;
+				UINT16 wEncodeOptions;
+				UINT32 dwSuperBlockAlign;
+			}
+		case 0x7A21:
+		case 0x7A22:
+			struct CodecGSMAMRSpecificData
+			{
+				UINT32 dwFlags
+				{
+					UINT32 SID:1 = FormatString("    (%s) %s",this.tobitstring,this?"SID is used":"must be zero in case 0x7A21");
+					UINT32 varying:1 = FormatString("(%s) %s",this.tobitstring,this?"varying bitrate is used ":"must be zero in case 0x7A21");
+				}
+			}
+		default:
+			BLOB(CodecSpecificDataSize) CodecSpecificData;
+	}
+}
+
+struct ASFMediaDegradableJPEGType = FormatString("ImageWidth = %d ; ImageHeight = %d",ImageWidth,ImageHeight)
+{
+	UINT32 ImageWidth;
+	UINT32 ImageHeight;
+	UINT16 Reserved1 = MustBeSetToTable(this,"0");
+	UINT16 Reserved2 = MustBeSetToTable(this,"2");
+	UINT16 Reserved3 = MustBeSetToTable(this,"4");
+	UINT16 InterchangeDataLength;
+	switch(InterchangeDataLength)
+	{
+		case  0: UINT8 InterchangeDataZero;
+		default: BLOB(InterchangeDataLength) InterchangeData;
+	}
+}
+
+struct ASFMediaErrorCorrectionDataType
+{
+	UINT8  Span = ShouldBeSetToTable(this,"1");
+	UINT16 VirtualPacketLength;
+	UINT16 VirtualChunkLength;
+	UINT16 SilenceDataLength;
+	switch
+	{
+		case SilenceDataLength:
+			BLOB(SilenceDataLength) SilenceData;
+	}
+}
+
+struct ASFMediaFileTransferAndBinaryType
+{
+	GUID(True) MajorMediaType;
+	GUID(True) MediaSubtype = FormatString("%s",ASFMediaWebStreamTypeTable(this));
+	UINT32     FixedSizeSamples = FormatString("%u %s",this,this?"Stream has fixed-size samples":"Stream has no fixed-size samples");
+	UINT32     TemporalCompression = FormatString("%u %s",this,this?"Media object might depend on next media object":"");
+	UINT32     SampleSize;
+	GUID(True) FormatType = FormatString("%s",ASFMediaWebStreamTypeTable(this));
+	UINT32     FormatDataSize;
+	switch
+	{
+		case FormatDataSize > 0:
+			switch
+			{
+				case FormatType == ASF_Web_Stream_Format &&
+					 MediaSubtype == ASF_Web_Stream_Media_Subtype:
+					struct ASFMediaWebStreams
+					{
+						ASFMediaWebStreamsHeader WebStreamsMediaHeader;
+						ASFMediaWebStreamsType WebStreamsMediaData;
+					}
+				default:
+					BLOB(FormatDataSize) FormatData;
+			}
+	}
+}
+
+struct ASFMediaJFIFJPEGType = FormatString("ImageWidth = %d ; ImageHeight = %d",ImageWidth,ImageHeight)
+{
+	UINT32 ImageWidth;
+	UINT32 ImageHeight;
+	UINT32 Reserved = MustBeSetToTable(this,"0");
+}
+
+struct ASFMediaVideoType = FormatString("EncodedImageWidth = %d ; EncodedImageHeight = %d",EncodedImageWidth,EncodedImageHeight)
+{
+	UINT32 EncodedImageWidth;
+	UINT32 EncodedImageHeight;
+	UINT8  ReservedFlags = ShouldBeSetToTable(this,"2");
+	UINT16 FormatDataSize;
+	struct FormatData = FormatString("FormatDataSize = %d ; EncodedImageWidth = %d ; EncodedImageHeight = %d",FormatDataSize,EncodedImageWidth,EncodedImageHeight)
+	{
+		UINT32 FormatDataSize;
+		INT32  ImageWidth;
+		INT32  ImageHeight;
+		UINT16 Reserved;
+		UINT16 BitsPerPixelCount;
+		AsciiString(4) CompressionID;
+		INT32  HorizontalPixelsPerMeter;
+		INT32  VerticalPixelsPerMeter;
+		UINT32 ColorsUsedCount;
+		UINT32 ImportantColorsCount;
+		
+		switch
+		{
+			case FormatDataSize > 36:
+				BLOB(FormatDataSize - 36) CodecSpecificData;
+		}
+	}
+}
+
+struct ASFMediaWebStreamsHeader
+{
+	UINT16 TotalHeaderLength;
+	UINT16 PartNumber;
+	UINT16 TotalPartCount;
+	UINT16 SampleType;
+	switch
+	{
+		case TotalHeaderLength > 8:
+			UnicodeString((TotalHeaderLength - 8)/2) URLString;
+	}
+}
+
+struct ASFMediaWebStreamsType
+{
+	UINT16 WebStreamFormatDataSize = ShouldBeSetToTable(this,"8");
+	UINT16 FixedSampleHeaderSize = ShouldBeSetToTable(this,"10");
+	UINT16 VersionNumber = ShouldBeSetToTable(this,"1");
+	UINT16 Reserved = MustBeSetToTable(this,"0");
+}
+

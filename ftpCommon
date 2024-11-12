@@ -1,0 +1,359 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  File Transfer Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 697, 737, 743, 775, 959, 959, 1639
+//#                          RFC 2228, 2389, 2428, 2640, 2773
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+//#? dev note 2005-5-19
+//#? blocked by an OffLoading issue
+const FtpDataPort = 20;
+const FtpControlPort = 21;
+
+Protocol FTP = FormatString("%s", Property.FTPPayloadSummary )
+{
+	switch
+	{
+		case FtpControlPort == Property.DestinationPort:
+			switch
+			{
+				case UINT16(framedata,Offset + 3) == 0x0D0A:
+					switch(AsciiString(framedata,Offset,3))
+					{
+						case  "CCC":
+						case  "CWD":
+						case  "ENC":
+						case  "MIC":
+						case  "MKD":
+						case  "PWD":
+						case  "RMD":
+							_struct Request3NoParam
+							{
+								[FTPPayloadSummary = FormatString("Request from Port %d,'%s'",
+																 Property.SourcePort,Command)]
+								AsciiStringTerm("\r\n") Command = FTPCommandTable(this);
+								switch
+								{
+									case frameOffset < frameLength :
+										Blob(frameLength - frameOffset) FTPPayLoad;
+								}
+							}
+					}
+				case UINT16(framedata,Offset + 4) == 0x0D0A:
+					switch(AsciiString(framedata,Offset,4))
+					{
+						case "ABOR":
+						case "ACCT":
+						case "ADAT":
+						case "ALLO":
+						case "APPE":
+						case "AUTH":
+						case "CDUP":
+						case "CONF":
+						case "DELE":
+						case "EPRT":
+						case "EPSV":
+						case "FEAT":
+						case "HELP":
+						case "LANG":
+						case "LIST":
+						case "LPRT":
+						case "MODE":
+						case "NLST":
+						case "NOOP":
+						case "OPTS":
+						case "PASS":
+						case "PASV":
+						case "PBSZ":
+						case "PORT":
+						case "PROT":
+						case "QUIT":
+						case "REIN":
+						case "REST":
+						case "RETR":
+						case "RNFR":
+						case "RNTO":
+						case "SITE":
+						case "SMNT":
+						case "STAT":
+						case "STOR":
+						case "STOU":
+						case "STRU":
+						case "SYST":
+						case "TYPE":
+						case "USER":
+						case "XCUP":
+						case "XMKD":
+						case "XPWD":
+						case "XRCP":
+						case "XRMD":
+						case "XRSQ":
+						case "XSEM":
+						case "XSEN":
+							_struct Request4NoParam
+							{
+								[FTPPayloadSummary = FormatString("Request from Port %d, '%s'",
+																  Property.SourcePort,Command)]
+								AsciiStringTerm("\r\n") Command = FTPCommandTable(this);
+								switch
+								{
+									case frameOffset < frameLength :
+										Blob(frameLength - frameOffset) FTPPayLoad;
+								}
+							}
+					}
+				default:
+					_struct RequestWithParameter
+					{
+						AsciiStringTerm(" ") Command = FTPCommandTable(this);
+						[FTPPayloadSummary = FormatString("Request from Port %d,'%s'",
+														  Property.SourcePort,
+														  Command + " " + CommandParameter)]
+						AsciiStringTerm("\r\n") CommandParameter;
+						switch
+						{
+							case frameOffset < frameLength :
+								Blob(frameLength - frameOffset) FTPPayLoad;
+						}
+					};
+			}
+		case FtpControlPort == Property.SourcePort:
+			switch
+			{
+				case (UINT8( Framedata, Offset ) >= 0x31 &&
+					 UINT8( Framedata, Offset ) <= 0x36) &&
+					 (UINT8( Framedata, Offset + 1 ) >= 0x30 &&
+					 	UINT8( Framedata, Offset + 1 ) <= 0x35)&&
+					 (UINT8( Framedata, Offset + 2 ) >= 0x30 &&
+					 	UINT8( Framedata, Offset + 2 ) <= 0x39) :
+							_struct Response
+							{
+								AsciiString(3) ReplyCode = FTPReplyCodeTable(this, UINT24(frameData, offset));
+								[FTPPayloadSummary = FormatString("Response to Port %d, '%s'",
+																 Property.DestinationPort,
+																 ReplyCode + " " + ReplyMessage)]
+								AsciiStringTerm("\r\n") ReplyMessage;
+								while option[ frameOffset < frameLength ]
+								{
+									AsciiStringTerm("\r\n") ReplyMessage;
+								}
+							};
+				
+				default:
+					_struct ResponseMultipleLine
+					{
+						while option[( frameOffset < frameLength ) &&
+									((UINT8( Framedata, Offset ) < 0x31 || UINT8( Framedata, Offset ) > 0x35) ||
+									 (UINT8( Framedata, Offset + 1 ) < 0x30 || UINT8( Framedata, Offset + 1 ) > 0x35) ||
+									 (UINT8( Framedata, Offset + 2 ) < 0x30 || UINT8( Framedata, Offset + 2 ) > 0x39))]
+						{
+							AsciiStringTerm("\r\n") Message;
+						}
+						
+						switch
+						{
+							case (UINT8( Framedata, Offset ) >= 0x31 && UINT8( Framedata, Offset ) <= 0x35) &&
+								 (UINT8( Framedata, Offset + 1 ) >= 0x30 && UINT8( Framedata, Offset + 1 ) <= 0x35) &&
+								 (UINT8( Framedata, Offset + 2 ) >= 0x30 && UINT8( Framedata, Offset + 2 ) <= 0x39) :
+									struct Reply = ReplyCode + " " + ReplyMessage
+									{
+										AsciiString(3) ReplyCode = FTPReplyCodeTable(this, UINT24(frameData, offset));
+										[FTPPayloadSummary = FormatString("Response to Port %d,'%s'",
+																		 Property.DestinationPort,
+																		 ReplyCode + " " + this)]
+										AsciiStringTerm("\r\n") ReplyMessage;
+										while option[ frameOffset < frameLength ]
+										{
+											AsciiStringTerm("\r\n") ReplyMessage;
+										}
+									};
+						}
+					};
+			}
+		case FtpDataPort == Property.SourcePort:
+			[FTPPayloadSummary = FormatString("Data Transfer To Client,DstPort = %d,size = %d bytes",
+											 Property.DestinationPort,
+											 frameLength - frameOffset)]
+			Blob(frameLength - frameOffset) PayLoadToClient;
+		case FtpDataPort == Property.DestinationPort:
+			[FTPPayloadSummary = FormatString("Data Transfer To Server,SrcPort = %d, size = %d bytes",
+											 Property.SourcePort,
+											 frameLength - frameOffset)]
+			Blob(frameLength - frameOffset) PayLoadToServer;
+	}
+	switch
+	{
+		case FrameLength - Offset > 0  :
+			Blob(FrameLength - frameOffset) Padding;
+	}
+}
+
+Table FTPCommandTable(Command)
+{
+	switch(Command)
+	{
+		case "ABOR": FormatString("%s, Abort", Command);
+		case "ACCT": FormatString("%s, Account", Command);
+		case "ADAT": FormatString("%s, Authentication/Security Data", Command);
+		case "ALLO": FormatString("%s, Allocate", Command);
+		case "APPE": FormatString("%s, Append", Command);
+		case "AUTH": FormatString("%s, Authentication/Security Mechanism", Command);
+		case  "CCC": FormatString("%s, Clear Command Channel", Command);
+		case "CDUP": FormatString("%s, Change to parent directory", Command);
+		case "CONF": FormatString("%s, Confidentiality Protected Command", Command);
+		case  "CWD": FormatString("%s, Change working directory", Command);
+		case "DELE": FormatString("%s, Delete", Command);
+		case  "ENC": FormatString("%s, Privacy Protected Command", Command);
+		case "EPRT": FormatString("%s, Extended Data port", Command);
+		case "EPSV": FormatString("%s, Extended Passive", Command);
+		case "FEAT": FormatString("%s, Feature", Command);
+		case "HELP": FormatString("%s, Help", Command);
+		case "LANG": FormatString("%s, Language negotiation", Command);
+		case "LIST": FormatString("%s, List", Command);
+		case "LPRT": FormatString("%s, Long data port", Command);
+		case "LPSV": FormatString("%s, Long passive", Command);
+		case  "MIC": FormatString("%s, Integrity Protected Command", Command);
+		case  "MKD": FormatString("%s, Make directory", Command);
+		case "MODE": FormatString("%s, Transfer mode", Command);
+		case "NLST": FormatString("%s, Name list", Command);
+		case "NOOP": FormatString("%s, No operation", Command);
+		case "OPTS": FormatString("%s, Options", Command);
+		case "PASS": FormatString("%s, Password", Command);
+		case "PASV": FormatString("%s, Passive", Command);
+		case "PBSZ": FormatString("%s, Protection Buffer Size", Command);
+		case "PORT": FormatString("%s, Data port", Command);
+		case "PROT": FormatString("%s, Data Channel Protection Level", Command);
+		case  "PWD": FormatString("%s, Print working directory", Command);
+		case "QUIT": FormatString("%s, Logout", Command);
+		case "REIN": FormatString("%s, Reinitialize", Command);
+		case "REST": FormatString("%s, Restart", Command);
+		case "RETR": FormatString("%s, Retrieve", Command);
+		case  "RMD": FormatString("%s, Remove directory", Command);
+		case "RNFR": FormatString("%s, Rename from", Command);
+		case "RNTO": FormatString("%s, Rename to", Command);
+		case "SITE": FormatString("%s, Site parameters", Command);
+		case "SMNT": FormatString("%s, Structure mount", Command);
+		case "STAT": FormatString("%s, Status", Command);
+		case "STOR": FormatString("%s, Store", Command);
+		case "STOU": FormatString("%s, Store unique", Command);
+		case "STRU": FormatString("%s, File structure", Command);
+		case "SYST": FormatString("%s, System", Command);
+		case "TYPE": FormatString("%s, Representation type", Command);
+		case "USER": FormatString("%s, User name", Command);
+		case "XCUP": FormatString("%s, Change to the parent of the current working directory", Command);
+		case "XMKD": FormatString("%s, Make a directory", Command);
+		case "XPWD": FormatString("%s, Print the current working directory", Command);
+		case "XRCP": FormatString("%s, Recipient specification", Command);
+		case "XRMD": FormatString("%s, Remove the directory", Command);
+		case "XRSQ": FormatString("%s, Scheme Selection", Command);
+		case "XSEM": FormatString("%s, Send, Mail if can't", Command);
+		case "XSEN": FormatString("%s, Send to terminal", Command);
+		case "XMAS": FormatString("%s, Mail And Send", Command); //RFC737
+		case "MAIL": FormatString("%s, MAIL", Command);
+		default    : FormatString("%s, UNHANDLED FTP Command", Command);
+	}
+}
+
+Table FTPReplyCodeXTable(code)
+{
+	switch(code)
+	{
+		case 0x31: FormatString("%c Positive Preliminary reply", code);
+		case 0x32: FormatString("%c Positive Completion reply", code);
+		case 0x33: FormatString("%c Positive Intermediate reply", code);
+		case 0x34: FormatString("%c Transient Negative Completion reply", code);
+		case 0x35: FormatString("%c Permanent Negative Completion reply", code);
+		case 0x36: FormatString("%c Protected reply", code);
+		default  : FormatString("%c UNHANDLED FTP ReplyCode X", code);
+	}
+}
+
+Table FTPReplyCodeYTable(code)
+{
+	switch(code)
+	{
+		case 0x30: FormatString("%c Syntax errors", code);
+		case 0x31: FormatString("%c Information", code);
+		case 0x32: FormatString("%c Connections", code);
+		case 0x33: FormatString("%c Authentication and accounting", code);
+		case 0x34: FormatString("%c Unspecified", code);
+		case 0x35: FormatString("%c File system", code);
+		default  : FormatString("%c UNHANDLED FTP ReplyCode Y", code);
+	}
+}
+
+//usage: ReplyCode mustbe a 3 bytes AsciiString
+Table FTPReplyCodeTable(ReplyCode, code)
+{
+	switch(ReplyCode)
+	{
+		case "110": FormatString("%s, Restart marker reply", ReplyCode);
+		case "120": FormatString("%s, Service ready in nnn minutes", ReplyCode);
+		case "125": FormatString("%s, Data connection already open; transfer starting", ReplyCode);
+		case "150": FormatString("%s, File status okay; about to open data connection", ReplyCode);
+		case "200": FormatString("%s, Command okay", ReplyCode);
+		case "202": FormatString("%s, Command not implemented, superfluous at this site", ReplyCode);
+		case "211": FormatString("%s, System status, or system help reply", ReplyCode);
+		case "212": FormatString("%s, Directory status", ReplyCode);
+		case "213": FormatString("%s, File status", ReplyCode);
+		case "214": FormatString("%s, Help message", ReplyCode);
+		case "215": FormatString("%s, NAME system type", ReplyCode);
+		case "220": FormatString("%s, Service ready for new user", ReplyCode);
+		case "221": FormatString("%s, Service closing control connection", ReplyCode);
+		case "225": FormatString("%s, Data connection open; no transfer in progress", ReplyCode);
+		case "226": FormatString("%s, Closing data connection", ReplyCode);
+		case "227": FormatString("%s, Entering Passive Mode <h1,h2,h3,h4,p1,p2>", ReplyCode);
+		case "228": FormatString("%s, Entering Long Passive Mode", ReplyCode);
+		case "229": FormatString("%s, Extended Passive Mode Entered", ReplyCode);
+		case "230": FormatString("%s, User logged in, proceed", ReplyCode);
+		case "250": FormatString("%s, Requested file action okay, completed", ReplyCode);
+		case "257": FormatString("%s, 'PATHNAME' created", ReplyCode);
+		case "331": FormatString("%s, User name okay, need password", ReplyCode);
+		case "332": FormatString("%s, Need account for login", ReplyCode);
+		case "350": FormatString("%s, Requested file action pending further information", ReplyCode);
+		case "421": FormatString("%s, Service not available, closing control connection", ReplyCode);
+		case "425": FormatString("%s, Can't open data connection", ReplyCode);
+		case "426": FormatString("%s, Connection closed; transfer aborted", ReplyCode);
+		case "450": FormatString("%s, Requested file action not taken", ReplyCode);
+		case "451": FormatString("%s, Requested action aborted. Local error in processing", ReplyCode);
+		case "452": FormatString("%s, Requested action not taken", ReplyCode);
+		case "500": FormatString("%s, Syntax error, command unrecognized", ReplyCode);
+		case "501": FormatString("%s, Syntax error in parameters or arguments", ReplyCode);
+		case "502": FormatString("%s, Command not implemented", ReplyCode);
+		case "503": FormatString("%s, Bad sequence of commands", ReplyCode);
+		case "504": FormatString("%s, Command not implemented for that parameter", ReplyCode);
+		case "521": FormatString("%s, Supported address families are <af1, .., afn>", ReplyCode);
+		case "522": FormatString("%s, Protocol not supported", ReplyCode);
+		case "530": FormatString("%s, Not logged in", ReplyCode);
+		case "532": FormatString("%s, Need account for storing files", ReplyCode);
+		case "550": FormatString("%s, Requested action not taken", ReplyCode);
+		case "551": FormatString("%s, Requested action aborted. Page type unknown", ReplyCode);
+		case "552": FormatString("%s, Requested file action aborted", ReplyCode);
+		case "553": FormatString("%s, Requested action not taken", ReplyCode);
+		case "554": FormatString("%s, Requested action not taken: invalid REST parameter", ReplyCode);
+		case "555": FormatString("%s, Requested action not taken: type or stru mismatch", ReplyCode);
+		case "232": FormatString("%s, User logged in, authorized by security data exchange", ReplyCode);//below refer to rfc2228, 12nd page
+		case "234": FormatString("%s, Security data exchange complete", ReplyCode);
+		case "235": FormatString("%s, Security data exchange completed successfully", ReplyCode);
+		case "334": FormatString("%s, Requested security mechanism is ok", ReplyCode);
+		case "335": FormatString("%s, Security data is acceptable and more is required to complete the security data exchange", ReplyCode);
+		case "336": FormatString("%s, Username okay, need password", ReplyCode);
+		case "431": FormatString("%s, Need some unavailable resource to process security", ReplyCode);
+		case "533": FormatString("%s, Command protection level denied for policy reasons", ReplyCode);
+		case "534": FormatString("%s, Request denied for policy reasons", ReplyCode);
+		case "535": FormatString("%s, Failed security check (hash, sequence, etc)", ReplyCode);
+		case "536": FormatString("%s, Requested PROT level not supported by mechanism", ReplyCode);
+		case "537": FormatString("%s, Command protection level not supported by security mechanism", ReplyCode);
+		default   : FormatString("%s (x=%s,y=%s,z=%c)", ReplyCode, FTPReplyCodeXTable(code[2]),FTPReplyCodeYTable(code[1]),code[0]);
+	}
+}
+
+

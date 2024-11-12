@@ -1,0 +1,1134 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Management Instrumentation Encoding Version 1.0 Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WMIO]: Windows Management Instrumentation Encoding Version 1.0 Protocol Specification (1.3.4)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 6/22/2009
+//#                          Minor, 9/15/2009
+//#
+//####
+
+//
+// 2.2.1   EncodingUnit
+//
+struct WMIOEncodingUnit
+{
+	UINT32 Signature;
+	[Local.WMIOEncodingUnitEndOffset = FrameOffset + ObjectEncodingLength + 4]
+	UINT32 ObjectEncodingLength;
+	WMIOObjectBlock classObject;
+	switch
+	{
+		case FrameOffset < Local.WMIOEncodingUnitEndOffset: BLOB(Local.WMIOEncodingUnitEndOffset - FrameOffset) GarbageOctets;
+	}
+}
+
+//
+// 2.2.2   EncodingUnitObjectBlock
+//
+struct WMIOEncodingUnitObjectBlock
+{
+	WMIOObjectBlock ObjectBlock;
+}
+
+//
+// 2.2.3   EncodingUnitInstanceNoClass
+//
+struct WMIOEncodingUnitInstanceNoClass
+{
+	 UINT8 ObjectFlags = WMIOObjectBlockFlagsTable(this)
+	{
+		UINT8 CIMClass:1 = FormatString("        (%s) %s",this.ToBitString, this ? "The object is a CIM class and the Encoding block contains ClassType." : "The object isn't a CIM class and the Encoding block doesn't contain ClassType.");
+		UINT8 CIMInstance:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The object is a CIM instance and the Encoding block contains InstanceType." : "The object isn't a CIM Instance and the Encoding block doesn't contain InstanceType.");
+		UINT8 DecorationBlock:1 = FormatString(" (%s) %s",this.ToBitString, this ? "the object has a Decoration block.":"the object hasn't a Decoration block.");
+		UINT8 Reserved1:1 = FormatString("       (%s)",this.ToBitString);
+		UINT8 ProtoType:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The object is a prototype of the result object for the query." : "The object isn't a prototype of the result object for the query.");								
+		UINT8 Reserved2:1 = FormatString("       (%s)",this.ToBitString);								
+		UINT8 NoKeyProperties :1 = FormatString("(%s) %s",this.ToBitString, this ? "One or more key properties of the class are not present in the Prototype Result Object." : "One or more key properties of the class are present in the Prototype Result Object.");
+		UINT8 Reserved3:1 = FormatString("       (%s)",this.ToBitString);
+	};
+	switch
+	{
+		case ObjectFlags & 0x04: WMIODecoration Decoration;
+	}
+	[DataFieldFrameLength = FrameOffset + UINT32(FrameData,FrameOffset)]
+	struct 
+	{
+		[Local.WMIONdTableValueTableLength = Property.ClassId ? Global.ValueTableLength$[Property.ClassId] : Property.WMIONdTableValueTableLength]
+		[Local.WMIOQualifierSetLength = UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength)]
+		[Local.WMIOInstancePropQualifierSetFlag = UINT8(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength)]
+		[Local.WMIOInstancePropQualifierSet1Length = UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength + 1)]
+		[Local.WMIOInstancePropQualifierSetLength = Local.WMIOInstancePropQualifierSet1Length + UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength + 1 + Local.WMIOInstancePropQualifierSet1Length)]
+		[Local.WMIOInstanceQualifierSetLength = Local.WMIOInstancePropQualifierSetFlag ==2 ? Local.WMIOQualifierSetLength + 1 + Local.WMIOInstancePropQualifierSetLength:Local.WMIOQualifierSetLength + 1]
+		[Local.WMIOInstanceHeapItemStartOffset = FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOInstanceQualifierSetLength + 4]
+		UINT32 EncodingLength;
+		UINT8 InstanceFlags = MustBeSetToTable(this,"0");
+		[Local.WMIOHeapItemOffset = Local.WMIOInstanceHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+		WMIOInstanceClassName(Local.WMIOHeapItemOffset) InstanceClassNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+		[Local.WMIONdTableValueTableEndOffSet = FrameOffset + Local.WMIONdTableValueTableLength]
+		struct
+		{
+			[Property.NdTablestartOffset = FrameOffset,Property.WMIONdTableCount = Property.ClassId ? Global.WMIPropertyCount$[Property.ClassId]:Property.LookupPropertyCount]
+			WMIONdTable NdTable;
+			[Property.WMIOValueTableStartOffset = FrameOffset,Local.WMIOBlob = Property.WMIONdTableValueTableLength - Property.WMIOValueTableStartOffset + Property.NdTablestartOffset]
+			switch
+			{
+				case Property.WMIONOJump:
+				Blob(FrameOffset + Local.WMIOBlob < FrameLength ? Local.WMIOBlob:FrameLength - FrameOffset) ValueTable;
+				default:
+				struct
+				{
+					WMIOInstanceData(Local.WMIOInstanceHeapItemStartOffset) InstanceData;
+					switch
+					{
+						case FrameOffset < Local.WMIONdTableValueTableEndOffSet: BLOB(Local.WMIONdTableValueTableEndOffSet - FrameOffset) Padding;
+					}
+				}
+			}
+		}
+		WMIOInstanceQualifierSet(Local.WMIOInstanceHeapItemStartOffset) InstanceQualifierSet;
+		WMIOInstanceHeap InstanceHeap;
+		switch
+		{
+			case FrameOffset < FrameLength: 
+			BLOB(FrameLength - FrameOffset) GarbageOctets;
+		}
+	}
+}
+
+//
+// 2.2.5   ObjectBlock
+//
+struct WMIOObjectBlock
+{
+	[Property.WMIOObjectFlags]
+	UINT8 ObjectFlags = WMIOObjectBlockFlagsTable(this)
+	{
+		UINT8 CIMClass:1 = FormatString("        (%s) %s",this.ToBitString, this ? "The object is a CIM class and the Encoding block contains ClassType." : "The object isn't a CIM class and the Encoding block doesn't contain ClassType.");
+		UINT8 CIMInstance:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The object is a CIM instance and the Encoding block contains InstanceType." : "The object isn't a CIM Instance and the Encoding block doesn't contain InstanceType.");
+		UINT8 DecorationBlock:1 = FormatString(" (%s) %s",this.ToBitString, this ? "the object has a Decoration block.":"the object hasn't a Decoration block.");
+		UINT8 Reserved1:1 = FormatString("       (%s)",this.ToBitString);
+		UINT8 ProtoType:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The object is a prototype of the result object for the query." : "The object isn't a prototype of the result object for the query.");								
+		UINT8 Reserved2:1 = FormatString("       (%s)",this.ToBitString);								
+		UINT8 NoKeyProperties :1 = FormatString("(%s) %s",this.ToBitString, this ? "One or more key properties of the class are not present in the Prototype Result Object." : "One or more key properties of the class are present in the Prototype Result Object.");
+		UINT8 Reserved3:1 = FormatString("       (%s)",this.ToBitString);
+	};
+	switch
+	{
+		case ObjectFlags & 0x04: WMIODecoration Decoration;
+	}
+	[EncodingPartStartOffset = FrameOffset]
+	switch                        //2.2.10   Encoding
+	{
+		case ObjectFlags & 0x01:
+			WMIOClassType ClassType;
+		case ObjectFlags & 0x02:
+			WMIOInstanceType InstanceType;
+	}
+}
+
+//
+// 2.2.7   Decoration
+//
+struct WMIODecoration = FormatString("%s\\%s", Server.ToString, namespace.ToString)
+{
+	WMIOEncodedString Server;
+	WMIOEncodedString namespace;
+}
+
+//
+// 2.2.8   DecServerName
+//
+struct WMIODecServerName
+{
+	WMIOEncodedString ServerName;
+}
+
+//
+// 2.2.9   DecNamespaceName
+//
+struct WMIODecNamespaceName
+{
+	WMIOEncodedString NamespaceName;
+}
+
+//
+// 2.2.11   ClassType
+//
+struct WMIOClassType
+{
+	WMIOParentClass ParentClass;
+	WMIOCurrentClass CurrentClass;            
+}
+
+//
+// 2.2.12   ParentClass
+//
+struct WMIOParentClass
+{
+	WMIOClassAndMethodsPart  ParentClass;          
+}
+
+//
+// 2.2.13   CurrentClass
+//
+struct WMIOCurrentClass
+{
+	WMIOClassAndMethodsPart  CurrentClass;          
+}
+
+//
+// 2.2.14   ClassAndMethodsPart
+//
+struct WMIOClassAndMethodsPart
+{
+	[DataFieldFrameLength = FrameOffset + UINT32(FrameData,FrameOffset)]								
+	WMIOClassPart ClassPart;
+	switch
+	{
+		case Property.WMIOObjectFlags & 0x01:
+		[DataFieldFrameLength = FrameOffset + UINT32(FrameData,FrameOffset)]
+		WMIOMethodPart MethodPart; 
+	}           
+}
+
+//
+// 2.2.15   ClassPart
+//
+struct WMIOClassPart
+{
+	[Local.WMIODerivationListLength = UINT32(FrameData, FrameOffset + 13)]
+	[Local.WMIOClassQualifierSetLength = UINT32(FrameData, FrameOffset + 13 + Local.WMIODerivationListLength)]
+	[Local.WMIOPropertyLookupTableLength = 4 + 8 * UINT32(FrameData, FrameOffset + 13 + Local.WMIODerivationListLength + Local.WMIOClassQualifierSetLength)]
+	[Local.WMIONdTableValueTableLength = UINT32(FrameData, FrameOffset + 9)]
+	[Local.WMIOClassHeapItemStartOffset = FrameOffset + 13 + Local.WMIODerivationListLength + Local.WMIOClassQualifierSetLength + Local.WMIOPropertyLookupTableLength + Local.WMIONdTableValueTableLength + 4]
+	WMIOClassHeader(Local.WMIOClassHeapItemStartOffset) ClassHeader;
+	WMIODerivationList derivation;
+	WMIOClassQualifierSet(Local.WMIOClassHeapItemStartOffset) ClassQualifierSet;
+	WMIOPropertyLookupTable(Local.WMIOClassHeapItemStartOffset) propTable;
+	[Local.WMIONdTableValueTableEndOffSet = FrameOffset + Property.WMIONdTableValueTableLength]
+	switch
+	{
+		case Property.WMIONdTableValueTableLength > 0:
+		struct
+		{
+			[Property.NdTablestartOffset = FrameOffset,Property.WMIONdTableCount = Property.ClassId ? Global.WMIPropertyCount$[Property.ClassId]:Property.LookupPropertyCount]
+			WMIONdTable NdTable;
+			[Property.WMIOValueTableStartOffset = FrameOffset,Local.WMIOBlob = Property.WMIONdTableValueTableLength - Property.WMIOValueTableStartOffset + Property.NdTablestartOffset]
+			switch
+			{
+				case Property.WMIONOJump:
+					Blob(FrameOffset + Local.WMIOBlob < FrameLength ? Local.WMIOBlob:FrameLength - FrameOffset) ValueTable;
+				default:
+				struct
+				{
+					WMIOValueTable(Local.WMIOClassHeapItemStartOffset) ValueTable;		
+					switch
+					{
+						case FrameOffset < Local.WMIONdTableValueTableEndOffSet:
+							BLOB(Local.WMIONdTableValueTableEndOffSet - FrameOffset) Padding;
+					}
+				}
+			}
+		}
+	}
+	WMIOClassHeap ClassHeap;
+	switch
+	{
+		case FrameOffset < FrameLength:
+		BLOB(FrameLength - FrameOffset) GarbageOctets;
+	}
+}
+
+//
+// 2.2.16   ClassHeader
+//
+struct WMIOClassHeader(WMIOClassHeapItemStartOffset)
+{
+	UINT32 EncodingLength;
+	UINT8 ReservedOctet;
+	[Local.WMIOHeapItemOffset = WMIOClassHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOClassNameRef(Local.WMIOHeapItemOffset) ClassNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+	[Property.WMIONdTableValueTableLength,Global.ValueTableLength$[Property.ClassId]]
+	UINT32 NdTableValueTableLength;
+}
+
+//
+// 2.2.17   DerivationList
+//
+struct WMIODerivationList
+{    
+	UINT32 EncodingLength;
+	[ DataFieldFrameLength = FrameOffset + EncodingLength - 4 ]
+	while [FrameOffset < FrameLength]
+	{
+		WMIOClassNameEncoding ClassNameEncoding;
+	}    
+}
+
+//
+// 2.2.18   ClassNameEncoding
+//
+struct WMIOClassNameEncoding = EncodedString.ToString
+{  
+	WMIOEncodedString EncodedString;
+	UINT32 EncodingLength;
+}
+
+//
+// 2.2.19   ClassNameRef
+//
+struct WMIOClassNameRef(WMIOHeapItemOffset)
+{
+	WMIOHeapStringRef(WMIOHeapItemOffset) ClassNameRef;
+}
+
+//
+// 2.2.20   ClassQualifierSet
+//
+struct WMIOClassQualifierSet(WMIOClassHeapItemStartOffset)
+{
+	WMIOQualifierSet(WMIOClassHeapItemStartOffset) ClassQualifierSet;
+}
+
+//
+// 2.2.21   PropertyLookupTable
+//
+struct WMIOPropertyLookupTable(WMIOClassHeapItemStartOffset)
+{
+	[Property.LookupPropertyCount,Global.WMIPropertyCount$[Property.ClassId],Property.WMIOLookupPropertyCount = 0]
+	UINT32 PropertyCount;
+	// WMIOPropertyLookup Length = 8 * PropertyCount
+	[Property.WMIONOJump = false,Local.ClassHeapStartOffset = FrameOffset + 8 * PropertyCount + Property.WMIONdTableValueTableLength]
+	while [Property.WMIOLookupPropertyCount < PropertyCount]
+	{
+		WMIOPropertyLookup(WMIOClassHeapItemStartOffset) propLookup;
+		[Property.ClassId ? Global.WMIOClassPropertyInfoTable$[MakeByteArray(Property.ClassId,UINT32(FrameData, Local.ClassHeapStartOffset + 10 + Property.PropertyInfoOffset))]
+		= UINT32(FrameData, Local.ClassHeapStartOffset + 4 + Property.PropertyInfoOffset)
+		:Property.WMIClassPropertyInfoTable$[UINT32(FrameData, Local.ClassHeapStartOffset + 10 + Property.PropertyInfoOffset)]
+		= UINT32(FrameData, Local.ClassHeapStartOffset + 4 + Property.PropertyInfoOffset)
+		,Property.WMIOLookupPropertyCount = Property.WMIOLookupPropertyCount + 1]
+		struct {};
+	}
+}
+
+//
+// 2.2.23   PropertyLookup
+//
+struct WMIOPropertyLookup(WMIOClassHeapItemStartOffset) = FormatString("PropertyNameOffset:%s, PropertyInfoOffset:%s",PropertyNameRef.ToString, PropertyInfo.ToString)
+{
+	[Local.WMIOHeapItemOffset = WMIOClassHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOPropertyNameRef(Local.WMIOHeapItemOffset) PropertyNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+	[Property.PropertyInfoOffset = UINT32(FrameData,FrameOffset)
+	,Local.WMIOHeapItemOffset = WMIOClassHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOPropertyInfoRef PropertyInfoRef = FormatString("0x%08X", UINT32(FrameData,FrameOffset));
+	// DEV NOTE: Work around for engine bug 17655, should be removed.
+	switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+	{
+		case 0x80000000:
+			[Property.WMIOHeapRefFlag = false] 
+			struct {};
+		default:
+			[Property.WMIOHeapRefFlag = true]
+			struct {};
+	}
+	switch
+	{
+		case !Property.WMIOHeapRefFlag:
+			struct {};
+		case Local.WMIOHeapItemOffset <= FrameLength:
+			[Local.CurrentFrameOffset = FrameOffset,FrameOffset = Local.WMIOHeapItemOffset,Post.FrameOffset = Local.CurrentFrameOffset]	
+			WMIOPropertyInfo(WMIOClassHeapItemStartOffset) PropertyInfo;
+		default:
+			[Property.WMIONOJump = true]
+			struct {};
+	}
+}
+
+//
+// 2.2.24   PropertyNameRef
+//
+struct WMIOPropertyNameRef(WMIOHeapItemStartOffset)
+{
+	WMIOHeapStringRef(WMIOHeapItemStartOffset) PropertyNameRef;
+}
+
+//
+// 2.2.25   PropertyInfoRef
+//
+struct WMIOPropertyInfoRef
+{
+	WMIOHeapRef PropertyInfoRef;
+}
+
+//
+// 2.2.26   NdTable
+//
+struct WMIONdTable
+{
+	// DEV NOTE: Work around for engine bug 18507, should be removed and use below part instead.
+	//WMIONullAndDefaultFlag Flag[(Property.WMIONdTableCount - 1)/4 + 1];
+	[Local.WMIONdTableByte = (Property.WMIONdTableCount - 1)/4 + 1]
+	BLOB( Local.WMIONdTableByte % 4 == 0 ? Local.WMIONdTableByte : (Local.WMIONdTableByte / 4 + 1)) Flags
+	{
+		WMIONullAndDefaultFlag Flag[Local.WMIONdTableByte];
+	};
+}
+
+//
+// 2.2.27   NullAndDefaultFlag
+//
+[DataTypeBitAlign]
+struct WMIONullAndDefaultFlag = FormatString("%s, %s", nullness ? "NULL" : "Not NULL", inheritedDefault ? "Inherited default" : "No inherited default")
+{
+	[Property.DefaultFlag]
+	UINT8 nullness:1 = FormatString("        (%s)%s",this.ToBitString, this ? "default value is NULL" : "");
+	UINT8 inheritedDefault:1 = FormatString("(%s)%s",this.ToBitString, this ? "default value is inherited from parent class" : "");
+}
+
+//
+// 2.2.29   ValueTable
+//
+struct WMIOValueTable(WMIOHeapItemStartOffset)
+{	
+	[MaxLoopCount = Property.WMIONdTableCount,Local.CheckedPropertyCount = 0 , Property.ClassValueTableStartOffset = FrameOffset]
+	while [ Local.CheckedPropertyCount < Property.WMIONdTableCount ]
+	 {
+		[    
+			Property.WMIOEncodedValueType = Property.ClassId ? Global.WMIOClassPropertyInfoTable$[MakeByteArray(Property.ClassId,FrameOffset - Property.ClassValueTableStartOffset)]
+			:Property.WMIClassPropertyInfoTable$[FrameOffset - Property.ClassValueTableStartOffset], 
+			Post.Local.CheckedPropertyCount = Local.CheckedPropertyCount + 1
+		]
+		WMIOEncodedValue(WMIOHeapItemStartOffset) EncodedValue;
+	}
+}
+
+//
+// 2.2.30   PropertyInfo
+//
+struct WMIOPropertyInfo(WMIOClassHeapItemStartOffset) = FormatString("Property %d,ValueTableOffset %d",DeclarationOrder,ValueTableOffset)
+{
+	WMIOPropertyType PropertyType = WMIOCIMArrayTypeTable(PropertyType.CIMTypeORInherited.type);
+	UINT16 DeclarationOrder;
+	UINT32 ValueTableOffset;
+	UINT32 ClassOfOrigin;
+	WMIOPropertyQualifierSet(WMIOClassHeapItemStartOffset) PropertyQualifierSet;
+}
+
+//
+// 2.2.31   PropertyType
+//
+struct WMIOPropertyType
+{
+	WMIOCIMType CIMTypeORInherited;
+}
+
+//
+// 2.2.36   PropertyQualifierSet
+//
+struct WMIOPropertyQualifierSet(WMIOClassHeapItemStartOffset)
+{
+	WMIOQualifierSet(WMIOClassHeapItemStartOffset) PropertyQualifierSet;
+}
+
+//
+// 2.2.37   ClassHeap
+//
+struct WMIOClassHeap
+{
+	WMIOHeap Heap;
+}
+
+//
+// 2.2.38   MethodsPart
+//
+struct WMIOMethodPart
+{
+	[Local.WMIOMethodDescriptionLength =  24 * UINT16(FrameData, FrameOffset + 4)]
+	[Local.WMIOMethodHeapItemStartOffset = FrameOffset + 8 + Local.WMIOMethodDescriptionLength + 4]
+	UINT32 EncodingLength;
+	UINT16 MethodCount;
+	UINT16 MethodCountPadding;
+	WMIOMethodDescription(Local.WMIOMethodHeapItemStartOffset) MethodDescription[MethodCount];
+	WMIOMethodHeap MethodHeap;
+	switch
+	{
+		case FrameOffset < FrameLength: BLOB(FrameLength - FrameOffset) GarbageOctets;
+	}
+}
+
+//
+// 2.2.41   MethodDescription
+//
+struct WMIOMethodDescription(WMIOMethodHeapItemStartOffset)
+{
+	[Local.WMIOHeapItemOffset = WMIOMethodHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOMethodName(Local.WMIOHeapItemOffset) MethodNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+	UINT8 MethodFlags = WMIOMethodFlagsTable(this);
+	UINT24 MethodPadding;
+	UINT32 MethodOrigin;
+	[Local.WMIOHeapItemOffset = WMIOMethodHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOMethodQualifiers(Local.WMIOHeapItemOffset) MethodQualifiersRef = FormatString("0x%08X", UINT32(FrameData, FrameOffset));
+	[Local.WMIOHeapItemOffset = WMIOMethodHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOInputSignature(Local.WMIOHeapItemOffset) InputSignatureRef = FormatString("0x%08X", UINT32(FrameData, FrameOffset));
+	[Local.WMIOHeapItemOffset = WMIOMethodHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOOutputSignature(Local.WMIOHeapItemOffset) OutputSignatureRef = FormatString("0x%08X", UINT32(FrameData, FrameOffset));
+}
+
+Table WMIOMethodFlagsTable(value)
+{
+	switch(value)
+	{
+		case 32:"WBEM_FLAVOR_ORIGIN_PROPAGATED - The method is inherited from the parent class.";
+	}
+}
+
+//
+// 2.2.42   MethodName
+//
+struct WMIOMethodName(WMIOMethodHeapItemStartOffset)
+{
+	WMIOHeapStringRef(WMIOMethodHeapItemStartOffset) MethodName;
+}
+
+//
+// 2.2.46   MethodQualifiers
+//
+struct WMIOMethodQualifiers(WMIOHeapItemStartOffset)
+{
+	WMIOHeapQualifierSetRef MethodQualifiers;
+	// DEV NOTE: Work around for engine bug 17655, should be removed.
+	switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+	{
+		case 0x80000000:
+			[Property.WMIOHeapRefFlag = false] 
+			struct {};
+		default:
+			[Property.WMIOHeapRefFlag = true]
+			struct {};
+	} 
+	switch
+	{
+		case !Property.WMIOHeapRefFlag:
+			struct {};
+		case WMIOHeapItemStartOffset <= FrameLength:
+			[Local.CurrentFrameOffset = FrameOffset,FrameOffset = WMIOHeapItemStartOffset,Post.FrameOffset = Local.CurrentFrameOffset,Local.WMIOQualifierSetStartOffset = WMIOHeapItemStartOffset - MethodQualifiers]	
+			WMIOQualifierSet(Local.WMIOQualifierSetStartOffset) MethodQualifiers;
+		default:
+			[Property.WMIONOJump = true]
+			struct {};
+	}
+}
+
+//
+// 2.2.47   HeapQualifierSetRef
+//
+struct WMIOHeapQualifierSetRef
+{
+	WMIOHeapRef HeapQualifierSetRef;
+}
+
+//
+// 2.2.48   InputSignature
+//
+struct WMIOInputSignature(WMIOHeapItemStartOffset)
+{
+	WMIOMethodSignature(WMIOHeapItemStartOffset) InputSignature;
+}
+
+//
+// 2.2.49   OutputSignature
+//
+struct WMIOOutputSignature(WMIOHeapItemStartOffset)
+{
+	WMIOMethodSignature(WMIOHeapItemStartOffset) OutputSignature;
+}
+
+//
+// 2.2.50   MethodSignature
+//
+struct WMIOMethodSignature(WMIOHeapItemStartOffset)
+{
+	WMIOHeapMethodSignatureBlockRef MethodSignature;
+	// DEV NOTE: Work around for engine bug 17655, should be removed.
+	switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+	{
+		case 0x80000000:
+			[Property.WMIOHeapRefFlag = false] 
+			struct {};
+		default:
+			[Property.WMIOHeapRefFlag = true]
+			struct {};
+	} 
+	switch
+	{
+		case !Property.WMIOHeapRefFlag:
+			struct {};
+		case WMIOHeapItemStartOffset <= FrameLength:
+			[Local.CurrentFrameOffset = FrameOffset,FrameOffset = WMIOHeapItemStartOffset,Post.FrameOffset = Local.CurrentFrameOffset]	
+			WMIOMethodSignatureBlock MethodSignatureBlock;
+		default:
+			[Property.WMIONOJump = true]
+			struct {};
+	}
+}
+
+//
+// 2.2.51   HeapMethodSignatureBlockRef
+//
+struct WMIOHeapMethodSignatureBlockRef
+{
+	WMIOHeapRef HeapMethodSignatureBlockRef;
+}
+
+//
+// 2.2.52   MethodHeap 
+//
+struct WMIOMethodHeap
+{
+	WMIOHeap Heap;
+}
+
+//
+// 2.2.53   InstanceType
+//
+struct WMIOInstanceType
+{
+	WMIOCurrentClass CurrentClass;
+	[DataFieldFrameLength = FrameOffset + UINT32(FrameData,FrameOffset)]
+	struct
+	{
+		[Local.WMIONdTableValueTableLength = Property.ClassId ? Global.ValueTableLength$[Property.ClassId] : Property.WMIONdTableValueTableLength]
+		[Local.WMIOQualifierSetLength = UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength)]
+		[Local.WMIOInstancePropQualifierSetFlag = UINT8(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength)]
+		[Local.WMIOInstancePropQualifierSet1Length = UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength + 1)]
+		[Local.WMIOInstancePropQualifierSetLength = Local.WMIOInstancePropQualifierSet1Length + UINT32(FrameData, FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOQualifierSetLength + 1 + Local.WMIOInstancePropQualifierSet1Length)]
+		[Local.WMIOInstanceQualifierSetLength = Local.WMIOInstancePropQualifierSetFlag ==2 ? Local.WMIOQualifierSetLength + 1 + Local.WMIOInstancePropQualifierSetLength:Local.WMIOQualifierSetLength + 1]
+		[Local.WMIOInstanceHeapItemStartOffset = FrameOffset + 9 + Local.WMIONdTableValueTableLength + Local.WMIOInstanceQualifierSetLength + 4]
+		UINT32 EncodingLength;
+		UINT8 InstanceFlags = MustBeSetToTable(this,"0");
+		[Local.WMIOHeapItemOffset = Local.WMIOInstanceHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+		WMIOInstanceClassName(Local.WMIOHeapItemOffset) InstanceClassNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+		[Local.WMIOInstanceValueTableLength = Property.ClassId ? Global.ValueTableLength$[Property.ClassId] : Property.WMIONdTableValueTableLength]
+		[Local.WMIONdTableValueTableEndOffset = FrameOffset + Local.WMIOInstanceValueTableLength]
+		switch
+		{
+			case Local.WMIOInstanceValueTableLength > 0:
+			struct
+			{
+				[Property.NdTablestartOffset = FrameOffset,Property.WMIONdTableCount = Property.ClassId ? Global.WMIPropertyCount$[Property.ClassId]:Property.LookupPropertyCount]
+				WMIONdTable NdTable;
+				[Property.WMIOValueTableStartOffset = FrameOffset,Local.WMIOBlob = Property.WMIONdTableValueTableLength - Property.WMIOValueTableStartOffset + Property.NdTablestartOffset]
+				switch
+				{
+					case Property.WMIONOJump:
+					Blob(FrameOffset + Local.WMIOBlob < FrameLength ? Local.WMIOBlob:FrameLength - FrameOffset) ValueTable;
+					default:
+					struct
+					{
+						WMIOValueTable(Local.WMIOInstanceHeapItemStartOffset) ValueTable;
+						switch
+						{
+							case FrameOffset < Local.WMIONdTableValueTableEndOffset: BLOB(Local.WMIONdTableValueTableEndOffset - FrameOffset) Padding;
+						}
+					}
+				}
+			}
+		}
+		WMIOInstanceQualifierSet(Local.WMIOInstanceHeapItemStartOffset) InstanceQualifierSet;
+		WMIOInstanceHeap InstanceHeap;
+		switch
+		{
+			case FrameOffset < FrameLength: 
+			BLOB(FrameLength - FrameOffset) GarbageOctets;
+		}
+	}
+}
+
+//
+// 2.2.55   InstanceClassName
+//
+struct WMIOInstanceClassName(WMIOInstanceHeapItemStartOffset)
+{
+	WMIOHeapStringRef(WMIOInstanceHeapItemStartOffset) InstanceClassName;
+}
+
+//
+// 2.2.56   InstanceData
+//
+struct WMIOInstanceData(WMIOInstanceHeapItemStartOffset)
+{
+	WMIOValueTable(WMIOInstanceHeapItemStartOffset) ValueTable;
+}
+
+//
+// 2.2.57   InstanceQualifierSet
+//
+struct WMIOInstanceQualifierSet(WMIOInstanceHeapItemStartOffset)
+{
+	WMIOQualifierSet(WMIOInstanceHeapItemStartOffset) QualifierSet;
+	WMIOInstancePropQualifierSet(WMIOInstanceHeapItemStartOffset) InstancePropQualifierSet;
+}
+
+//
+// 2.2.58   InstanceHeap 
+//
+struct WMIOInstanceHeap
+{
+	WMIOHeap InstanceHeap;
+}
+
+//
+// 2.2.59   QualifierSet
+//
+struct WMIOQualifierSet(WMIOHeapItemStartOffset)
+{
+	UINT32 Length;
+	[Local.WMIOQuarlifierEndOffset = FrameOffset + Length - 4 ,Property.WMIOQuarlifierCount = 0]
+	while [ FrameOffset < Local.WMIOQuarlifierEndOffset ]
+	{
+		[Property.WMIOQuarlifierCount = Property.WMIOQuarlifierCount + 1]
+		WMIOQuarlifier(WMIOHeapItemStartOffset) qualifier = FormatString("%d", Property.WMIOQuarlifierCount);
+	}
+}
+
+//
+// 2.2.60   Qualifier
+//
+struct WMIOQuarlifier(WMIOHeapItemStartOffset)
+{
+	[Local.WMIOHeapItemOffset = WMIOHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+	WMIOQualifierName(Local.WMIOHeapItemOffset) QualifierNameRef = FormatString("0x%08X,%s", UINT32(FrameData,FrameOffset),Property.WMIONameSummary);
+	UINT8 QualifierFlavor
+	{
+		UINT8 FLAG_PROPAGATE_TO_INSTANCE:1 = FormatString("     (%s) %s", this.ToBitString, this ? "The qualifier is progagated to instances" : "The qualifier is not progagated to instances");
+		UINT8 FLAG_PROPAGATE_TO_DERIVED_CLASS:1 = FormatString("(%s) %s", this.ToBitString, this ? "The qualifier is propagated to derived classes" : "The qualifier is not propagated to derived classes");
+		UINT8 Reserved:2 = FormatString("                       (%s) Reserved", this.ToBitString);
+		UINT8 NOT_OVERRIDABLE:1 = FormatString("                (%s) %s", this.ToBitString, this ? "The qualifier value cannot be overridden in a derived class or an instance" : "The qualifier value can be overridden in a derived class or an instance");
+		UINT8 ORIGIN_PROPAGATED:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Origin propagated" : "Don't origin propagated");
+		UINT8 ORIGIN_SYSTEM:1 = FormatString("                  (%s) %s", this.ToBitString, this ? "Origin system" : "Don't origin system");
+		UINT8 AMENDED:1 = FormatString("                        (%s) %s", this.ToBitString, this ? "The qualifier is localized" : "The qualifier is not localized");
+	};
+	[Property.WMIOEncodedValueType = UINT32(FrameData,FrameOffset)]
+	WMIOQualifierType QualifierType = WMIOCIMArrayTypeTable(UINT32(FrameData,FrameOffset));
+	WMIOQualifierValue(WMIOHeapItemStartOffset) QualifierValueOrRef = FormatString("%s",Property.WMIOQualifierValue);
+}
+
+//
+// 2.2.61   QualifierName 
+//
+struct WMIOQualifierName(WMIOHeapItemStartOffset)
+{
+	WMIOHeapStringRef(WMIOHeapItemStartOffset) QualifierName;
+}
+
+//
+// 2.2.63   QualifierType 
+//
+struct WMIOQualifierType
+{
+	WMIOCIMType QualifierType;
+}
+
+//
+// 2.2.64   QualifierValue 
+//
+struct WMIOQualifierValue(WMIOHeapItemStartOffset)
+{
+	[Property.WMIOQualifierValue = true]
+	WMIOEncodedValue(WMIOHeapItemStartOffset) QualifierValue = Property.WMIOEncodedValueFlag? FormatString(" Array of %s",WMIOCIMBaseTypeTable(Property.WMIOEncodedValueType)): FormatString("%s",Property.WMIOQualifierValue);
+}
+
+//
+// 2.2.65   InstancePropQualifierSet
+//
+struct WMIOInstancePropQualifierSet(WMIOInstanceHeapItemStartOffset)
+{
+	UINT8 InstPropQualSetFlag;
+	switch(InstPropQualSetFlag)
+	{
+		case 2: WMIOQualifierSet(WMIOInstanceHeapItemStartOffset) QualifierSet[2];
+	}
+}
+
+//
+// 2.2.66   Heap 
+//
+struct WMIOHeap
+{
+	[DataFieldByteOrder = LittleEndian, Property.WMIOHeapLength = this & 0x7FFFFFFF]
+	UINT32 HeapLength = FormatString("%d", this & 0x7FFFFFFF);
+	[DataFieldFrameLength = FrameOffset + Property.WMIOHeapLength]
+	switch
+	{
+		case Property.WMIOHeapLength > 0:
+			Blob(Property.WMIOHeapLength) HeapBuffer;
+	}
+}
+
+//
+// 2.2.68   HeapStringRef
+//
+struct WMIOHeapStringRef(WMIOHeapItemOffset)
+{
+	WMIOHeapRef HeapRef;
+	// DEV NOTE: Work around for engine bug 17655, should be removed.
+	switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+	{
+		case 0x80000000:
+			[Property.WMIOHeapRefFlag = false] 
+			struct {};
+		default:
+			[Property.WMIOHeapRefFlag = true]
+			struct {};
+	} 
+	switch
+	{
+		case !Property.WMIOHeapRefFlag:
+			struct {};
+		case WMIOHeapItemOffset <= FrameLength:
+			[Local.CurrentFrameOffset = FrameOffset,FrameOffset = WMIOHeapItemOffset,Post.FrameOffset = Local.CurrentFrameOffset,Property.WMIONameSummary = EncodedString.ToString]	
+			WMIOEncodedString EncodedString;
+		default:
+			[Property.WMIONOJump = true]
+			struct {};
+	}
+}
+
+//
+// 2.2.69   HeapRef
+//
+struct WMIOHeapRef
+{
+	switch( UINT32(FrameData,FrameOffset) & 0x80000000 )
+	{
+		case 0x80000000:
+			[
+				Property.WMIOHeapRefFlag = false,
+				Post.Property.WMIONameSummary = Formatstring("DictionaryReference %s",WMIODictionaryReferenceTable(this & 0x7FFFFFFF)),
+				Post.Property.WMIOEncodedValue = Formatstring("DictionaryReference %s",WMIODictionaryReferenceTable(this & 0x7FFFFFFF)) 
+			]
+			UINT32 DictionaryReference = WMIODictionaryReferenceTable(this & 0x7FFFFFFF);
+		default:
+			[Property.WMIOHeapRefFlag = true]
+			UINT32 HeapOffset;
+	}
+}
+
+Table WMIODictionaryReferenceTable( type )
+{
+	switch( type )
+	{
+		case 0: "quote character";
+		case 1: "key";
+		case 2: "";
+		case 3: "read";
+		case 4: "write";
+		case 5: "volatile";
+		case 6: "provider";
+		case 7: "dynamic";
+		case 8: "cimwin32";
+		case 9: "DWORD";
+		case 10: "CIMType";
+	}
+}
+
+//
+// 2.2.70   MethodSignatureBlock
+//
+struct WMIOMethodSignatureBlock
+{
+	UINT32 EncodingLength;
+	switch
+	{
+		case EncodingLength > 0 :
+			WMIOObjectBlock ObjectBlock;
+	}
+}
+
+//
+// 2.2.71   EncodedValue
+//
+struct WMIOEncodedValue(WMIOHeapItemStartOffset) = FormatString("%s %s",Property.WMIOEncodedValue,Property.DefaultFlag?"Novalue":"")
+{
+	[Property.WMIOEncodedValueType = Property.WMIOEncodedValueType & 0xBFFF] // Remove Inherited Bit
+	switch
+	{
+		case Property.WMIOEncodedValueType & 0x2000: // Array Type
+		[Property.WMIOEncodedValueType = Property.WMIOEncodedValueType & 0x00FF,Property.WMIOEncodedValueFlag = true]
+		switch( Property.WMIOEncodedValueType)
+		{
+			case 0x02:
+			case 0x03:
+			case 0x04:
+			case 0x05:
+			case 0x08:
+			case 0x0B:
+			case 0x0D:
+			case 0x10:
+			case 0x11:
+			case 0x12:
+			case 0x13:
+			case 0x14:
+			case 0x15:
+			case 0x65:
+			case 0x66:
+			case 0x67:
+			struct
+			{
+				[Property.WMIOQualifierValue = FormatString(" Array of %s",WMIOCIMBaseTypeTable(Property.WMIOEncodedValueType))]
+				[Local.WMIOHeapItemOffset = WMIOHeapItemStartOffset + UINT32(FrameData, FrameOffset)]
+				WMIOHeapRef ArrayRef;
+				// DEV NOTE: Work around for engine bug 17655, should be removed.
+				switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+				{
+					case 0x80000000:
+						[Property.WMIOHeapRefFlag = false] 
+						struct {};
+					default:
+						[Property.WMIOHeapRefFlag = true]
+						struct {};
+				}
+				switch
+				{
+					case !Property.WMIOHeapRefFlag:
+						struct {};
+					case Local.WMIOHeapItemOffset <= FrameLength:
+						[Local.CurrentFrameOffset = FrameOffset,FrameOffset = Local.WMIOHeapItemOffset,Post.FrameOffset = Local.CurrentFrameOffset]	
+						WMIOEncodedArray(Property.WMIOEncodedValueType,WMIOHeapItemStartOffset) EncodedArray = FormatString(" Array of %s",WMIOCIMBaseTypeTable(Property.WMIOEncodedValueType));
+					default:
+						[Property.WMIONOJump = true]
+						struct {};
+				}
+			}
+			default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "WMI", "InstanceQuarlifier error: Unknown QualifierType" ) ParserError;
+				BLOB(FrameLength - FrameOffset) UnknownValue;
+			}
+		}
+		default:// Basic Type
+		[Property.WMIOEncodedValueType = Property.WMIOEncodedValueType & 0xFF,Property.WMIOEncodedValueFlag = False]
+		switch( Property.WMIOEncodedValueType )
+		{
+			case 0x02:
+			[Property.WMIOQualifierValue = INT16(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "SINT16Value"]
+			INT16 SINT16Value;
+			case 0x03:
+			[Property.WMIOQualifierValue = INT32(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "SINT32Value"]
+			INT32 SINT32Value;
+			case 0x04:
+			[Property.WMIOQualifierValue = BLOB(FrameData,FrameOffset,4)
+			,Property.WMIOEncodedValue = "REAL32Value"]
+			BLOB(4) REAL32Value;
+			case 0x05:
+			[Property.WMIOQualifierValue = BLOB(FrameData,FrameOffset,8)
+			,Property.WMIOEncodedValue = "REAL64Value"]
+			BLOB(8) REAL64Value;
+			case 0x08:
+			case 0x65:
+			case 0x66:
+			struct
+			{
+				[
+					Property.WMIOQualifierValue = UINT32(FrameData,FrameOffset)
+					,Local.WMIOHeapItemOffset = WMIOHeapItemStartOffset + UINT32(FrameData, FrameOffset)
+				]
+				WMIOHeapRef StringRef;
+				// DEV NOTE: Work around for engine bug 17655, should be removed.
+				switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+				{
+					case 0x80000000:
+						[Property.WMIOHeapRefFlag = false] 
+						struct {};
+					default:
+						[Property.WMIOHeapRefFlag = true]
+						struct {};
+				} 
+				switch
+				{
+					case !Property.WMIOHeapRefFlag:
+						struct {};
+					case Local.WMIOHeapItemOffset <= FrameLength:
+						[Local.CurrentFrameOffset = FrameOffset,FrameOffset = Local.WMIOHeapItemOffset,Post.FrameOffset = Local.CurrentFrameOffset]	
+						WMIOEncodedString EncodedStringValue = FormatString("%s",WMIOCIMBaseTypeTable(Property.WMIOEncodedValueType));
+					default:
+						[Property.WMIONOJump = true]
+						struct {};
+				}
+			}
+			case 0x0B:
+			[Property.WMIOQualifierValue = UINT16(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "BooleanValue"]
+			UINT16 BooleanValue;
+			case 0x0D:
+			struct
+			{
+				[
+					Property.WMIOQualifierValue = UINT32(FrameData,FrameOffset)
+					,Local.WMIOHeapItemOffset = WMIOHeapItemStartOffset + UINT32(FrameData, FrameOffset)
+				]				
+				WMIOHeapRef ObjectRef;
+				// DEV NOTE: Work around for engine bug 17655, should be removed.
+				switch( UINT32(FrameData,FrameOffset - 4) & 0x80000000 )
+				{
+					case 0x80000000:
+						[Property.WMIOHeapRefFlag = false] 
+						struct {};
+					default:
+						[Property.WMIOHeapRefFlag = true]
+						struct {};
+				} 
+				switch
+				{
+					case !Property.WMIOHeapRefFlag:
+						struct {};
+					case Local.WMIOHeapItemOffset <= FrameLength:
+						[Local.CurrentFrameOffset = FrameOffset,FrameOffset = Local.WMIOHeapItemOffset,Post.FrameOffset = Local.CurrentFrameOffset
+						,Property.WMIOEncodedValue = "ObjectBlock"]	
+						WMIOObjectBlock ObjectBlock;
+					default:
+						[Property.WMIONOJump = true]
+						struct {};
+				}
+			}
+			case 0x10:
+			[Property.WMIOQualifierValue = INT8(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "SINT8Value"]
+			INT8 SINT8Value;
+			case 0x11:
+			[Property.WMIOQualifierValue = UINT8(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "UINT8Value"]
+			UINT8 UINT8Value;
+			case 0x12:
+			[Property.WMIOQualifierValue = UINT16(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "UINT16Value"]
+			UINT16 UINT16Value;
+			case 0x13:
+			[Property.WMIOQualifierValue = UINT32(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "UINT32Value"]
+			UINT32 UINT32Value;
+			case 0x14:
+			[Property.WMIOQualifierValue = INT64(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "SINT64Value"]
+			INT64 SINT64Value;
+			case 0x15:
+			[Property.WMIOQualifierValue = UINT64(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "UINT64Value"]
+			UINT64 UINT64Value;
+			case 0x67:
+			[Property.WMIOQualifierValue = UINT16(FrameData,FrameOffset)
+			,Property.WMIOEncodedValue = "CHAR16Value"]
+			UINT16 CHAR16Value;
+			default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "WMIO", "InstanceQuarlifier error: Unknown QualifierType" ) ParserError;
+				BLOB(FrameLength - FrameOffset) UnknownValue;
+			}
+		}
+	}
+}
+
+//
+// 2.2.78   Encoded-String
+//
+struct WMIOEncodedString = FormatString("%s%s", AsciiStringValue, UnicodeStringValue)
+{
+	UINT8 Type = WMIOEncodedStringCharacterType( this );
+	switch( Type )
+	{
+		case 0: [Porperty.WMIOStringValue = this.ToString,Property.WMIOEncodedValue = this.ToString]
+			AsciiString AsciiStringValue;
+		case 1: [DataFieldByteOrder = LittleEndian,Porperty.WMIOStringValue = this.ToString,Property.WMIOEncodedValue = this.ToString]
+			UnicodeString UnicodeStringValue;
+	}
+}
+
+Table WMIOEncodedStringCharacterType( type )
+{
+	switch( type )
+	{
+		case 0: "ASCII";
+		case 1: "UNICODE";
+	}
+}
+
+Table WMIOObjectBlockFlagsTable(value)
+{
+	switch(value)
+	{
+		case 1:"The object is a CIM class. ";
+		case 2:"The object is a CIM instance. ";
+		case 4:"the object has a Decoration block. ";
+		case 5:"The object is a CIM class with a Decoration block. ";
+		case 6:"The object is a CIM instance with a Decoration block. ";
+		case 17:"The object is a prototype of the result object for the query. ";
+		case 81:"One or more key properties of the class are not present in the Prototype Result Object. ";
+	}
+}
+
+//
+// 2.2.79   Encoded-Array
+//
+struct WMIOEncodedArray(Type,WMIOHeapStartOffset)
+{
+	UINT32 ArrayCount;
+	[Property.WMIOEncodedValueType = Type]
+	WMIOEncodedValue(WMIOHeapStartOffset) EncodedValue[ArrayCount];
+}
+
+//
+// 2.2.82   WMIOCIMType 
+//
+[DataTypeByteOrder = LittleEndian]
+struct WMIOCIMType = type.ToString
+{
+	[Property.WMIOCIMType]
+	UINT32 type = WMIOCIMArrayTypeTable(this);
+}
+
+Table WMIOCIMBaseTypeTable( Value )
+{
+	switch( Value )
+	{
+		case 2: "CIM-TYPE-SINT16";
+		case 3: "CIM-TYPE-SINT32";
+		case 4: "CIM-TYPE-REAL32";
+		case 5: "CIM-TYPE-REAL64";
+		case 8: "CIM-TYPE-STRING";
+		case 11: "CIM-TYPE-BOOLEAN";
+		case 13: "CIM-TYPE-OBJECT";
+		case 16: "CIM-TYPE-SINT8";
+		case 17: "CIM-TYPE-UINT8";
+		case 18: "CIM-TYPE-UINT16";
+		case 19: "CIM-TYPE-UINT32";
+		case 20: "CIM-TYPE-SINT64";
+		case 21: "CIM-TYPE-UINT64";
+		case 101: "CIM-TYPE-DATETIME";
+		case 102: "CIM-TYPE-REFERENCE";
+		case 103: "CIM-TYPE-CHAR16";
+		default: FormatString("Undefined type(%d)", Value);
+	}
+}
+
+Table WMIOCIMArrayTypeTable( Value )
+{
+	switch
+	{
+		case (Value & 0x2000):
+			"ARRAY || " + WMIOCIMBaseTypeTable(Value & 0xFF);
+		case (Value & 0x4000):
+			WMIOCIMBaseTypeTable(Value & 0xFF) + " || The current property was originally defined in a parent class";
+		default: 
+			WMIOCIMBaseTypeTable(Value & 0xFF) + " || The property was defined in the current class";
+	}
+}

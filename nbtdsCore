@@ -1,0 +1,133 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NetBIOS Datagram Service
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1002
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 4/22/2009
+//#
+//####
+
+// [RFC 1002    Page 31    4.4.  DATAGRAM SERVICE PACKETS]
+Protocol NbtDS = FormatString("%s, %s", NntDsMSGTypeTable( PacketType ), NbtDsSummary)
+{
+	[NbtDsPacketType]
+	UINT8 PacketType = FormatString("%s, %d(%#x)", NntDsMSGTypeTable( this ), this, this);
+	UINT8 Flags = FormatString("%s, %s %s",
+							   NntDsSourceEndNodeTable(SourceEndNode),
+							   FirstFlag ? "First Fragment" : "",
+							   MoreFlag ? "More Fragments" : ""
+							  )
+	{
+		UINT8 Reserved:4 =  FormatString("     (%s) %s",
+										this.ToBitString, this ? "ERROR: Reserved (should be Zero)" : ""
+										);
+		UINT8 SourceEndNode:2 = FormatString("(%s) %s",
+											this.ToBitString, NntDsSourceEndNodeTable( this )
+											);
+		UINT8 FirstFlag:1 =  FormatString("    (%s) %s",
+										this.ToBitString,
+										this ? "First Fragment" : "Not First Fragment"
+										);
+		UINT8 MoreFlag:1 = FormatString("     (%s) %s",
+										this.ToBitString,
+										this ? "More NetBIOS datagram fragments follow"
+											 : "No More NetBIOS datagram fragments follow"
+										);
+	};
+	UINT16 DGMID;
+	IPv4Address SourceIP;
+	UINT16 SourcePort = FormatString("%s, %d(%#x)", PortNameTable( this ), this, this);
+	
+	switch( PacketType )
+	{
+		case 0x10:
+			NbtDsPacket(SourceIP)  DirectUniqueDatagram;  // DIRECT_UNIQUE DATAGRAM
+		case 0x11:
+			NbtDsPacket(SourceIP)  DirectGroupDatagram;
+		case 0x12:
+			NbtDsPacket(SourceIP)  BroadcaseDatagram;  // BROADCASE DATAGRAM
+		case 0x13:
+			[Post.NbtDsSummary = NbtDSBDErrorCode(this)]
+			UINT8 ErrorCode = FormatString("%s %d(0x%02X)", NbtDSBDErrorCode(this), this, this);// DATAGRAM ERROR
+		case 0x14:
+			[Post.NbtDsSummary = "DestName = " + this.ToString]
+			NbtName DatagramDestinationName; // DATAGRAM QUERY REQUEST
+		case 0x15:
+			[Post.NbtDsSummary = "DestName = " + this.ToString]
+			NbtName PositiveDestinationName; // DATAGRAM POSITIVE QUERY RESPONSE
+		case 0x16:
+			[Post.NbtDsSummary = "DestName = " + this.ToString]
+			NbtName NegativeDestinationName; // DATAGRAM NEGATIVE QUERY RESPONSE
+	}
+	switch
+	{
+		case frameLength > frameOffset && (UINT32(FrameData, FrameOffset) == 0xFF534D42): // 0xFF SMB
+				SMB Smb;
+		case frameLength - frameOffset > 0:
+			Blob(frameLength - frameOffset) UnknownNBTDSData;
+	}
+}
+// [RFC 1002    Page 31    4.4.1.  NetBIOS DATAGRAM HEADER]
+Table NntDsMSGTypeTable( value )
+{
+	switch( value )
+	{
+		case 0x10:"DIRECT_UNIQUE DATAGRAM";
+		case 0x11:"DIRECT_GROUP DATAGRAM";
+		case 0x12:"BROADCAST DATAGRAM";
+		case 0x13:"DATAGRAM ERROR";
+		case 0x14:"DATAGRAM QUERY REQUEST";
+		case 0x15:"DATAGRAM POSITIVE QUERY RESPONSE";
+		case 0x16:"DATAGRAM NEGATIVE QUERY RESPONSE";
+		default  :FormatString("DATAGRAM %#x",value);
+	}
+}
+
+// [RFC 1002    Page 32    4.4.1.  NetBIOS DATAGRAM HEADER]
+Table NntDsSourceEndNodeTable( value )
+{
+	switch( value )
+	{
+		case 0x00:"B node";
+		case 0x01:"P node";
+		case 0x02:"M node";
+		case 0x03:"NBDD";
+		default: "Unknown NbtDs Source End Node";
+	}
+}
+
+// [RFC 1002    Page 33    4.4.3.  DATAGRAM ERROR PACKET]
+Table NbtDSBDErrorCode( value )
+{
+	switch( value )
+	{
+		case 0x82:"Error: DESTINATION NAME NOT PRESENT";
+		case 0x83:"Error: INVALID SOURCE NAME FORMAT";
+		case 0x84:"Error: INVALID DESTINATION NAME FORMAT";
+		default  :"Error: Undefined";
+	}
+}
+
+// [RFC 1002    Page 32    4.4.2.  DIRECT_UNIQUE, DIRECT_GROUP, & BROADCAST DATAGRAM]
+struct  NbtDsPacket(NetworkAddress)
+{
+	UINT16 DGMLength;
+	UINT16 PacketOffset;
+	[
+		NbtDsSummary = "SrcName = " + this.ToString,
+		Global.NameTable$[NetworkAddress] = NbtString(FrameData, FrameOffset)
+	]
+	NbtName SourceName;
+	[
+		NbtDsSummary = NbtDsSummary + ", DestName = " + this.ToString,
+		Global.NameTable$[DestinationNetworkAddress] = NbtDsPacketType == 0x10 ? NbtString(FrameData, FrameOffset) : Global.NameTable$[DestinationNetworkAddress] 
+	]
+	NbtName DestinationName;
+}
+
+

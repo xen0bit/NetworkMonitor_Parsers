@@ -1,0 +1,241 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Network Trace Event Header
+//#
+//#  Details:                
+//#
+//#  Public References:      http://msdn2.microsoft.com/en-us/library/aa363759(VS.85).aspx
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 4/16/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol NetEvent
+{
+	EventHeader Header;
+	ETWBufferContext BufferContext;
+	[ExtendedDataIndex = 0]
+	UINT16 ExtendedDataCount;
+	UINT16 UserDataLength;
+	UINT8 Reassembled;
+
+	while [Property.ExtendedDataIndex < ExtendedDataCount]
+	{
+		[ExtendedDataIndex = ExtendedDataIndex + 1]
+		EventHeaderExtendedDataItem ExtendedDataItem;
+	}
+	
+	[post.conversation.ConversationDescription = FormatString("ActivityID %u%s",Global.ActivityNo$[property.UTActivityId],
+		IsValueNone(Global.ETLContext$[property.UTActivityId]) ? (IsValueNone(Conversation.ProvidesListArray) || Conversation.ProvidesListArray == "" ? ""  : " - " + Conversation.ProvidesListArray)
+		: " - " + Global.ETLContext$[property.UTActivityId])]
+	switch(Property.ETLProviderGUID)
+	{			
+		default:
+			BLOB(UserDataLength) UserData;
+	}
+}
+struct EventDescriptor
+{
+	[property.EventId]
+	UINT16 Id;
+	[property.EventVersion]
+	UINT8 Version;
+	UINT8 Channel;
+	UINT8 Level = EventLevelTable(this);
+	[property.EventOpcode]
+	UINT8 Opcode = EventOpcodeTable(this);
+	UINT16 Task;
+//	UINT64 Keyword;
+	switch(Property.ETLProviderGUID)
+	{
+	    default:
+	        UINT64 DefaultKeyword;
+	}
+}
+
+table EventLevelTable(value)
+{
+	switch(value)
+	{
+		case 0:"WINEVENT_LEVEL_LOG_ALWAYS";
+		case 1:"WINEVENT_LEVEL_CRITICAL";
+		case 2:"WINEVENT_LEVEL_ERROR";
+		case 3:"WINEVENT_LEVEL_WARNING";
+		case 4:"WINEVENT_LEVEL_INFO";
+		case 5:"WINEVENT_LEVEL_VERBOSE";
+		default:"Not Possible value!";
+	}
+}
+
+table EventOpcodeTable(value)
+{
+	switch(value)
+	{
+		case 0:"WINEVENT_OPCODE_INFO";
+		case 1:"WINEVENT_OPCODE_START";
+		case 2:"WINEVENT_OPCODE_STOP";
+		case 3:"WINEVENT_OPCODE_DC_START";
+		case 4:"WINEVENT_OPCODE_DC_STOP";
+		case 5:"WINEVENT_OPCODE_EXTENSION";
+		case 6:"WINEVENT_OPCODE_REPLY";
+		case 7:"WINEVENT_OPCODE_RESUME";
+		case 8:"WINEVENT_OPCODE_SUSPEND";
+		case 9:"WINEVENT_OPCODE_TRANSFER";
+		default:value;
+	}
+}
+
+struct EventHeader
+{
+	UINT16 Size;
+	UINT16 HeaderType;
+	UINT16 Flags
+	{
+		UINT16 ExtInfo:1 = FormatString("  (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_EXTENDED_INFO": "");
+		UINT16 Private:1 = FormatString("  (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_PRIVATE_SESSION": "");
+		[property.UnicodeStringUserData]
+		UINT16 String:1 = FormatString("   (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_STRING_ONLY": "");
+		UINT16 Trace:1 = FormatString("    (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_TRACE_MESSAGE": "");
+		UINT16 NoCPUTime:1 = FormatString("(%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_NO_CPUTIME": "");
+		UINT16 B32:1 = FormatString("      (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_32_BIT_HEADER": "");
+		[property.EventIs64Bit]
+		UINT16 B64:1 = FormatString("      (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_64_BIT_HEADER": "");
+		UINT16 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 Classic:1 = FormatString("  (%s) %s", this.ToBitString, this? "EVENT_HEADER_FLAG_CLASSIC_HEADER": "");
+		UINT16 Reserved2:7 = FormatString("(%s)", this.ToBitString);	
+	}
+	UINT16 EventProperty
+	{
+		UINT16 XML:1 = FormatString("           (%s) %s", this.ToBitString, this? "EVENT_HEADER_PROPERTY_XML": "");
+		UINT16 ForwardXML:1 = FormatString("    (%s) %s", this.ToBitString, this? "EVENT_HEADER_PROPERTY_FORWARDED_XML": "");
+		UINT16 LegacyEventLog:1 = FormatString("(%s) %s", this.ToBitString, this? "EVENT_HEADER_PROPERTY_LEGACY_EVENTLOG": "");
+		UINT16 Reserved: 13 = FormatString("    (%s)", this.ToBitString);
+	}
+	UINT32 ThreadId;
+	[Property.UTProcessId]
+	[Property.UTProcessName = FormatString("%s (%u)", Global.ProcessNameTable$[this], this)]
+	UINT32 ProcessId = FormatString("%u, ProcessName: %s",this, Global.ProcessNameTable$[this]);
+	FILETIME TimeStamp;
+	[Property.ETLProviderGUID = ProviderId.ToString]
+	GUID(true) ProviderId;
+	EventDescriptor Descriptor;
+	switch
+	{
+		case Flags.Private:
+		case Flags.NoCPUTime:
+			_struct
+			{
+				UINT32 KernelTime;
+				UINT32 UserTime;
+			}
+		default:
+			UINT64 ProcessorTime; // Or KernelTime + UserTime
+	}
+	[Global.ActivitySeq = IsValueNone(Global.ActivityNo$[ActivityId]) ? (Global.ActivitySeq + 1) : Global.ActivitySeq]
+	[Global.ActivityNo$[ActivityId] = IsValueNone(Global.ActivityNo$[ActivityId]) ?
+		 Global.ActivitySeq : Global.ActivityNo$[ActivityId]]
+	[property.UTActivityId]
+	[BuildConversationWithParent(ActivityId)]
+	GUID(true) ActivityId;
+	ETLProcessProvidersContext(Property.ETLProviderGUID) ETLProvider;
+}
+
+struct ETWBufferContext
+{
+	UINT8 ProcessorNumber;
+	UINT8 Alignment;
+	UINT16 LoggerId;
+}
+
+struct EventHeaderExtendedDataItem
+{
+	UINT16 Reserved1;
+	UINT16 ExtType;
+	UINT16 Reserved2;
+	UINT16 DataSize;
+	UINT64 DataPtr;
+	switch(ExtType)
+	{
+		case 0x1:GUID(true) RelatedActivityId;
+		case 0x2:SID(false) SID;
+		case 0x3:UINT32 SessionId;
+		case 0x4:EventExtenedItemInstance EventExtenedItemInstance;
+		default:BLOB(DataSize) ExtendedData;
+	}
+}
+
+struct EventExtenedItemInstance
+{
+	UINT32 InstanceId;
+	UINT32 ParentInstanceId;
+	GUID(true) ParentGuid;
+} 
+
+
+
+UnsignedNumber EtlPtrField(Size)
+{
+	Size = Size;
+	DisplayFormat = FormatString( FormatString("0x%s0%dX", "%", size * 2), this );
+}
+struct EtlPtr = Ptr.ToString
+{
+	EtlPtrField(property.EventIs64Bit ? 8 : 4) Ptr;
+}
+
+Struct ETL_SOCKADDR_STORAGE = FormatString("%s", Property.thisDescription) //this.IPv4 ? this.IPv4.ToString : this.IPv6.ToString)
+{
+	UINT16 Family;
+	switch (Family)
+	{
+		case 2: // AF_INET
+			[Property.thisDescription=IPv4.ToString]
+			[Property.UTAddress = this.Address]
+			SOCKADDR_IN IPv4;
+		case 23: // AF_INET6
+			[Property.thisDescription=IPv6.ToString]
+			[Property.UTAddress = this.Address]
+			SOCKADDR_IN6 IPv6;
+		case 33:
+			[Property.thisDescription=MACAddr.ToString]
+			[Property.UTAddress = this.Address]
+			SOCKADDR_MAC MACAddr;
+	}		
+}
+
+Struct SOCKADDR_MAC = FormatString("%s", Address.ToString)
+{
+	[DataFieldByteOrder = BigEndian]MacAddress Address;
+	BLOB(6) Reserved;
+}
+
+Struct SOCKADDR_IN = FormatString("%s:%d", Address.ToString, Port)
+{
+	[DataFieldByteOrder = BigEndian]UINT16 Port;
+	[DataFieldByteOrder = BigEndian]IPv4Address Address;
+	BLOB(8) Reserved;
+}
+
+Struct SOCKADDR_IN6 = FormatString("%s:%s", Address.ToString, Port.ToString)
+{
+	[DataFieldByteOrder = BigEndian]UINT16 Port;
+	UINT32 FlowInfo;
+	[DataFieldByteOrder = BigEndian]IPv6Address Address;
+	UINT32 ScopeId;
+}
+
+Struct WinErrorCode = Property.ErrorSummary
+{
+	switch(UINT32(FrameData, FrameOffset) & 0xFFFF0000)
+	{
+		case 0x0: 
+			[Property.ErrorSummary = WinErrorCodeNameTable(WinErrorValue)]
+			UINT32 WinErrorValue = WinErrorCodeTable(this);
+		default : 
+			[Property.ErrorSummary = this.ToString]
+			HRESULT ErrorValue;
+	}
+}

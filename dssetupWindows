@@ -1,0 +1,284 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Directory Services Setup Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DSSP]: Directory Services Setup Remote Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/2/2010
+//#
+//####
+
+Protocol DSSETUP = property.Description
+{
+	Switch( property.MSRPCOpnum )
+	{
+		case 0:
+		_struct DsRolerGetPrimaryDomainInformation
+		{
+			Switch (property.MSRPCPType)
+			{
+		// REQUEST
+				case 0x00:
+				[post.Description = FormatString("DsRolerGetPrimaryDomainInformation Request, Level=%s", InfoLevel.ToString)]
+				_Struct Request 
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								NdrEnum InfoLevel = this.value + " " + DSSETUPInfoLevelTable( this.value );
+							}
+					}
+
+				}
+
+		// RESPONSE
+				case 0x02:
+				[post.Description = FormatString("DsRolerGetPrimaryDomainInformation Response, InfoLevel=%d, Status:%s", Property.DSSETUPInfoLevel,WinErrorCodeNameTable( ReturnValue ))]
+				_Struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								PDSSETUPDsRolerPrimaryDomainInformation DomainInfo;
+								Align4 Pad;
+								UINT32  ReturnValue = FormatString("0x%08X: ", this) + WinErrorCodeTable( this );
+							}
+					}
+
+				}
+			}
+		}
+
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+		case 9:
+		case 10:
+		case 11:
+		struct NotUsedOnWire
+		{
+			switch (property.MSRPCPType)
+			{
+				case 0x00:// REQUEST
+				[post.Description = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+				struct Request 
+				{
+					ReportParserWarning("DSSETUP", "Invalid dssetup method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+					Blob(FrameLength - Offset) PayloadData;
+				}
+					
+				case 0x02:// RESPONSE
+				[post.Description = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+				struct Response
+				{
+					ReportParserWarning("DSSETUP", "Invalid dssetup method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+					Blob(FrameLength - Offset) PayloadData;
+				}
+			}
+		}
+
+		Default:
+		[post.Description = "Error: " + Property.ParserErrorMessage]
+		ReportParserError(ParserErrorProtocolClassWindows, "DSSETUP", FormatString( "Unknown Method opnum=%d", property.MSRPCOpnum ) ) ProtocolError;
+	}
+}
+
+table DSSETUPInfoLeveltable( value ) 
+{
+	switch( value )
+	{
+		case 1: "DsRolePrimaryDomainInfoBasic";
+		case 2: "DsRoleUpgradeStatus";
+		case 3: "DsRoleOperationState";
+		default: "unknown";
+	}
+}
+
+struct PDSSETUPDsRolerPrimaryDomainInformation
+{
+	NdrPtr Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0: DSSETUPDsRolerPrimaryDomainInformation DomainInfo;
+	}
+}
+
+struct DSSETUPDsRolerPrimaryDomainInformation
+{
+	[DSSETUPInfoLevel]
+	NdrEnum InfoLevel;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch( InfoLevel.value )
+	{
+		case 1:
+			struct
+			{
+				NdrAlign Pad;  
+				DSSETUPDsRolerPrimaryDomainInfoBasic	DomainInfoBasic;
+			}
+		case 2:
+			struct
+			{
+				Align4 Pad; 
+				DSSETUPDsRoleUpgradeStatusInfo			UpgradeStatusInfo;
+			}
+		case 3: DSSETUPDsRoleOperationStateInfo			OperationStateInfo;
+		default: ReportParserError(ParserErrorProtocolClassWindows, "DSSETUP", FormatString( "Unknown Info Level %d", InfoLevel.value ) ) ProtocolError;
+	}
+}
+
+table DSSETUPMachineRoleTable( value )
+{
+	switch( value )
+	{
+		case 0: "DsRole_RoleStandaloneWorkstation - The machine is a standalone workstation.";
+		case 1: "DsRole_RoleMemberWorkstation - The machine is a workstation that is joined to a domain.";
+		case 2: "DsRole_RoleStandaloneServer - The machine is a standalone server.";
+		case 3: "DsRole_RoleMemberServer - The machine is a server that is joined to a domain.";
+		case 4: "DsRole_RoleBackupDomainController - The machine is a server that is a backup to the primary domain controller.";
+		case 5: "DsRole_RolePrimaryDomainController - The machine is a server that is the primary domain controller.";
+		default: "unknown";
+	}
+}
+
+//
+//	[MS-DSSP] DSROLER_PRIMARY_DOMAIN_INFO_BASIC
+//	Alignment:NdrAlign
+//
+struct DSSETUPDsRolerPrimaryDomainInfoBasic = FormatString( "FlatName=%s MachineRole=%u Flags=0x%X", DomainNameFlatString.ToString, MachineRole.value, Flags )
+{
+	NdrEnum MachineRole = this.value + " " + DSSETUPMachineRoleTable( this.value );
+	Align4 Pad2;
+	UINT32 Flags = FormatString( "%08X", this )
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+			Struct
+			{
+				UINT32 DsrolePrimaryDsRunning:1 = FormatString("        (%s) %s", this.ToBitString, this ? "The directory service is running on this computer." : "The directory service is not running on this computer.");
+				UINT32 DsrolePrimaryDsMixedMode:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The directory service is running in mixed mode." : "The directory service is not running in mixed mode.");
+				UINT32 bit02:1 = FormatString("                         (%s)", this.ToBitString);
+				UINT32 DsrolePrimaryDsReadOnly:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The computer holds a read-only copy of the directory." : "The computer does not hold a read-only copy of the directory.");
+				UINT32 Unused:20 = FormatString("                        (%s)", this.ToBitString);
+				UINT32 DsrolePrimaryDomainGuidPresent:1 = FormatString("(%s) %s", this.ToBitString, this ? "The DomainGuid member contains a valid domain GUID." : "The DomainGuid member does not contain a valid domain GUID.");
+				UINT32 Reserved:7 = FormatString("                      (%s)", this.ToBitString);
+			}
+
+			Case BigEndian:
+			Struct
+			{
+				UINT32 Reserved:7 = FormatString("                      (%s)", this.ToBitString);
+				UINT32 DsrolePrimaryDomainGuidPresent:1 = FormatString("(%s) %s", this.ToBitString, this ? "The DomainGuid member contains a valid domain GUID." : "The DomainGuid member does not contain a valid domain GUID.");
+				UINT32 Unused:20 = FormatString("                        (%s)", this.ToBitString);
+				UINT32 DsrolePrimaryDsReadOnly:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The computer holds a read-only copy of the directory." : "The computer does not hold a read-only copy of the directory.");
+				UINT32 bit02:1 = FormatString("                         (%s)", this.ToBitString);
+				UINT32 DsrolePrimaryDsMixedMode:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The directory service is running in mixed mode." : "The directory service is not running in mixed mode.");
+				UINT32 DsrolePrimaryDsRunning:1 = FormatString("        (%s) %s", this.ToBitString, this ? "The directory service is running on this computer." : "The directory service is not running on this computer.");
+			}			
+		}
+	}
+	[DSSETUPPtr1 = this.ReferentId]
+	NdrPtr DomainNameFlat;
+	[DSSETUPPtr2 = this.ReferentId]
+	NdrPtr DomainNameDns;
+	[DSSETUPPtr3 = this.ReferentId]
+	NdrPtr DomainForestName;
+	DSSETUPGuid DomainGuid;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case DSSETUPPtr1 != 0: NdrWideString DomainNameFlatString;
+	}
+	switch
+	{
+		case DSSETUPPtr2 != 0: NdrWideString DomainNameDnsString;
+	}
+	switch
+	{
+		case DSSETUPPtr3 != 0: NdrWideString DomainForestNameString;
+	}
+}
+
+table DSSETUPOperationStateTable( value )
+{
+	switch( value )
+	{
+		case 0: "No upgrade is currently in progress.";
+		case 0x00000004: "DSROLE_UPGRADE_IN_PROGRESS - An upgrade is currently in progress. (The computer is being upgraded from a previous version of the operating system.)";
+		default: "unknown";
+	}
+}
+
+table DSSETUPPreviousServerStateTable( value )
+{
+	switch( value )
+	{
+		case 0: "DsRoleServerUnknown - The previous role of the server is unknown.";
+		case 1: "DsRoleServerPrimary - The previous role of the server was primary domain controller.";
+		case 2: "DsRoleServerBackup - The previous role of the server was backup domain controller.";
+		default: "unknown";
+	}
+}
+
+//
+//	[MS-DSSP] DSROLE_UPGRADE_STATUS_INFO
+//	Alignment:4
+//
+struct DSSETUPDsRoleUpgradeStatusInfo = FormatString( "OperationState=%s PreviousState=%s", OperationState.ToString, PreviousServerState.ToString )
+{
+	UINT32 OperationState = FormatString("%d, ", this) + DSSETUPOperationStateTable( this );
+	NdrEnum PreviousServerState = this.value + " " + DSSETUPPreviousServerStateTable( this.value );
+}
+
+table DSSETUPOperationStateInfoTable( value )
+{
+	switch( value )
+	{
+		case 0: "DsRoleOperationIdleDsRoleOperationIdleNo - role-change operation is currently being performed on the server.";
+		case 1: "DsRoleOperationActiveDsRoleOperationActiveA - role-change operation is in progress.";
+		case 2: "DsRoleOperationNeedRebootDsRoleOperationNeedRebootThe - server must be rebooted.";
+		default: "unknown";
+	}
+}
+
+//
+//	[MS-DSSP] DSROLE_OPERATION_STATE_INFO
+//	Alignment:4
+//
+struct DSSETUPDsRoleOperationStateInfo = OperationState.ToString
+{
+	NdrEnum OperationState = this.value + " " + DSSETUPOperationStateInfoTable( this.value );
+}
+
+Number DSSETUPGuid
+{
+	size = 16,
+	DisplayFormat = FormatString(
+	"{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+	this[3],this[2],this[1],this[0],this[5],this[4],this[7],this[6],this[8],
+	this[9],this[10],this[11],this[12],this[13],this[14],this[15]),
+}
+

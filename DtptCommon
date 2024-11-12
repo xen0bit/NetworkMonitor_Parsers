@@ -1,0 +1,240 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  DTPT - DeskTop PassThrough
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.synce.org/oldwiki/index.php/DTPT
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/24/2009
+//#
+//####
+
+[RegisterAfter(tcppayload.ftp, DTPT, 5721)]
+[DataTypeByteOrder = LittleEndian]
+Protocol DTPT = FormatString("%s%s", Property.DTPTCommand, Property.DTPTSummary)
+{
+	switch
+	{
+		case (UINT8(FrameData, FrameOffset)==1):
+			_struct DTPTMessage
+			{
+				UINT8 Version;
+				UINT8 MessageType;
+				switch(MessageType)
+				{
+				case 1:
+					[Property.DTPTCommand = "Connect Request"]
+					struct ConnectRequest
+					{
+						DTPTSockAddr Adress;
+						UINT32 LastError;
+					}
+				case 0x5A:
+					[Property.DTPTCommand = "Connect Response Success"]
+					struct ConnectResponse
+					{
+						DTPTSockAddr Adress;
+						UINT32 LastError;
+					}
+				case 0x5B:
+					[Property.DTPTCommand = "Connect Response Failure"]
+					[Property.DTPTSummary = FormatString(", Error=%d, %s", LastError, WinErrorCodeNameTable(LastError))]
+					struct ConnectResponse
+					{
+						DTPTSockAddr Adress;
+						UINT32 LastError;
+					}
+				case 9:
+					[Property.DTPTCommand = "Lookup Begin Request"]
+					[Property.DTPTSummary = FormatString(", PayloadSize = %d", this)]
+					struct LookupBeginRequest
+					{
+						UINT16 Padding;
+						UINT64 QValue = FormatString("Not Used");
+						UINT32 dwControlFlags;
+						UINT32 PayloadSize;
+						Blob(PayloadSize) Payload;
+					}
+				case 10:
+					[Property.DTPTCommand = "Lookup Begin Response"]
+					[Property.DTPTSummary = FormatString(", Last Error = %d, %s", LastError, WinErrorCodeNameTable(LastError))]
+					struct LookupBeginResponse
+					{
+						UINT16 Padding;
+						UINT64 Handle;
+						UINT32 LastError;
+						UINT32 Dvalue2 = FormatString("Not Used");
+					}
+				case 11:
+					[Property.DTPTCommand = "Lookup Next Request"]
+					[Property.DTPTSummary = FormatString(", Buffer Size = %d", this)]
+					struct LookupNextRequest
+					{
+						UINT16 Padding;
+						UINT64 Handle;
+						UINT32 Dvalue1 = FormatString("Not Used");
+						UINT32 BufferSize;
+					}
+				case 12:
+					[Property.DTPTCommand = "Lookup Next Response"]
+					[Property.DTPTSummary = FormatString(", Data Size = %d, Last Error = %d, %s", DataSize, LastError, WinErrorCodeNameTable(LastError))]
+					struct LookupNextResponse
+					{
+						UINT16 Padding;
+						UINT64 QValue = FormatString("Not Used");
+						UINT32 LastError;
+						UINT32 DataSize;
+					}
+				case 13:
+					[Property.DTPTCommand = "Lookup End Request"]
+					[Property.DTPTSummary = FormatString(", Handle = %d", this)]
+					struct LookupEndRequest
+					{
+						UINT16 Padding;
+						UINT64 Handle;
+						UINT32 DValue1 = "Not Used";
+						UINT32 DValue2 = "Not Used";
+					}
+				}
+			}
+		case UINT32(FrameData, FrameOffset) == 0x3c:
+			[Property.DTPTCommand = "DTPT Data"]
+			[Property.DTPTSummary = WSAQuerySet.ToString]
+			DTPTWSAQuerySet WSAQuerySet = FormatString("Service Name: %s", WSAQuerySet.ServiceInstanceName.Name);
+		default:
+			[Property.DTPTSummary = "Unknown Frame format " + (FrameLength - FrameOffset) + " bytes"]
+			switch
+			{
+				case FrameLength - FrameOffset > 0:
+					Blob(FrameLength - FrameOffset) Data;
+			}
+		}
+}
+struct DTPTSockAddr
+{
+	UINT32 SIN_Family;
+	switch(SIN_Family)
+	{
+	case 2:
+		[DataFieldByteOrder = BigEndian]
+		struct AF_INET
+		{
+			UINT32 Padding;
+			UINT16 sin_port;
+			IPv4Address sin_addr;
+			Blob(16) Reserved;
+		}
+	case 6:
+		[DataFieldByteOrder = BigEndian]
+		struct AF_INET
+		{
+			UINT32 Padding;
+			UINT16 sin6_port;
+			IPv6Address sin6_addr;
+			UINT32 sin6_scope_id;
+		}
+	}	
+}
+
+struct DTPTCSADDR
+{
+	DTPTSockAddr LocalAddr;
+	DTPTSockAddr RemoteAddr;
+	UINT32 SocketType;
+	UINT32 Prot = ProtocolTypeTable(this);
+}
+
+struct DTPTAFProtocol = FormatString("Family = %s Protocol Type = %s", AddressFamilyTable(Family), ProtocolTypeTable(Prot))
+{
+	UINT32 Family = AddressFamilyTable(this);
+	UINT32 Prot = ProtocolTypeTable(this);
+}
+
+struct DTPTWSAQuerySet
+{
+	struct Raw = FormatString("Size = %d", Size)
+	{
+		UINT32 Length;
+		UINT32 Size;
+		UINT32 ServiceIsntanceNamePtr;
+		UINT32 ServiceClassIDPtr;
+		UINT32 VersionPtr;
+		UINT32 CommentPtr;
+		UINT32 dwNameSpace;
+		UINT32 NSProviderIdPtr;
+		UINT32 ContextPtr;
+		UINT32 NumberOfProtocols;
+		UINT32 ProtocolsPtr;
+		UINT32 QueryStringPtr;
+		UINT32 NumberOfCSAddrs;
+		UINT32 BufferPtr;
+		UINT32 OutputFlags;
+		UINT32 BlobPtr;
+	}
+	struct ServiceInstanceName = Name
+	{
+		UINT32 Length;
+		UnicodeString(Length / 2) Name;
+	}
+	struct ServiceClassID = Data.ToString
+	{
+		UINT32 Length;
+		GUID(1) Data;
+	}
+	struct Comment = Comment.ToString
+	{
+		UINT32 Length;
+		UnicodeString(Length / 2) Comment;
+	}
+	struct NSProvider = NSProviderId.ToString
+	{
+		UINT32 Length;
+		GUID(1) NSProviderId;
+	}
+	struct Context = Context.Tostring
+	{
+		UINT32 Length;
+		switch
+		{
+			case Length > 0:
+				UnicodeString(Length / 2) Context;
+		}
+	}
+	struct Protocols = FormatString("Protocol Count = %d", ProtocolCount)
+	{
+		UINT32 ProtocolCount;
+		UINT32 Length;
+		DTPTAFProtocol AFProt[ProtocolCount];
+	}
+	struct Query = ContextGUID.Tostring
+	{
+		UINT32 Length;
+		switch
+		{
+			case Length > 0:
+				UnicodeString(Length / 2) ContextGUID;
+		}		
+	}
+	struct Addresses = FormatString("Address Count = %d", AddressCount)
+	{
+		UINT32 AddressCount;
+		DTPTCSADDR CSAddrInfo[AddressCount];
+	}
+	switch
+	{
+		case FrameLength - FrameOffset > 0:
+			struct BlobData
+			{
+				UINT32 Length;
+				switch
+				{
+					case FrameLength - FrameOffset > 0:
+						Blob(Length) Blob;
+				}					
+			}
+	}
+}
+			

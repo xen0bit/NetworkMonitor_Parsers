@@ -1,0 +1,307 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Real-Time Streaming Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2326
+//#  Microsoft References:   [MS-RTSP]: Real-Time Streaming Protocol (RTSP) Windows Media Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol RTSP = property.RtspSummary
+{
+	switch
+	{
+		case conversation.RTSP.id > 0:
+			struct{}
+		default:
+			[BuildConversationWithParent]struct{}
+	}
+	[
+		Post.Conversation.ConversationDescription
+			= Conversation.RTSP.ConversationDescription ? Conversation.RTSP.ConversationDescription
+			: (RequestMethod ? FormatString("(%s)", RequestMethod + " " + Request.URL):"") 
+			+ (FormatString(" ConvID = %d", ConvID))
+	]
+	// RTSP Header
+	[
+		Post.PayloadStart(
+			NetworkDirection, /* direction */
+			0, /* id */
+			0, /* sequence token */
+			0, /* next sequence token */
+			property.RTSPHeaderEndOffset - ProtocolOffset + (IsValueNone(property.RTSPContentLength) ? 0 : property.RTSPContentLength), /* total payload length */
+			IsValueNone(Property.RTSPInterleaved) ? Property.RTSPIsFirst : true, /* is first */
+			IsValueNone(Property.RTSPInterleaved) ? false : true, /* is last */
+			RssmblyIndStartBit + RssmblySelfBit + (IsValueNone(Property.RTSPInterleaved) ?  RssmblyIndLengthBit : RssmblyIndEndBit)
+			)
+	]
+	while [FrameOffset < FrameLength]
+	{
+		Switch(AsciiStringTerm( FrameData, Offset,  " " ))
+		{
+			case "PLAY":
+			case "PAUSE":
+			case "SETUP":
+			case "OPTIONS":
+			case "DESCRIBE":
+			case "TEARDOWN":
+			case "ANNOUNCE":
+			case "REDIRECT":
+			case "GET_PARAMETER":
+			case "SET_PARAMETER":
+				[Property.RTSPIsFirst = True]
+				
+				[
+					Global.RTSPContentTypeTable$[FrameNumber] = Global.RTSPCurrentContentType$[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress,DestinationNetworkAddress) : MakeByteArray(DestinationNetworkAddress,SourceNetworkAddress)],
+					property.RTSPContentType = Global.RTSPContentTypeTable$[FrameNumber],
+					post.Global.RTSPCurrentContentType$[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress,DestinationNetworkAddress) : MakeByteArray(DestinationNetworkAddress,SourceNetworkAddress)] = property.RTSPContentType
+				]
+				Struct Request = FormatString( "URL : %s",URL)
+				{
+					[ContentExist =  false,RequestMethod]
+					[property.RTSPContentType = Method.Contains("PLAY") ? "" : property.RTSPContentType]
+					AsciiStringTerm( " " ) Method;
+					AsciiStringTerm( " " ) URL;
+					[property.RtspSummary = "REQUEST, " + RequestMethod + " " + URL]
+					AsciiStringTerm( "\r\n" ) ProtocolVersion;
+
+					While Headers[!(UINT8( Framedata, Offset ) == 0x0D) && !(UINT8( Framedata, Offset + 1 ) == 0x0A)]
+					{
+						DynamicSwitch AsciiStringTerm( ": " )
+						{
+							case "Content-Length":
+								[post.property.RTSPContentLength = StringToNumber(ContentLength)]
+								AsciiStringTerm("\r\n") ContentLength;
+							case "Content-Type":
+								[post.property.RTSPContentType = ContentType, ContentExist = true]
+								AsciiStringTerm("\r\n") ContentType;
+
+							Default: AsciiStringTerm( "\r\n" ) DefaultName;
+						}
+					}
+					[property.RTSPHeaderEndOffset = FrameOffset + 2]
+					[property.RtspSummary = "REQUEST, " + RTSPRequestTypeTable(RequestMethod,RTSPContentType,ContentExist) + " " + URL]
+					AsciiStringTerm( "\r\n", TRUE ) HeaderEnd = "CRLF";
+				}
+			default:
+				switch
+				{
+					case AsciiString( FrameData, Offset, 4 ) == "Rtsp":
+					case AsciiString( Framedata, Offset, 11) == "Secure-RTSP":
+						[Property.RTSPIsFirst = True]
+						Struct Response = FormatString( "Status of response : %s",RTSPStatusCodeTable( StatusCode ) )
+						{
+							AsciiStringTerm( " " ) ProtocolVersion;
+							AsciiStringTerm( " " ) StatusCode = FormatString( "%s, %s", this, RTSPStatusCodeTable( this ) );
+							[property.RtspSummary = "RESPONSE, " + ProtocolVersion + ", Status Code = " + StatusCode + " - " + this]
+							AsciiStringTerm( "\r\n" ) Reason;
+
+							While Headers[!(UINT8( Framedata, Offset ) == 0x0D) && !(UINT8( Framedata, Offset + 1 ) == 0x0A)]
+							{
+								DynamicSwitch AsciiStringTerm( ": " )
+								{
+									case "Content-Length":
+										[post.property.RTSPContentLength = StringToNumber(ContentLength)]
+										AsciiStringTerm("\r\n") ContentLength;
+									case "Content-Type":
+										[post.property.RTSPContentType = ContentType]
+										AsciiStringTerm("\r\n") ContentType;
+
+									Default:
+										AsciiStringTerm( "\r\n" ) DefaultName;
+								}
+							}
+							[property.RTSPHeaderEndOffset = FrameOffset + 2]
+							AsciiStringTerm( "\r\n", TRUE ) HeaderEnd = "CRLF";
+						}
+					default:
+						[ Property.RTSPIsFirst = FrameOffset == ProtocolOffset ? False : Property.RTSPIsFirst ]
+						struct{}
+				}
+		}
+		
+		// RTSP Payload
+		switch
+		{
+			case property.RTSPContentLength > 0:
+				[DataFieldFrameLength = FrameOffset + property.RTSPContentLength]
+				Switch
+				{
+					case property.RTSPContentType.contains("application/x-wms-sendevent"):
+						WMSPRemoteEvent WMSPRemoteEvent;
+					case property.RTSPContentType.contains("application/x-wms-streamswitch"):	
+					case property.RTSPContentType.contains("application/x-wms-extension-cmd"):
+						while [FrameOffset < FrameLength]
+						{
+							AsciiStringTerm("\r\n") Message;
+						}
+					case property.RTSPContentType.contains("application/x-rtsp-packetpair"):
+						RTSPWmspPacketPair PacketPair;
+					case property.RTSPContentType.contains("application/x-rtsp-udp-packetpair"):
+						RTSPUdpPacketPair UdpPacketPair;
+					case property.RTSPContentType.contains("application/x-wms-Logplaystats"):
+					case property.RTSPContentType.contains("application/x-wms-Logconnectstats"):
+						WMLOG WMLOG;
+					case property.RTSPContentType.contains("application/sdp"):
+					case AsciiString(FrameData, FrameOffset, 2) == "v=":
+						SDP SDP;
+					default:
+						BLOB(property.RTSPContentLength < FrameLength - FrameOffset ? property.RTSPContentLength : FrameLength - FrameOffset) RTSPPayload;
+				}
+			case FrameOffset == ProtocolOffset:
+				switch(UINT8( Framedata, Offset ))
+				{
+					case 0x24: //$
+						switch(UINT8( Framedata, Offset + 1 ))
+						{
+							case 0x50://P
+								[property.RtspSummary = (FrameOffset == ProtocolOffset) ? FormatString("[Continuation] Length = %d", FrameLength - FrameOffset) : property.RtspSummary]
+								BLOB(FrameLength - FrameOffset) PacketPairContinuation;
+							default:
+								[Property.RTSPInterleaved = true]
+								[property.RtspSummary = (FrameOffset == ProtocolOffset) ? FormatString("[Interleaved Data] Length = %d", FrameLength - FrameOffset) : property.RtspSummary]
+								While [frameOffset < FrameLength]
+								{
+									RTSPInterleavedFrame InterleavedFrame;
+								}
+						}
+					default:
+						[property.RtspSummary = (FrameOffset == ProtocolOffset) ? FormatString("[Continuation] Length = %d", FrameLength - FrameOffset) : property.RtspSummary]
+						BLOB(FrameLength - FrameOffset) RTSPContinuation;
+				}
+		}	
+	}
+}
+
+Table RTSPStatusCodeTable( StatusCode )
+{
+	Switch ( StatusCode )
+	{
+		Case "100": "Continue";
+		Case "200": "Ok";
+		Case "201": "Created";
+		Case "250": "Low on storage";
+		Case "300": "Multiple choices";
+		Case "301": "Moved permanently";
+		Case "302": "Moved temporarily";
+		Case "303": "See other";
+		Case "305": "Use proxy";
+		Case "400": "Bad request";
+		Case "401": "Unauthorized";
+		Case "402": "Payment required";
+		Case "403": "Forbidden";
+		Case "404": "Not found";
+		Case "405": "Method not allowed";
+		Case "406": "Not acceptable";
+		Case "407": "Proxy authentication required";
+		Case "408": "Request timeout";
+		Case "410": "Gone";
+		Case "411": "Length required";
+		Case "412": "Precondition failed";
+		Case "413": "Request entity too large";
+		Case "414": "Request URI too long";
+		Case "415": "Unsupported media type";
+		Case "451": "Invalid parameter";
+		Case "452": "Illegal Conference Identifier";
+		Case "453": "Not Enough Bandwidth";
+		Case "454": "Session Not Found";
+		Case "455": "Method Not Valid In This State";
+		Case "456": "Header Field Not Valid";
+		Case "457": "Invalid Range";
+		Case "458": "Parameter Is Read-Only";
+		Case "459": "Aggregate Operation Not Allowed";
+		Case "460": "Only Aggregate Operation Allowed";
+		Case "461": "Unsupported Transport";
+		Case "462": "Destination Unreachable";
+		Case "500": "Internal server error";
+		Case "501": "Not implemented";
+		Case "502": "Bad gateway";
+		Case "503": "Service unavailable";
+		Case "504": "Gateway timeout";
+		Case "505": "RTSP Version Not Supported";
+		Case "551": "Option not support";
+		Default   : "UNHANDLED RTSP Status Code";
+	}
+}
+
+Struct RTSPInterleavedFrame = FormatString("Channel = %d, %d bytes", ChannelID, PayloadLength)
+{
+	UINT8 Delimiter;
+	UINT8 ChannelID;
+	[PostAfter.Local.RTSPInterleavePayloadEndOffset = FrameOffset + this]
+	UINT16 PayloadLength;
+	Switch
+	{
+		Case (UINT8( Framedata, Offset ) & 0xC0) == 0x80: //rtp.Version == 2
+			[DataFieldFrameLength = FrameOffset + PayloadLength]
+			RTP Rtp; //#? RTCP
+		Default:
+			BLOB ((PayloadLength > (FrameLength - Offset)) ? FrameLength - FrameOffset : PayloadLength) PayloadData;
+	}
+	Switch
+	{
+		case FrameOffset < Local.RTSPInterleavePayloadEndOffset:
+			struct
+			{
+				[Local.DataLeft = (Local.RTSPInterleavePayloadEndOffset > FrameLength) ? (FrameLength - FrameOffset) : (Local.RTSPInterleavePayloadEndOffset - frameOffset)]
+				BLOB(Local.DataLeft) DataLeft; //Fragmented Data
+			}
+	}
+}
+
+Table RTSPRequestTypeTable(Method,ContentType,ContentExist)
+{
+	switch
+	{
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-wms-Logconnectstats"): "LogConnect";
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-wms-Logplaystats"):    "LogPlay";
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-wms-streamswitch"):    "SelectStream";
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-wms-sendevent"):       "SendEvent";
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-rtsp-udp-packetpair"): "UdpPacketPair";
+		case Method.Contains("SET_PARAMETER") && ContentType.Contains("x-wms-extension-cmd"):   "EndofStream";
+		case Method.Contains("ANNOUNCE"): "ANNOUNCE";
+		case Method.Contains("DESCRIBE"): "DESCRIBE";
+		case Method.Contains("GET_PARAMETER") && ContentType.Contains("x-rtsp-packetpair"):     "TcpPacketPair";
+		case Method.Contains("GET_PARAMETER") && ContentType.Contains("x-wms-getcontentinfo"):  "GetContentInfo";
+		case Method.Contains("GET_PARAMETER") && ContentExist == false: "KeepAlive";
+		default: Method;
+	}
+}
+
+
+// --- For RTSP PacketPair ---    
+struct RTSPWmspPacketPair      
+{                                 
+	RTSPWmspPacketPairHead PacketPairHeadFirst = FormatString("First Payload Length = %d",504 - PacketPairHeadFirst.Reason);
+	WMSPPacketPairPayload(504 - PacketPairHeadFirst.Reason) PacketPairPayloadFirst;
+	                              
+	RTSPWmspPacketPairHead PacketPairHeadSecond = "Second Payload Length = 504";
+	WMSPPacketPairPayload(504) PacketPairPayloadSecond;
+	                              
+	RTSPWmspPacketPairHead PacketPairHeadThird = FormatString("Third Payload Length = %d",1048 + PacketPairHeadThird.Reason);
+	WMSPPacketPairPayload(1048 + PacketPairHeadThird.Reason) PacketPairPayloadThird;
+}                                 
+                                 
+struct RTSPWmspPacketPairHead  
+{                                 
+	UINT16 PacketID = FormatString("%s - %s",this,WMSPPacketIdTable(this));
+	[DataFieldByteOrder = BigEndian,WMSPPacketPairLen]
+	UINT16 PacketLength;          
+	[DataFieldByteOrder = BigEndian]
+	UINT32 Reason;                
+}                                 
+                                 
+// --- For RTSP PacketPair End ---
+
+// --- RTSP UdpPacketPair ---
+struct RTSPUdpPacketPair
+{
+	AsciiString UdpPacketPairMsg;
+}
+

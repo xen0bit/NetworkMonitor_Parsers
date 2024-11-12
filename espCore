@@ -1,0 +1,279 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Encapsulating Security Payload Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2401, 2404, 2406, 3602, 3686
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+// Get the Authentication data length, at most 16 bytes
+//
+// Known Algorithms and their Authentication data length:
+/////////////////////////////////////////////////
+// Authentication   AutDataLength   Reference  //
+//  Algorithms        (bytes)                  //
+//---------------------------------------------//
+//  HMAC-MD5-96         12           RFC2403   //
+//  HMAC-SHA1-96        12           RFC2404   //
+//  SHA-256             16                     //
+//  AES-GMAC            16                     //
+/////////////////////////////////////////////////
+
+[DefaultTimeOut = ESPConversationTimeout]
+Protocol ESP = FormatString("%sSPI = %#x, Seq = %#x", Property.EspNextProtocolSummary, SecurityParameterIndex, SequenceNumber)
+{
+	//#? Dev note 2006-03-10
+	//#? How to identify an encrypted ESP payload?
+	[
+		BuildConversationWithParent
+	]
+	UINT32 SecurityParameterIndex;
+	
+	UINT32 SequenceNumber;
+	
+	//#? Dev note 2008-06-24
+	//#? Check for IV field RFC 4543.  This heurisic is specific
+	// To the Microsoft Implmentation.
+	[DataFieldByteOrder = LittleEndian]
+	switch 
+	{
+		case UINT64(FrameData, FrameOffset) == SequenceNumber:
+			UINT64 IV;
+	}
+	
+	//#? Dev note 2008-06-16
+	//#? There is no direct way to detect the ICV length or IV presence. 
+	//#? We use approximate algorithm as following:
+	//#? Try ICV = 12
+	//#? Try ICV = 16, IV present
+	//#? ICV = 16, IV not presenthout skipping the IV.
+	[Local.IPFragmented = Property.IPv4FragmentMoreFrag || Property.IPv6FragmentMoreFrag]
+	switch 
+	{
+		case !property.IPTruncated && !Local.IPFragmented:
+			struct
+			{
+				[
+					Property.EspICVValid = true, 
+					Property.EspICVLength = 12, 
+					Property.EspNextProtocol = UINT8( Framedata, FrameLength - (Property.EspICVLength + 1) ),
+					Property.EspPadLength = UINT8( Framedata, FrameLength - (Property.EspICVLength + 2) ), 
+					Property.EspPad = BLOB(FrameData, FrameLength - (Property.EspICVLength + 2 + Property.EspPadLength), Property.EspPadLength),
+					Property.EspNextByte = UINT8(FrameData, FrameOffset)
+				]
+				switch (Property.EspNextProtocol)
+				{
+					case 0x06:	// TCP
+					case 0x11:	// UDP
+						struct {};
+					case  0x01:
+						switch
+						{
+							case Property.EspNextByte <= 40:	// ICMP
+								struct{};
+							default:
+								[Property.EspICVValid = false] struct {};
+						}
+					case 0x02:	// IGMP
+						switch
+						{
+							case Property.EspNextByte <= 0x42:
+								struct{};
+							default:
+								[Property.EspICVValid = false] struct {};
+						}
+					case 0x04:	// IPv4
+						switch (Property.EspNextByte & 0xF0)
+						{
+							case 0x40:
+								struct {};
+							default:
+								[Property.EspICVValid = false] struct {};
+						}
+					case 0x29:	// IPv6
+						switch (Property.EspNextByte & 0xF0)
+						{
+							case 0x60:
+								struct {};
+							default:
+								[Property.EspICVValid = false] struct {};
+						}
+					case 0x3B:	// EmptyPacket
+						switch
+						{
+							case (FrameLength - FrameOffset) == Property.ESPPadLength + Property.EspICVLength + 2:
+								struct {};
+							default:
+								[Property.EspICVValid = false] struct {};
+						} 
+					default:
+						[Property.EspICVValid = false] struct {};
+				}
+				
+				switch 
+				{
+					case Property.EspPadLength != 0 && Property.EspPad != 0 && (Property.EspPad & 0xFF) != Property.EspPadLength:
+						[Property.EspICVValid = false] struct {};
+				}
+				
+				switch 
+				{
+					case !Property.EspICVValid:
+						[
+							Property.EspICVLength = 16, 
+							Property.EspNextProtocol = UINT8( Framedata, FrameLength - (Property.EspICVLength + 1) ),
+							Property.EspPadLength = UINT8( Framedata, FrameLength - (Property.EspICVLength + 2) ),
+						]
+						struct {};
+				}
+			}
+	}
+	
+	switch(Property.EspNextProtocol)
+	{
+		case 0x01:
+		case 0x02:
+		case 0x04:
+		case 0x06:
+		case 0x11:
+		case 0x29:
+		case 0x3B:
+			[Property.ESPEncrypted = false] struct {}
+		default:
+			[Property.ESPEncrypted = true] struct {}
+	}
+	
+	//
+	// This switch statement determines and invokes the Encapsulated protocol.
+	//
+	[Property.ESPTrailerOffset = Property.ESPEncrypted ? FrameLength : (FrameLength - Property.ESPPadLength -(Property.EspICVLength + 2))]
+	[Property.ESPEncrypted = Property.ESPTrailerOffset < FrameOffset || Property.ESPTrailerOffset > FrameLength]
+	[Property.ESPEncrypted ? Property.EspNextProtocol = -1 : 0]
+	[Property.ESPEncrypted ? Property.ESPTrailerOffset = FrameLength : 0]
+	[Property.ESPEncrypted ? Conversation.ESPEncrypted = 1 : 0]
+	[Conversation.ConversationDescription = FormatString("%sConvID = %d", Conversation.ESPEncrypted? "(Encrypted) " : "", ConvID)]
+	[DataFieldFrameLength = Property.ESPTrailerOffset]
+	switch(Property.EspNextProtocol)
+	{
+		case 0x06:
+			TCP Tcp;
+		case 0x11:
+			UDP Udp;
+		case 0x01:
+			ICMP Icmp;
+		case 0x02:
+			IGMP Igmp;
+		case 0x04:
+			// Not supported in IPv4.
+			// For IPv6 packets, this value indicates that the data is in IPv4 format.
+			IPv4 Ipv4;
+		case 0x29:
+			IPv6 Ipv6;
+		case 0x3B:
+			// Empty packet without additional header packets to follow.
+			UINT8 EmptyPacket[0];
+		default:
+		
+			[Property.TCPDataOffset =  ((UINT8( Framedata, Offset + 12 ) & 0xF0)  >> 4) * 4 ]
+			switch(AsciiStringTerm(FrameData,FrameOffset + Property.TCPDataOffset," " ) )
+			{
+				//Http Request
+				case "GET":
+				case "PUT":
+				case "HEAD":
+				case "POST":
+				case "TRACE":
+				case "PATCH":
+				case "DELETE":
+				case "UNLINK":
+				case "CONNECT":
+				case "OPTIONS":
+				case "CCM_POST":
+				case "RPC_CONNECT":
+				case "RPC_IN_DATA":
+				case "RPC_OUT_DATA":
+				case "SSTP_DUPLEX_POST":
+				case "MERGE":
+				case "NOTIFY":
+				case "M-SEARCH":
+				Case "COPY":
+				Case "LOCK":
+				Case "MOVE":
+				Case "MKCOL":
+				Case "SEARCH":
+				Case "UNLOCK":
+				Case "PROPFIND":
+				Case "PROPPATCH":
+				Case "GETLIB":
+				case "SUBSCRIBE": 
+				//Http response 
+				case "Http/1.0":
+				case "Http/1.1":
+					[Property.ESPEncrypted = false]
+					[Property.EspNextProtocol = 0x06]
+					[Property.ESPTCPSrcPort= uint16(FrameData, FrameOffset)]
+					[Property.ESPTCPDstPort= uint16(FrameData, FrameOffset + 2)]
+					[Conversation.ESPTCPPorts$[
+						Property.ESPTCPSrcPort < Property.ESPTCPDstPort
+						? MakeByteArray( Property.ESPTCPSrcPort, Property.ESPTCPDstPort )
+						:  MakeByteArray( Property.ESPTCPDstPort, Property.ESPTCPSrcPort )]
+						= true
+					]
+					TCP Tcp;
+				default:
+					[Property.ESPTCPSrcPort= uint16(FrameData, FrameOffset)]
+					[Property.ESPTCPDstPort= uint16(FrameData, FrameOffset + 2)]
+					struct
+					{
+						switch
+						{
+							case Conversation.ESPTCPPorts$[
+									Property.ESPTCPSrcPort < Property.ESPTCPDstPort
+									? MakeByteArray( Property.ESPTCPSrcPort, Property.ESPTCPDstPort )
+									:  MakeByteArray( Property.ESPTCPDstPort, Property.ESPTCPSrcPort )]:
+									[Property.ESPEncrypted = false]
+									[Property.EspNextProtocol = 0x06]
+									TCP Tcp;
+							case Property.IPTruncated && Local.IPFragmented:
+								Blob(FrameLength - FrameOffset) TruncatedFragmentedData;
+							case Property.IPTruncated:
+								Blob(FrameLength - FrameOffset) TruncatedData;
+							case Local.IPFragmented:
+								Blob(FrameLength - FrameOffset) FragmentedData;
+							default:
+								[Conversation.ESPEncrypted = 1]
+								Blob(FrameLength - FrameOffset) EncryptedData;
+						}
+					}
+			}
+	}
+	switch
+	{
+		case FrameOffset < Property.ESPTrailerOffset:
+			BLOB(Property.ESPTrailerOffset - FrameOffset) UnknownData;
+	}
+	switch
+	{
+		case !Property.ESPEncrypted:
+			EspTrailer Trailer;
+	}
+}
+
+struct EspTrailer = FormatString("PadLength = %d, Encapsulated Protocol = %s", PaddingLength, protocolTypeTable(NextProtocol))
+{
+	switch
+	{
+		case Property.ESPPadLength > 0:
+			BLOB(Property.ESPPadLength) PaddingData;
+	}
+	UINT8 PaddingLength;
+	[Property.EspNextProtocolSummary = "Next Protocol = " + ProtocolTypeTable(this) + ", "]
+	UINT8 NextProtocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	BLOB(Property.EspICVLength) AuthenticationData;
+}

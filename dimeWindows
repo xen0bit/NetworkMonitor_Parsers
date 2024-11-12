@@ -1,0 +1,177 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Direct Internet Message Encapsulation
+//#
+//#  Details:                
+//#
+//#  Public References:      INTERNET-DRAFT http://xml.coverpages.org/draft-nielsen-dime-02.txt
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 8/25/2009
+//#
+//####
+[RegisterBefore(tcppayload.TCPPayloadData, DIME, Property.SourcePort  == 2383 || Property.DestinationPort == 2383
+										|| ContainsBin(framedata, 0, "http://schemas.microsoft.com/analysisservices/2003/ext"))]
+[RegisterBefore(tcppayload.TCPPayloadData, DIME,Conversation.Tcp.DimeConversation$[Property.TcpSeqNumber] )]
+[ByteOrder = BigEndian]
+Protocol DIME = Local.DIMESummary
+{
+	[BuildConversationWithParent]
+	switch 
+	{
+		case FrameOffset >= FrameLength:
+			[Local.DIMESummary = (HttpIsRequest  ? FormatString("Request to %s%s%s%s", HttpUri, (HttpHost ? FormatString(" on %s", HttpHost) : ""), (HttpUserAgent ? FormatString(" from %s", HttpUserAgent) : ""), (HttpSOAPAction ? FormatString(", SOAPAction = %s", HttpSOAPAction) : "")) : "")
+							+	(HttpIsResponse ? FormatString("Response from %s%s%s", HttpServer, (HttpXPoweredBy ? FormatString(" powered by %s", HttpXPoweredBy) : ""), (HttpXAspNetVersion ? FormatString(" version %s", HttpXAspNetVersion) : "")) : "")
+							+	(!(HttpIsRequest || HttpIsResponse) ? "DIME Payload" : "")
+			] 
+			_struct Empty{};
+		default:
+			[Local.DIMESummary = (HttpIsRequest  ? FormatString("Request to %s%s%s%s", HttpUri, (HttpHost ? FormatString(" on %s", HttpHost) : ""), (HttpUserAgent ? FormatString(" from %s", HttpUserAgent) : ""), (HttpSOAPAction ? FormatString(", SOAPAction = %s", HttpSOAPAction) : "")) : "")
+							+	(HttpIsResponse ? FormatString("Response from %s%s%s", HttpServer, (HttpXPoweredBy ? FormatString(" powered by %s", HttpXPoweredBy) : ""), (HttpXAspNetVersion ? FormatString(" version %s", HttpXAspNetVersion) : "")) : "")
+							+	(!(HttpIsRequest || HttpIsResponse) ? "DIME Payload" : "")
+							] 
+			[post.Conversation.DIMEIsLastMultiTable$[FrameNumber] = Conversation.DIMEIsLastConv$[Property.NetworkDirection] ? true : Conversation.DIMEIsLastMultiTable$[FrameNumber]]
+			[
+				Post.Property.DIMEIsFirst = Conversation.DIMEIsStartSeq$[Property.NetworkDirection, Property.TcpSeqNumber]
+							&& Property.DimeFirstFlag,
+				Post.Property.DIMEIsLast = Conversation.DIMEIsStartSeq$[Property.NetworkDirection, Property.TcpNextSeqNumber] 
+							&& Conversation.DIMEIsLastMultiTable$[FrameNumber],
+				Post.PayloadStart(
+					NetworkDirection, /*direction */
+					0, /* id */
+					0, /* sequence token */
+					0, /* next sequence token */
+					0, /* total payload length */
+					Property.DimeIsFirst, /* is first */
+					Property.DimeIsLast, /* is last */
+					RssmblyIndStartBit + RssmblySelfBit + RssmblyIndEndBit
+				)
+			]
+			
+			[Post.Conversation.NextEndSequence$[Property.NetworkDirection, Property.TcpNextSeqNumber] = Conversation.DIMEEndSeqVar$[Property.NetworkDirection]]
+			while Options[ ( FrameLength - FrameOffset > 0 ) ]
+			{
+				switch
+				{
+					case ((UINT8(FrameData, FrameOffset) & 0xF8) == 0x08)
+							&& ((UINT8(FrameData, FrameOffset + 1) & 0x0F) == 0x00):
+						struct
+						{
+							[Property.DIMEHeaderParsed = true]
+							[Conversation.DIMEEndSeqVar$[Property.NetworkDirection] = -1]
+							[Conversation.DIMEIsStartSeq$[Property.NetworkDirection, Property.TcpSeqNumber + CurrentProtocolOffset] = true]
+							[Conversation.DIMEIsLastConv$[Property.NetworkDirection] = false]
+							[Conversation.Tcp.DimeConversation$[Property.TCPNextSeqNumber] = true]
+							
+							struct DimeHeader = Formatstring((MB & ME) ? "A complete Dime packet" : (MB ? "The first fragment" : ( ME ? "The last fragment" : "The middle fragment"))) 
+							{
+								UINT8	Version:5 = FormatString(" (%s) %s", this.ToBitString, VersionTable( this ));
+								[Property.DimeFirstFlag = IsValueNone(Property.DimeFirstFlag) ? this : Property.DimeFirstFlag]
+								[Property.DimeIsFirst]
+								UINT8	MB:1 = FormatString("      (%s) %s", this.ToBitString , this ? " Start of message" : " Continued message");
+								[Property.DimeLastFlag, Conversation.DIMEIsLastConv$[Property.NetworkDirection] = this ? true : Conversation.DIMEIsLastConv$[Property.NetworkDirection]]
+								UINT8	ME:1 = FormatString("      (%s) %s ", this.ToBitString , this ? " End of DIME massage" : " More DIME message segments to follow" );
+								UINT8	CF:1 = FormatString("      (%s) %s", this.ToBitString , this ? " Message spans more then one packet" : " Entire message contained in one packet" );
+								UINT8	TypeT:4 = FormatString("   (%s) %s" , this.ToBitString, TypeTTable(this) );
+								UINT8	Reserved:4 = FormatString("(%s) %s", this.ToBitString, " Bits reserved for future use");
+						
+								[LengthOfOptions]
+								UINT16	OptionsLength;
+								[LengthOfId]
+								UINT16	     IdLength;
+								[LengthOfType]
+								UINT16	   TypeLength;
+								[Property.DIMELengthOfData]
+								UINT32	   DataLength;
+							};
+							switch
+							{
+								case LengthOfOptions > 0 :
+									struct OptionsData
+									{
+										UINT16	ElementType;
+										UINT16	ElementLength;
+										AsciiString(ElementLength) Ed; 
+										ALIGN4 MyAlign4;
+									};
+							}
+							
+							switch
+							{
+								case LengthOfId > 0 :
+									struct IdData
+									{
+										AsciiString(LengthOfId) IdData;
+										ALIGN4 MyAlign4;
+									};
+							}
+							
+							switch
+							{
+								case LengthOfType > 0 :
+									struct TypeData
+									{
+										[Property.DIMEDataType]
+										AsciiString(LengthOfType) Type;
+										ALIGN4 MyAlign4;
+									};
+							}
+							[Property.DIMEDataPadCount = Property.DIMELengthOfData % 4 == 0 ? 0 : ( 4- Property.DIMELengthOfData % 4 )]
+							[Conversation.DIMEIsStartSeq$[Property.NetworkDirection,Property.TcpSeqNumber + CurrentProtocolOffset + Property.DIMELengthOfData + Property.DIMEDataPadCount] = true]
+							[Conversation.DIMEEndSeqVar$[Property.NetworkDirection] = Property.TcpSeqNumber + CurrentProtocolOffset + Property.DIMELengthOfData]
+							struct{}
+						}
+					
+				}
+				
+				
+				struct DimeData = Formatstring("%u bytes data", Property.DimeDataLength)
+				{
+					[Property.DimeDataBeginOffset = FrameOffset]
+					Switch
+					{
+						Case (Property.DIMEDataType.Contains("xml") && Property.DimeIsFirst) :
+								[Property.DimeFlag = true]
+								[DataFieldFrameLength = FrameOffset + Property.DIMELengthOfData]
+								xmlparser SoapOverDime;
+						Case Property.DIMEHeaderParsed:
+							[Post.Property.DIMEHeaderParsed = false]
+							BLOB(Property.DIMELengthOfData > FrameLength - FrameOffset ? FrameLength- FrameOffset : Property.DIMELengthOfData) DataOverDime;
+						Default :
+							[Property.DIMEContinuationLength = Conversation.NextEndSequence$[Property.NetworkDirection, Property.TcpSeqNumber] - Property.TcpSeqNumber]
+							[Property.DIMEContinuationLength = Property.DIMEContinuationLength > FrameLength - FrameOffset ? FrameLength- FrameOffset : Property.DIMEContinuationLength]
+							BLOB(IsValueNone(Conversation.NextEndSequence$[Property.NetworkDirection, Property.TcpSeqNumber]) ?
+									FrameLength - FrameOffset : Property.DIMEContinuationLength) ContinuationData;
+					}
+					[Property.DimeDataLength = FrameOffset - Property.DimeDataBeginOffset]
+					ALIGN4 MyAlign4;
+				};
+		
+			}//while	
+	}
+} //protocol
+
+Table VersionTable( Version )
+{
+	switch( Version )
+	{
+		case 1: FormatString(" Version 1.0 (%d)", Version);
+		default: FormatString(" Invalid DIME version (%d)", Version);
+	}
+}
+
+Table TypeTTable( PayloadType )
+{
+	Switch ( PayloadType )
+	{
+		Case 0: FormatString(" Unchanged (%d)", PayloadType);
+		Case 1: FormatString(" MediaType (%d)", PayloadType);
+		Case 2: FormatString(" AbsoluteURI (%d)", PayloadType);
+		Case 3: FormatString(" Unknown (%d)", PayloadType);
+		Case 4: FormatString(" None (%d)", PayloadType);
+		default:  FormatString(" Reserved (%d)", PayloadType);
+	}
+}
+
+

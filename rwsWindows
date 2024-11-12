@@ -1,0 +1,2418 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Winsock (Rws) Protocol Parser
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   ISA Server Winsock Proxy Spec, winsock.h, winsock2.h
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 6/3/2009
+//#                          Minor, 2/20/2010
+//#
+//####
+//------------------------------------------------------------------------------
+// Global variable set defined and populated by RWS parser; used in TCP.npl and UDP.npl
+//------------------------------------------------------------------------------
+/* Global PropertyGroup used for Socket Proxy traffic, all referenced by "Global.SocketProxy"
+
+	Supports the following properties, indexed by the "proxied" socket identified by "SocketIndex" as:
+	
+	[SocketIndex = (SourceNetworkAddress < DestinationNetworkAddress)
+				? MakeByteArray(SourceNetworkAddress,SourcePort,DestinationNetworkAddress,DestPort)
+				: MakeByteArray(DestinationNetworkAddress,DestPort,SourceNetworkAddress,SourcePort)]
+
+	.ClientAddress$		// binary representation of the client IP address
+	.ClientPort$		// binary representing the client port
+	.ClientEndpoint$	// string "IP/port" representation of the client end of the internal connection
+	.ExternalAddress$	// binary representation of the ISA external IP address
+	.ExternalPort$		// binary representing the port used at the remote host
+	.ExternalEndpoint$	// string "IP/port" representation of the proxy end of the external connection
+	.InternalAddress$	// binary representation of the ISA internal IP address
+	.InternalPort$		// binary representing the ISA internal port
+	.InternalEndpoint$	// string "IP/port" representation of the proxy end of the internal connection
+	.ProxyProtocol$		// string containing the name of the proxy protocol; "WSP", "SOCKS", etc.
+	.RemoteAddress$		// binary representation of the remote host IP address
+	.RemotePort$		// binary representing the port used at the remote host
+	.RemoteEndpoint$	// string "IP/port" representation of the remote end of the external connection
+	.RwsApp$			// string representation of the RWS client application
+	.RwsHost$			// string representation of the RWS client computer
+	.RwsId$				// binary value passed through Property.RwsId, derived from the ClientConnectionHandle
+	.RwsUser$			// string representation of the RWS client user
+*/
+
+//------------------------------------------------------------------------------
+// Conversation variable set used only by Rws parser
+//------------------------------------------------------------------------------
+/*  Conversation PropertyGroup used only by the RWS parser to build the Global.Socketproxy data,
+	all referenced by "Conversation.RwsData." and are array-mapped according to 
+	Property.RwsId or Property.SvrMapHandle
+
+	.RemoteEndpoint$	// string "IP/port" representation of the remote end of the external connection
+	.RemoteAddress$		// binary representation of the remote host IP address
+	.RemotePort$		// integer representing the port used at the remote host
+	.ExternalEndpoint$	// string "IP/port" representation of the proxy end of the external connection
+	.ExternalAddress$	// binary representation of the ISA external IP address
+	.ExternalPort$		// integer representing the ISA external port
+	.InternalEndpoint$	// string "IP/port" representation of the proxy end of the internal connection
+	.InternalAddress$	// binary representation of the ISA internal IP address
+	.InternalPort$		// integer representing the ISA internal port
+	.ClientEndpoint$	// string "IP/port" representation of the client end of the internal connection
+	.ClientAddress$		// binary representation of the client IP address
+	.ClientPort$		// integer representing the client port
+	.RwsId$				// used to persist the RwsId across mapping commands (can get lost between map msgs)
+	.RwsApp				// string representation of the RWS client application
+	.RwsHost			// string representation of the RWS client computer
+	.RwsUser			// string representation of the RWS client user
+*/
+
+//******************************************************************************
+// RWS protocol constants
+//******************************************************************************
+//------------------------------------------------------------------------------
+// Primary connect port for FWC control channel
+//------------------------------------------------------------------------------
+const RwsPort 				= 1745;
+
+//------------------------------------------------------------------------------
+//  RwsSignatures : Rws Control Channel message signature bytes
+//------------------------------------------------------------------------------
+	//Rws over UDP - note that this is actually in a different location than the
+	//TCP signatures
+const RwsUDP 				= 0x52575350;	//"RWSP"
+	//Rws over TCP
+const RwsTCP 				= 0x00525753;	//"\0RWS"
+	//Encrypted Rws over TCP
+const RwsENC 				= 0x52575345;	//"RWSE"
+
+const RwsPrxy1  			= 9;  // Proxy 1; WSP
+const RwsPrxy2  			= 10; // Proxy 2; WSP
+const RwsIsa				= 11; // ISA 2000, 2004, 2006; FWC
+const RwsTmg				= 12; // TMG; TMGC
+
+//------------------------------------------------------------------------------
+//  RwsOpCodeSet : Rws Control Channel message operation codes
+//------------------------------------------------------------------------------
+	// Authentication message
+const RwsOpCodeLogon			= 0;
+	// Error response
+const RwsOpCodeError			= 1;
+	// RwsOpCodeConnect request
+const RwsOpCodeConnect			= 2;
+	// Response for successful RwsOpCodeConnect request
+const RwsOpCodeConnectReply		= 3;
+	// Bind request for TCP
+const RwsOpCodeTcpBind			= 4;
+	// Bind request for UDP
+const RwsOpCodeUdpBind			= 5;
+	// Response for successful bind request
+const RwsOpCodeBindReply		= 6;
+	// RwsOpCodeListen request
+const RwsOpCodeListen			= 7;
+	// Response for successful RwsOpCodeListen request
+const RwsOpCodeListenReply		= 8;
+	// mapping annoncement from proxy to client
+const RwsOpCodeMappingNew		= 9;
+	// mapping accepted by client
+const RwsOpCodeMappingRcv		= 10;
+	// mapping request from client
+const RwsOpCodeMappingReq		= 11;
+	// Remove mapping Request
+const RwsOpCodeMappingRmv		= 12;
+	// Get host by name query
+const RwsOpCodeGhbn			= 13;
+	// Get host by addr query
+const RwsOpCodeGhba			= 14;
+	// Reply for gethostbyX
+const RwsOpCodeHostEntry		= 15;
+	// Force the server to close a bound but not connected socket
+const RwsOpCodeClose			= 16;
+	// Get serv by name query
+const RwsOpCodeGsbn			= 17;
+	// Get serv by port query
+const RwsOpCodeGsbp			= 18;
+	// Reply for getservbyX
+const RwsOpCodeSrvEntry			= 19;
+	// Continue authentication sequence
+const RwsOpCodeLogonContinue		= 20;
+	// The client is authenticated
+const RwsOpCodeLogonOk			= 21;
+	// The access to the service denied to this client
+const RwsOpCodeLogonDeny		= 22;
+	// Change socket options
+const RwsOpCodeSetSockOpt		= 23;
+	// Get server IPs
+const RwsOpCodeGetSvrIPs		= 24;
+	// IPX support was dropped as of ISA 2000
+const RwsOpCodeIPX1			= 25;
+const RwsOpCodeIPX2			= 26;
+const RwsOpCodeIPX3			= 27;
+const RwsOpCodeIPX4			= 28;
+	// RwsOpCodePing message for diagnostic
+const RwsOpCodePing			= 29;
+	// New (v2.0) RwsOpCodeConnect request, that reduces server load
+const RwsOpCodeNewConnect		= 30;
+	// This opcode is not used.
+const RwsOpCodeUnused			= 31;
+	// Establishment of TCP control channel
+const RwsOpCodeChanSetup		= 32;
+	
+	// RWS v12 (TMG) opcodes
+	// Connect v12
+const RwsOpCodeConnect12		= 33;
+const RwsOpCodeConnectReply12		= 34;
+
+	// Bind v12
+const RwsOpCodeBind12			= 35;
+const RwsOpCodeBindReply12	  	= 36;
+
+	// Mapping v12
+const RwsOpCodeMappingRequest12 	= 37;
+const RwsOpCodeMappingAdd12	 	= 38;
+const RwsOpCodeMappingAck12	 	= 39;
+const RwsOpCodeMappingRemove12  	= 40;
+const RwsOpCodeExtendedData12		= 41;
+
+//------------------------------------------------------------------------------
+// RwsControlFlags : UDP control channel opcode bit flags
+//------------------------------------------------------------------------------
+	// The message should be resent until acknowledged
+const RwsMsgResend			= 0x01;
+	// The message should be dispatched to the outer levels
+const RwsMsgMsg				= 0x02;
+	// The message has piggibacked acknowledge.
+const RwsMsgAck				= 0x04;
+	// Negative acknowledge
+const RwsMsgNack			= 0x08;
+	// Hint for the new session
+const RwsMsgHint			= 0x10;
+	// Shutdown notification
+const RwsMsgShut			= 0x20;
+	// Authentication message
+const RwsMsgNtlm			= 0x40;
+
+//------------------------------------------------------------------------------
+// RwsControlCodes : UDP control channel valid opcode combinations
+//------------------------------------------------------------------------------
+	// Regular message
+const RwsMsg				= ( RwsMsgResend | RwsMsgMsg | RwsMsgAck );
+	// Idle message
+const RwsIdle				= ( RwsMsgResend | RwsMsgAck );
+	// Control channel shutdown code
+const RwsShut				= ( RwsMsgResend | RwsMsgAck | RwsMsgShut );
+	// Authentication message
+const RwsNtlm				= ( RwsMsgResend | RwsMsgMsg | RwsMsgAck | RwsMsgNtlm );
+
+// size calculation datadata
+const RwsMaxMachineName			= 32;
+const RwsMaxUserName			= 32;
+const RwsMaxInfoSize			= 16;
+const RwsMaxClientDataSize		= 56;
+const RwsMaxClientInfoDataSize	= (RwsMaxMachineName + 
+									RwsMaxUserName + 
+									RwsMaxInfoSize + 
+									RwsMaxClientDataSize +
+									1);
+const RwsCbSha1HashLength		= 20;
+
+//------------------------------------------------------------------------------
+// RwsControlFlags : Various capabiity flags between client & server
+//------------------------------------------------------------------------------
+const RwsKillOldSession			= 1; // Tell the server to terminate the session
+				     	     		 // from the same app on the same machine.
+const RwsAllowRouteMode			= 2; // Tell the server that the client is willing
+									 // to work in Route Mode
+const RwsForceEncryption		= 4; // Tell the client that the server requires secure control channel
+const RwsEncryptionEnabled		= 8; // Tell the server that the client is able to encrypt the data
+
+//------------------------------------------------------------------------------
+// Rws IP Families : IP version family values
+//------------------------------------------------------------------------------
+const RwsIpv4				= 0x2;
+const RwsIpv6				= 0x6;
+
+//------------------------------------------------------------------------------
+// Rws Transports: TCP or UDP
+//------------------------------------------------------------------------------
+const RwsXportTcp			= 0x6;
+const RwsXportUdp			= 0x11;
+
+//------------------------------------------------------------------------------
+// Winsock Socket Options Values (from Winsock2.h)
+//------------------------------------------------------------------------------
+const SOL_SOCKET					= 0xFFFF;
+const SOL_TCP						= 0x0600;
+const SO_DEBUG						= 0x0001;		// turn on debugging info recording 
+const SO_ACCEPTCONN					= 0x0002;		// socket has had listen() 
+const SO_REUSEADDR					= 0x0004;		// allow local address reuse 
+const SO_KEEPALIVE					= 0x0008;		// keep connections alive 
+const SO_DONTROUTE					= 0x0010;		// just use interface addresses 
+const SO_BROADCAST					= 0x0020;		// permit sending of broadcast msgs 
+const SO_USELOOPBACK				= 0x0040;		// bypass hardware when possible 
+const SO_LINGER						= 0x0080;		// linger on close if data present 
+const SO_OOBINLINE					= 0x0100;		// leave received OOB data in line 
+const SO_DONTLINGER					= ~SO_LINGER;		// disallow linger on close 
+const SO_EXCLUSIVEADDRUSE			= ~SO_REUSEADDR;  	// disallow local address reuse 
+const SO_SNDBUF						= 0x1001;		// send buffer size 
+const SO_RCVBUF						= 0x1002;		// receive buffer size 
+const SO_SNDLOWAT					= 0x1003;		// send low-water mark 
+const SO_RCVLOWAT					= 0x1004;		// receive low-water mark 
+const SO_SNDTIMEO					= 0x1005;		// send timeout 
+const SO_RCVTIMEO					= 0x1006;		// receive timeout 
+const SO_ERROR						= 0x1007;		// get error status and clear 
+const SO_TYPE						= 0x1008;		// get socket type 
+const SO_GROUP_ID					= 0x2001;		// ID of a socket group 
+const SO_GROUP_PRIORITY				= 0x2002;		// the relative priority within a group
+const SO_MAX_MSG_SIZE				= 0x2003;		// maximum message size 
+const SO_PROTOCOL_INFOA				= 0x2004;		// WSAPROTOCOL_INFOA structure 
+const SO_PROTOCOL_INFOW				= 0x2005;		// WSAPROTOCOL_INFOW structure 
+const PVD_CONFIG					= 0x3001;		// configuration info for service provider 
+const SO_CONDITIONAL_ACCEPT			= 0x3002;		// enable true conditional accept: 
+													// connection is not ack-ed to the 
+													// other side until conditional 
+													// function returns CF_ACCEPT 
+const SO_PORT_SCALABILITY			= 0x3006;		// new for WS08; allows more than 64K outgoing ports 
+const SO_UPDATE_ACCEPT_CONTEXT		= 0x700B;
+
+//------------------------------------------------------------------------------
+// Winsock Error Values (from Winsock2.h)
+//------------------------------------------------------------------------------
+
+const WSAEINTR				= 10004;
+const WSAEACCES				= 10013;
+const WSAEFAULT				= 10014;
+const WSAEINVAL				= 10022;
+const WSAEMFILE				= 10024;
+const WSAEWOULDBLOCK		= 10035;
+const WSAEINPROGRESS		= 10036;
+const WSAEALREADY			= 10037;
+const WSAENOTSOCK			= 10038;
+const WSAEDESTADDRREQ		= 10039;
+const WSAEMSGSIZE			= 10040;
+const WSAEPROTOTYPE			= 10041;
+const WSAENOPROTOOPT		= 10042;
+const WSAEPROTONOSUPPORT	= 10043;
+const WSAESOCKTNOSUPPORT	= 10044;
+const WSAEOPNOTSUPP			= 10045;
+const WSAEPFNOSUPPORT		= 10046;
+const WSAEAFNOSUPPORT		= 10047;
+const WSAEADDRINUSE			= 10048;
+const WSAEADDRNOTAVAIL		= 10049;
+const WSAENETDOWN			= 10050;
+const WSAENETUNREACH		= 10051;
+const WSAENETRESET			= 10052;
+const WSAECONNABORTED		= 10053;
+const WSAECONNRESET			= 10054;
+const WSAENOBUFS			= 10055;
+const WSAEISCONN			= 10056;
+const WSAENOTCONN			= 10057;
+const WSAESHUTDOWN			= 10058;
+const WSAETIMEDOUT			= 10060;
+const WSAECONNREFUSED		= 10061;
+const WSAEHOSTDOWN			= 10064;
+const WSAEHOSTUNREACH		= 10065;
+const WSAEPROCLIM			= 10067;
+const WSASYSNOTREADY		= 10091;
+const WSAVERNOTSUPPORTED	= 10092;
+const WSANOTINITIALISED		= 10093;
+const WSAEDISCON			= 10101;
+const WSATYPENOTFOUND		= 10109;
+const WSAHOSTNOTFOUND		= 11001;
+const WSATRYAGAIN			= 11002;
+const WSANORECOVERY			= 11003;
+const WSANODATA				= 11004;
+
+//******************************************************************************
+// RWS Protocol
+//******************************************************************************
+[RegisterAfter(TCPPayload.MMS, RWS, RwsPort), 
+ RegisterAfter(UDPPayload.MMS, RWS, RwsPort), 
+ RegisterAfter(PayloadHeader.MMS, RWS, "RWS")]
+Protocol RWS = FormatString("%s%s", Property.RwsProtoDescr, (Property.RWSTooBig)?" (needs reassembly)":"" )
+{
+	[BuildConversationWithParent]
+
+	[Property.RwsFwd = (RwsPort == DestinationPort)?TRUE:FALSE,
+	 Property.RwsMsgCount = 0,
+	 Property.RwsId = 0,
+	 Property.RwsPktStart = FrameOffset,
+	 Property.RwsOnTcp = IsValueNone(Property.TcpSeqNumber)?FALSE:TRUE,
+	 Property.RwsPacketLen = (TRUE == Property.RwsOnTcp)?
+	 						Property.TCPPayloadLength:
+	 						Property.UDPPayloadLength]
+	 
+	switch(IsValueNone(Conversation.RwsData.DataRequest) && 
+						Property.RwsFwd && 
+						1 == Property.RwsPacketLen)
+	{
+		case TRUE: 
+			[Conversation.RwsData.DataRequest = TRUE]
+			struct{};
+	}
+
+	switch
+	{
+		case (Conversation.RwsData.DataRequest && Property.RwsFwd):
+			[Property.RwsMsgCount = 1,
+			 Property.RwsPktDescr = (this == RwsPrxy1 || 
+ 									this == RwsPrxy2 || 
+ 									this == RwsIsa || 
+ 									this == RwsTmg
+ 									  )?"Configuration data request":
+ 										FormatString("Invalid configuration data request trigger (%#x)",this)]
+			UINT8	DataTrigger = RwsVersionTable(this);
+		case (Conversation.RwsData.DataRequest && !Property.RwsFwd):
+			[Property.RwsMsgCount = 1,
+			 Property.RwsPktDescr = "Configuration data response"]
+			struct
+			{
+				RwsAddressTable	Addresses;
+				switch(FrameOffset < FrameLength)
+				{
+					case TRUE: RwsAppConfigData	ConfigData;
+				}
+			};
+		case (!Property.RwsOnTcp &&
+			  Property.RwsFwd &&
+			  RwsUDP != UINT32(FrameData,FrameOffset + 24)):
+				[Property.RwsMsgCount = 1]
+				Rws12HttpsMsg Rws12HttpsMsg;
+		default:
+			//single packet may contain multiple messages
+			while [FrameOffset < FrameLength &&
+					(TRUE == Conversation.RwsEncrypted ||
+					RwsTCP == UINT32(FrameData,FrameOffset) ||
+					RwsENC == UINT32(FrameData,FrameOffset) ||
+					RwsUDP == UINT32(FrameData,FrameOffset + 24))]
+			{
+				[Property.RwsMsgCount = Property.RwsMsgCount + 1]
+				switch
+				{
+					case (RwsUDP == UINT32(FrameData,FrameOffset + 24)):
+						RwsuPacket  RwsuPacket;
+					case (RwsTCP == UINT32(FrameData,FrameOffset)): 
+						RwstPacket	RwstPacket;
+					case (RwsENC == UINT32(FrameData,FrameOffset)):
+						[Conversation.RwsEncrypted = TRUE]
+						RwsePacket	RwsePacket;
+					case (TRUE == Conversation.RwsEncrypted):
+						[Property.RwsPktDescr = FormatString("Encrypted (%u bytes)", FrameLength - FrameOffset)]
+						BLOB(FrameLength - FrameOffset)	Encrypted;
+				}
+				switch(IsValueNone(Conversation.RwsApp) && !IsValueNone(Property.RwsApp))
+				{
+					case TRUE:
+						[Conversation.RwsApp = Property.RwsApp,
+						 Conversation.Parent.RwsApp = Property.RwsApp]
+						struct{};
+				}
+				switch(IsValueNone(Conversation.RwsHost) && !IsValueNone(Property.RwsHost))
+				{
+					case TRUE:
+						[Conversation.RwsHost = Property.RwsHost,
+						 Conversation.Parent.RwsHost = Property.RwsHost]
+						struct{};
+				}
+				switch(IsValueNone(Conversation.RwsUser) && !IsValueNone(Property.RwsUser))
+				{
+					case TRUE:
+						[Conversation.RwsUser = Property.RwsUser,
+						 Conversation.Parent.RwsUser = Property.RwsUser]
+						struct{};
+				}
+			}
+	}
+	switch(Property.RwsMsgCount)
+	{
+		case 0:
+			[Property.RwsProtoDescr = "Unrecognized RWS packet."]
+			BLOB(Property.RwsPacketLen)	Unparsed;
+		case 1:
+			[Property.RwsProtoDescr = (0 == Property.RwsId)?
+							Property.RwsPktDescr:
+							FormatString("%#x %s", 
+									Property.RwsId, 
+									Property.RwsPktDescr)]
+			struct{};
+		default:
+			[Property.RwsProtoDescr = FormatString("%d Messages",Property.RwsMsgCount)]
+			struct{};
+	}
+}
+
+//******************************************************************************
+// WSP Protocol - only exists if RWS is used
+//******************************************************************************
+Protocol WSP = Local.WspDescription
+{
+	[BuildConversationWithParent]
+	[Conversation.RwsApp = IsValueNone(Global.SocketProxy.RwsApp$[SocketIndex])?
+										"Unknown App":
+										Global.SocketProxy.RwsApp$[SocketIndex],
+	 Conversation.RwsHost = IsValueNone(Global.SocketProxy.RwsHost$[SocketIndex])?
+										"Unknown Host":
+										Global.SocketProxy.RwsHost$[SocketIndex],
+	 Conversation.RwsId = Global.SocketProxy.RwsId$[SocketIndex],
+	 Conversation.RwsUser = IsValueNone(Global.SocketProxy.RwsUser$[SocketIndex])?
+										"Unknown User":
+										Global.SocketProxy.RwsUser$[SocketIndex]]
+	[Conversation.Parent.RwsApp = Conversation.RwsApp,
+	 Conversation.Parent.RwsHost = Conversation.RwsHost,
+	 Conversation.Parent.RwsId = Conversation.RwsId,
+	 Conversation.Parent.RwsUser = Conversation.RwsUser]
+	[Local.WspSessPort = Global.SocketProxy.RemotePort$[SocketIndex],
+	 Property.RwsApp = Conversation.RwsApp,
+	 Property.RwsHost = Conversation.RwsHost,
+	 Property.RwsId = Conversation.RwsId,
+	 Property.RwsUser = Conversation.RwsUser]
+	// because the RWS session is made up of four separate sockets, we need to descibe them
+	// for the user when a protocol parser doesn't behave properly under "socket proxy" conditions
+	[Local.WspFwd =	(SourceNetworkAddress == Global.SocketProxy.ClientAddress$[SocketIndex]),
+
+	//"Src" describes the originator of this packet
+	 Local.SrcEndPt =	(Local.WspFwd)?Global.SocketProxy.ClientEndpoint$[SocketIndex]:Global.SocketProxy.RemoteEndpoint$[SocketIndex],
+	 Local.SrcAddr =	(Local.WspFwd)?SourceNetworkAddress:Global.SocketProxy.RemoteAddress$[SocketIndex],
+	 Local.SrcPort =	(Local.WspFwd)?Property.SourcePort:Global.SocketProxy.RemotePort$[SocketIndex],
+
+	//"Via1" describes the proxy recipient
+	 Local.Via1EndPt =	(Local.WspFwd)?Global.SocketProxy.InternalEndpoint$[SocketIndex]:Global.SocketProxy.ExternalEndpoint$[SocketIndex],
+	 Local.Via1Addr =	(Local.WspFwd)?DestinationNetworkAddress:Global.SocketProxy.ExternalAddress$[SocketIndex],
+	 Local.Via1Port =	(Local.WspFwd)?Property.DestinationPort:Global.SocketProxy.ExternalPort$[SocketIndex],
+
+	//"Via2" describes the proxy forwarder
+	 Local.Via2EndPt =	(Local.WspFwd)?Global.SocketProxy.ExternalEndpoint$[SocketIndex]:Global.SocketProxy.InternalEndpoint$[SocketIndex],
+	 Local.Via2Addr =	(Local.WspFwd)?Global.SocketProxy.ExternalAddress$[SocketIndex]:SourceNetworkAddress,
+	 Local.Via2Port =	(Local.WspFwd)?Global.SocketProxy.ExternalPort$[SocketIndex]:Property.SourcePort,
+
+	//"Dest" describes the final recipient
+	 Local.DstEndPt =   (Local.WspFwd)?Global.SocketProxy.RemoteEndpoint$[SocketIndex]:Global.SocketProxy.ClientEndpoint$[SocketIndex],
+	 Local.DstAddr =	(Local.WspFwd)?Global.SocketProxy.RemoteAddress$[SocketIndex]:DestinationNetworkAddress,
+	 Local.DstPort =	(Local.WspFwd)?Global.SocketProxy.RemotePort$[SocketIndex]:Property.DestinationPort]
+
+	//default frame description if no higher-layer protocol
+	[Local.WspDescription = FormatString("%#x; %s --> %s and %s --> %s for %s as %s on %s",
+											Conversation.RwsId,
+											Local.SrcEndPt,
+											Local.Via1EndPt,
+											Local.Via2EndPt,
+											Local.DstEndPt,
+											Conversation.RwsApp,
+											Conversation.RwsUser,
+											Conversation.RwsHost)]
+
+	[Property.SourcePort = Local.SrcPort, Property.DestinationPort = Local.DstPort]
+	switch
+	{
+		case (TRUE == Property.WspOnTcp):
+			TCPPayload(Local.SrcPort, Local.DstPort) WspTcp = Local.WspDescription;
+		default:
+			UDPPayload(Local.SrcPort, Local.DstPort) WspUdp = Local.WspDescription;
+	}
+}
+
+//******************************************************************************
+// RWS protocol lookup tables
+//******************************************************************************
+//------------------------------------------------------------------------------
+// Operating System lookup
+//------------------------------------------------------------------------------
+Table RwsOsVersionTable( WinVer )
+{
+	switch( WinVer )
+	{
+		case "5.0.2195":  "running Windows Server 2000";
+		case "5.1.2600":  "running Windows XP x32";
+		case "5.2.3790":  "running Windows Server 2003 or Windows XP x64";
+		case "6.0.6000":  "running Windows Vista";
+		case "6.0.6001":  "running Windows Vista SP1 or Windows Server 2008";
+		case "6.0.6002":  "running Windows Vista SP2 or Windows Server 2008 SP2";
+		case "6.1.7000":  "running Windows 7 or Windows Server 2008 R2 Beta";
+		case "6.1.7100":  "running Windows 7 or Windows Server 2008 R2 RC";
+		case "6.1.7600":  "running Windows 7 or Windows Server 2008 R2 RTM";
+		default:	  	  FormatString( "version %s", WinVer );
+	}
+}
+
+//------------------------------------------------------------------------------
+// RWS transport protocol lookup
+//------------------------------------------------------------------------------
+Table RwsProtoTypeTable( value )
+{
+	switch(value)
+	{
+		case RwsXportTcp: "TCP";
+		case RwsXportUdp: "UDP";
+		default:	  FormatString("Unknown protocol; 0x%x (%u)",value,value);
+	}
+}
+
+//------------------------------------------------------------------------------
+// Winsock Socket Options Table (from winsock2.h)
+//------------------------------------------------------------------------------
+Table RwsWinsockOptsTable( Level, OptValue )
+{
+	switch( OptValue )
+	{
+		case SOL_TCP:			"Act on TCP protocol";
+		case SOL_SOCKET:		"Act on Socket";
+		//TCP_NODELAY == SO_DEBUG, so we need to pay attention to the SOL_TCP flag
+		case SO_DEBUG:			(SOL_TCP == Level)?
+							"Disable Nagle algorithm for send coalescing":
+							"Set debugging on socket";
+		case SO_ACCEPTCONN:		"Accept incoming connection";
+		case SO_REUSEADDR:		"Resuse local address";
+		case SO_KEEPALIVE:		"Set keep-alive";
+		case SO_DONTROUTE:		"Ignore routing";
+		case SO_BROADCAST:		"Allow Broadcast";
+		case SO_USELOOPBACK:		"Use Loopback logic";
+		case SO_LINGER:			"Delay close until buffers cleared";
+		case SO_OOBINLINE:		"Receive OOB data in normal stream";
+		case SO_DONTLINGER:		"Don't wait for buffer clear for close";
+		case SO_EXCLUSIVEADDRUSE:	"Disallow local address reuse";
+		case SO_SNDBUF:			"Define send buffer size";
+		case SO_RCVBUF:			"Define receive buffer size";
+		case SO_SNDLOWAT:		"Send low watermark";
+		case SO_RCVLOWAT:		"Receive low watermark";
+		case SO_SNDTIMEO:		"Send timeout";
+		case SO_RCVTIMEO:		"Receive timeout";
+		case SO_ERROR:			"Error state";
+		case SO_TYPE:			"Get socket type";
+		case SO_GROUP_ID:		"Socket group ID";
+		case SO_GROUP_PRIORITY:		"Socket group relative priority";
+		case SO_MAX_MSG_SIZE:		"Maximum message size";
+		case SO_PROTOCOL_INFOA:		"Protocol info (ANSI)";
+		case SO_PROTOCOL_INFOW:		"Protocol info (UNICODE)";
+		case PVD_CONFIG:		"Provider protocol info";
+		case SO_CONDITIONAL_ACCEPT:	"Config info for service provider";
+		case SO_UPDATE_ACCEPT_CONTEXT:	"Accept socket matches listening socket";
+		case SO_PORT_SCALABILITY:	"Allow per-IP outgoing port table mapping";
+		default:			FormatString( "Unrecognized socket option (%u).", OptValue );
+	}
+}
+
+//------------------------------------------------------------------------------
+// RWS message version table
+//------------------------------------------------------------------------------
+Table RwsVersionTable( version )
+{
+	switch( version )
+	{
+		case RwsPrxy1:	"Proxy Server 1 compatible";
+		case RwsPrxy2:	"Proxy Server 2 compatible";
+		case RwsIsa:	"ISA Server compatible";
+		case RwsTmg:	"TMG compatible";
+		default:	FormatString("Unknown RWS version; %u", version);
+	}
+}
+
+//------------------------------------------------------------------------------
+// Rws IP formatting when not available via NM
+//------------------------------------------------------------------------------
+Table RwsAddrToStringTable( AddrFamily, IPAddress )
+{
+	switch( AddrFamily )
+	{
+		case RwsIpv4: 
+			FormatString("%u.%u.%u.%u", 
+					IPAddress[3],IPAddress[2],IPAddress[1],IPAddress[0]);
+		case RwsIpv6: 
+			FormatString( "%X:%X:%X:%X:%X:%X:%X:%X", 
+					IPAddress[15] * 256 + IPAddress[14],IPAddress[13] * 256 + IPAddress[12], 
+					IPAddress[11] * 256 + IPAddress[10],IPAddress[9] * 256 + IPAddress[8], 
+					IPAddress[7] * 256 + IPAddress[6],IPAddress[5] * 256 + IPAddress[4], 
+					IPAddress[3] * 256 + IPAddress[2],IPAddress[1] * 256 + IPAddress[0] );
+		default:	  
+			FormatString( "Unrecognized IP address family (%u).", AddrFamily );
+	}
+}
+//------------------------------------------------------------------------------
+// Rws OpCodes
+//------------------------------------------------------------------------------
+Table RwsOpCodeSetTable( value )
+{
+	switch( value )
+	{
+		case RwsOpCodeLogon:		"Logon";
+		case RwsOpCodeError:		"Error";
+		case RwsOpCodeConnect:		"Connect";
+		case RwsOpCodeConnectReply:	"Connect reply";
+		case RwsOpCodeTcpBind:		"TCP bind";
+		case RwsOpCodeUdpBind:		"UDP bind";
+		case RwsOpCodeBindReply:	"Bind reply";
+		case RwsOpCodeListen:		"Listen";
+		case RwsOpCodeListenReply:	"Listen reply";
+		case RwsOpCodeMappingNew:	"New mapping";
+		case RwsOpCodeMappingRcv:	"Mapping received";
+		case RwsOpCodeMappingReq:	"Mapping request";
+		case RwsOpCodeMappingRmv:	"Remove mapping";
+		case RwsOpCodeGhbn:		"Get host by name";
+		case RwsOpCodeGhba:		"Get host by address";
+		case RwsOpCodeHostEntry:	"Host entry";
+		case RwsOpCodeClose:		"Close";
+		case RwsOpCodeGsbn:		"Get server by name";
+		case RwsOpCodeGsbp:		"Get server by port";
+		case RwsOpCodeSrvEntry:		"Serv entry";
+		case RwsOpCodeLogonContinue:	"Logon continue";
+		case RwsOpCodeLogonOk:		"Logon OK";
+		case RwsOpCodeLogonDeny:	"Logon deny";
+		case RwsOpCodeSetSockOpt:	"Set socket option";
+		case RwsOpCodeGetSvrIPs:	"Get Server IPs";
+		case RwsOpCodeIPX1:
+		case RwsOpCodeIPX2:
+		case RwsOpCodeIPX3:
+		case RwsOpCodeIPX4:		"IPX - Not Used";
+		case RwsOpCodePing:		"Ping";
+		case RwsOpCodeNewConnect:	"New Connect";
+		case RwsOpCodeUnused:		"Unused";
+		case RwsOpCodeChanSetup:	"Channel setup";
+		// RWS v12 (TMG) opcodes
+		case RwsOpCodeConnect12:	"Connect v12";
+		case RwsOpCodeConnectReply12:	"Connect Reply v12";
+		case RwsOpCodeBind12:		"Bind v12";
+		case RwsOpCodeBindReply12:	"Bind Reply v12";
+		case RwsOpCodeMappingRequest12: "Mapping Request v12";
+		case RwsOpCodeMappingAdd12:	"Add Mapping v12";
+		case RwsOpCodeMappingAck12:	"Acknowledge Mapping v12";
+		case RwsOpCodeMappingRemove12:  "Remove Mapping v12";
+		case RwsOpCodeExtendedData12:	"Extended Data";
+ 		default:			FormatString( "Unknown; (%#x, %d)", value, value );
+	}
+}
+
+//------------------------------------------------------------------------------
+// Rws UDP control channel command set
+//------------------------------------------------------------------------------
+Table RwsControlCodesSet( value )
+{
+	switch( value )
+	{
+		case RwsMsgResend:	"Resend Message";
+		case RwsMsgMsg:		"Generic Message";
+		case RwsMsgAck:		"Acknowledge Message";
+		case RwsMsgNack:	"Reject Message";
+		case RwsMsgHint:	"Message Hint";
+		case RwsMsgShut:	"Shut Session";
+		case RwsMsgNtlm:	"NTLM Message";
+		case RwsMsg:		"Message";
+		case RwsIdle:		"Idle";
+		case RwsShut:		"Shut";
+		case RwsNtlm:		"NTLM";
+ 		default:		FormatString( "Unknown; (%#x)", value );
+	}
+}
+
+//------------------------------------------------------------------------------
+// Rws IP family set
+//------------------------------------------------------------------------------
+Table RwsAddrFamilyTable( value )
+{
+	switch( value )
+	{
+		case RwsIpv4:	"IPv4";
+		case RwsIpv6:	"IPv6";
+ 		default:	FormatString( "Unknown; (%#x)", value );
+	}
+}
+
+//------------------------------------------------------------------------------
+// Rws Endpoint formatting table
+//------------------------------------------------------------------------------
+Table RwsEndpointTable( family, addr, port )
+{
+	switch(addr)
+	{
+		case 0:
+			(0 == port)? "Dynamic":FormatString("Dynamic/%d",port);
+		default:
+			FormatString("%s/%s", RwsAddrToStringTable(family, addr), 
+								  (0 == port)? "Dynamic": FormatString("%d",port));
+	}
+}
+
+//------------------------------------------------------------------------------
+// Rws Winsock error lookup table
+//------------------------------------------------------------------------------
+Table RwsWsaErrorCodeSetTable( value )
+{
+	//Winsock error codes
+	switch(value)
+	{
+		case WSAEINTR:				FormatString("(%d); Interrupted function call", value);
+		case WSAEACCES:				FormatString("(%d); Permission denied", value);
+		case WSAEFAULT:				FormatString("(%d); Bad address", value);
+		case WSAEINVAL:				FormatString("(%d); Invalid argument", value);
+		case WSAEMFILE:				FormatString("(%d); Too many open files", value);
+		case WSAEWOULDBLOCK:		FormatString("(%d); Resource temporarily unavailable", value);
+		case WSAEINPROGRESS:		FormatString("(%d); Operation now in progress", value);
+		case WSAEALREADY:			FormatString("(%d); Operation already in progress", value);
+		case WSAENOTSOCK:			FormatString("(%d); Socket operation on nonsocket", value);
+		case WSAEDESTADDRREQ:		FormatString("(%d); Destination address required", value);
+		case WSAEMSGSIZE:			FormatString("(%d); Message too long", value);
+		case WSAEPROTOTYPE:			FormatString("(%d); Protocol wrong type for socket", value);
+		case WSAENOPROTOOPT:		FormatString("(%d); Bad protocol option", value);
+		case WSAEPROTONOSUPPORT:	FormatString("(%d); Protocol not supported", value);
+		case WSAESOCKTNOSUPPORT:	FormatString("(%d); Socket type not supported", value);
+		case WSAEOPNOTSUPP:			FormatString("(%d); Operation not supported", value);
+		case WSAEPFNOSUPPORT:		FormatString("(%d); Protocol family not supported", value);
+		case WSAEAFNOSUPPORT:		FormatString("(%d); Address family not supported by protocol family", value);
+		case WSAEADDRINUSE:			FormatString("(%d); Address already in use", value);
+		case WSAEADDRNOTAVAIL:		FormatString("(%d); Cannot assign requested address", value);
+		case WSAENETDOWN:			FormatString("(%d); Network is down", value);
+		case WSAENETUNREACH:		FormatString("(%d); Network is unreachable", value);
+		case WSAENETRESET:			FormatString("(%d); Network dropped connection on reset", value);
+		case WSAECONNABORTED:		FormatString("(%d); Software caused connection abort", value);
+		case WSAECONNRESET:			FormatString("(%d); Connection reset by peer", value);
+		case WSAENOBUFS:			FormatString("(%d); No buffer space available", value);
+		case WSAEISCONN:			FormatString("(%d); Socket is already connected", value);
+		case WSAENOTCONN:			FormatString("(%d); Socket is not connected", value);
+		case WSAESHUTDOWN:			FormatString("(%d); Cannot send after socket shutdown", value);
+		case WSAETIMEDOUT:			FormatString("(%d); Connection timed out", value);
+		case WSAECONNREFUSED:		FormatString("(%d); Connection refused", value);
+		case WSAEHOSTDOWN:			FormatString("(%d); Host is down", value);
+		case WSAEHOSTUNREACH:		FormatString("(%d); No route to host", value);
+		case WSAEPROCLIM:			FormatString("(%d); Too many processes", value);
+		case WSASYSNOTREADY:		FormatString("(%d); Network subsystem is unavailable", value);
+		case WSAVERNOTSUPPORTED:	FormatString("(%d); Winsock.dll version out of range", value);
+		case WSANOTINITIALISED:		FormatString("(%d); Successful WSAStartup not yet performed", value);
+		case WSAEDISCON:			FormatString("(%d); Graceful shutdown in progress", value);
+		case WSATYPENOTFOUND:		FormatString("(%d); Class type not found", value);
+		case WSAHOSTNOTFOUND:		FormatString("(%d); Host not found", value);
+		case WSATRYAGAIN:			FormatString("(%d); Nonauthoritative host not found", value);
+		case WSANORECOVERY:			FormatString("(%d); Nonrecoverable error", value);
+		case WSANODATA:				FormatString("(%d); Valid name, no data record of requested type", value);
+		default:					FormatString( "Unknown; (%#x)", value );
+	}
+}
+
+
+//******************************************************************************
+// RWS data structures
+//******************************************************************************
+
+struct RwsHandle =  (this.HighWord << 16) + this.LowWord
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT16	HighWord;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16	LowWord
+}
+
+//------------------------------------------------------------------------------
+// RwsControlCodesSetFlag
+//------------------------------------------------------------------------------
+Struct RwsControlCodesSetFlag = RwsControlCodesSet( UINT8( Framedata, Offset ) )
+{
+	UINT8 FlagsUnused:1 = FormatString("    (%s)",this.ToBitString);
+	UINT8 RwsMsgNtlm:1 = FormatString("     (%s) %s",this.ToBitString,(this)?"NTLM Message":"");
+	UINT8 RwsMsgShut:1 = FormatString("     (%s) %s",this.ToBitString,(this)?"Shut Session":"");
+	UINT8 RwsMsgHint:1 = FormatString("     (%s) %s",this.ToBitString,(this)?"Message Hint":"");
+	UINT8 RwsMsgNack:1 = FormatString("     (%s) %s",this.ToBitString,(this)?"Reject Message":"");
+	UINT8 RwsMsgAck:1 = FormatString("      (%s) %s",this.ToBitString,(this)?"Acknowledge Message":"");
+	UINT8 RwsMsgMsg:1 = FormatString("      (%s) %s",this.ToBitString,(this)?"Generic Message":"");
+	UINT8 RwsMsgResend:1 = FormatString("   (%s) %s",this.ToBitString,(this)?"Resend Message":"");
+	
+}
+
+//------------------------------------------------------------------------------
+//	Rws serialized version of SOCKADDRIN struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsSockAddrIn4 = Local.SockAddrIn
+{
+	[DataFieldFrameLength = FrameOffset + 16]
+	struct{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16		Family = RwsAddrFamilyTable(this);
+	UINT16	  	Port;
+	IPv4Address	Addr;
+	[Local.SockAddrIn = RwsEndpointTable(family, addr, port),
+	 Property.SockAddrIn = Local.SockAddrIn]
+	struct{BLOB(FrameLength-FrameOffset)		Padding;};
+	};
+};
+
+//------------------------------------------------------------------------------
+//	ISA server information struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataVersionBuf
+{
+	UINT32	MajorVersion;
+	UINT32	MinorVersion;
+	UINT32	UpdateVersion;
+	UINT32	BuildSource;		// 1 - Haifa; 2 - Redmond.
+	UINT32	ProtocolVersion;	// Rws control protocol version.
+};
+
+
+//------------------------------------------------------------------------------
+//	ISA server diagnostics information struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct  RwsDataDiagPartBuf
+{
+	RwsDataVersionBuf 	ver;
+	UINT32				WinMajor;
+	UINT32				WinMinor;
+	UINT32				BuildNum;
+	UINT32				Platform;
+	UINT32				Debug;
+	RwsSockAddrIn4		NetSocket;
+};
+
+struct RwsOsVerInfo = RwsOsVersionTable( FormatString("%d.%d.%d",
+													this.MajorVersion, 
+													this.MinorVersion, 
+													this.BuildNumber ) )
+{
+	UINT32	OSVersionInfoSize;
+	UINT32	MajorVersion;
+	UINT32	MinorVersion;
+	UINT32	BuildNumber;
+	UINT32	PlatformId;
+};
+
+struct RwsDosVer
+{
+	UINT8	MajorDosVer;
+	UINT8	MinorDosVer;
+	UINT16	ResDosVer;
+}
+
+//------------------------------------------------------------------------------
+//	Client information data
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsClientInfo = (0 < Size)?
+						Property.ClientInfoDescr:
+						"- No detailed client information -"
+{
+	[Local.ClientInfoRoot = FrameOffset]
+	UINT32			Size;				// total size of structure including names
+	switch(Size)
+	{
+		case 0:
+			struct{BLOB(126)	Padding;};
+		default:
+			[DataFieldFrameLength = FrameOffset + Size - 4]
+			[PostAfter.Property.ClientInfoDescr = FormatString("%s as %s on %s %s",
+									Property.RwsApp,
+									Property.RwsUser,
+									Property.RwsHost,
+									RwsOsVersionTable( FormatString("%d.%d.%d",
+																	this.OsVerInfo.MajorVersion, 
+																	this.OsVerInfo.MinorVersion, 
+																	this.OsVerInfo.BuildNumber ) ) ) ]
+			struct{
+			RwsOsVerInfo	OsVerInfo;
+			UINT32			CPU;
+			RwsDosVer		DosVer;
+			UINT32			Reserved;			// Was used for SPX protocol.
+			[Local.OffUserName = Local.ClientInfoRoot + this]
+			UINT32			offUserName;
+			[Local.OffHostName = Local.ClientInfoRoot + this]
+			UINT32			offMachineName;
+			[Local.OffAppName = Local.ClientInfoRoot + this]
+			UINT32			offAppName;
+
+			// fields may get reordered
+			while [FrameOffset < FrameLength]
+			{
+				switch
+				{
+					case FrameOffset == Local.OffUserName:
+						[Property.RwsUser = this]
+						AsciiString UserName;
+					case FrameOffset == Local.OffHostName:
+						[Property.RwsHost = this]
+						AsciiString HostName;
+					case FrameOffset == Local.OffAppName:
+						[Property.RwsApp = this]
+						AsciiString AppName;
+					default:
+						BLOB(1) Junk;	//consume extra bytes in RwsUdp msg
+				}
+			}
+			};
+	}
+}
+
+//------------------------------------------------------------------------------
+// RwsAppAndClientInfo
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsAppAndClientInfo = Property.ClientInfoDescr
+{
+	AsciiString(16)	 Application;
+	[PostAfter.Property.RwsApp = IsValueNone(Property.RwsApp)?
+											Application:
+											Property.RwsApp,
+	 PostAfter.Property.ClientInfoDescr = IsValueNone(Property.ClientInfoDescr)?
+											Property.RwsApp:
+											Property.ClientInfoDescr]
+	switch
+	{
+		case FrameLength > FrameOffset:
+			RwsClientInfo	ClientInfo;
+	}
+};
+
+//------------------------------------------------------------------------------
+// RwsChanSetupFlag interprets Channel Setup flags
+//------------------------------------------------------------------------------
+struct RwsChanSetupFlag = FormatString( "KeepSession: %s; RouteMode: %s; ServerEncrypt: %s; ClientEncrypt: %s",
+										Local.KeepOld,
+										Local.RouteMode,
+										Local.NeedEncrypt,
+										Local.LikeEncrypt )
+{
+	[Local.KeepOld = (1 == this)? "True": "False"]
+	UINT32 ServerKeepOldSession:1	= FormatString(" (%s) %s previous session for this application",this.ToBitString,(this)?"Terminate":"Keep");
+	[Local.RouteMode = (1 == this)? "True": "False"]
+	UINT32 ClientRouteMode:1	= FormatString("      (%s) Route mode %sdesired",this.ToBitString, (this)?"":"not ");
+	[Local.NeedEncrypt = (1 == this)? "True": "False"]
+	UINT32 ServerEncryption:1	= FormatString("     (%s) Encryption %srequired",this.ToBitString,(this)?"":"not ");
+	[Local.LikeEncrypt = (1 == this)? "True": "False"]
+	UINT32 ClientEncryption:1	= FormatString("     (%s) Encryption %sabled",this.ToBitString,(this)?"en":"dis");
+	UINT32 FlagsUnused:24		= FormatString("          (%s)",this.ToBitString);
+}
+	
+//------------------------------------------------------------------------------
+//  Connection Setup Msg data struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsChanSetup = Property.RwsChanSetupDescr
+{
+	struct{BLOB(18)			Padding;};
+	UINT8					MinVersion = RwsVersionTable(this);
+	UINT8					MaxVersion = RwsVersionTable(this);
+	BOOLEAN					Authentication = (this)?"required":"not required";
+	UINT8					Reserved;
+	RwsChanSetupFlag		SetupFlags;
+	UINT32					dwReserved;
+	RwsDataDiagPartBuf  	DiagBuf;
+	
+	[PostAfter.Property.RwsOpDescr = Property.RwsChanSetupDescr]
+	switch(Property.RwsFwd)
+	{
+		case TRUE:
+			[PostAfter.Property.RwsChanSetupDescr = FormatString("request (%s) for %s",
+										RwsVersionTable(MaxVersion),
+										Property.ClientInfoDescr)]
+			struct
+			{
+				struct{BLOB(178)	Padding;}
+				RwsClientInfo	ClientInfo;
+			};
+		default:
+			[PostAfter.Property.RwsChanSetupDescr = FormatString("response to %s (%s), authentication %s required; encryption %s required",
+										Conversation.RwsApp,
+										RwsVersionTable(MaxVersion),
+										(Authentication)?Local.IsaAuthName:"not",
+										(RwsChanSetupFlag.ServerEncryption)?"is":"not")]
+			switch(Authentication)
+			{
+				case TRUE: 
+					struct
+					{
+						struct{BLOB((FrameLength - FrameOffset) - (Property.RwsPktLen - 281))	Padding;};
+						[Local.IsaAuthName = FormatString("to %s is", this)]
+						AsciiString	 FirewallContext;
+					};
+			}
+	}
+};
+
+//------------------------------------------------------------------------------
+//  Connection RwsOpCodeLogon / Logoff Msg data struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataLogon
+{
+	[Property.RWSTooBig = (!Property.RWSTooBig)?(FrameLength < FrameOffset + this):Property.RWSTooBig]
+	UINT32		TotalSize;
+	UINT32		DataOffset;
+	struct{BLOB(10)	Padding;};
+	[Property.RWSTooBig = (!Property.RWSTooBig)?(FrameLength < FrameOffset + this):Property.RWSTooBig]
+	UINT16		AuthLength;
+
+	switch
+	{
+		case (RwsMsgHint == Property.RwsControlCode && 
+			  RwsOpCodeLogon == Property.RwsOpCode):
+			struct
+			{
+			struct{BLOB(38)	Padding;};
+			RwsSockAddrIn4	InternalEndpoint;
+			};
+		default:
+			struct
+			{
+			switch
+			{
+				case (TRUE == Property.RwsOnTcp):
+					struct{BLOB(244) Padding;};
+				default:
+					struct{BLOB(114) Padding;};
+			}
+			GssAPI	GssAPI;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  Error information from ISA
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataError = Local.RwsDataErrDescr
+{
+	switch
+	{
+		case (FALSE == Property.RwsOnTcp):
+			RwsBindIndex UdpIndex;
+	}
+	BOOLEAN	PrivateCode;
+	[Local.OpCodeText = RwsOpCodeSetTable(this)]
+	UINT8	OpCode = RwsOpCodeSetTable(this);
+
+	[DataFieldByteOrder=BigEndian]
+	[Local.ErrText = RwsWsaErrorCodeSetTable(this)] 
+	UINT16	ErrorCode = RwsWsaErrorCodeSetTable(this);
+	
+	[PostAfter.Local.RwsDataErrDescr = FormatString("to %s for %s; %s",
+								Property.RwsApp,
+								Property.ErrDescr,
+								Local.ErrText),
+	 PostAfter.Property.RwsOpDescr = Local.RwsDataErrDescr]
+	[Local.DataStart = FrameOffset]
+	switch(OpCode)
+	{
+		case RwsOpCodeGhbn:
+			struct{
+			[Property.ErrDescr = FormatString("%s('%s')",Local.OpCodeText,this)]
+			ASCIIString			HostName;
+			struct{BLOB(96 - (FrameOffset - Local.DataStart))	Padding;};
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		case RwsOpCodeGhba:
+			[Property.ErrDescr = FormatString("%s(%s)",Local.OpCodeText,this.toString)]
+			IPv4Address 		Address;
+		case RwsOpCodeNewConnect:
+		case RwsOpCodeConnect:
+			struct{
+			[Property.ErrDescr = FormatString("%s(%s)",Local.OpCodeText,this.toString)]
+			[DataFieldByteOrder = BigEndian]
+			IPV4Address			SvrAddr;
+			struct{BLOB(8)		Padding;};
+			[DataFieldByteOrder = BigEndian]
+			UINT16				ClientPort;
+			struct{BLOB(82)		Padding;};
+			switch
+			{
+				case (TRUE == Property.RwsOnTcp):
+					RwsAppAndClientInfo	AppAndClientInfo;
+				default:
+					[Property.RwsApp = this]
+					AsciiString(16)		AppName;
+			}
+			};
+		case RwsOpCodeConnect12:
+			struct{
+			[Property.ErrDescr = FormatString("%s(%s)",Local.OpCodeText,this.toString)]
+			[DataFieldByteOrder = BigEndian]
+			IPV4Address 		SvrAddr;
+			struct{BLOB(20) 	Padding;};
+			Rws12Endpoint		ClientEndpoint;
+			struct{BLOB(44)		Padding;};
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		case RwsOpCodeBind12:
+			struct{
+			[Property.ErrDescr = FormatString("%s(%s)",Local.OpCodeText,this.toString)]
+			[DataFieldByteOrder=LittleEndian]
+			IPV4Address			Address;
+			struct{BLOB(20) 	Padding;};
+			Rws12Endpoint		ErrEndpoint;
+			UINT32  BindProtocol = RwsProtoTypeTable(this);
+			struct{BLOB(40) 	Padding;};
+			RwsAppAndClientInfo AppAndClientInfo;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsBind Index data struct
+//  this data helps map bound sockets to connect sockets
+//------------------------------------------------------------------------------
+struct RwsBindIndex
+{
+	struct{BLOB(2)	Padding;};
+	[Property.ClntIndex = this]
+	UINT32		ClientIndex;
+	[Property.SrvrIndex = this]
+	UINT32		ServerIndex;
+	struct{BLOB(8)	Padding;};
+}
+
+
+//------------------------------------------------------------------------------
+//  RwsOpCodeConnect Request data struct
+//  we'll use this data added to Conversation.RwsData in the ConnectReply response
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsDataConnect = Local.RwsDataConnDescr
+{
+	[PostAfter.Local.RwsDataConnDescr = FormatString( "request from %s to %s; client will send from %s",
+							Property.RwsApp,
+							Conversation.RwsData.RemoteEndpoint$[Property.RwsId],
+							Conversation.RwsData.ClientEndpoint$[Property.RwsId])]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataConnDescr]
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp):
+			struct
+			{
+			// This is the port we'll use in the SocketProxy global variable array.
+			[PostAfter.Conversation.RwsData.RemoteAddress$[Property.RwsId] = this.Addr,
+			 PostAfter.Conversation.RwsData.RemotePort$[Property.RwsId] = this.Port,
+			 PostAfter.Conversation.RwsData.RemoteEndpoint$[Property.RwsId] = Property.SockAddrIn]
+			RwsSockAddrIn4  	ConnectEndpoint;
+
+			// Client RwsOpCodeConnect port (only for OPCODENEWCONNECT)
+			[Conversation.RwsData.ClientPort$[Property.RwsId] = this,
+			 Conversation.RwsData.ClientAddr$[Property.RwsId] = SourceNetworkAddress,
+			 Conversation.RwsData.ClientEndpoint$[Property.RwsId] = RwsEndpointTable(RwsIpv4,SourceNetworkAddress,this)]
+			UINT16				ClientPort;
+			struct{BLOB(82)		Padding;};
+
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		default:
+			struct
+			{
+			RwsBindIndex	  	BindIndex;
+			// This is the port we'll use in the SocketProxy global variable array.
+			[Conversation.RwsData.RemoteAddress$[Property.RwsId] = this.Addr,
+			 Conversation.RwsData.RemotePort$[Property.RwsId] = this.Port,
+			 PostAfter.Conversation.RwsData.RemoteEndpoint$[Property.RwsId] = RwsEndpointTable(this.Family,this.Addr,this.Port)]
+			RwsSockAddrIn4		ConnectEndpoint;
+			[Conversation.RwsData.ClientPort$[Property.RwsId] = (0 == this)?Conversation.RwsData.ClientPort$[Property.RwsId]:this,
+			 Conversation.RwsData.ClientAddr$[Property.RwsId] = SourceNetworkAddress,
+			 Conversation.RwsData.ClientEndpoint$[Property.RwsId] = (0 == this)?Conversation.RwsData.ClientEndpoint$[Property.RwsId]:
+																	RwsEndpointTable(RwsIpv4,SourceNetworkAddress,this)]
+			UINT16				ClientPort;
+			struct{BLOB(82)		Padding;};
+			[Property.RwsApp = this]
+			AsciiString(16)		AppName;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsOpCodeConnect Reply data struct
+//------------------------------------------------------------------------------
+struct RwsDataConnectReply = Local.RwsDataConnReplyDescr
+{
+	switch
+	{
+		case FALSE == Property.RwsOnTcp:
+			RwsBindIndex		BindIndex;
+	}
+	[Local.WspSessionIndex = (DestinationNetworkAddress < this.Addr)?
+								MakeByteArray(DestinationNetworkAddress,
+									Conversation.RwsData.ClientPort$[Property.RwsId],
+									this.Addr,
+									this.Port):
+								MakeByteArray(InternalEndpoint.Addr,
+									this.Port,
+									DestinationNetworkAddress,
+									Conversation.RwsData.ClientPort$[Property.RwsId])]
+	[Global.SocketProxy.InternalAddress$[Local.WspSessionIndex] = this.Addr, 
+	 Global.SocketProxy.InternalPort$[Local.WspSessionIndex] = this.Port, 
+	 Global.SocketProxy.InternalEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(this.Family,this.Addr,this.Port)]
+	[Local.InternalEndpoint = RwsEndpointTable(this.Family,this.Addr,this.Port)]
+	// Proxy address the client will connect through
+	RwsSockAddrIn4		InternalEndpoint;
+
+	[Global.SocketProxy.ExternalAddress$[Local.WspSessionIndex] = this.Addr,
+	 Global.SocketProxy.ExternalPort$[Local.WspSessionIndex] = this.Port,
+	 Global.SocketProxy.ExternalEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(this.Family,this.Addr,this.Port)]
+	[Local.ExternalEndpoint = RwsEndpointTable(this.Family,this.Addr,this.Port)]
+	// Address that client will receive for "getsockname()".
+	RwsSockAddrIn4		ExternalEndpoint;
+	struct{BLOB(68)		Padding;};
+
+	[Global.SocketProxy.ProxyProtocol$[Local.WspSessionIndex] = "WSP", 
+	 Global.SocketProxy.ClientAddress$[Local.WspSessionIndex] = DestinationNetworkAddress, 
+	 Global.SocketProxy.ClientPort$[Local.WspSessionIndex] = Conversation.RwsData.ClientPort$[Property.RwsId], 
+	 Global.SocketProxy.ClientEndpoint$[Local.WspSessionIndex] = Conversation.RwsData.ClientEndpoint$[Property.RwsId],
+	 Global.SocketProxy.RemoteAddress$[Local.WspSessionIndex] = Conversation.RwsData.RemoteAddress$[Property.RwsId],
+	 Global.SocketProxy.RemotePort$[Local.WspSessionIndex] = Conversation.RwsData.RemotePort$[Property.RwsId],
+	 Global.SocketProxy.RemoteEndpoint$[Local.WspSessionIndex] = Conversation.RwsData.RemoteEndpoint$[Property.RwsId],
+	 Global.SocketProxy.RwsId$[Local.WspSessionIndex] = Property.RwsId,
+	 Global.SocketProxy.RwsApp$[Local.WspSessionIndex] = Conversation.RwsApp,
+	 Global.SocketProxy.RwsHost$[Local.WspSessionIndex] = Conversation.RwsHost,
+	 Global.SocketProxy.RwsUser$[Local.WspSessionIndex] = Conversation.RwsUser]
+	[PostAfter.Local.RwsDataConnReplyDescr = FormatString("to %s; using %s with %s == %s with %s",
+												Property.RwsApp,
+												Conversation.RwsData.ClientEndpoint$[Property.RwsId],
+								  				Local.InternalEndpoint,
+								  				Local.ExternalEndpoint,
+								  				Conversation.RwsData.RemoteEndpoint$[Property.RwsId])]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataConnReplyDescr]
+	switch
+	{
+		case TRUE == Property.RwsOnTcp:
+			RwsAppAndClientInfo	AppAndClientInfo;
+		default:
+			[Property.RwsApp = this]
+			AsciiString(16)		AppName;
+	}
+};
+
+//------------------------------------------------------------------------------
+//  Data Bind (UDP data send) data struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder=BigEndian]
+struct RwsDataBind = Local.RwsDataBindDescr
+{
+	[PostAfter.Local.RwsDataBindDescr = FormatString( "request from %s to %s. %s bound to %s",
+							Property.RwsApp,
+							Local.BindEndpoint,
+							Property.RwsApp,
+							Local.ClientEndpoint)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataBindDescr]
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp):
+			struct
+			{
+			// Requested bind IP address.
+			IPv4Address		BindAddress;
+
+			// Requested bind port
+			UINT16			BindPort;
+
+			// Set to TRUE to allow more than one accept on the listening socket.
+			BOOLEAN			AcceptMultConn;
+
+			// Reserved, Padding
+			struct{BLOB(1)		Padding;};
+
+			// Local bind address
+			[Local.ClientAddr = (0x0 < this.Addr)?this.Addr:SourceNetworkAddress,
+			 Local.ClientPort = this.Port]
+			RwsSockAddrIn4		ClientEndpoint;
+			struct{BLOB(76)		Padding;}
+			[Local.ClientEndpoint = RwsEndpointTable(RwsIpv4,Local.ClientAddr,Local.ClientPort),
+			 Local.BindEndpoint = RwsEndpointTable(RwsIpv4, BindAddress, BindPort)]
+			[Conversation.RwsData.ClientEndpoint$[Property.RwsId] = Local.ClientEndpoint,
+			 Conversation.RwsData.ClientAddress$[Property.RwsId] = Local.ClientAddr,
+			 Conversation.RwsData.ClientPort$[Property.RwsId] = Local.ClientPort]
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		default:
+			struct
+			{
+			RwsBindIndex		BindIndex;
+			IPv4Address			BindAddress;
+			UINT16				BindPort;
+			BOOLEAN				AcceptMultiConn;
+			struct{BLOB(1)		Padding;};
+			[Local.ClientAddr = (0x0 < this.Addr)?this.Addr:SourceNetworkAddress,
+			 Local.ClientPort = this.Port]
+			RwsSockAddrIn4		ClientEndpoint;
+			struct{BLOB(76)		Padding;};
+			[Local.ClientEndpoint = RwsEndpointTable(RwsIpv4,Local.ClientAddr,Local.ClientPort),
+			 Local.BindEndpoint = RwsEndpointTable(RwsIpv4, BindAddress, BindPort)]
+			[Property.RwsApp = this]
+			[Conversation.RwsData.ClientEndpoint$[Property.RwsId] = Local.ClientEndpoint,
+			 Conversation.RwsData.ClientAddress$[Property.RwsId] = Local.ClientAddr,
+			 Conversation.RwsData.ClientPort$[Property.RwsId] = Local.ClientPort]
+			AsciiString(16)		AppName;
+			};
+	}
+};
+
+
+//------------------------------------------------------------------------------
+//  RwsDataBindReply
+//------------------------------------------------------------------------------
+
+struct RwsDataBindReply = Local.RwsDataBindReplyDescr
+{
+	[PostAfter.Local.RwsDataBindReplyDescr = FormatString( "to %s on %s successful",
+															Property.RwsApp,
+															Property.SockAddrIn)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataBindReplyDescr]
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp):
+			struct
+			{
+			// Address that client will return for "getsockname()".
+			[Conversation.RwsData.ExternalAddress$[Property.RwsId] = this.Addr,
+			 Conversation.RwsData.ExternalPort$[Property.RwsId] = this.Port,
+			 PostAfter.Conversation.RwsData.ExternalEndpoint$[Property.RwsId] = Property.SockAddrIn]
+			RwsSockAddrIn4		ExternalEndpoint;
+			struct{BLOB(84)		Padding;};
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		default:
+			struct
+			{
+			RwsBindIndex	  	BindIndex;
+			[Local.ExternalEndpoint = RwsEndpointTable(this.Family, this.addr, this.Port)]
+			[Conversation.RwsData.ExternalAddress$[Property.RwsId] = this.Addr,
+			 Conversation.RwsData.ExternalPort$[Property.RwsId] = this.Port,
+			 PostAfter.Conversation.RwsData.ExternalEndpoint$[Property.RwsId] = Property.SockAddrIn]
+			RwsSockAddrIn4		ExternalEndpoint;
+			struct{BLOB(84)		Padding;};
+			[Property.RwsApp = this]
+			AsciiString(16)		AppName;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsDataListen
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataListen = Local.RwsDataListenDescr
+{
+	[PostAfter.Local.RwsDataListenDescr = FormatString( "on %s from %s",
+									Conversation.RwsData.ExternalEndpoint$[Property.RwsId],
+									Property.RwsApp)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataListenDescr]
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp):
+			struct
+			{
+			UINT8				Backlog;
+			UINT8				Reserved;
+			struct{BLOB(98)		Padding;};
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		default:
+			struct
+			{
+			RwsBindIndex		BindIndex;
+			struct{BLOB(100)	Padding;};
+			[Property.RwsApp = this]
+			AsciiString(16)		AppName;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsDataListenReply
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataListenReply = Local.RwsDataListenReplyDescr
+{
+	[PostAfter.Local.RwsDataListenReplyDescr = FormatString( "to %s for %s successful",
+									Conversation.RwsData.ExternalEndpoint$[Property.RwsId],
+									Property.RwsApp)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataListenReplyDescr]
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp):
+			struct
+			{
+			struct{BLOB(100)	Padding;};
+			RwsAppAndClientInfo	AppAndClientInfo;
+			};
+		default:
+			struct
+			{
+			RwsBindIndex		BindIndex;
+			struct{BLOB(100)	Padding;};
+			[Property.RwsApp = this]
+			AsciiString(16)		AppName;
+			};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  Socket mapping generic entry point
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsDataMap = Property.RwsDataMapDescr
+{
+	switch
+	{
+		case (FALSE == Property.RwsOnTcp):
+			struct
+			{
+			UINT16			Length;
+			[Property.SvrMapHandle = (this.HighWord << 16) + this.LowWord]
+			RwsHandle		SrvMapHandle;
+			RwsHandle		ClntMapHandle;
+			//duplicate handle data
+			struct{BLOB(8)	Padding;};
+			};
+	}
+	// Remote host address data
+	[Local.RemoteEndpoint = RwsEndpointTable(this.Family, this.Addr, this.Port)]
+	RwsSockAddrIn4		RemoteEndpoint;
+	//this is the port the client will connect to at the proxy
+	UINT16				ProxyIntPort;
+	// Socket name for this mapping (used for TCP mappings only).
+	[Local.ExternalEndpoint = RwsEndpointTable(this.Family, this.Addr, this.Port)]
+	RwsSockAddrIn4		ExternalEndpoint;
+	UINT8				Protocol = RwsProtoTypeTable(this);
+
+	[PostAfter.Property.RwsOpDescr = Property.RwsDataMapDescr]
+	switch(Property.RwsOpCode)
+	{
+		//from proxy to client acknowledging or advising of new port mapping
+		case RwsOpCodeMappingNew:
+			[Property.RwsDataMapDescr = FormatString( "to %s; %s with %s == %s with %s",
+								Conversation.RwsApp,
+								Local.RemoteEndpoint,
+								Local.ExternalEndpoint,
+								RwsEndpointTable(RwsIpv4, SourceNetworkAddress, ProxyIntPort),
+								RwsEndpointTable(RwsIpv4, DestinationNetworkAddress,
+										Conversation.RwsData.ClientPort$[Property.RwsId]))]
+			//may lose the RwsId in the MapRcv message, so we persist it here
+			[Conversation.RwsData.RwsId$[Property.SvrMapHandle] = Property.RwsId]
+			struct{};
+		//from client to proxy accepting new incoming port mapping
+		case RwsOpCodeMappingRcv:
+			 [Local.MapIndex = (0 < Property.RwsId)?Property.RwsId:Conversation.RwsData.RwsId$[Property.SvrMapHandle],
+			  Property.RwsDataMapDescr = FormatString( "by %s; %s with %s == %s with %s",
+								Conversation.RwsApp,
+								Local.RemoteEndpoint,
+								Local.ExternalEndpoint,
+								RwsEndpointTable(RwsIpv4, DestinationNetworkAddress,
+										ProxyIntPort),
+								RwsEndpointTable(RwsIpv4, SourceNetworkAddress,
+										Conversation.RwsData.ClientPort$[Local.MapIndex])
+								  ),
+			 Local.WspSessionIndex = (SourceNetworkAddress < DestinationNetworkAddress)?
+									MakeByteArray(SourceNetworkAddress,
+											Conversation.RwsData.ClientPort$[Local.MapIndex],
+											DestinationNetworkAddress,
+											ProxyIntPort):
+									MakeByteArray(DestinationNetworkAddress,
+											ProxyIntPort,
+											SourceNetworkAddress,
+											Conversation.RwsData.ClientPort$[Local.MapIndex]),
+			 Global.SocketProxy.ProxyProtocol$[Local.WspSessionIndex] = "WSP",
+			 Global.SocketProxy.ClientAddress$[Local.WspSessionIndex] = SourceNetworkAddress,
+			 Global.SocketProxy.ClientPort$[Local.WspSessionIndex] = Conversation.RwsData.ClientPort$[Local.MapIndex],
+			 Global.SocketProxy.ClientEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(RwsIpv4, SourceNetworkAddress,
+			 									Conversation.RwsData.ClientPort$[Local.MapIndex]),
+			 Global.SocketProxy.RemoteAddress$[Local.WspSessionIndex] = RemoteEndpoint.addr,
+			 Global.SocketProxy.RemotePort$[Local.WspSessionIndex] = RemoteEndpoint.port,
+			 Global.SocketProxy.RemoteEndpoint$[Local.WspSessionIndex] = Local.RemoteEndpoint,
+			 Global.SocketProxy.ExternalAddress$[Local.WspSessionIndex] = ExternalEndpoint.addr,
+			 Global.SocketProxy.ExternalPort$[Local.WspSessionIndex] = ExternalEndpoint.port,
+			 Global.SocketProxy.ExternalEndpoint$[Local.WspSessionIndex] = Local.ExternalEndpoint,
+			 Global.SocketProxy.InternalAddress$[Local.WspSessionIndex] = DestinationNetworkAddress,
+			 Global.SocketProxy.InternalPort$[Local.WspSessionIndex] = ProxyIntPort,
+			 Global.SocketProxy.InternalEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(RwsIpv4, DestinationNetworkAddress, ProxyIntPort),
+			 Global.SocketProxy.RwsId$[Local.WspSessionIndex] = Local.MapIndex,
+			 Global.SocketProxy.RwsApp$[Local.WspSessionIndex] = Conversation.RwsApp,
+			 Global.SocketProxy.RwsHost$[Local.WspSessionIndex] = Conversation.RwsHost,
+			 Global.SocketProxy.RwsUser$[Local.WspSessionIndex] = Conversation.RwsUser]
+			[Property.RwsId = Local.MapIndex]
+			struct{};
+		//from client to proxy requesting a port mapping
+		case RwsOpCodeMappingReq:
+			[Property.RwsDataMapDescr = FormatString( "from %s to %s",
+								Conversation.RwsApp,
+								Local.RemoteEndpoint), Property.RwsOpDescr = Property.RwsDataMapDescr]
+			struct{};
+		//from client to proxy deleting a port mapping
+		case RwsOpCodeMappingRmv:
+			[Property.RwsDataMapDescr = FormatString( "from %s to %s via %s",
+								Conversation.RwsApp,
+								Local.RemoteEndpoint,
+								RwsEndpointTable(RwsIpv4, DestinationNetworkAddress, ProxyIntPort))]
+			struct{};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsDataSockOpt
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwsDataSockOpt = Local.RwsDataSockOptDescr
+{
+	switch
+	{
+		case FALSE == Property.RwsOnTcp:
+			RwsBindIndex	UdpIndex;
+	}
+	UINT32		Level = RwsWinsockOptsTable(this, this);
+	[Local.SocketOption = RwsWinsockOptsTable(Level, this)]
+	UINT32		OptName = RwsWinsockOptsTable(Level, this);
+	UINT32		OptLen;
+	[Local.ValuePtr = FrameOffset]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataSockOptDescr]
+	switch
+	{
+		// boolean values
+		case (SO_BROADCAST == OptName || SO_ACCEPTCONN == OptName || SO_DEBUG == OptName || 
+			  SO_DONTLINGER == OptName || SO_DONTROUTE == OptName || SO_KEEPALIVE == OptName || 
+			  SO_OOBINLINE == OptName || SO_REUSEADDR == OptName || SO_EXCLUSIVEADDRUSE == OptName || 
+			  SO_USELOOPBACK == OptName || SO_CONDITIONAL_ACCEPT == OptName):
+			[Local.RwsDataSockOptDescr = FormatString("%sable '%s'", (this)?"en":"dis", Local.SocketOption)]
+			struct{BOOLEAN	SetValue;};
+		// integers
+		case (SO_GROUP_PRIORITY == OptName || SO_RCVBUF == OptName || SO_SNDBUF == OptName || 
+			  SO_UPDATE_ACCEPT_CONTEXT == OptName):
+			[Local.RwsDataSockOptDescr = FormatString("'%s' == %d",Local.SocketOption, this)]
+			struct{UINT32	SetValue;};
+		//custom structs
+		case SO_LINGER == OptName:
+			[Local.RwsDataSockOptDescr = FormatString("%sable '%s' %s",(LingerData.OnOff)?"en":"dis", 
+								Local.SocketOption, 
+								(LingerData.OnOff)?FormatString("for %d seconds", LingerData.Seconds):" ")]
+			struct LingerData
+			{
+				BOOLEAN	OnOff;
+				UINT8	Seconds;
+			};
+		case PVD_CONFIG == OptName:
+			struct{};
+	}
+	BLOB(32 - (FrameOffset - Local.ValuePtr))	Buffer;
+};
+
+//------------------------------------------------------------------------------
+//  RwsDataGxBy
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsDataGxBy = Property.RwsOpDescr
+{  
+	switch(Property.RwsExtData)
+	{
+		case TRUE:
+			struct{BLOB(100)		Padding;};
+	}
+	switch
+	{
+		case FALSE == Property.RwsOnTcp:
+			RwsBindIndex	UdpIndex;
+	}
+	[Local.DataOffset = CurrentProtocolOffset]
+	AsciiString		HostName;
+	[Local.UsedBytes = CurrentProtocolOffset-Local.DataOffset]
+	switch(100 > Local.UsedBytes)
+	{
+		case TRUE:
+			struct{BLOB(100 - Local.UsedBytes)	Padding;};
+	}
+	[PostAfter.Property.RwsOpDescr = FormatString("('%s') from %s", HostName, Property.RwsApp)]
+	RwsAppAndClientInfo	AppAndClientInfo;
+};
+
+//------------------------------------------------------------------------------
+//  RwsHostEntList - Alias or IP Address list
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsHostEntList(bAlias) = FormatString("%u entr%s",Local.EntryCounter,(1==Local.EntryCounter)?"y":"ies")
+{
+	//sort out any entries that were reported
+	[Local.EntryCounter = 0,
+	 Local.DataOffset = Offset]
+	while[UINT32(FrameData,Offset)]
+	{
+		[Local.EntryCounter = Local.EntryCounter + 1]
+		UINT32		offAddr;
+	}
+	UINT32		offAddrEnd;
+	switch(bAlias)
+	{
+		case TRUE:
+			switch(Local.EntryCounter)
+			{
+				case 0:
+					struct{};
+				case 1:
+					struct{AsciiString Alias;};
+				default:
+					struct{AsciiString Alias[Local.EntryCounter];};
+			}
+		default:
+			switch(Local.EntryCounter)
+			{
+				case 0:
+					struct{};
+				case 1:
+					struct{IPV4Address Address;};
+				default:
+					struct{IPV4Address Address[Local.EntryCounter];};
+			}
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsDataHostEnt - serialized form of a Winsock HostEnt structure
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsDataHostEnt// = Local.HostEntData
+{
+	[PostAfter.Property.RwsOpDescr = FormatString("response to %s for '%s'",
+							  Property.RwsApp,
+							  Local.ReqHost?Local.ReqHost:Local.RealHostName)]
+	struct{
+	switch
+	{
+		case TRUE == Property.RwsExtData:
+		struct
+		{
+			[Local.ThisRoot = FrameOffset]
+			[Local.ReqHost = this]
+			AsciiString				ReqHostName;
+			struct{BLOB(100 - (FrameOffset - Local.ThisRoot)) Padding;};
+			RwsAppAndClientInfo		AppAndClientInfo;
+		};
+	}
+	switch
+	{
+		case FALSE == Property.RwsOnTcp:
+			struct
+			{
+			[DataFieldByteOrder = LittleEndian]
+			UINT16	DataLen;
+			struct{BLOB(16)	Padding;};
+			[Local.ReqHost = this]
+			AsciiString		ReqHostName;
+			struct{BLOB((FrameLength - FrameOffset) - (DataLen + 16))	Padding;};
+			[Property.RwsApp = this]
+			AsciiString(16)	AppName;
+			};
+	}
+	[Local.HostRoot = FrameOffset]
+	[Local.HostPtr]
+	UINT32	  	offHostName;
+	[Local.AliasPtr]
+	UINT32	  	offAliasList;  
+	UINT16	  	AddrType = RwsAddrFamilyTable(this);
+	[Local.EntryLen]
+	UINT16	  	Length;
+	[Local.AddrPtr]
+	UINT32	  	offAddrlist;
+	[Local.RealHostName]
+	AsciiString(Local.AliasPtr - Local.HostPtr)	RealHostName;
+	RwsHostEntList(TRUE)	Aliases;
+	struct{BLOB(Local.AddrPtr - (FrameOffset - Local.HostRoot)) Padding;};
+	RwsHostEntList(FALSE)	Addresses;
+	switch
+	{
+		case (TRUE == Property.RwsOnTcp && 16 <= FrameLength - FrameOffset):
+			struct{
+			struct{BLOB(100 - (FrameOffset - Local.HostRoot))	Padding;};
+			RwsAppAndClientInfo		AppAndClientInfo;
+			};
+	}
+	};
+};
+
+//------------------------------------------------------------------------------
+//  Configuration data local address table
+//------------------------------------------------------------------------------
+struct RwsAddressTable = FormatString("(%u Address Ranges)",Property.AddrTblCount)
+{
+	[DataFieldByteOrder=LittleEndian]
+	[Property.RWSTooBig = (!Property.RWSTooBig)?(FrameLength - FrameOffset - 4 < this):Property.RWSTooBig]
+	UINT32		AddrTableLen;
+	[DataFieldFrameLength = (FrameLength > (FrameOffset + AddrTableLen))?
+							 FrameOffset + AddrTableLen:
+							 FrameLength]
+	struct{
+	while [UINT8(FrameData,Offset) && FrameOffset < FrameLength]
+	{
+		[Property.AddrTblCount = Property.AddrTblCount + 1]
+		struct AddressRange = FormatString( "%s --> %s",StartAddr,EndAddr)
+		{
+			AsciiStringTerm("\t")	StartAddr;
+			AsciiStringTerm("\n")	EndAddr;
+		};
+	}
+	UINT8	Terminator;
+	};
+};
+
+//------------------------------------------------------------------------------
+//  Separates the domain name list within the RwsAppCfgData set
+//------------------------------------------------------------------------------
+struct RwsDomainList = FormatString( "(%d Domains)", Local.DomainCount )
+{
+	// this is a '\r\n'-terminated, ','-delimited array of strings, as:
+	// domain1.tld,domain2.tld,domain3.tld,...,domainlast.tld\r\n
+	[Local.DomainCount = 0]
+	[Local.DomainDelimiter.AddToProperty(",", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+	[Local.DomainDelimiter.AddToProperty("\r\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+	[Local.EndIndicator = ","]
+	while ["," == Local.EndIndicator]
+	{
+		[Local.DomainCount = Local.DomainCount + 1]
+		[PostAfter.Local.EndIndicator = AsciiString(FrameData, FrameOffset - 1, 1)]
+		StringTerm(ASCII, Local.DomainDelimiter, TRUE, FALSE, TRUE) DomainName;
+	}
+}
+
+//------------------------------------------------------------------------------
+//  Separates the address range list within the RwsAppCfgData set
+//------------------------------------------------------------------------------
+struct Rws12AddressList = FormatString( "(%d Address Ranges)", Local.AddressCount )
+{
+	[Local.AddressCount = 0]
+	AsciiStringTerm("\r\n")	LocalAddrTable;
+	while [UINT8(FrameData,Offset) && FrameOffset < FrameLength]
+	{
+		[Local.AddressCount = Local.AddressCount +1]
+		DynamicSwitch AsciiStringTerm("=")
+		{
+			default: AsciiStringTerm("\r\n")  DefaultName;
+		}
+	}
+	UINT8	Terminator;
+}
+//------------------------------------------------------------------------------
+//  Configuration data application settings
+//------------------------------------------------------------------------------
+struct RwsAppConfigData = FormatString("(%u bytes)",AppCfgDataLen)
+{
+	[DataFieldByteOrder=LittleEndian]
+	[Property.RWSTooBig = (!Property.RWSTooBig)?(FrameLength - FrameOffset - 4 < this):Property.RWSTooBig]
+	UINT32		AppCfgDataLen;
+	[DataFieldFrameLength = (FrameLength > (FrameOffset + AppCfgDataLen))?
+							 FrameOffset + AppCfgDataLen:
+							 FrameLength]
+	struct{
+	while [UINT8(FrameData,Offset) && FrameOffset < FrameLength]
+	{
+		switch(UINT8(FrameData,Offset))
+		{
+			case 0x3b:	//comment character ";"
+				AsciiStringTerm("\r\n")	Comment;
+			case 0x5b:	//left bracket character "["
+				AsciiStringTerm("\r\n")	Context;
+			default:
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					case "LocalDomains":
+						RwsDomainList	LocalDomains;
+					case "ServerVersion": 
+						[Local.ServerVersion = StringToNumber(this)]
+						AsciiStringTerm("\r\n") ServerVersion = RwsVersionTable(StringToNumber(this));
+					default: 
+						AsciiStringTerm("\r\n") DefaultName;
+				}
+		}
+	}
+	UINT8	Terminator;
+	switch
+	{
+		case (RwsIsa < Local.ServerVersion):
+			Rws12AddressList	AddressList;
+	}
+	};
+};
+
+//------------------------------------------------------------------------------
+//  RWS v12 Messages and data
+//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+//	Rws serialized version of SOCKADDRIN6 struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct RwsSockAddrIn6 = Local.SockAddrIn
+{
+	[DataFieldByteOrder = LittleEndian]
+	UINT16		Family = RwsAddrFamilyTable(this);
+	[Local.InAddrPort = this]
+	UINT16		Port;
+	UINT32		FlowInfo;
+	[Local.SockAddrIn = RwsEndpointTable(Family, Addr, Port),
+	 PostAfter.Property.SockAddrIn = Local.SockAddrIn]
+	IPv6Address	Addr;
+};
+
+//------------------------------------------------------------------------------
+//	Rws12 Endpoint struct
+//------------------------------------------------------------------------------
+struct Rws12Endpoint = Local.Socket
+{
+	//
+	// Total size is the same as SOCKADDR_IN6, 28 bytes.
+	//
+	[DataFieldByteOrder = LittleEndian,
+	 DataFieldFrameLength = FrameOffset + 28]
+	struct
+	{
+	[PostAfter.Local.Socket = RwsEndpointTable(this.Socket.Family, this.Socket.Addr, this.Socket.Port)]
+	switch(UINT16(FrameData,FrameOffset))
+	{
+		case 0:	// helps process null data
+		case RwsIpv4:
+			struct{RwsSockAddrIn4	Socket;};
+		case RwsIpv6:
+			struct{RwsSockAddrIn6	Socket;};
+	}
+	struct{BLOB(FrameLength - FrameOffset) Padding;};
+	};
+};
+
+//------------------------------------------------------------------------------
+//	Rws12 Connect message
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = BigEndian]
+struct Rws12ConnectRequest = Local.RwsDataConnDescr
+{
+	// This is the socket we'll use in the SocketProxy global variable array.
+	[Local.MsgPadding = CurrentProtocolOffset + 100,
+	 Local.RemoteEndpoint = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	[Conversation.RwsData.RemoteAddress$[Property.RwsId] = this.Socket.Addr,
+	 Conversation.RwsData.RemotePort$[Property.RwsId] = this.Socket.port]
+	Rws12Endpoint		ConnectEndpoint;
+
+	[Local.ClientAddr = (0 == this.Socket.Addr)?SourceNetworkAddress:this.Socket.Addr,
+	 Local.ClientEndpoint = RwsEndpointTable(this.Socket.Family,Local.ClientAddr,this.Socket.Port)]
+	[Conversation.RwsData.ClientPort$[Property.RwsId] = this.Socket.Port]
+	Rws12Endpoint		ClientEndpoint;
+
+	[Conversation.RwsData.RemoteEndpoint$[Property.RwsId] = Local.RemoteEndpoint,
+	 Conversation.RwsData.ClientEndpoint$[Property.RwsId]= Local.ClientEndpoint,
+	 Conversation.RwsData.ClientAddr$[Property.RwsId] = Local.ClientAddr]
+
+	struct{BLOB(Local.MsgPadding - CurrentProtocolOffset)	Padding;};
+
+	[PostAfter.Local.RwsDataConnDescr = FormatString( "request from %s to %s; client will send from %s",
+									Property.RwsApp,
+									Local.RemoteEndpoint,
+									Local.ClientEndpoint),
+	 PostAfter.Property.RwsOpDescr = Local.RwsDataConnDescr]
+	RwsAppAndClientInfo	AppAndClientInfo;
+};
+
+//------------------------------------------------------------------------------
+//  Rws12ConnectReply Reply data struct
+//------------------------------------------------------------------------------
+struct Rws12ConnectReply = Local.RwsDataConnReplyDescr
+{
+	//SocketProxy is used in tcp.npl, udp.npl & ftp.npl to help parse the session data 
+	// which follows the control channel
+	// we use 
+	// - ISA IP address & port
+	// - client IP address & port
+	// to identify this socket
+	// built using the same logic as SocketIndex in tcp.npl & udp.npl
+	[Local.Align = CurrentProtocolOffset + 100]
+	[Local.WspSessionIndex = (DestinationNetworkAddress < this.Socket.Addr)?
+					MakeByteArray(DestinationNetworkAddress,
+							Conversation.RwsData.ClientPort$[Property.RwsId],
+							this.Socket.Addr,
+							this.Socket.Port):
+					MakeByteArray(this.Socket.Addr,
+							this.Socket.Port,
+							DestinationNetworkAddress,
+							Conversation.RwsData.ClientPort$[Property.RwsId]),
+	// Proxy address the client will connect through
+	 Global.SocketProxy.InternalAddress$[Local.WspSessionIndex] = this.Socket.Addr, 
+	 Global.SocketProxy.InternalPort$[Local.WspSessionIndex] = this.Socket.Port, 
+	 Global.SocketProxy.InternalEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	Rws12Endpoint		InternalEndpoint;
+
+	// Address that client will receive for "getsockname()".
+	[Global.SocketProxy.ExternalAddress$[Local.WspSessionIndex] = this.Socket.Addr,
+	 Global.SocketProxy.ExternalPort$[Local.WspSessionIndex] = this.Socket.Port,
+	 Global.SocketProxy.ExternalEndpoint$[Local.WspSessionIndex] = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	Rws12Endpoint		ExternalEndpoint;
+
+	[Global.SocketProxy.ProxyProtocol$[Local.WspSessionIndex] = "WSP", 
+	 Global.SocketProxy.ClientAddress$[Local.WspSessionIndex] = DestinationNetworkAddress, 
+	 Global.SocketProxy.ClientPort$[Local.WspSessionIndex] = Conversation.RwsData.ClientPort$[Property.RwsId], 
+	 Global.SocketProxy.ClientEndpoint$[Local.WspSessionIndex] = Conversation.RwsData.ClientEndpoint$[Property.RwsId],
+	 Global.SocketProxy.RemoteAddress$[Local.WspSessionIndex] = Conversation.RwsData.RemoteAddress$[Property.RwsId],
+	 Global.SocketProxy.RemotePort$[Local.WspSessionIndex] = Conversation.RwsData.RemotePort$[Property.RwsId],
+	 Global.SocketProxy.RemoteEndpoint$[Local.WspSessionIndex] = Conversation.RwsData.RemoteEndpoint$[Property.RwsId],
+	 Global.SocketProxy.RwsId$[Local.WspSessionIndex] = Property.RwsId,
+	 Global.SocketProxy.RwsApp$[Local.WspSessionIndex] = Conversation.RwsApp,
+	 Global.SocketProxy.RwsHost$[Local.WspSessionIndex] = Conversation.RwsHost,
+	 Global.SocketProxy.RwsUser$[Local.WspSessionIndex] = Conversation.RwsUser]
+
+	struct{BLOB(Local.Align - CurrentProtocolOffset)	Padding;};
+	[PostAfter.Global.SocketProxy.RwsApp$[Local.WspSessionIndex] = Conversation.RwsApp,
+	 PostAfter.Local.RwsDataConnReplyDescr = FormatString("to %s; using %s with %s == %s with %s",
+								  Property.RwsApp,
+  								  Global.SocketProxy.ClientEndpoint$[Local.WspSessionIndex],
+  								  Global.SocketProxy.InternalEndpoint$[Local.WspSessionIndex],
+  								  Global.SocketProxy.ExternalEndpoint$[Local.WspSessionIndex],
+  								  Global.SocketProxy.RemoteEndpoint$[Local.WspSessionIndex]),
+  	 PostAfter.Property.RwsOpDescr = Local.RwsDataConnReplyDescr]
+	RwsAppAndClientInfo	AppAndClientInfo;
+};
+
+//------------------------------------------------------------------------------
+//  Rws12 Data Bind (UDP data send) data struct
+//------------------------------------------------------------------------------
+[DataTypeByteOrder=LittleEndian]
+struct Rws12DataBind = Local.RwsDataBindDescr
+{
+	// This is the socket we'll use in the SocketProxy global variable array.
+	[Local.BindEndpoint = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	Rws12Endpoint		BindEndpoint;
+
+	[Local.ClientAddr = (0 == this.Socket.Addr)?SourceNetworkAddress:this.Socket.Addr,
+	 Local.ClientEndpoint = RwsEndpointTable(this.Socket.Family,Local.ClientAddr,this.Socket.Port)]
+	Rws12Endpoint		ClientEndpoint;
+	[Local.ProtocolName = RwsProtoTypeTable(this)]
+	UINT32				BindProtocol = RwsProtoTypeTable(this);
+	UINT32				BindFlags;
+	struct{BLOB(36)		Padding;};
+
+	[PostAfter.Local.RwsDataBindDescr = FormatString( "request from %s to %s %s. %s bound to %s",
+														Property.RwsApp,
+														Local.ProtocolName,
+														Local.BindEndpoint,
+														Property.RwsApp,
+														Local.ClientEndpoint)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataBindDescr]
+	RwsAppAndClientInfo AppAndClientInfo;
+};
+
+//------------------------------------------------------------------------------
+//  Rws12DataBindReply
+//------------------------------------------------------------------------------
+[DataTypeByteOrder=LittleEndian]
+struct Rws12DataBindReply = Local.RwsDataBindReplyDescr
+{
+	// Address that client will return for "getsockname()".
+	[Local.ExternalEndpoint = RwsEndpointTable(this.Socket.Family,
+					  this.Socket.Addr,
+					  this.Socket.Port)]
+	[Conversation.RwsData.ExternalAddr$[Property.RwsId] = this.Socket.Addr,
+	 Conversation.RwsData.ExternalPort$[Property.RwsId] = this.Socket.Port]
+	Rws12Endpoint		ExternalEndpoint;
+
+	[Local.ClientAddr = (0 == this.Socket.Addr)?DestinationNetworkAddress:this.Socket.Addr]
+	[Conversation.RwsData.ClientAddr$[Property.RwsId] = this.Socket.Addr,
+	 Conversation.RwsData.ClientPort$[Property.RwsId] = this.Socket.Port,
+	 Conversation.RwsData.ClientEndpoint$[Property.RwsId] = RwsEndpointTable(this.Socket.Family,
+															Local.ClientAddr,
+															this.Socket.Port)]
+	Rws12Endpoint		ClientEndpoint;
+
+	[Local.ProtocolName = RwsProtoTypeTable(this)]
+	UINT32		  		BoundProtocol = RwsProtoTypeTable(this);
+	struct{BLOB(40)		Padding;};
+
+	[Conversation.RwsData.ExternalEndpoint$[Property.RwsId] = Local.ExternalEndpoint]
+	[PostAfter.Local.RwsDataBindReplyDescr = FormatString( "%s to %s on %s successful",
+															Local.ProtocolName,
+															Property.RwsApp,
+															Local.ExternalEndpoint)]
+	[PostAfter.Property.RwsOpDescr = Local.RwsDataBindReplyDescr]
+	RwsAppAndClientInfo 	AppAndClientInfo;
+};
+
+//------------------------------------------------------------------------------
+//  Rws12 Socket mapping generic entry point
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct Rws12DataMap = Property.RwsDataMapDescr
+{
+	// Remote host address data
+	[Property.RemoteEndpoint = RwsEndpointTable(this.Socket.Family, this.Socket.Addr, this.Socket.Port)]
+	Rws12Endpoint	RemoteEndpoint;
+
+	// TMG internal address data
+	[Property.InternalEndpoint = RwsEndpointTable(this.Socket.Family, this.Socket.Addr, this.Socket.Port)]
+	Rws12Endpoint	InternalEndpoint;
+
+	// TMG external address data
+	[Property.ExternalEndpoint = RwsEndpointTable(this.Socket.Family, this.Socket.Addr, this.Socket.Port)]
+	Rws12Endpoint	ExternalEndpoint;
+
+	//this is the protocol the client will use to connect to the proxy
+	UINT32		MappedProtocol = RwsProtoTypeTable(this);
+
+	[PostAfter.Property.RwsOpDescr = Property.RwsDataMapDescr]
+	switch(Property.RwsOpCode)
+	{
+		//from proxy to client acknowledging or advising of new port mapping
+		case RwsOpCodeMappingAdd12:
+			[Property.RwsDataMapDescr = FormatString( "to %s; %s with %s == %s with %s",
+														Conversation.RwsApp,
+														Property.RemoteEndpoint,
+														Property.ExternalEndpoint,
+														Property.InternalEndpoint,
+														Conversation.RwsData.ClientEndpoint$[Property.RwsId])]
+			//may lose the RwsId in the MapAck message, so we persist it here
+			[Conversation.RwsData.RwsId$[Property.SvrMapHandle] = Property.RwsId]
+			struct{};
+		//from client to proxy accepting new incoming port mapping
+		case RwsOpCodeMappingAck12:
+			  //re-aqcuire the RwsId from the AddMapping message
+			 [Local.MapIndex = (0 < Property.RwsId)?Property.RwsId:Conversation.RwsData.RwsId$[Property.SvrMapHandle],
+			  Local.WspSessionIndex = (SourceNetworkAddress < DestinationNetworkAddress)?
+										MakeByteArray(SourceNetworkAddress,
+												Conversation.RwsData.ClientPort$[Local.MapIndex],
+												DestinationNetworkAddress,
+												InternalEndpoint.Socket.Port):
+										MakeByteArray(DestinationNetworkAddress,
+												InternalEndpoint.Socket.Port,
+												SourceNetworkAddress,
+												Conversation.RwsData.ClientPort$[Local.MapIndex])]
+			[Property.RwsDataMapDescr = FormatString( "by %s; %s with %s == %s with %s",
+														Conversation.RwsApp,
+														Property.RemoteEndpoint,
+														Property.ExternalEndpoint,
+														Property.InternalEndpoint,
+														Conversation.RwsData.ClientEndpoint$[Local.MapIndex]),
+			 Property.RwsId = Local.MapIndex]
+			[Global.SocketProxy.ProxyProtocol$[Local.WspSessionIndex] = "WSP",
+			 Global.SocketProxy.ClientAddress$[Local.WspSessionIndex] = SourceNetworkAddress,
+			 Global.SocketProxy.ClientPort$[Local.WspSessionIndex] = Conversation.RwsData.ClientPort$[Local.MapIndex],
+			 Global.SocketProxy.ClientEndpoint$[Local.WspSessionIndex] = Conversation.RwsData.ClientEndpoint$[Local.MapIndex],
+			 Global.SocketProxy.RemoteAddress$[Local.WspSessionIndex] = RemoteEndpoint.Socket.Addr,
+			 Global.SocketProxy.RemotePort$[Local.WspSessionIndex] = RemoteEndpoint.Socket.Port,
+			 Global.SocketProxy.RemoteEndpoint$[Local.WspSessionIndex] = Property.RemoteEndpoint,
+			 Global.SocketProxy.ExternalAddress$[Local.WspSessionIndex] =  ExternalEndpoint.Socket.Addr,
+			 Global.SocketProxy.ExternalPort$[Local.WspSessionIndex] =  ExternalEndpoint.Socket.Port,
+			 Global.SocketProxy.ExternalEndpoint$[Local.WspSessionIndex] = Property.ExternalEndpoint,
+			 Global.SocketProxy.InternalAddress$[Local.WspSessionIndex] = InternalEndpoint.Socket.Addr,
+			 Global.SocketProxy.InternalPort$[Local.WspSessionIndex] = InternalEndpoint.Socket.Port,
+			 Global.SocketProxy.InternalEndpoint$[Local.WspSessionIndex] = Property.InternalEndpoint,
+			 Global.SocketProxy.RwsApp$[Local.WspSessionIndex] = Conversation.RwsApp,
+			 Global.SocketProxy.RwsHost$[Local.WspSessionIndex] = Conversation.RwsHost,
+			 Global.SocketProxy.RwsUser$[Local.WspSessionIndex] = Conversation.RwsUser,
+			 Global.SocketProxy.RwsId$[Local.WspSessionIndex] = Local.MapIndex]
+			struct{};
+		//from client to proxy requesting a port mapping
+		case RwsOpCodeMappingRequest12:
+			[Property.RwsDataMapDescr = FormatString( "from %s to %s",
+														Conversation.RwsApp,
+														Property.RemoteEndpoint),
+			 Property.RwsOpDescr = Property.RwsDataMapDescr]
+			struct{};
+		//from client to proxy deleting a port mapping
+		case RwsOpCodeMappingRemove12:
+			[Property.RwsDataMapDescr = FormatString( "from %s to %s via %s",
+														Conversation.RwsApp,
+														Property.RemoteEndpoint,
+														Property.InternalEndpoint)]
+			struct{};
+	}
+};
+
+//------------------------------------------------------------------------------
+//  Rws12HttpsMsg; FWC HTTPS inspection notification message from TMG
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct Rws12HttpsMsg = Property.RwsPktDescr
+{
+	UINT32							MessageVersion;
+	GUID(FALSE)						MessageGuid;
+	[Local.ClientEndpoint = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	Rws12Endpoint					ClientEndpoint;
+
+	[Local.FirewallEndpoint = RwsEndpointTable(this.Socket.Family,this.Socket.Addr,this.Socket.Port)]
+	Rws12Endpoint					FirewallEndpoint;
+
+	UINT16							TargetDomainBytes;
+	UINT16							TargetDomainOffset;
+
+	BLOB(RwsCbSha1HashLength)		Hash;
+
+	UINT16							SignedMessageBytes;
+	UINT16							SignedMessageOffset;
+
+	UnicodeString(TargetDomainBytes / 2)	TargetDomain;
+	[Property.RwsPktDescr = FormatString("HTTPSi notification v%d for %s on connection %s --> %s",
+											MessageVersion,
+											TargetDomain,
+											Local.ClientEndpoint,
+											Local.FirewallEndpoint)]
+	BLOB(SignedMessageBytes)		SignedMessage;
+};
+
+//------------------------------------------------------------------------------
+//  Rws12ExtendedData; FWC application detailed data
+//------------------------------------------------------------------------------
+struct Rws12ExtendedData = Property.RwsOpDescr
+{
+	BLOB(FrameLength - (FrameOffset + Property.RwsDataLen)) Buffer;
+	[DataFieldFrameLength = FrameOffset + Property.RwsDataLen]
+	[PostAfter.Property.RwsOpDescr = FormatString("for %s version %s as %s on %s",
+													Property.RwsApp,
+													Property.ProductVersion,
+													Property.RwsUser,
+													Property.RwsHost )]
+	while[FrameOffset < FrameLength]
+	{
+		 DynamicSwitch UnicodeStringTerm("=")
+		{
+			case "IsTrusted":
+				UnicodeStringTerm("\0")	IsTrusted = (0 == StringToNumber(this))?"False":"True";
+			case "FileName":
+				[Property.RwsApp = this]
+				UnicodeStringTerm("\0")	FileName;
+			case "MachineFQDN":
+				// using unqualified name here for consistency with 
+				// RwsChanSetup() property assignment behavior
+				[Property.RwsHost = UnicodeStringTerm(FrameData, FrameOffset, ".", FALSE)]
+				UnicodeStringTerm("\0")	MachineFQDN;
+			case "ProductVersion":
+				[Property.ProductVersion = this]
+				UnicodeStringTerm("\0")	ProductVersion;
+			case "UserName":
+				[Property.RwsUser = this]
+				UnicodeStringTerm("\0")	UserName;
+			default: 
+				UnicodeStringTerm("\0")	DefaultName;
+		}
+	}
+}
+
+//------------------------------------------------------------------------------
+//  RwsMsgsSet : RWS Messages handoff
+//------------------------------------------------------------------------------
+struct RwsMsgsSet = Property.RwsOpDescr
+{
+	switch( Property.RwsOpCode )
+	{
+		case RwsOpCodeLogon:
+		case RwsOpCodeLogonContinue:
+			RwsDataLogon		LogonData;
+		case RwsOpCodeError:
+			RwsDataError		ErrorData; 
+		case RwsOpCodeConnect:
+		case RwsOpCodeNewConnect:
+			RwsDataConnect		ConnectData;
+		case RwsOpCodeConnectReply:
+			RwsDataConnectReply	ConnReplyData;
+		case RwsOpCodeTcpBind:
+		case RwsOpCodeUdpBind:
+			RwsDataBind		BindData;
+		case RwsOpCodeBindReply:
+			RwsDataBindReply	BindReplyData;
+		case RwsOpCodeListen:
+			RwsDataListen		ListenData;
+		case RwsOpCodeListenReply:
+			RwsDataListenReply	Listening;
+		case RwsOpCodeMappingNew:
+		case RwsOpCodeMappingRcv:
+		case RwsOpCodeMappingReq:
+		case RwsOpCodeMappingRmv:
+			RwsDataMap		MapData;
+		case RwsOpCodeGhbn:
+		case RwsOpCodeGhba:
+		case RwsOpCodeGsbn:
+		case RwsOpCodeGsbp:
+			RwsDataGxBy		Gxby;
+		case RwsOpCodeHostEntry:
+			RwsDataHostEnt		HOSTENTRY;
+		case RwsOpCodeSrvEntry:
+			RwsDataHostEnt		SERVENTRY;
+		case RwsOpCodeSetSockOpt:
+			RwsDataSockOpt		SockOptData;
+		case RwsOpCodeChanSetup:
+			RwsChanSetup		SetupData;
+		case RwsOpCodePing:
+			[Property.RwsOpDescr = (Property.RwsFwd)?"Request":"Response"]
+			struct{};
+			
+		// RWS12 messages; TMG-compatible
+		case RwsOpCodeExtendedData12:
+			Rws12ExtendedData	ExtendedData;
+		case RwsOpCodeConnect12:
+			Rws12ConnectRequest	Connect12Data;
+		case RwsOpCodeConnectReply12:
+			Rws12ConnectReply	Connect12Reply;
+		case RwsOpCodeBind12:
+			Rws12DataBind		Bind12Data;
+		case RwsOpCodeBindReply12:
+			Rws12DataBindReply	BindReply12Data;
+		case RwsOpCodeMappingRequest12:
+		case RwsOpCodeMappingAdd12:
+		case RwsOpCodeMappingAck12:
+		case RwsOpCodeMappingRemove12:
+			Rws12DataMap		Map12Data;
+		default:
+		/* includes the following OpCodes:
+		case RwsOpCodeLogonDeny:
+		case RwsOpCodeLogonOk:
+		case RwsOpCodeClose:
+		case RwsOpCodeIPX1:
+		case RwsOpCodeIPX2:
+		case RwsOpCodeIPX3:
+		case RwsOpCodeIPX4:
+		case RwsOpCodeGetSvrIPs:
+		*/
+			[Property.RwsOpDescr = " "]
+			struct{};
+	}
+}
+
+//------------------------------------------------------------------------------
+//  RwsePacket : Encrypted Rws TCP Control Channel packet
+//------------------------------------------------------------------------------
+struct RwsePacket = Property.RwsPktDescr
+{
+	AsciiString(4)  ProtoSig;
+
+	[DataFieldByteOrder = BigEndian,
+	 Property.RwsPktDescr = FormatString("Encrypted (%u bytes)", this),
+	 Local.RwsMsgEnd = (FrameLength > (FrameOffset + this - 4))?
+						FrameOffset + this - 4:
+						FrameLength,
+	 Property.RWSTooBig = (!Property.RWSTooBig)?(FrameLength < Local.RwsMsgEnd):Property.RWSTooBig]
+	UINT16		  PacketByteSize;
+	[DataFieldByteOrder = LittleEndian]
+	UINT16		  SignatureByteSize;
+	UINT32		  SequenceNumber;
+
+	// remainder is encrypted data;
+	BLOB(Local.RwsMsgEnd - FrameOffset)	RwsEncryptedMsg;
+};
+
+//------------------------------------------------------------------------------
+//  RwstPacket : Rws TCP Control Channel packet
+//------------------------------------------------------------------------------
+[DataTypeByteOrder = LittleEndian]
+struct RwstPacket = Property.RwsPktDescr
+{
+	[Conversation.RwsEncrypted = TRUE]
+	UINT8		NullChar;
+	AsciiString(3)	ProtoSig;
+
+	[DataFieldByteOrder = BigEndian,
+	 Local.RwsMsgEnd = (FrameLength > (FrameOffset + this - 4))?
+						FrameOffset + this - 4:
+						FrameLength,
+	 Property.RwsPktLen = this]
+	UINT16		PktLen;
+	UINT16		Reserved1;
+	UINT32		Flags;
+	UINT32		Reserved2;
+	[Property.RwsOpCode = this,
+	 Property.RwsOpCodeText = RwsOpCodeSetTable(this)]
+	UINT8	OpCode = RwsOpCodeSetTable( this );
+
+	switch
+	{
+		case (RwsOpCodeLogon != Property.RwsOpCode &&
+			  RwsOpCodeLogonContinue != Property.RwsOpCode &&
+			  RwsOpCodeLogonOk != Property.RwsOpCode &&
+			  RwsOpCodeLogonDeny != Property.RwsOpCode &&
+			  RwsOpCodeChanSetup != Property.RwsOpCode &&
+			  RwsOpCodePing != Property.RwsOpCode): 
+			struct
+			{
+			[Property.RwsExtData = ( 100 <= this )?TRUE:FALSE,
+			 Property.RwsDataLen = this]
+			UINT16	DataLength;
+			[Property.RwsId = (this.HighWord << 16) + this.LowWord]
+			RwsHandle	ClientConnectionHandle;
+			[Property.SvrConnHandle = (this.HighWord << 16) + this.LowWord]
+			RwsHandle	ServerConnectionHandle;
+			[Property.ClientMapHandle = (this.HighWord << 16) + this.LowWord]
+			RwsHandle	ClientMappingHandle;
+			[Property.SvrMapHandle = (this.HighWord << 16) + this.LowWord]
+			RwsHandle	ServerMappingHandle;
+			};
+	}
+
+	[Local.StringBase = "%s %s"]
+	switch(OpCode)
+	{
+		case RwsOpCodeGhbn:
+		case RwsOpCodeGhba:
+		case RwsOpCodeGsbn:
+		case RwsOpCodeGsbp:
+			[Local.StringBase = "%s%s"]
+			struct{};
+	}
+	[PostAfter.Property.RwsPktDescr = FormatString(Local.StringBase,
+							Property.RwsOpCodeText, 
+							Property.RwsOpDescr)]
+	RwsMsgsSet  RwsMessage; 
+	switch(FrameOffset < Local.RwsMsgEnd)
+	{
+		case TRUE:  BLOB(Local.RwsMsgEnd - FrameOffset)	Unparsed;
+	}
+};
+
+//------------------------------------------------------------------------------
+//  RwsuPacket : Rws UDP Control Channel packet
+//------------------------------------------------------------------------------
+struct RwsuPacket = Property.RwsPktDescr
+{
+	UINT32			InstanceSig;
+	[Property.RwsId = (this.HighWord << 16) + this.LowWord]
+	RwsHandle	ClientConnectionHandle;
+	RwsHandle	ServerConnectionHandle;
+	UINT32		SerialNumber;
+	UINT32		AckWaterMark;
+	UINT32		AckBitmap;
+	AsciiString(4)	ProtoSig;
+	UINT32		ChannelSetupFlags;
+	UINT32		Reserved;
+	[Local.RwsControlCodeDescr = RwsControlCodesSet(UINT8( Framedata, Offset )),
+	 Property.RwsControlCode = UINT8( Framedata, Offset )]
+	RwsControlCodesSetFlag ControlCode;
+
+	switch(UINT8( Framedata, FrameOffset - 1 ))
+	{
+		case RwsMsgAck:
+			[Property.RwsPktDescr = Local.RwsControlCodeDescr]
+			struct
+			{
+			struct{BLOB(135) Padding;};
+			switch
+			{
+				case (FrameLength > FrameOffset):
+					[Property.RwsPktDescr = FormatString("%s for %s",Local.RwsControlCodeDescr, this)]
+					AsciiString DomainAndServer;
+			}
+			};
+		case RwsMsg:
+		case RwsMsgHint:
+		case RwsMsgResend:
+		case RwsNtlm:
+			struct
+			{
+				[Property.RwsOpCode = this,
+				 Property.RwsOpCodeText = RwsOpCodeSetTable(this)]
+				UINT8	OpCode = RwsOpCodeSetTable(this);
+				[PostAfter.Property.RwsPktDescr = FormatString( "%s %s", Property.RwsOpCodeText, Property.RwsOpDescr)]
+				RwsMsgsSet  RwsMessage; 
+			};
+		case RwsIdle:
+			struct
+			{
+				struct{BLOB(135) Padding;};
+				switch
+				{
+					case (FrameLength > FrameOffset):
+						[PostAfter.Property.RwsPktDescr = FormatString("%s %s %s",
+												Local.RwsControlCodeDescr,
+												(Property.RwsFwd)?"from":"to",
+													Property.ClientInfoDescr)]
+						RwsClientInfo	ClientInfo;
+					default:
+						[Property.RwsPktDescr = Local.RwsControlCodeDescr]
+						struct{};
+				}
+			};
+		default:
+		/* includes
+			RwsMsgMsg:
+			RwsMsgNack:
+			RwsMsgShut:
+			RwsShut:
+		*/
+			[Property.RwsPktDescr = Local.RwsControlCodeDescr]
+			struct{};
+	}
+	BLOB(FrameLength - FrameOffset)	Unparsed;
+};

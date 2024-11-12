@@ -1,0 +1,78 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Teredo Extensions
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-TERE]: Teredo Extensions (7.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/23/2009
+//#                          Minor, 1/28/2010
+//#
+//####
+
+//2.2.1   Nonce Trailer
+//[RegisterBefore(Controls.controls.UnknownControlValue, LDAPServerASQControlValue, "1.2.840.113556.1.4.1504")]
+[RegisterBefore(TEREDO.TeredoTrailers.Trailer, nonceTrailer, 0x01)]
+struct TERENonceTrailer = TERETrailerTypeTable(Type)
+{
+	//Type == 1
+	UINT8 Type = FormatString("%s %d(0x%02X)", TERETrailerTypeTable(this), this, this);
+	UINT8 Length;
+	UINT32 Value;
+}
+
+//2.2.2   Alternate Address Trailer
+[RegisterBefore(TEREDO.TeredoTrailers.Trailer, alternateAddressTrailer, 0x03)]
+struct TEREAlternateAddressTrailer= TERETrailerTypeTable(Type)
+{
+	//Type == 3
+	UINT8 Type = FormatString("%s %d(0x%02X)", TERETrailerTypeTable(this), this, this);
+	UINT8 Length;
+	UINT16 Reserved;
+	TEREAlternateAddressPortMapping PortMapping[(Length - 2)/6];
+}
+
+struct TEREAlternateAddressPortMapping = FormatString("%s:%d", Ipv4Address.tostring, PortNumber)
+{
+	IPv4Address Ipv4Address;
+	UINT16 PortNumber;
+}
+
+//2.2.3   Neighbor Discovery Option Trailer
+[RegisterBefore(TEREDO.TeredoTrailers.Trailer, neighborDiscoveryTrailer, 0x04)]
+struct TERENeighborDiscoveryTrailer = FormatString("%s",DiscoveryType.toString)
+{
+	UINT8 Type = FormatString("%s %d(0x%02X)", TERETrailerTypeTable(this), this, this);
+	UINT8 Length;
+	UINT8 DiscoveryType = FormatString("DiscoveryType:%s",this==1?"TeredoDiscoveryAdvertisement":"TeredoDiscoverySolicitation");
+	BLOB(Length - 1) Reserved;
+}
+
+//2.2.5   Random Port Trailer
+[RegisterBefore(TEREDO.TeredoTrailers.Trailer, RandomPortTrailer, 0x05)]
+struct TERERandomPortTrailer = FormatString("%s",RandomPort.toString)
+{
+	UINT8 Type = FormatString("%s %d(0x%02X)", TERETrailerTypeTable(this), this, this);
+	UINT8 Length;
+		[Global.TeredoPortOverUDP$[MakeByteArray(Ipv4.SourceAddress,RandomPort)] = true]
+	UINT16 RandomPort = FormatString("SenderListeningPort:%d(0x%x)",this,this);
+}
+
+Table TERETrailerTypeTable(type)
+{
+	switch(type)
+	{
+		case  0:"Blank Trailer";
+		case  1:"Nonce Trailer";
+		case  2:"Origin Trailer";
+		case  3:"Alternate Address Trailer";
+		case  4:"Neighbor Discovery Option Trailer";
+ 		case  5:"Random Port Trailer";
+		default:"Undefined Trailer";
+	}
+}
+
+

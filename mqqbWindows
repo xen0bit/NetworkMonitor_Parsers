@@ -1,0 +1,324 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Directory Service Discovery Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQQB]: Message Queuing (MSMQ): Directory Service Discovery Protocol Specification (11.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 10/15/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+[ByteOrder = LittleEndian, MQQBSummary=""]
+Protocol MQQB = MQQBSummary
+{
+	switch
+	{
+		case ! (Conversation.MQQB.id > 0):
+		[BuildConversationWithParent]struct{}
+	}
+
+	switch( property.MQQBPort )
+	{
+		case 1801:
+			switch( property.MQQBOnTCP )
+			{	
+				case TRUE: // MESSAGE-QUEUING BINARY PROTOCOL (over TCP).
+					[
+						Post.PayloadStart(
+												NetworkDirection, /* direction */
+												0, /* id */
+												0, /* sequence token */
+												0, /* next sequence token */
+												0, /* total payload length */
+												Property.MQQBIsFirst, /* is first */
+												Property.MQQBIsLast, /* is last */
+												RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+											)
+					]
+					[
+						Conversation.MQQBEndSeq$[framenumber] = Conversation.MQQBRemainedLength$[Property.NetworkDirection],
+						Property.MQQBRemainLength = Conversation.MQQBEndSeq$[framenumber],
+						Post.Conversation.MQQBRemainedLength$[Property.NetworkDirection]= Property.MQQBRemainLength
+					]
+					while [FrameOffSet < Framelength]
+					{
+						switch
+						{
+								case UINT8(FrameData,FrameOffset) == 0x10 
+									&& UINT32(FrameData, FrameOffset + 4) == 0x524F494C:
+									[
+										Property.MQQBLength = FrameLength - FrameOffset,
+										Property.MQQBIsFirst = CurrentProtocolOffset == 0 ? true : Property.MQQBIsFirst,
+										Property.MQQBIsLast = Property.MQQBLength == UINT32(FrameData, FrameOffset + 8),
+										Property.MQQBRemainLength = FrameLength - FrameOffset >= 12 
+										? UINT32(FrameData, FrameOffset + 8) - Property.MQQBLength:-1
+									]
+									Struct
+									{
+										[MQQBSummary = "Message Queuing Binary Protocol"]
+										MQMQBaseHeader BaseHeader;
+										switch(Property.MQMQBaseHeaderInternalMessageFlag)
+										{
+											
+											case 0: // USER MESSAGE.3.1.7.1.1   Construction of a UserMessage Packet
+												struct
+												{
+													[MQQBSummary = MQQBSummary + ", User Message"]
+													MQMQUserHeader UserHeader;
+													switch
+													{
+														case Property.MQMQTransactionHeaderFlag == 1:
+															MQMQTransactionHeader Transaction;
+													}
+													switch
+													{
+														case Property.MQMQSecurityHeaderFlag == 1:
+															MQMQSecurityHeader Security;
+													}
+													switch
+													{
+														case Property.MQMQMessagePropertiesHeaderFlag == 1:
+															MQMQMessagePropertiesHeader MessagePropertiesHeader;
+													}
+													switch
+													{
+														case Property.MQMQDebugHeaderFlag == 1:
+															MQMQDebugHeader DebugHeader;
+													}
+													switch
+													{
+														case Property.MQMQMultiQueueFormatHeaderFlag == 1:
+															MQMQMultiQueueFormatHeader MultiQueueFormat;
+													}
+													switch
+													{
+														case Property.MQMQSessionHeaderFlag == 1:
+															MQMQSessionHeader Session;
+													}
+													switch
+													{
+														case Property.MQMQSoapHeaderFlag== 1:
+															MQMQSoapHeader SoapHeader;
+													}
+												}
+											case 1: // INTERNAL MESSAGE.
+												struct
+												{
+													[MQQBSummary = MQQBSummary + ", Internal Message"]
+													MQQBInternalHeader InternalHeader;
+													switch( MQQBInternalHeader.Flags.PacketType )
+													{
+														case 1:
+															Switch
+															{
+																case Property.MQMQSessionHeaderFlag == 1:
+																	[MQQBSummary = MQQBSummary + ", Session Acknowledge Packet"]
+																	MQMQSessionHeader SessionHeader;
+															}
+														case 2:
+															[MQQBSummary = MQQBSummary + ", Establish Connection Packet"]
+															MQQBEstablishConnectionHeader EstablishConnection;
+														case 3:
+															[MQQBSummary = MQQBSummary + ", Connection Parameters Packet"]
+															MQQBConnectionParametersHeader ConnectionParameters;
+													}
+												}
+										}
+									}
+							
+								case Property.MQQBRemainLength > 0:
+									[
+										MQQBSummary = "MQQB Continuation Data",
+										local.MQQBRemainLengthData = FrameLength - FrameOffset > Property.MQQBRemainLength ? Property.MQQBRemainLength : FrameLength - FrameOffset,
+										Property.MQQBIsLast = FrameLength - FrameOffset == Property.MQQBRemainLength ? True : False,
+										Property.MQQBRemainLength = Property.MQQBRemainLength - local.MQQBRemainLengthData
+									]
+									Blob(local.MQQBRemainLengthData) ContinuationData;
+								default:
+									[MQQBSummary = "MQQB Continuation Data"]
+									Struct ContinuationData
+									{
+										while[!(UINT8( Framedata, Offset ) == 0x10 && UINT32(FrameData, FrameOffset + 4) == 0x524F494C)]
+										{
+											UINT8 ContinuationData;
+										}
+									}
+								
+						}
+					}
+				case False:
+					Switch
+					{
+						case Framelength - FrameOffSet > 0:
+							Struct MQQBUnknownData
+							{
+								Blob(Framelength - FrameOffSet) Data;
+								ReportParserError( ParserErrorProtocolClassWindows, "MQQB", "Unknown Union Switch Value" ) ParserErrorData;
+							}
+					}
+			}
+		case 3527: // MSMQ PING (UDP or IPX port 3527).
+			[MQQBSummary = "MQQB Ping Message"]
+			MQQBPingPacket PingMessage;
+		default:
+			Switch
+			{
+				case Framelength - FrameOffSet > 0:
+					Struct MQQBUnknownDataA
+					{
+						Blob(Framelength - FrameOffSet) UnknownData;
+						ReportParserError( ParserErrorProtocolClassWindows, "MQQB", "Unknown Union Switch Value" ) ParserErrorDataA;
+					}
+			}
+	}
+}
+
+//
+//2.2.1   InternalHeader
+//
+Struct MQQBInternalHeader = MQQBInternalHeaderPacketTypeTable(Flags.PacketType)
+{
+	UINT16 Reserved;
+	UINT16 Flags
+	{
+		UINT16 PacketType:4 = FormatString( "     ( %s ) - %s", this.ToBitString, MQQBInternalHeaderPacketTypeTable( this ) );
+		UINT16 ConnectionState:1 = FormatString( "( %s ) - %s", this.ToBitString, this ? "Connection refused" : "Connection accepted" );
+		UINT16 Reserved:11 = FormatString( "       ( %s ) - %s", this.ToBitString, "Reserved bits" );
+	}
+}
+
+Table MQQBInternalHeaderPacketTypeTable( value )
+{
+	switch( value )
+	{
+		case 1: "SessionAck packet";
+		case 2: "EstablishConnection packet";
+		case 3: "ConnectionParameters packet";
+	}
+}
+
+//
+//	2.2.2.1   ConnectionParametersHeader
+//
+Struct MQQBConnectionParametersHeader = FormatString( "%u milliseconds minimum from receiving recoverable UserMessage to sending SessionAck", RecoverableAckTimeout )
+{
+	UINT32 RecoverableAckTimeout = FormatString( "%u milliseconds minimum from receiving recoverable UserMessage to sending SessionAck", this );
+	UINT32 AckTimeout = FormatString( "%u milliseconds to wait for a SessionAck before closing the session", this );
+	UINT16 Reserved;
+	UINT16 WindowSize = FormatString( "Sliding window size of %u based on number of unacknowledged packets received", this );
+}
+
+//
+//	2.2.3.1   EstablishConnectionHeader
+//
+Struct MQQBEstablishConnectionHeader = FormatString( "%u milliseconds since the device booted", this )
+{
+	GUID(true) ClientGuid;
+	GUID(true) ServerGuid;
+	UINT32 TimeStamp = FormatString( "%u milliseconds since the device booted", TimeStamp );
+	UINT16 OperatingSystem
+	{
+		UINT32 Reserved:8 = FormatString( "        ( %s ) - %s", this.ToBitString, "Reserved bits" );
+		UINT32 Session:1 = FormatString( "         ( %s ) - %s", this.ToBitString, this ? "New session" : "Not a new session" );
+		UINT32 OperatingSystem:1 = FormatString( " ( %s ) - %s", this.ToBitString, this ? "Initiator OS is a server" : "Initiator OS is not a server" );
+		UINT32 QualityOfService:1 = FormatString( "( %s ) - %s", this.ToBitString, this ? "Quality of transport service supported" : "Quality of transport service not supported" );
+		UINT32 Unused1:5 = FormatString( "         ( %s ) - %s", this.ToBitString, "Unused bits" );
+	}
+	UINT16 Reserved;
+	BLOB(512) Padding;
+}
+
+//
+//	2.2.7   Ping Packet
+//
+Struct MQQBPingPacket = FormatString("Signature = %s",Signature)
+{
+	MQQBPingMessageFlags Flags;
+	UINT16 Signature;
+	UINT32 Cookie;
+	GUID(true) QMGuid;
+}
+
+Struct MQQBPingMessageFlags
+{
+	UINT16 Value
+	{
+		UINT16 RC:1 = FormatString( "    ( %s ) - %s", this.ToBitString, this ? "Client is independent" : "Client is not independent" );
+		UINT16 RF:1 = FormatString( "    ( %s ) - %s", this.ToBitString, this ? "Server refuses new connection" : "Server accepts new connection" );
+		UINT16 Unused:14 = FormatString( "( %s ) - %s", this.ToBitString, "Unused bits" );
+	}
+}
+
+//
+//	2.4.1   PUBLICKEYBLOB
+//
+Struct MQQBPublicKeyBlob
+{
+	Switch
+	{
+		case UINT8( Framedata, Offset ) == 0x06 && UINT8( Framedata, Offset + 1 ) == 0x02
+			&& UINT8( Framedata, Offset + 2 ) == 0x00 && UINT8( Framedata, Offset + 3 ) == 0x00
+			&& UINT8( Framedata, Offset + 4 ) == 0x00 && UINT8( Framedata, Offset + 5 ) == 0xA4
+			&& UINT8( Framedata, Offset + 6 ) == 0x00 && UINT8( Framedata, Offset + 7 ) == 0x00
+			&& UINT8( Framedata, Offset + 8 ) == 0x52 && UINT8( Framedata, Offset + 9 ) == 0x53
+			&& UINT8( Framedata, Offset + 10 ) == 0x41 && UINT8( Framedata, Offset + 11 ) == 0x31:
+			Struct
+			{
+				BLOB(12) Data = FormatString("%s",Data);
+				UINT32 BitLen;
+				UINT32 PubExp;
+				BLOB(BitLen) Modulus;
+			}
+		Default:
+			ReportParserError(ParserErrorProtocolClassWindows, "MQQBPublicKeyBlob", "Unknown data") parserError;
+	}
+}
+
+//
+//	2.4.2   SIMPLEBLOB
+//
+Struct MQQBSimpleBlob
+{
+	Switch
+	{
+		case UINT8( Framedata, Offset ) == 0x01 && UINT8( Framedata, Offset + 1 ) == 0x02
+			&& UINT8( Framedata, Offset + 2 ) == 0x00 && UINT8( Framedata, Offset + 3 ) == 0x00:
+			Struct
+			{
+				Blob(4) SimpleBlobDataA= FormatString("%s",SimpleBlobDataA);
+				UINT32 SessionKeyAlgorithm = MQQBSessionKeyAlgorithmTable(this);
+				Switch
+				{
+					case UINT8( Framedata, Offset ) == 0x00 && UINT8( Framedata, Offset + 1 ) == 0xA4
+						&& UINT8( Framedata, Offset + 2 ) == 0x00 && UINT8( Framedata, Offset + 3 ) == 0x00:
+						Struct
+						{
+							Blob(4) SimpleBlobDataB= FormatString("%s",SimpleBlobDataB);
+							BLOB(256) EncryptedKey;
+						}
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "MQQBSimpleBlob", "Unknown data") EncryptedKeyParserError;
+				}
+			}
+		Default:
+			ReportParserError(ParserErrorProtocolClassWindows, "MQQBSimpleBlob", "Unknown data") SimpleBlobParserError;
+	}
+}
+
+Table MQQBSessionKeyAlgorithmTable(value)
+{
+	Switch(value)
+	{
+		case 0x0000660e: "AES-128";
+		case 0x0000660f: "AES-192";
+		case 0x00006610: "AES-256";
+		case 0x00006602: "RC2";
+		case 0x00006801: "RC4";
+		Default: "Unknown Value" + FormatString("%u", value);
+	}
+}

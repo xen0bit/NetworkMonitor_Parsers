@@ -1,0 +1,154 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  RDP - Desktop Composition Virtual Channel Extension
+//#
+//#  Details:                Remote Desktop Protocol parser family
+//#
+//#  Microsoft References:   [MS-RDPEDC]: Remote Desktop Protocol: Desktop Composition Virtual Channel Extension (1.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 5/15/2009
+//#                          Minor, 6/23/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Struct RDPEDC  = FormatString("Operation = %s", RDPEDCOperationTable(UINT8(FrameData, Frameoffset)))
+{
+	[DataFieldFrameLength = FrameOffset + UINT16(FrameData, Frameoffset + 1) + 3]
+	struct
+	{
+		Switch(UINT8(FrameData, Frameoffset))
+		{
+			Case 0x01:
+				RDPEDCDrawingandDesktopStateChangesOrder DrawingandDesktopStateChangesOrder;
+			Case 0x02:
+				RDPEDCLogicalSurfaceLifetimeManagementOrders LogicalSurfaceLifetimeManagementOrders;
+			Case 0x03:
+				RDPEDCRedirectionSurfacesLifetimeManagementOrder RedirectionSurfacesLifetimeManagementOrder;
+			Case 0x04:
+				RDPEDCRedirectionSurfaceandLogicalSurfaceAssociationOrder RedirectionSurfaceandLogicalSurfaceAssociationOrder;
+			Case 0x05:
+				RDPEDCLogicalSurfaceCompositorReference LogicalSurfaceCompositorReference;
+			Case 0x06:
+				RDPEDCRetargetingDrawingOrder RetargetingDrawingOrder;
+			Case 0x07:
+				RDPEDCFlushComposeOnceDrawingOrder FlushComposeOnceDrawingOrder;
+		}
+		Switch
+		{
+				Case FrameLength > FrameOffset:
+					Struct RDPEDCParserError
+					{
+						ReportParserError(ParserErrorProtocolClassWindows, "RDPEDC", "Unknown RDPEDC data" ) ParserError;
+						Blob(FrameLength - FrameOffset) RDPEDCUnknownData;
+					}
+		}
+	}
+}
+
+Table RDPEDCOperationTable(code)
+{
+	Switch(code)
+	{
+		Case 0x01: "DrawingandDesktopStateChangesOrder";
+		Case 0x02: "LogicalSurfaceLifetimeManagementOrders";
+		Case 0x03: "RedirectionSurfacesLifetimeManagementOrder";
+		Case 0x04: "RedirectionSurfaceandLogicalSurfaceAssociationOrder";
+		Case 0x05: "LogicalSurfaceCompositorReference";
+		Case 0x06: "RetargetingDrawingOrder";
+		Case 0x07: "FlushComposeOnceDrawingOrder";
+		Default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+Table RDPEDCDrawingandDesktopStateChangesOrdereventTypeTable(code)
+{
+	Switch(code)
+	{
+		Case 0x00: "REDIRMODE_COMPOSITION_OFF: The server is leaving desktop composition mode";
+		Case 0x01: "REDIRMODE_RESERVED_00: This value is reserved and not used";
+		Case 0x02: "REDIRMODE_RESERVED_01: This value is reserved and not used";
+		Case 0x03: "REDIRMODE_COMPOSITION_ON: The server is entering desktop composition mode";
+		Case 0x04: "REDIRMODE_DWM_DESK_ENTER: The server is switching from a non-composed desktop to a composed desktop";
+		Case 0x05: "REDIRMODE_DWM_DESK_LEAVE: The server is switching from a composed desktop to a non-composed desktop";
+		Default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+// 2.2.1.1 Drawing and Desktop State Changes Order 
+Struct RDPEDCDrawingandDesktopStateChangesOrder
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x01: COMPDESKTOGGLE");
+	UINT16 Size = MustBeSetToTable(this, "0x0001");
+	UINT8 EventType = RDPEDCDrawingandDesktopStateChangesOrdereventTypeTable(this);
+}
+
+// 2.2.2.1 Logical Surface Lifetime Management Orders
+Struct RDPEDCLogicalSurfaceLifetimeManagementOrders
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x02: LSURFACE_CREATE_DESTROY");
+	UINT16 Size = MustBeSetToTable(this, "0x22");
+	UINT8 Create = this ? "create" : "remove";
+	UINT8 Flags
+	{
+		UINT8 Composeonce:1 = FormatString("(%s) %s", this.ToBitString, this ? "This logical surface is a compose-once surface." : "This logical surface is not a compose-once surface.");
+		UINT8 Res1:1 = FormatString("       (%s) %s", this.ToBitString, "Unused." );
+		UINT8 Redirection:1 = FormatString("(%s) %s", this.ToBitString, this ? "This logical surface is a redirection surface." : "This logical surface is not a redirection surface.");
+		UINT8 Res2:5 = FormatString("       (%s) %s", this.ToBitString, "Unused." );
+	}
+	UINT64 Lsurface;
+	UINT32 Width;
+	UINT32 Height;
+	UINT64 Hwnd;
+	UINT64 Luid;
+}
+
+// 2.2.2.2  Redirection Surfaces Lifetime Management Order
+Struct RDPEDCRedirectionSurfacesLifetimeManagementOrder
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x03: SURFOBJ_CREATE_DESTROY");
+	UINT16 Size = MustBeSetToTable(this, "0x16");
+	UINT32 CacheId;
+	UINT8 SurfaceBpp;
+	UINT8 Flags;
+	UINT64 Surf;
+	UINT32 cx;
+	UINT32 cy;	
+}
+
+// 2.2.2.3 Redirection Surface and Logical Surface Association Order
+Struct RDPEDCRedirectionSurfaceandLogicalSurfaceAssociationOrder
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x04: REDIRSURF_ASSOC_DEASSOC_LSURFACE");
+	UINT16 Size = MustBeSetToTable(this, "0x11");
+	UINT8 Associate = this ? "association" : "disassociation";
+	UINT64 Surface;
+	UINT64 Surf;
+}
+
+// 2.2.2.4  Logical Surface Compositor Reference
+Struct RDPEDCLogicalSurfaceCompositorReference
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x05: LSURFACE_COMPREF_PENDING");
+	UINT16 Size = MustBeSetToTable(this, "0x08");
+	UINT64 Surface;
+}
+
+// 2.2.3.1 Retargeting Drawing Order
+Struct RDPEDCRetargetingDrawingOrder
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x06: SURFOBJSWITCH");
+	UINT16 Size = MustBeSetToTable(this, "0x0004");
+	UINT32 CacheId;
+}
+
+// 2.2.3.2 FlushComposeOnce Drawing Order
+Struct RDPEDCFlushComposeOnceDrawingOrder
+{
+	UINT8 Operation = MustBeSetToTable(this, "0x07: FLUSHCOMPOSEONCE");
+	UINT16 Size = MustBeSetToTable(this, "0x000c");
+	UINT32 CacheId;
+	UINT64 Sprite;
+}

@@ -1,0 +1,358 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  The KerberosV5 GSS-API Mechanism
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1964 The Kerberos Version 5 GSS-API Mechanism
+//#                          RFC 4121 The KerberosV5 GSS-API Mechanism: Version 2
+//#                          draft-swift-win2k-krb-user2user-03 User to User Kerberos Authentication using GSS-API
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeByteOrder=BigEndian]
+struct GssAPIKrb5
+{
+	switch 
+	{
+		// MS-SPNG Windows Behavior <9>
+		// it accepts raw Kerberos messages that are based on 
+		// [RFC4121] and [RFC4120], and it accepts raw NTLM messages 
+		// that are not embedded in [RFC4178] SPNEGO messages.
+		case UINT8( Framedata, Offset ) == 0x60:			// RFC 4121
+			GssAPIInitialContextToken KerberosInitToken;
+		case (UINT8( Framedata, Offset ) & 0x60) == 0x60:	// RFC 4120
+			KerberosV5_struct Kerberos;
+		default:										// RFC 4121
+			_struct
+			{
+				[Property.AuthSummary = Krb5tokidTable(this)]
+				UINT16 TokId = Krb5tokidTable( this );
+				switch(TokId)
+				{
+/*
+RFC 1964
+The GSS_GetMIC token has the following format:
+
+        Byte no         Name        Description
+        0..1           TOK_ID     Identification field.
+                                  Tokens emitted by GSS_GetMIC() contain
+                                  the hex value 01 01 in this field.
+        2..3           SGN_ALG    Integrity algorithm indicator.
+                                  11 00 - HMAC
+        4..7           Filler     Contains ff ff ff ff
+        8..15          SND_SEQ    Sequence number field.
+        16..23         SGN_CKSUM  Checksum of "to-be-signed data",
+                                  calculated according to algorithm
+                                  specified in SGN_ALG field.
+*/
+					case 0x0101:
+						struct Krb5GssGetMic
+						{
+							UINT16 Krb5sgnAlg = Krb5sgnalgTable(this);
+							UINT32 Filler;
+							INT64 Krb5sndSeq;
+							INT64 Krb5sgnCksum;
+						};
+/*
+The RC4-HMAC GSS_Wrap() token has the following format:
+
+
+      Byte no          Name         Description
+        0..1           TOK_ID       Identification field.
+                                    Tokens emitted by GSS_Wrap() contain
+                                    the hex value 02 01 in this field.
+        2..3           SGN_ALG      Checksum algorithm indicator.
+                                    11 00 - HMAC
+        4..5           SEAL_ALG     ff ff - none
+                                    00 00 - DES-CBC
+                                    10 00 - RC4
+        6..7           Filler       Contains ff ff
+        8..15          SND_SEQ      Encrypted sequence number field.
+        16..23         SGN_CKSUM    Checksum of plaintext padded data,
+                                    calculated according to algorithm
+                                    specified in SGN_ALG field.
+        24..31         Confounder   Random confounder.
+        32..last       Data         Encrypted or plaintext padded data.
+*/
+					case 0x0201:
+						struct Krb5GssWrap
+						{
+							UINT16 Krb5sgnAlg = Krb5sgnalgTable( this );
+							[GssapiSeal]
+							UINT16 Krb5sealAlg = Krb5sealalgTable( this );
+							UINT16 Filler;
+							INT64 Krb5sndSeq;
+							INT64 Krb5sgnCksum;
+							switch(Krb5sgnAlg)
+							{
+								case 0x1100:
+									INT64 Krb5confounder;
+							}
+							switch
+							{
+								case Property.GssAPISeal !=  0xFFFF:
+									BLOB(FrameLength - FrameOffset) EncryptedData;
+								default:
+									BLOB(FrameLength - FrameOffset) UnParsedData;
+							}
+						};
+					
+/*
+The token emitted by GSS_Delete_sec_context() is based on the packet
+   format for tokens emitted by GSS_GetMIC().  The context-deletion
+   token has the following format:
+
+Linn                        Standards Track                    [Page 11]
+ 
+RFC 1964               Kerberos Version 5 GSS-API              June 1996
+
+
+   Byte no          Name           Description
+    0..1           TOK_ID          Identification field.
+                                   Tokens emitted by
+                                   GSS_Delete_sec_context() contain
+                                   the hex value 01 02 in this field.
+    2..3           SGN_ALG         Integrity algorithm indicator.
+                                   00 00 - DES MAC MD5
+                                   01 00 - MD2.5
+                                   02 00 - DES MAC
+    4..7           Filler          Contains ff ff ff ff
+    8..15          SND_SEQ         Sequence number field.
+    16..23         SGN_CKSUM       Checksum of "to-be-signed data",
+                                   calculated according to algorithm
+                                   specified in SGN_ALG field.
+*/	
+					case 0x0102:
+						struct Krb5GssDeleteSecContext
+						{
+							UINT16 Krb5sgnAlg = Krb5sgnalgTable( this );
+							UINT32 Filler;
+							INT64 Krb5sndSeq;
+							INT64 Krb5sgnCksum;
+						};
+						
+/*
+RFC 4121
+          Token               TOK_ID Value in Hex
+         -----------------------------------------
+          KRB_AP_REQ            01 00
+          KRB_AP_REP            02 00
+          KRB_ERROR             03 00
+   Where Kerberos message KRB_AP_REQUEST, KRB_AP_REPLY, and KRB_ERROR
+   are defined in [RFC4120].
+
+*/
+					case 0x0100:
+						KrbApReq ApReq;
+					case 0x0200:
+						KrbApRep ApRep;
+					case 0x0300:
+						KrbError Error;
+
+/*
+Use of the GSS_GetMIC() call yields a token (referred as the MIC
+   token in this document), separate from the user data being protected,
+   which can be used to verify the integrity of that data as received.
+   The token has the following format:
+
+         Octet no   Name        Description
+         --------------------------------------------------------------
+         0..1     TOK_ID     Identification field.  Tokens emitted by
+                             GSS_GetMIC() contain the hex value 04 04
+                             expressed in big-endian order in this
+                             field.
+         2        Flags      Attributes field, as described in section
+                             4.2.2.
+         3..7     Filler     Contains five octets of hex value FF.
+         8..15    SND_SEQ    Sequence number field in clear text,
+                             expressed in big-endian order.
+         16..last SGN_CKSUM  Checksum of the "to-be-signed" data and
+                             octet 0..15, as described in section 4.2.4.
+
+*/
+					case 0x0404:
+						struct Krb5GssV2GetMic
+						{
+								UINT8 Flags
+								{
+									UINT8 Unused:5 = FormatString( "(%s) Unused", this.ToBitString );
+									UINT8 Bit2:1 = FormatString( "  (%s) AcceptorSubkey - %s", this.ToBitString, this ? "A subkey asserted by the context acceptor is used to protect the message." : "A subkey is NOT used to protect the message." );
+									UINT8 Bit1:1 = FormatString( "  (%s) Sealed - %s", this.ToBitString, this ? "Indicates confidentiality is provided" : "Indicates confidentiality is NOT provided" );
+									UINT8 Bit0:1 = FormatString( "  (%s) SentByAcceptor - %s", this.ToBitString, this ? "The sender is the context acceptor." : "The sender is the context initiator." );
+								}
+								Blob(5) Filler;
+								INT64 SndSeq;
+								Blob( FrameLength - FrameOffset ) SgnCksum;
+						};
+						
+/*
+The GSS_Wrap() token SHALL have the following format:
+
+         Octet no   Name        Description
+         --------------------------------------------------------------
+          0..1     TOK_ID    Identification field.  Tokens emitted by
+                             GSS_Wrap() contain the hex value 05 04
+                             expressed in big-endian order in this
+                             field.
+          2        Flags     Attributes field, as described in section
+                             4.2.2.
+          3        Filler    Contains the hex value FF.
+          4..5     EC        Contains the "extra count" field, in big-
+                             endian order as described in section 4.2.3.
+          6..7     RRC       Contains the "right rotation count" in big-
+                             endian order, as described in section
+                             4.2.5.
+          8..15    SND_SEQ   Sequence number field in clear text,
+                             expressed in big-endian order.
+          16..last Data      Encrypted data for Wrap tokens with
+                             confidentiality, or plaintext data followed
+                             by the checksum for Wrap tokens without
+                             confidentiality, as described in section
+                             4.2.4.
+
+*/
+					case 0x0504:
+						struct Krb5GssV2Wrap
+						{
+							UINT8 Flags
+							{
+								UINT8 Unused:5 = FormatString( "(%s) Unused", this.ToBitString );
+								UINT8 Bit2:1 = FormatString( "  (%s) AcceptorSubkey - %s", this.ToBitString, this ? "A subkey asserted by the context acceptor is used to protect the message." : "A subkey is NOT used to protect the message." );
+								UINT8 Bit1:1 = FormatString( "  (%s) Sealed - %s", this.ToBitString, this ? "Indicates confidentiality is provided" : "Indicates confidentiality is NOT provided" );
+								UINT8 Bit0:1 = FormatString( "  (%s) SentByAcceptor - %s", this.ToBitString, this ? "The sender is the context acceptor." : "The sender is the context initiator." );
+							}
+							UINT8 Filler;
+							UINT16 EC; // Extra Count
+							UINT16 RRC; // Right Rotation Count
+							INT64 SndSeq;
+							// 4.2.3.  EC Field
+							Switch {
+								Case Flags.Bit1 != 0:
+									Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Blob(EC) checksum;
+							}
+						};
+						
+					// draft-swift-win2k-krb-user2user-03
+					case 0x0400:
+						Krb5UserToUserSession UsertoUserSessionReq;
+					case 0x0401:
+						Krb5UserToUserSession UsertoUserSessionRep;
+				}
+			}
+	}
+}
+
+struct Krb5UserToUserSession = Krb5UserToUserTypeMsgTypeTable(Local.UserToUserMsgType)
+{
+	AsnBerInfo		SequenceHeader;	
+	AsnBerInfo		Tag0;
+	AsnBerInteger	pvno;
+	AsnBerInfo		Tag1;
+	[post.Local.UserToUserMsgType = AsnIntValue]
+	AsnBerInteger	MessageType;
+	
+	switch ( AsnIntValue )
+	{
+		//
+		// msg - type is KRB_TGT_REQ (16)
+		//
+		//	KERB-TGT-REQUEST ::= SEQUENCE { 
+		//                pvno[0]                         INTEGER, 
+		//                msg-type[1]                     INTEGER, 
+		//                server-name[2]                  PrincipalName OPTIONAL, 
+		//                realm[3]					      Realm OPTIONAL 	
+		// }
+		// 
+		case 16:
+			struct 
+			{
+				switch {
+					case UINT8( Framedata, Offset ) == 0xA2:
+					struct {
+						AsnBerInfo Tag2;
+						KrbPrincipalName ServerName;
+					}
+				}
+				
+				switch {
+					case UINT8( Framedata, Offset ) == 0xA3:
+					struct {
+						AsnBerInfo Tag3;
+						KrbRealm Realm;
+					}
+				}				
+			}
+		//
+		// msg - type is KRB_TGT_REP (17) 
+		//
+		//KERB-TGT-REPLY ::= SEQUENCE { 
+		//                pvno[0]                         INTEGER, 
+		//                msg-type[1]                     INTEGER, 
+		//                ticket[2]                       Ticket 
+		//                } 
+		//
+		case 17:
+			struct 
+			{
+				AsnBerInfo Tag2;
+				KrbTicket Ticket;				
+			}
+	}
+ 
+}
+
+Table Krb5UserToUserTypeMsgTypeTable(msgtype)
+{
+	switch( msgtype )
+    {
+        case 16: FormatString("KRB_TGT_REQ (0x%x)", msgtype);
+        case 17: FormatString("KRB_TGT_REP (0x%x)", msgtype);
+        default: FormatString("Unknown Message Type (0x%x)", msgtype);
+    }
+}
+
+Table Krb5tokidTable( Id )
+{
+    switch( Id )
+    {
+        case 0x0100: FormatString("Krb5ApReq (0x%x)", Id);
+        case 0x0200: FormatString("Krb5ApRep (0x%x)", Id);
+        case 0x0300: FormatString("Krb5Error (0x%x)", Id);
+        case 0x0404: FormatString("GSS_GetMIC (0x%x)", Id);
+        case 0x0504: FormatString("GSS_Wrap (0x%x)", Id);
+        case 0x0101: FormatString("Krb5GssGetMIC (0x%x)", Id);
+        case 0x0201: FormatString("Krb5GssWrap (0x%x)", Id);
+        case 0x0102: FormatString("Krb5GssDeleteSecContext (0x%x)", Id);
+        default: FormatString("0x%x", Id);
+    }
+}
+
+Table Krb5sgnalgTable( Alg )
+{
+    switch( Alg )
+    {
+        case 0x0000: FormatString("DES MAC MD5 (0x%x)", Alg);
+        case 0x0100: FormatString("MD2.5 (0x%x)", Alg);
+        case 0x0200: FormatString("DES MAC (0x%x)", Alg);
+        case 0x1100: FormatString("HMAC (0x%x)", Alg);
+        default: FormatString("0x%x", Alg);
+    }
+}
+
+Table Krb5sealalgTable( Alg )
+{
+    switch( Alg )
+    {
+        case 0x0000: FormatString("DES CBC (0x%x)", Alg);
+        case 0x0100: FormatString("RC4 (0x%x)", Alg);
+        case 0xFFFF: FormatString("None (0x%x)", Alg);
+        default: FormatString("0x%x", Alg);
+    }
+}

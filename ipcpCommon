@@ -1,0 +1,161 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IPCP
+//#
+//#  Details:                Internet Protocol Control Protocol
+//#
+//#  Public References:      RFC 2153,1332,2290,1877
+//#                          http://www.networksorcery.com/enp/protocol/IPCP.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[RegisterAfter(PPP.Ccp,Ipcp,0x8021)]
+Protocol IPCP = FormatString("Code = %s, Length = %d",IPCPCodeTable(Code),Length)
+{
+	UINT8 Code = FormatString("(0x%X) %s",this,IPCPCodeTable(this));
+	UINT8 Identifier;
+	UINT16 Length;
+	switch(Code)
+	{
+		case 0x00 :
+		struct VendorSpecificPacket
+		{
+			UINT32 MagicNumber;
+			UINT24 OUI = OUITable(this);
+			UINT8 Kind;
+			switch
+			{
+				case Length > 12:
+				while[FrameOffset < ProtocolOffset + Length]
+				{
+					struct VerdorSpecificOption
+					{
+						UINT8 Type;
+						UINT8 OptionLength;
+						UINT24 OUI = OUITable(this);
+						UINT8 Kind;
+						switch
+						{
+							case OptionLength > 6:
+							BLOB(OptionLength - 6) Data;
+						}
+					} 
+				};
+			}
+		};
+		default :
+		while [FrameOffset < ProtocolOffset + Length]
+		{
+			switch(UINT8( Framedata, Offset ))
+			{
+				case 0x01: IPCPOPTIPAddresses IPAddresses;
+				case 0x02: IPCPOPTIPCompression IPCompression;
+				case 0x03: IPCPOPTIPAddress IPAddress;
+				case 0x04: IPCPOPTMobileIPv4 MobileIPv4;
+				case 0x81: IPCPOPTPrimaryDNS PrimaryDNS; 
+				case 0x82: IPCPOPTPrimaryNBNS PrimaryNBNS;
+				case 0x83: IPCPOPTSecondaryDNS SecondaryDNS;
+				case 0x84: IPCPOPTSecondaryNBNS SecondaryNBNS;
+				default:
+				struct UnknownAddress = FormatString("Option = %s",IPCPOptionTable(Option))
+				{
+					UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+					UINT8 Length;	
+					BLOB(Length - 2) Data;					
+				};								
+			}	
+		};
+	}
+}
+Table IPCPCodeTable
+{
+	switch(value)
+	{
+		case 0x00 : "Vendor Specific";
+		case 0x01 : "Configure-Request";
+		case 0x02 : "Configure-Ack";
+		case 0x03 : "Configure-Nak";
+		case 0x04 : "Configure-Reject";
+		case 0x05 : "Terminate-Request";
+		case 0x06 : "Terminate-Ack";
+		case 0x07 : "Code-Reject";
+		default : "Unknown Code";
+	}
+}
+
+Table IPCPOptionTable
+{
+	switch(value)
+	{
+		case 0x01 : "IP-Addresses (deprecated)";
+		case 0x02 : "IP-Compression-Protocol";
+		case 0x03 : "IP-Address";
+		case 0x04 : "Mobile-IPv4";
+		case 0x81 : "Primary DNS Server Address";
+		case 0x82 : "Primary NBNS Server Address";
+		case 0x83 : "Secondary DNS Server Address";
+		case 0x84 : "Secondary NBNS Server Address";
+		default : "Unknown Option";
+	}	
+}
+
+struct IPCPOPTIPAddresses
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;
+	IPv4Address IPv4Address[(Length - 2)/4];
+}
+
+struct IPCPOPTIPCompression
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	UINT16 IPCompression = FormatString("%s",this == 0x002D ? "Van Jacobson Compressed TCP/IP":""); 
+	BLOB(Length - 4) Data;
+}
+
+struct IPCPOPTIPAddress = IPv4Address.ToString
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;
+	IPv4Address IPv4Address;
+}
+
+struct IPCPOPTMobileIPv4 = MobileIPv4Address.ToString
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	IPv4Address MobileIPv4Address;	
+}
+
+struct IPCPOPTPrimaryDNS = PrimaryDNSAddress.ToString
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	IPv4Address PrimaryDNSAddress;	
+}
+
+struct IPCPOPTPrimaryNBNS = PrimaryNBNSAddress.ToString
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	IPv4Address PrimaryNBNSAddress;	
+}
+
+struct IPCPOPTSecondaryDNS = SecondaryDNSAddress.ToString 
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	IPv4Address SecondaryDNSAddress;	
+}
+
+struct IPCPOPTSecondaryNBNS = SecondaryNBNSAddress.ToString
+{
+	UINT8 Option = FormatString("(0x%X) %s",this,IPCPOptionTable(this));
+	UINT8 Length;	
+	IPv4Address SecondaryNBNSAddress;	
+}

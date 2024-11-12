@@ -1,0 +1,151 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  BKUP
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-BKUP]: Microsoft NT Backup File Structure Specification (3.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/22/2009
+//#
+//####
+
+Table BKUPWin32StreamIdStreamIdTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "DATA - Standard data.";
+		Case 0x00000002: "EA_DATA - Extended attribute data.";
+		Case 0x00000003: "SECURITY_DATA - Security descriptor data.";
+		Case 0x00000004: "ALTERNATE_DATA - Alternative data streams.";
+		Case 0x00000005: "LINK - Hard link information.";
+		Case 0x00000007: "OBJECT_ID - Object identifiers.";
+		Case 0x00000008: "REPARSE_DATA - Reparse points.";
+		Case 0x00000009: "SPARSE_BLOCK - Data in a sparse file.";
+		Case 0x0000000A: "TXFS_DATA - Transactional file system.";
+		Default: "Unknown Stream Type";
+	}
+}
+
+Table BKUPWin32StreamIdStreamAttributesTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "STREAM_NORMAL_ATTRIBUTE - This backup stream has no special attributes.";
+		Case 0x00000002: "STREAM_CONTAINS_SECURITY - The backup stream contains security information.  This attribute applies only to backup stream of type SECURITY_DATA.";
+		Case 0x00000008: "STREAM_SPARSE_ATTRIBUTE - The backup stream is part of a sparse file stream.  This attribute applies only to backup stream of type DATA, ALTERNATE_DATA, and SPARSE_BLOCK.";
+		Default: "Unknown Stream Attribute";
+	}
+}
+
+//
+//	[MS-BKUP] Object ID Backup Stream Structure
+//
+Struct BKUPObjectIDBackupStreamStructure = FormatString("GUID:%s",ObjectID.toString)
+{
+	GUID(true) ObjectID;
+	AsciiString(48) ObjectIDData;
+}
+
+//
+//	[MS-BKUP] Sparse Block Stream Structure
+//
+struct BKUPSparseBlockStreamStructure = "Sparse Stream"
+{
+	UINT64 Offset;
+	BLOB(BKUPContentDataLength - 8) SparseData;
+}
+
+//
+// 2.4 Data Backup Stream Structure
+//
+struct BKUPDataBackupStreamStructure = FormatString("Content:%s",Data)
+{
+	BLOB(BKUPContentDataLength) Data;
+}
+
+//
+//  2.5 Extended Attribute Data Backup Stream Structure
+//
+struct BKUPEaDataBackupStreamStructure = "EA-Data Stream"
+{
+	BLOB(BKUPContentDataLength) EAData;
+}
+
+//
+//  2.9 Security Stream Structure
+//
+struct BKUPSecurityBackupStreamStructure = "Securuty Descriptor"
+{
+	NdrSecurityDescriptor SecurityData;
+}
+
+//
+//  2.3 Alternate Data Backup Stream Structure
+//
+struct BKUPAlternateBackupStreamStructure = FormatString("Content:%s",FileData)
+{
+	BLOB(BKUPContentDataLength) FileData;
+}
+
+//
+//  2.6 Link Backup Stream Structure
+//
+struct BKUPLinkBackupStreamStructure = "Link Stream"
+{
+	BLOB(BKUPContentDataLength) LinkData;
+}
+
+//
+//  2.8  Reparse Backup Stream Structure
+//
+struct BKUPReparseBackupStreamStructure = "Reparse Stream"
+{
+	switch (UINT16(FrameData,FrameOffset))
+	{
+		case 0:FSCCReparseGUIDDataBuffer ReparseGUIDDataBuffer;
+		case 1:FSCCReparseDataBuffer ReparseDataBuffer;
+		default:ReportParserError(ParserErrorProtocolClassWindows, "BKUP", FormatString("BKUP: Unknown Reparse Tag")) UnknownReparseTagError;
+	}
+}
+
+//
+//  2.11 TXFS Stream Structure
+//
+struct BKUPTXFSBackupStreamStructure = "TXFS Stream"
+{
+	BLOB(BKUPContentDataLength) TXFSData;
+}
+
+//Protocol, LittleEndian
+struct BKUP = FormatString("StreamType:%s,Length = %d", StreamId.toString,BKUPContentDataLength + 20 +StreamNameSize)
+{
+	UINT32 StreamId = BKUPWin32StreamIdStreamIdTable( this );
+	UINT32 StreamAttributes = BKUPWin32StreamIdStreamAttributesTable( this );
+	[BKUPContentDataLength]
+	UINT64 Size;
+	UINT32 StreamNameSize;
+	switch
+	{
+		case StreamId == 4: 
+		[DataFieldByteOrder = LittleEndian]
+		UnicodeString(StreamNameSize/2) CStreamName;
+	}
+	[DataFieldFrameLength = FrameOffset + BKUPContentDataLength]
+	switch(StreamId)
+	{
+		case 1:  BKUPDataBackupStreamStructure DataStream;
+		case 2:  BKUPEaDataBackupStreamStructure EADataStream;
+		case 3:  BKUPSecurityBackupStreamStructure SecurityStream;
+		case 4:  BKUPAlternateBackupStreamStructure AlternateDataStream;
+		case 5:  BKUPLinkBackupStreamStructure LinkStream;
+		case 7:  BKUPObjectIDBackupStreamStructure ObjectIDStream;
+		case 8:  BKUPReparseBackupStreamStructure ReparseStream;
+		case 9:  BKUPSparseBlockStreamStructure SparseBlockStream;
+		case 10: BKUPTXFSBackupStreamStructure TXFSStream;
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows, "BKUP", FormatString("BKUP: Unknown Stream Type")) UnknownStreamTypeError;
+	}
+}

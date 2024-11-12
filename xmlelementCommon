@@ -1,0 +1,878 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  XML Element
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.w3.org/TR/xml/
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 4/2/2010
+//#
+//####
+
+// NYI: Proper support for UTF8, UTF16 and UTF32 xml (current implementation is for UTF8 only)
+
+const XmlCommentDescription = "{comment}";
+const XmlDirectiveDescription = "{xml directive}";
+const UndefinedValue = "{undefined}";
+const XmlCdataSection = "{xml cdata}";
+const XmlLinkXSLT = "{link XSLT parameter}";
+
+
+Table XmlElementNameConversion(ElementName)
+{
+	switch(ElementName)
+	{
+		case "!--": XmlCommentDescription;
+		case "?xml": XmlDirectiveDescription;
+		case "![CDATA[": XmlCdataSection;
+		case "": UndefinedValue; 
+		case "?xml-stylesheet": XmlLinkXSLT;
+		default: ElementName;
+	}
+}
+struct XmlAttributeValue = Value
+{
+	while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+	{
+		DynamicSwitch String(Property.XMLEncoding, 1)
+		{
+			default: struct{}
+		};
+	}
+	// Start Quote
+	[Local.Quote = String(FrameData, FrameOffset, Property.XMLEncoding, 1)]
+	DynamicSwitch String(Property.XMLEncoding, 1)
+	{
+		default: struct{}
+	};
+	
+	[Property.FrameOffsetBeforeValue = FrameOffset]
+	StringTerm(Property.XMLEncoding, Local.Quote, true, false, false) Value; 
+	[Property.ValueLength = (FrameOffset - Property.FrameOffsetBeforeValue)/Property.XMLCharLen]
+	
+	// End Quote
+	DynamicSwitch String(Property.XMLEncoding, 1)
+	{
+		default: struct{}
+	};
+	
+	while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+	{
+		DynamicSwitch String(Property.XMLEncoding, 1)
+		{
+			default: struct{}
+		};
+	}
+}
+
+struct XmlElemAttributes  = Property.XMLTagAttributes
+{
+	// Reset Previously used attributes and indexes
+	[Local.Dummy = Local.Dummy]
+	[Local.Count = 0]
+	[Post.Property.XmlElemAttrIndexes = Local.Dummy]
+	[Post.Property.XmlElemAttrIndCount = 0 ]
+	[MaxLoopCount = Property.XmlElemAttrIndCount]
+	while [true]
+	{
+		[Property.XmlElemAttrValues$[Property.XmlElemAttrIndexes[Local.Count]] = Local.Dummy]
+		[Local.Count = Local.Count + 1]
+		struct{}
+	}
+	
+	// Consume Attributes and set XmlElemAttrValues
+	[Property.XMLTagAttributes = StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLTagTerm, true, false)]
+	while [StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true) != Property.XMLTagTerm]
+	{
+		switch
+		{
+			case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLAttrNameTerm, true, false).contains(":"):
+				DynamicSwitch StringTerm(Property.XMLEncoding, ":", true, false, true)
+				{
+					default: struct{}
+				};
+		}
+		[Local.AttributeName = StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLAttrNameTerm, true, false)]
+		[Property.XmlElemAttrIndexes.AddToProperty(Local.AttributeName, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+		[Property.XmlElemAttrIndCount = Property.XmlElemAttrIndCount + 1]
+		DynamicSwitch StringTerm(Property.XMLEncoding, "=", true, false, true)
+		{
+			default:
+				[Property.XmlElemAttrValues$[Local.AttributeName] = this.Value, 
+				 Post.Property.XmlElemAttrValuesLength$[Local.AttributeName] = Property.ValueLength]
+				XmlAttributeValue DefaultName;
+		}
+	}
+}
+
+//
+// XmlTag consume a Start/End Tag, or an empty Element.
+//   TagName stands for the Name of this Tag
+//   If this Tag is not start with "<" or it's name is not "TagName", parser error will be reported
+//
+struct XmlTag(TagName) = this.Tag
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false : XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct{
+	[
+		Property.IsXmlEmptyElement = false,
+		Local.NameStartIndex = String(FrameData, FrameOffset + XMLCharLen * 1, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 1, Property.XMLEncoding, 1) == "/" ? 2 : 1,
+		Property.XmlTagName = StringTerm(FrameData, FrameOffset + Property.XMLCharLen * Local.NameStartIndex, Property.XMLEncoding, Property.XMLElementNameTerm, true, false)
+	]
+	switch
+	{
+		case ( !String(FrameData, FrameOffset, Property.XMLEncoding, FrameLength - FrameOffset).Contains(">") && FrameOffset <= FrameLength ) || (FrameLength - FrameOffset) <= 2:
+			struct
+			{
+				String(Property.XMLEncoding, FrameLength - FrameOffset) PartialXmlTag;
+				// The StopParsing is never reached, it is used to stop parsing when the XmlTag is partial.
+				UINT8 StopParsing;
+			}
+		case String(FrameData, FrameOffset, Property.XMLEncoding, 1) != "<" && FrameOffset < FrameLength:
+			ReportParserError(ParserErrorProtocolClassPublic, "Xml", "Invalid Xml Tag, not start with '<'") XmlTagError;
+		default:
+			StringTerm(Property.XMLEncoding, ">") Tag 
+			{
+				// Hide Tag Start "<", "</" and "<?" in UI
+				DynamicSwitch String(Property.XmlEncoding, 1)
+				{
+					default: struct{};
+				}
+				switch (String(FrameData, FrameOffset, Property.XmlEncoding, 1))
+				{
+					case "?":
+					case "/":
+						DynamicSwitch String(Property.XmlEncoding, 1)
+						{
+							default: struct{};
+						}
+				}
+				[local.OffsetBeforeTagName = FrameOffset]
+				StringTerm(Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false) TagName 
+				{
+					switch
+					{
+						case Property.XmlTagName.contains(":"):
+							StringTerm(Property.XMLEncoding, ":", true, false, true) NamespacePrefix;
+					}
+					string(Property.XMLEncoding) Name;
+				}
+				[property.XmlTagNameLength = FrameOffset - local.OffsetBeforeTagName]
+				switch
+				{
+					case !Property.XmlTagName.Contains(TagName) && FrameOffset < FrameLength:
+						ReportParserError(ParserErrorProtocolClassPublic, "Xml", FormatString("Invalid Xml Tag, the name of this tag is not '%s'", TagName)) XmlTagNameError;
+				}
+				
+				// Consume white spaces, and hide in UI
+				while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+				{
+					DynamicSwitch String(Property.XMLEncoding, 1)
+					{
+						default: struct{}
+					};
+				}
+				
+				// Consume Attributes
+				// If there is no Attributes, we also need to reset indexes and XmlElemAttrValues
+				// Please refer to struct XmlElemAttributes to see how XmlElemAttrValues works
+				switch
+				{
+					case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true) != Property.XMLTagTerm:
+						XmlElemAttributes Attributes;
+					default:
+						// Reset Previously used attributes and indexes
+						[Local.Dummy = Local.Dummy]
+						[Local.Count = 0]
+						[Post.Property.XmlElemAttrIndexes = Local.Dummy]
+						[Post.Property.XmlElemAttrIndCount = 0 ]
+						[MaxLoopCount = Property.XmlElemAttrIndCount]
+						while [true]
+						{
+							[Property.XmlElemAttrValues$[Property.XmlElemAttrIndexes[Local.Count]] = Local.Dummy]
+							[Local.Count = Local.Count + 1]
+							struct{}
+						}
+				}
+				// Consume white spaces, and hide in UI
+				while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+				{
+					DynamicSwitch String(Property.XMLEncoding, 1)
+					{
+						default: struct{}
+					};
+				}
+				
+				// Hide Tag End ">", "/>" and "?>" in UI
+				DynamicSwitch StringTerm(Property.XMLEncoding, ">")
+				{
+					case "/>": 
+						[Property.IsXmlEmptyElement = true]
+						struct{};
+				}
+			};
+	}
+	
+	switch
+	{
+		case FrameLength > FrameOffset:
+			struct
+			{
+				[Property.XmlContaisBinEncoding = Property.XMLEncoding == UTF16_LEN ? 3 : (Property.XMLEncoding == UTF16_BEN ? 1 : Property.XMLEncoding)]
+				[MaxLoopCount = 100, Property.SpaceStartPlace = FrameOffset]
+				while [ ContainsBin(FrameData, Property.XmlContaisBinEncoding, " ", Property.SpaceStartPlace, Property.XMLCharLen)
+				|| ContainsBin(FrameData, Property.XmlContaisBinEncoding, "\t", Property.SpaceStartPlace, Property.XMLCharLen)
+				|| ContainsBin(FrameData, Property.XmlContaisBinEncoding, "\n", Property.SpaceStartPlace, Property.XMLCharLen)
+				|| ContainsBin(FrameData, Property.XmlContaisBinEncoding, "\r", Property.SpaceStartPlace, Property.XMLCharLen)]
+				{
+					[Property.SpaceStartPlace = Property.SpaceStartPlace + Property.XMLCharLen]
+					struct{}
+				}
+				
+				// Consume white spaces, and hide in UI
+				switch
+				{
+					case ContainsBin(FrameData, Property.XmlContaisBinEncoding, "<", Property.SpaceStartPlace, Property.XMLCharLen) || FrameLength - Property.SpaceStartPlace == 0:
+						while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+						{
+							DynamicSwitch String(Property.XMLEncoding, 1)
+							{
+								default: struct{}
+							};
+						}
+				}
+			}
+	}
+	}//struct set DataFieldByteOrder
+}
+
+//
+// XmlElemContent is used to consume the content inside a leaf xml element.
+//
+[DataTypeByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+struct XmlElemContent = Content
+{
+	StringTerm(Property.XMLEncoding, "<", true, false, false) Content; 
+}
+
+//
+// XmlElement is used to parse the generic xml element
+// XmlElement assumes valid xml and that the frame pointer currently points to Start Tag, else report parser error	
+// Property.XMLDepth is used to record the Depth of the XML Element
+//
+[Property.XMLDepth = Property.XMLDepth + 1]
+[Post.Property.XMLDepth = Property.XMLDepth - 1]
+struct XmlElement(IfConsumeChildElements) = FormatString("XmlElement:<%s>%s", XmlElementNameConversion(Property.XmlElementName$[Property.XMLDepth]), this.Content ? ( " - " + this.Content ): "")
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false : XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct{
+	//
+	// Property.XmlElementName$[Property.XMLDepth] record the name of the XML element for each Depth
+	// This is the soul of XmlElement
+	//
+	[
+		Property.IsXmlComment = String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--",
+		Property.IsXmlLinkXSLT = String(FrameData, FrameOffset, Property.XMLEncoding, 16)  == "<?xml-stylesheet",
+		Property.IsXmlDirective = !Property.IsXmlLinkXSLT && String(FrameData, FrameOffset, Property.XMLEncoding, 5)  == "<?xml",
+		Property.IsCdataSection = String(FrameData, FrameOffset, Property.XMLEncoding, 9)  == "<![CDATA[",
+		Property.IsXmlSTag = !Property.IsXmlDirective && !Property.IsXmlLinkXSLT && !Property.IsXmlComment && !Property.IsCdataSection && String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset + Property.XMLCharLen * 1, Property.XMLEncoding, 1) != "/",
+
+		Property.XmlSTag =  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true, true), 
+		Property.IsXmlEmptyElement = Property.IsXmlSTag && Property.XmlSTag.contains("/>"),
+
+		Local.NameStartIndex = String(FrameData, FrameOffset + XMLCharLen * 1, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 1, Property.XMLEncoding, 1) == "/" ? 2 : 1,
+		Property.XmlTagName = StringTerm(FrameData, FrameOffset + Property.XMLCharLen * Local.NameStartIndex, Property.XMLEncoding, Property.XMLElementNameTerm, true, false)
+	]
+	switch
+	{
+		case Property.IsXmlEmptyElement:
+			[Property.XmlElementName$[Property.XMLDepth] = Property.XmlTagName]
+			XmlTag("") EmptyElement;
+		case Property.IsXmlComment:
+			[Property.XmlElementName$[Property.XMLDepth] = "!--"]
+			StringTerm(Property.XMLEncoding, "-->") Comment;
+		case Property.IsXmlDirective:
+			[Property.XmlElementName$[Property.XMLDepth] = "?xml"]
+			XmlTag("xml") Directive;
+		case Property.IsXmlLinkXSLT:
+			[Property.XmlElementName$[Property.XMLDepth] = "?xml-stylesheet"]
+			XmlTag("xml-stylesheet") StyleSheet;
+		case Property.IsCdataSection:
+			[Property.XmlElementName$[Property.XMLDepth] = "![CDATA["]
+			StringTerm(Property.XMLEncoding, "]]>") Cdata;
+		case Property.IsXmlSTag:
+			struct{
+				[Property.XmlElementName$[Property.XMLDepth] = Property.XmlTagName]
+				XmlTag("") STag;
+				switch
+				{
+					// This is the ETag when there is no content
+					case string(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true, true).Contains("</" + Property.XmlElementName$[Property.XMLDepth] ) :
+									struct{}
+					case String(FrameData, FrameOffset, Property.XMLEncoding, 1) != "<":
+					//case !IfConsumeChildElements:
+						[Property.XMLElementContent]
+						StringTerm(Property.XMLEncoding, "</" + Property.XmlElementName$[Property.XMLDepth], true, false, false) Content; 
+					case String(FrameData, FrameOffset, Property.XMLEncoding, 9)  == "<![CDATA[":
+						XmlElement(true) CDataSection;
+					case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<":
+						While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) Element;
+						}
+
+				}
+				//This is the ETag of the Element
+				switch
+				{
+					case FrameOffset < FrameLength:
+						XmlTag(Property.XmlElementName$[Property.XMLDepth]) ETag;
+				}
+			}
+		case !StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true, false).Contains(">") && FrameOffset <= FrameLength:
+			struct
+			{
+				String(Property.XMLEncoding, FrameLength - FrameOffset) PartialXmlElement;
+				// The StopParsing is never reached, it is used to stop parsing when the XmlTag is partial.
+				UINT8 StopParsing;
+			}
+		case FrameOffset < FrameLength:
+			ReportParserError(ParserErrorProtocolClassPublic, "Xml", "Invalid Xml Element") XmlElementError;
+	}
+	// Consume white spaces, and hide in UI
+	while [ FrameLength > FrameOffset && String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+	{
+		DynamicSwitch String(Property.XMLEncoding, 1)
+		{
+			default: struct{}
+		};
+	}
+	
+	switch
+	{
+		case Property.XMLDepth > 1:
+			switch
+				{
+					case  String(FrameData, FrameOffset, Property.XmlEncoding, 1) != "<":
+						StringTerm(Property.XMLEncoding, "<", true, false, false) CharData;
+				}
+	}
+	}//struct set DataFieldByteOrder
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Encoded xml
+// now the code supports
+// &lt;(<),&amp;lt;(<),&gt;(>), &amp;gt;(>), &amp;(&),  
+// &quot;("), &#34;("), &apos;('), &#39;('),
+// &#9;(/t), &#10;(/n), &#13;(/r), &#32;(space)
+//
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+struct EncXmlAttributeValue = Value
+{
+	while [ StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+	{
+		DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+		{
+			default: struct{}
+		};
+	}
+	// Start Quote
+	[Property.XmlAttributeQuote = StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncQuotationSign, true, true, false)]
+	DynamicSwitch StringTerm(Property.XMLEncoding, Property.EncQuotationSign, true, true, true)
+	{
+		default: struct{}
+	};
+	
+	StringTerm(Property.XMLEncoding, Property.XmlAttributeQuote, true, false, false) Value; 
+
+	// End Quote
+	DynamicSwitch StringTerm(Property.XMLEncoding, Property.XmlAttributeQuote, true, true, true)
+	{
+		default: struct{}
+	};
+	
+	while [ StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+	{
+		DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true) 
+		{
+			default: struct{}
+		};
+	}
+}
+
+table EncReplaceQuote(value)
+{
+	switch(value)
+	{
+		case "\"":
+		case "&#34;":
+		case "&quot;":
+		case "&amp;quot;":
+			"\"";
+		case "\'":
+		case "&#39;":
+		case "&apos;":
+		case "&amp;apos;":
+			"\'";
+	}
+}
+			
+struct EncXmlElemAttributes  = Property.XMLTagAttributes
+{
+	// Reset Previously used attributes and indexes
+	[Local.Dummy = Local.Dummy]
+	[Local.Count = 0]
+	[Post.Property.XmlElemAttrIndexes = Local.Dummy]
+	[Post.Property.XmlElemAttrIndCount = 0 ]
+	[MaxLoopCount = Property.XmlElemAttrIndCount]
+	while [true]
+	{
+		[Property.XmlElemAttrValues$[Property.XmlElemAttrIndexes[Local.Count]] = Local.Dummy]
+		[Local.Count = Local.Count + 1]
+		struct{}
+	}
+	
+	// Consume Attributes and set XmlElemAttrValues
+	[Property.XMLTagAttributes = ""]
+
+	while [StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncGreaterThanSign, true, true) != Property.EncXMLTagTerm]
+	{
+		[Local.AttributeName = StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLAttrNameTerm, true, false)]
+		[Property.XmlElemAttrIndexes.AddToProperty(Local.AttributeName, ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)]
+		[Property.XmlElemAttrIndCount = Property.XmlElemAttrIndCount + 1]
+		DynamicSwitch StringTerm(Property.XMLEncoding, "=", true, false, true)
+		{
+			default:
+				[Property.XMLTagAttributes = Property.XMLTagAttributes + " " + Local.AttributeName + " = " + EncReplaceQuote(Property.XmlAttributeQuote) + DefaultName.Value + EncReplaceQuote(Property.XmlAttributeQuote)]
+				[Property.XmlElemAttrValues$[Local.AttributeName] = this.Value]
+				EncXmlAttributeValue DefaultName;
+		}
+	}
+
+}
+
+//
+// EncXmlTag consume a Start/End Tag, or an empty Element.
+//   TagName stands for the Name of this Tag
+//   If this Tag is not start with "&lt;" or "&amp;lt;" or it's name is not "TagName", parser error will be reported
+//
+struct EncXmlTag(TagName) = FormatString("<%s %s>",this.Tag.TagName , this.Tag.Attributes.ToString)
+{
+	switch
+	{
+		case IsValueNone(Property.IsEncXmlPropertiesInitiated) || Property.IsEncXmlPropertiesInitiated == false : EncXmlPropertiesInitiator EncXmlPropertiesInitiator;
+	}
+
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct{
+	[
+		Property.IsXmlEmptyElement = false,
+		Local.NameStartIndex = string(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;" ? (String(FrameData, FrameOffset + XMLCharLen * 4, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 4, Property.XMLEncoding, 1) == "/" ? 5 : 4 ) : 
+			String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;" ? (String(FrameData, FrameOffset + XMLCharLen * 8, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 8, Property.XMLEncoding, 1) == "/" ? 9 : 8 ) : 0,
+		Property.XmlTagName = StringTerm(FrameData, FrameOffset + Property.XMLCharLen * Local.NameStartIndex, Property.XMLEncoding, Property.EncXMLElementNameTerm, true, false)
+	]
+	switch
+	{
+		case Local.NameStartIndex == 0 && FrameOffset < FrameLength:
+			ReportParserError(ParserErrorProtocolClassPublic, "Xml", "Invalid Xml Tag, not start with '<'") XmlTagError;
+		default:
+			struct Tag = FormatString("<%s %s>",this.Tag.TagName , this.Tag.Attributes.ToString)
+			{
+				// Hide Tag Start "&lt;", "&amp;lt;", "&lt;/", "&amp;lt;/, "&lt;?" and "&amp;lt;?" in UI
+				DynamicSwitch StringTerm(Property.XmlEncoding, Property.EncLessThanSign, true, true, true)
+				{
+					default: struct{};
+				}
+				switch (String(FrameData, FrameOffset, Property.XmlEncoding, 1))
+				{
+					case "?":
+					case "/":
+						DynamicSwitch String(Property.XmlEncoding, 1)
+						{
+							default: struct{};
+						}
+				}
+				StringTerm(Property.XMLEncoding, Property.EncXMLElementNameTerm, true, false, false) TagName 
+				{
+					switch
+					{
+						case Property.XmlTagName.contains(":"):
+							StringTerm(Property.XMLEncoding, ":", true, false, true) NamespacePrefix;
+					}
+					string(Property.XMLEncoding) Name;
+				}
+					
+				switch
+				{
+					case !Property.XmlTagName.Contains(TagName) && FrameOffset < FrameLength:
+						ReportParserError(ParserErrorProtocolClassPublic, "Xml", FormatString("Invalid Xml Tag, the name of this tag is not '%s'", TagName)) XmlTagNameError;
+				}
+					
+				// Consume white spaces, and hide in UI
+				while [  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+				{
+					DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+					{
+						default: struct{}
+					};
+				}
+					
+				// Consume Attributes
+				// If there is no Attributes, we also need to reset indexes and XmlElemAttrValues
+				// Please refer to struct EncXmlElemAttributes to see how EncXmlElemAttrValues works
+				switch
+				{
+					case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncGreaterThanSign, true, true) != Property.EncXMLTagTerm:
+							EncXmlElemAttributes Attributes ;
+					default:
+						// Reset Previously used attributes and indexes
+						[Local.Dummy = Local.Dummy]
+						[Local.Count = 0]
+						[Post.Property.XmlElemAttrIndexes = Local.Dummy]
+						[Post.Property.XmlElemAttrIndCount = 0 ]
+						[MaxLoopCount = Property.XmlElemAttrIndCount]
+						while [true]
+						{
+							[Property.XmlElemAttrValues$[Property.XmlElemAttrIndexes[Local.Count]] = Local.Dummy]
+							[Local.Count = Local.Count + 1]
+							struct{}
+						}
+				}
+				
+				// Consume white spaces, and hide in UI
+				while [  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+				{
+					DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+					{
+						default: struct{}
+					};
+				}
+				
+				// Hide Tag End "&gt;", "&amp;gt;", "/&gt;", "/&amp;gt;", "?&gt;" and "?&amp;gt;" in UI
+				DynamicSwitch StringTerm(Property.XMLEncoding, Property.EncGreaterThanSign)
+				{
+					case "/&gt;":
+					case "/&amp;gt;":
+						[Property.IsXmlEmptyElement = true]
+						struct{};
+				}
+			};
+	}
+	
+	// Consume white spaces, and hide in UI
+	while [  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+	{
+		DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+		{
+			default: struct{}
+		};
+	}
+	}//struct set DataFieldByteOrder
+}
+
+//
+// EncXmlElemContent is used to consume the content inside a encoded leaf xml element.
+//
+[DataTypeByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+struct EncXmlElemContent = Content
+{
+	StringTerm(Property.XMLEncoding, Property.EncLessThanSign, true, false, false) Content; 
+}
+
+
+//
+// EncXmlElement is used to parse the encoded xml element
+// EncXmlElement assumes valid xml and that the frame pointer currently points to Start Tag, else report parser error	
+// Property.XMLDepth is used to record the Depth of the XML Element
+//
+[Property.XMLDepth = Property.XMLDepth + 1]
+[Post.Property.XMLDepth = Property.XMLDepth - 1]
+struct EncXmlElement = FormatString("XmlElement:<%s>%s",XmlElementNameConversion(Property.XmlElementName$[Property.XMLDepth]), this.Content ? ( " - " + this.Content ): "")
+{
+	switch
+	{
+		case IsValueNone(Property.IsEncXmlPropertiesInitiated) || Property.IsEncXmlPropertiesInitiated == false : EncXmlPropertiesInitiator EncXmlPropertiesInitiator;
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	struct{
+	//
+	// Property.XmlElementName$[Property.XMLDepth] record the name of the XML element for each Depth
+	// This is the soul of XmlElement
+	//
+
+	[
+		Property.IsXmlComment = string(FrameData, FrameOffset, Property.XMLEncoding, 7) == "&lt;!--" || String(FrameData, FrameOffset, Property.XMLEncoding, 11) == "&amp;lt;!--",
+		Property.IsXmlLinkXSLT = String(FrameData, FrameOffset, Property.XMLEncoding, 19)  == "&lt;?xml-stylesheet" || String(FrameData, FrameOffset, Property.XMLEncoding, 23)  == "&lt;?xml-stylesheet",
+		Property.IsXmlDirective =  !Property.IsXmlLinkXSLT && (String(FrameData, FrameOffset, Property.XMLEncoding, 8)  == "&lt;?xml" || String(FrameData, FrameOffset, Property.XMLEncoding, 12)  == "&amp;lt;?xml"),
+		Property.IsCdataSection = string(FrameData, FrameOffset, Property.XMLEncoding, 12)  == "&lt;![CDATA[" || String(FrameData, FrameOffset, Property.XMLEncoding, 16)  == "&amp;lt;![CDATA[",
+		Property.IsXmlSTag = !Property.IsXmlDirective && !Property.IsXmlComment && !Property.IsCdataSection 
+			&& ((String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;" && String(FrameData, FrameOffset + Property.XMLCharLen * 4, Property.XMLEncoding, 1) != "/")
+					||(String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;" && String(FrameData, FrameOffset + Property.XMLCharLen * 8, Property.XMLEncoding, 1) != "/")),
+
+		Property.XmlSTag =  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncGreaterThanSign, true, true, true), 
+		Local.NameStartIndex = string(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;" ? 
+			(String(FrameData, FrameOffset + XMLCharLen * 4, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 4, Property.XMLEncoding, 1) == "/" ? 5 : 4 ) : 
+			String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;" ? 
+			(String(FrameData, FrameOffset + XMLCharLen * 8, Property.XMLEncoding, 1) == "?" || String(FrameData, FrameOffset + XMLCharLen * 8, Property.XMLEncoding, 1) == "/" ? 9 : 8 ) : 0,
+		Property.XmlTagName = StringTerm(FrameData, FrameOffset + Property.XMLCharLen * Local.NameStartIndex, Property.XMLEncoding, Property.EncXMLElementNameTerm, true, false),
+	]
+	switch
+	{
+		case Property.IsXmlComment:
+			[Property.XmlElementName$[Property.XMLDepth] = "!--"]
+			StringTerm(Property.XMLEncoding, Property.EncXmlCommentCloseSign) Comment;
+		case Property.IsXmlDirective:
+			[Property.XmlElementName$[Property.XMLDepth] = "?xml"]
+			EncXmlTag("xml") Directive;
+		case Property.IsXmlLinkXSLT:
+			[Property.XmlElementName$[Property.XMLDepth] = "?xml-stylesheet"]
+			EncXmlTag("xml-stylesheet") StyleSheet;
+		case Property.IsCdataSection:
+			[Property.XmlElementName$[Property.XMLDepth] = "![CDATA["]
+			StringTerm(Property.XMLEncoding, Property.EncXmlCdataCloseSign) Cdata;
+		case Property.IsXmlSTag:
+			struct{
+				[Property.XmlElementName$[Property.XMLDepth] = Property.XmlTagName]
+				EncXmlTag("") STag;
+				switch
+				{
+					case IsValueNone(Property.IsXmlEmptyElement) || Property.IsXmlEmptyElement == 0:
+						struct
+						{
+							switch
+							{
+								// This is the ETag when there is no content
+								case ( String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;"		
+											|| String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;") 
+										&& ( StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncGreaterThanSign, true, true, true).Contains("&lt;/" + Property.XmlElementName$[Property.XMLDepth] )
+												||StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.EncGreaterThanSign, true, true, true).Contains("&amp;lt;/" + Property.XmlElementName$[Property.XMLDepth] )):
+												struct{}
+								case string(FrameData, FrameOffset, Property.XMLEncoding, 4) != "&lt;" 
+									&& String(FrameData, FrameOffset, Property.XMLEncoding, 8) != "&amp;lt;":
+									[Property.XMLElementContent]
+									StringTerm(Property.XMLEncoding, Property.EncTagCloseSign + Property.XmlElementName$[Property.XMLDepth], true, false, false) Content; 
+								case String(FrameData, FrameOffset, Property.XMLEncoding, 12)  == "&lt;![CDATA[":
+								case String(FrameData, FrameOffset, Property.XMLEncoding, 16)  == "&amp;lt;![CDATA[":
+									EncXmlElement EncCDataSection;
+								case string(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;":
+								case String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;":				
+									While [
+											( String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "&lt;"
+												&& String(FrameData, FrameOffset, Property.XMLEncoding, 5) != "&lt;/")
+											||
+											( String(FrameData, FrameOffset, Property.XMLEncoding, 8) == "&amp;lt;"
+												&& String(FrameData, FrameOffset, Property.XMLEncoding, 9) != "&amp;lt;/")
+										]
+									{
+										EncXmlElement EncElement ;
+									}
+
+							}
+							// This is the ETag of the encoded Element
+							switch
+							{
+								case FrameOffset < FrameLength:
+									EncXmlTag(Property.XmlElementName$[Property.XMLDepth]) ETag;
+							}
+						}
+				}
+				}
+		case FrameOffset < FrameLength:
+			ReportParserError(ParserErrorProtocolClassPublic, "Xml", "Invalid Xml Element") XmlElementError;
+	}
+	// Consume white spaces, and hide in UI
+	while [  StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+	{
+		DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true) 
+		{
+			default: struct{}
+		};
+	}
+	}//struct set DataFieldByteOrder
+}
+
+//
+//Xml properties initiate
+//
+[
+	Property.XMLElementNameTerm.AddToProperty(" ", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty("\t", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty("\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty("\r", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty("/>", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLElementNameTerm.AddToProperty("?>", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLElementNameTerm.AddToProperty("&#9;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLElementNameTerm.AddToProperty("&#10;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLElementNameTerm.AddToProperty("&#13;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLElementNameTerm.AddToProperty("&#32;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.XMLSpace.AddToProperty(" ", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLSpace.AddToProperty("\t", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLSpace.AddToProperty("\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLSpace.AddToProperty("\r", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLSpace.AddToProperty("&#9;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLSpace.AddToProperty("&#10;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLSpace.AddToProperty("&#13;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLSpace.AddToProperty("&#32;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.XMLTagTerm.AddToProperty(">", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLTagTerm.AddToProperty("/>", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLTagTerm.AddToProperty("?>", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLTagTerm.AddToProperty("-->", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLTagTerm.AddToProperty("]]>", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.XMLAttrNameTerm.AddToProperty(" ", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLAttrNameTerm.AddToProperty("\t", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLAttrNameTerm.AddToProperty("\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLAttrNameTerm.AddToProperty("\r", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.XMLAttrNameTerm.AddToProperty("=", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLAttrNameTerm.AddToProperty("&#9;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLAttrNameTerm.AddToProperty("&#10;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLAttrNameTerm.AddToProperty("&#13;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.XMLAttrNameTerm.AddToProperty("&#32;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[	Property.IsXmlPropertiesInitiated = true	]
+struct XmlPropertiesInitiator
+{
+	// Consume white spaces, and hide in UI
+	while [ String(FrameData, FrameOffset, Property.XMLEncoding, 1) == Property.XMLSpace ]
+	{
+		DynamicSwitch String(Property.XMLEncoding, 1)
+		{
+			default: struct{}
+		};
+	}
+	
+	//
+	// XMLEncoding and XMLCharLen will be set when this XML is start with "<"
+	//
+	switch
+	{
+		case UINT8(FrameData, FrameOffset)== 0x3C && UINT8(FrameData, FrameOffset + 1)== 0x00:
+			[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+			struct{};
+		case UINT8(FrameData, FrameOffset)== 0x00 && UINT8(FrameData, FrameOffset + 1)== 0x3C:
+			[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+			struct{};
+		case UINT8(FrameData, FrameOffset)== 0x3C:
+			[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+			struct{};
+	}
+}
+
+//
+//Encoded Xml properties initiate
+//
+[
+	Property.EncXMLElementNameTerm.AddToProperty(" ", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.EncXMLElementNameTerm.AddToProperty("\t", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.EncXMLElementNameTerm.AddToProperty("\n", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.EncXMLElementNameTerm.AddToProperty("\r", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES), 
+	Property.EncXMLElementNameTerm.AddToProperty("&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("/&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("?&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("/&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("?&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("&#9;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("&#10;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("&#13;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLElementNameTerm.AddToProperty("&#32;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncXMLTagTerm.AddToProperty("&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("/&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("?&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("--&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("]]&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("/&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("?&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("--&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXMLTagTerm.AddToProperty("]]&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncLessThanSign.AddToProperty("&lt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncLessThanSign.AddToProperty("&amp;lt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncTagCloseSign.AddToProperty("&lt;/", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncTagCloseSign.AddToProperty("&amp;lt;/", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncGreaterThanSign.AddToProperty("&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncGreaterThanSign.AddToProperty("&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncXmlCommentCloseSign.AddToProperty("--&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXmlCommentCloseSign.AddToProperty("--&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncXmlCdataCloseSign.AddToProperty("]]&gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncXmlCdataCloseSign.AddToProperty("]]&amp;gt;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[
+	Property.EncQuotationSign.AddToProperty("\"", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("\'", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&quot;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&apos;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&#39;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&#34;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&amp;quot;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&amp;apos;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&amp;#39;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES),
+	Property.EncQuotationSign.AddToProperty("&amp;#34;", ADD_TO_PROPERTY_FLAG_NO_DUPLICATES)
+]
+[	Property.IsEncXmlPropertiesInitiated = true	]
+struct EncXmlPropertiesInitiator
+{
+	// Consume white spaces, and hide in UI
+	while [ StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLSpace, true, true, true) == Property.XMLSpace ]
+	{
+		DynamicSwitch StringTerm(Property.XMLEncoding, Property.XMLSpace, true, true, true)
+		{
+			default: struct{}
+		};
+	}
+	
+	//
+	// XMLEncoding and XMLCharLen will be set when this XML is start with "<" (0x3C)
+	//
+	switch
+	{
+		case UINT8(FrameData, FrameOffset)== 0x3C && UINT8(FrameData, FrameOffset + 1)== 0x00:
+			[Property.XMLEncoding = UTF16_LEN, Property.XMLCharLen = 2]
+			struct{};
+		case UINT8(FrameData, FrameOffset)== 0x00 && UINT8(FrameData, FrameOffset + 1)== 0x3C:
+			[Property.XMLEncoding = UTF16_BEN, Property.XMLCharLen = 2]
+			struct{};
+		case UINT8(FrameData, FrameOffset)== 0x3C:
+			[Property.XMLEncoding = UTF8, Property.XMLCharLen = 1]
+			struct{};
+	}
+}
+
+
+ 
+

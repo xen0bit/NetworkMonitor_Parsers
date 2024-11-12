@@ -1,0 +1,210 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Peer Content Caching and Retrieval
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PCCRR]: Peer Content Caching and Retrieval: Retrieval Protocol Specification (0.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/12/2009
+//#                          Minor, 4/6/2010
+//#
+//####
+
+[ RegisterBefore(HTTPPayloadData.DotNETRemotingHttpChannel, PCCRR , Property.HttpUriLocation.Contains("116B50EB-ECE2-41ac-8429-9F9E963361B7"))]
+Protocol PCCRR = ProtocolSummary
+{
+	switch 
+	{
+		case UINT32(FrameData,Offset + 4) == 0x00000000 || UINT32(FrameData,Offset + 4) == 0x00000002 || UINT32(FrameData,Offset + 4) == 0x00000003:
+			[Property.ProtocolSummary = RequestMessage.ToString]
+			PccrrRequestMessageStruct RequestMessage;
+		case UINT32(FrameData,Offset + 8) == 0x00000001 || UINT32(FrameData,Offset + 8) == 0x00000004 || UINT32(FrameData,Offset + 8) == 0x00000005:
+			[Property.ProtocolSummary = ResponseMessage.ToString]
+			PccrrResponseMessageStruct ResponseMessage;	
+		default:
+			[Property.ProtocolSummary = " Need reassemble "]			
+			Blob( FrameLength - Offset) PCCRRContinueData;	
+	}
+}
+
+Table PccrrMessageHeaderMsgTypeTable( Value )
+{
+	switch ( Value )
+	{
+		case 0x00000000: "Body message is NEGO_REQ";
+		case 0x00000001: "Body message is NEGO_RESP";
+		case 0x00000002: "Body message is GETBLKLIST";
+		case 0x00000003: "Body message is GETBLKS";
+		case 0x00000004: "Body message is BLKLIST";
+		case 0x00000005: "Body message is BLK";
+		default: "Unknown value";
+	}
+}
+
+
+Table PccrrMessageHeaderCryptoAlgoIdTable( Value )
+{
+	switch ( Value )
+	{
+		case 0x00000000: "No encryption";
+		case 0x00000001: "AES 128-bit encryption";
+		case 0x00000002: "AES 192-bit encryption";
+		case 0x00000003: "AES 256-bit encryption";
+		default: "Unknown value";
+	}
+}
+
+Table PccrcHashTypeValueTable( Value )
+{
+	switch(Value)
+	{
+		case 0x0000800C: 32;
+		case 0x0000800D: 48;
+		case 0x0000800E: 64;
+		default: "Unknown value";
+	}
+}
+
+//2.2.1.1   BLOCK_RANGE
+Struct PccrrBlockRangeStruct = FormatString("The first block is %d, This range contains %d blocks",Index ,Count)
+{
+	UINT32 Index;
+	UINT32 Count;
+}
+
+//2.2.2   TRANSPORT_RESPONSE_HEADER
+Struct PccrrTranspotResponseHeader = FormatString("Total message Size is %d",MessageSize)
+{
+	[ Property.PccrrMessageSize ]
+	UINT32 MessageSize;
+}
+
+Struct PccrrProtVerStruct = Formatstring("Version is %u.%u",(MSBMajorVersion<<8) + LSBMajorVersion,(MSBMinorVersion<<8) + LSBMinorVersion)
+{
+	UINT8 MSBMinorVersion;
+	UINT8 LSBMinorVersion;
+	UINT8 MSBMajorVersion;
+	UINT8 LSBMajorVersion;
+};
+
+//2.2.3   MESSAGE_HEADER
+Struct PccrrMessageHeader = FormatString("Message Size is %d, %s%s",MsgSize,PccrrMessageHeaderMsgTypeTable(MsgType),(FrameLength - offset + 16 ) < MsgSize ? ", Need reassemble":"")
+{
+	PccrrProtVerStruct ProtVer;
+	[ Property.PccrrBodyMessageType ]
+	UINT32 MsgType = PccrrMessageHeaderMsgTypeTable(this);
+	[ IsValueNone( Property.PccrrMessageSize ) ? Property.PccrrMessageSize = this : Property.PccrrMessageSize = Property.PccrrMessageSize ]
+	UINT32 MsgSize;
+	UINT32 CryptoAlgoId = PccrrMessageHeaderCryptoAlgoIdTable(this);	
+}
+
+//2.2.4   REQUEST_MESSAGE
+Struct PccrrRequestMessageStruct = Property.PccrrRequestSummary
+{
+	[ Property.PccrrRequestSummary = MessageHeader.ToString]
+	PccrrMessageHeader MessageHeader;	
+	PccrrBody Body;
+}
+
+Struct PccrrBody = PccrrMessageHeaderMsgTypeTable(Property.PccrrBodyMessageType)
+{
+	switch( Property.PccrrBodyMessageType )
+	{
+		case 0x00000000:
+			PccrrNegoReqStruct NegoVersionRequest;
+		case 0x00000001:
+			PccrrNegoRespStruct NegoVersionResponse;	
+		case 0x00000002:
+			PccrrGetBlockListStruct GetBlockList;
+		case 0x00000003:
+			PccrrGetBlocksStruct GetBlocks;	
+		case 0x00000004:
+			PccrrBlkListStruct BlkList;
+		case 0x00000005:
+			PccrrBlkStruct Blk;	
+		default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows,"PCCRR","Unknown Data") ParserError;
+				[Property.ProtocolSummary = "Unknown Data"]
+				Blob(Framelength - Offset) PccrrUnknownData;
+			}		
+	}
+}
+
+//2.2.5   RESPONSE_MESSAGE
+Struct PccrrResponseMessageStruct = Property.PccrrResponseSummary
+{
+	PccrrTranspotResponseHeader TranspotResponseHeader;
+	[ Property.PccrrResponseSummary = MessageHeader.ToString]
+	PccrrMessageHeader MessageHeader;
+	PccrrBody Body;
+}
+
+//2.2.4.1   MSG_NEGO_REQ
+Struct PccrrNegoReqStruct = Formatstring("Request min protocol %s, Max protocol %s",MinSupportedProtocolVersion.ToString,MaxSupportedProtocolVersion.ToString)
+{
+	PccrrProtVerStruct MinSupportedProtocolVersion;
+	PccrrProtVerStruct MaxSupportedProtocolVersion;
+}
+
+//2.2.5.1   MSG_NEGO_RESP
+Struct PccrrNegoRespStruct = Formatstring("Server supported min protocol %s, Max protocol %s",MinSupportedProtocolVersion.ToString,MaxSupportedProtocolVersion.ToString)
+{
+	PccrrProtVerStruct MinSupportedProtocolVersion;
+	PccrrProtVerStruct MaxSupportedProtocolVersion;
+}
+
+//2.2.4.2   MSG_GETBLKLIST
+Struct PccrrGetBlockListStruct = Formatstring("Need blocks range count %d",NeededBlocksRangeCount)
+{
+	UINT32 SizeOfSegmentID;
+	Blob(SizeOfSegmentID) SegmentID=FormatString("%X",this);
+	ALIGN4 ZeroPad;
+	UINT32 NeededBlocksRangeCount;
+	PccrrBlockRangeStruct NeededBlockRanges[NeededBlocksRangeCount];
+}
+
+//2.2.4.3   MSG_GETBLKS
+Struct PccrrGetBlocksStruct = Formatstring("Request block range count %d",ReqBlockRangeCount)
+{
+	UINT32 SizeOfSegmentID;
+	Blob(SizeOfSegmentID) SegmentID=FormatString("%X",this);
+	ALIGN4 ZeroPad;
+	UINT32 ReqBlockRangeCount;
+	PccrrBlockRangeStruct ReqBlockRanges[ReqBlockRangeCount];
+	UINT32 SizeOfDataForVrfBlock;	
+}
+
+//2.2.5.2   MSG_BLKLIST
+Struct PccrrBlkListStruct = Formatstring("Block range count: %d",BlockRangeCount)
+{
+	UINT32 SizeOfSegmentID;
+	Blob(SizeOfSegmentID) SegmentID=FormatString("%X",this);
+	ALIGN4 ZeroPad;
+	UINT32 BlockRangeCount;
+	PccrrBlockRangeStruct BlockRanges[BlockRangeCount];
+	UINT32 NextBlockIndex;
+}
+
+//2.2.5.3   MSG_BLK
+Struct PccrrBlkStruct = Formatstring("Block Index %d, Next Block Index %d",BlockIndex,NextBlockIndex)
+{
+	UINT32 SizeOfSegmentID;
+	Blob(SizeOfSegmentID) SegmentID=FormatString("%X",this);
+	ALIGN4 Pad;
+	UINT32 BlockIndex;
+	UINT32 NextBlockIndex;
+	UINT32 SizeOfBlock;
+	ConstrictingBlob(SizeOfBlock) Block;
+	Align4 Pad1;
+	UINT32 SizeOfVrfBlock;
+	Blob(SizeOfVrfBlock) VrfBlock;
+	Align4 Pad2;
+	UINT32 SizeOfIVBlock;
+	Blob(SizeOfIVBlock) IVBlock;
+}
+

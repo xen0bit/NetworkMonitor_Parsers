@@ -1,0 +1,76 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  People Near Me (PNM) Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PNM]: People Near Me (PNM) Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 01/15/2010
+//#                          Minor, 3/11/2010
+//#
+//####
+
+[RegisterBefore(WSDiscoveryHello.OtherElement, PNMNearMeData, Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "NearMeData") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"))]
+[RegisterBefore(WSDiscoveryProbeMatchElement.OtherElement, PNMNearMeData, Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "NearMeData") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"))]
+Struct PNMNearMe = this.STag.ToString
+{
+	[Post.Local.NearMeData_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("NearMeData") STag;
+	Switch
+	{
+		Case !Local.NearMeData_IsEmpty:
+			Struct
+			{
+				PNMNearMeDataBuf NearMeData;
+				XmlTag("NearMeData") ETag;
+			}
+	}
+}
+
+[DataFieldByteOrder = LittleEndian]
+[ Property.PNMNearMeDataBufSummary = "" ]
+Struct PNMNearMeDataBuf = Property.PNMNearMeDataBufSummary
+{
+	[ Local.PNMNearMeDataOffset ]
+	PNMNearMeDataHeader NearMeDataHeader;
+	Switch
+	{
+		Case Property.PNMFriendlyNameOffset - Local.PNMNearMeDataOffset - 18 > 0:
+			Blob( Property.PNMFriendlyNameOffset - Local.PNMNearMeDataOffset - 18 )	OptionalSpace1;
+	}
+	Switch
+	{
+		Case Property.PNMFriendlyNameLength > 0:
+			[ Property.PNMNearMeDataBufSummary = Property.PNMNearMeDataBufSummary + Formatstring("PeopleNearMeFriendlyName: %s ", this) ]
+			AsciiString( Property.PNMFriendlyNameLength )	PeopleNearMeFriendlyName;
+	}
+	Switch
+	{
+		Case Property.PNMEndpointNameOffset - Property.PNMFriendlyNameLength - Property.PNMFriendlyNameOffset > 0:
+			Blob( Property.PNMEndpointNameOffset - Property.PNMFriendlyNameLength - Property.PNMFriendlyNameOffset )	OptionalSpace2;
+	}
+	Switch
+	{
+		Case Property.PNMEndpointNameLength > 0:
+			[ Property.PNMNearMeDataBufSummary = Property.PNMNearMeDataBufSummary + Formatstring("EndpointFriendlyName: %s ", this) ]
+			AsciiString(Property.PNMEndpointNameLength) EndpointFriendlyName;
+	}
+}
+
+[DataTypeByteOrder = LittleEndian] 
+Struct PNMNearmedataheader
+{
+	[DataFieldByteOrder = BigEndian]
+	UINT16 PortNum;
+	[ Property.PNMFriendlyNameLength ]
+	UINT32 FriendlyNameLength;
+	[ Property.PNMFriendlyNameOffset ]
+	UINT32 FriendlyNameOffset;
+	[ Property.PNMEndpointNameLength ]
+	UINT32 EndpointNameLength;
+	[ Property.PNMEndpointNameOffset ]
+	UINT32 EndpointNameOffset;
+}

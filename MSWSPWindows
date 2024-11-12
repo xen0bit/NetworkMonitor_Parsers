@@ -1,0 +1,2239 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Search Service Query Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WSP]: Windows Search Protocol Specification (9.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/30/2009
+//#
+//####
+
+const WSPEmptyValue = 0x0000;
+const WSPNullValue = 0x0001;
+const WSPVTI1		=	0x0010;
+const WSPVTUI1	=	0x0011;
+const WSPVTI2		=	0x0002;
+const WSPVTUI2	=	0x0012;
+const WSPVTBOOL	=	0x000B;
+const WSPVTI4		=	0x0003;
+const WSPVTUI4	=	0x0013;
+const WSPVTR4		=	0x0004;
+const WSPVTINT	=	0x0016;
+const WSPVTUINT	=	0x0017;
+const WSPVTERROR	=	0x000A;
+const WSPVTI8		=	0x0014;
+const WSPVTUI8	=	0x0015;
+const WSPVTR8		=	0x0005;
+const WSPVTCY		=	0x0006;
+const WSPVTDATE	=	0x0007;
+const WSPVTFILETIME	=	0x0040;
+const WSPVTDECIMAL 	=	0x000E;
+const WSPVTCLSID	=	0x0048;
+const WSPVTBlob	=	0x0041;
+const WSPVTBlobObject = 	0x0046;
+const WSPVTCF		=	0x0047;
+const WSPVTBSTR	=	0x0008;
+const WSPVTLPSTR	=	0x001E;
+const WSPVTLPWSTR  	=	0x001F;
+const WSPVTCLPWSTR = 0x0023;
+const WSPVTVariant = 0x000C;
+
+const WSPVectorORI1	=	0x1010;
+const WSPVectorORUI1	=	0x1011;
+const WSPVectorORI2 	=	0x1002;
+const WSPVectorORUI2 	= 	0x1012;
+const WSPVectorORBOOL = 	0x100B;
+const WSPVectorORI4 	= 	0x1003;
+const WSPVectorORUI4 	= 	0x1013;
+const WSPVectorORR4 	= 	0x1004;
+const WSPVectorORERROR = 	0x100A;
+const WSPVectorORI8 	= 	0x1014;
+const WSPVectorORUI8 	= 	0x1015;
+const WSPVectorORR8 	= 	0x1005;
+const WSPVectorORCY 	= 	0x1006;
+const WSPVectorORDATE = 	0x1007;
+const WSPVectorORFILETIME = 	0x1040;
+const WSPVectorORCF 	= 	0x1047;
+const WSPVectorORCLSID = 	0x1048;
+const WSPVectorORBSTR = 	0x1008;
+const WSPVectorORLPSTR = 	0x101E;
+const WSPVectorORLPWSTR = 	0x101F;
+const WSPVectorORCLPWSTR = 	0x1023;
+const WSPVectorORVARIANT = 	0x100C;
+
+const WSPArrayORI1 	= 	0x2010;
+const WSPArrayORUI1 	= 	0x2011;
+const WSPArrayORI2 	= 	0x2002;
+const WSPArrayORUI2 	= 	0x2012;
+const WSPArrayORBOOL 	= 	0x200B;
+const WSPArrayORI4 	= 	0x2003;
+const WSPArrayORUI4 	= 	0x2013;
+const WSPArrayORR4 	= 	0x2004;
+const WSPArrayORERROR = 	0x200A;
+const WSPArrayORR8 	= 	0x2005;
+const WSPArrayORCY 	= 	0x2006;
+const WSPArrayORDATE 	= 	0x2007;
+const WSPArrayORBSTR 	= 	0x2008;
+const WSPArrayORVARIANT = 	0x200C;
+const WSPArrayORINT 	= 	0x2016;
+const WSPArrayORUINT 	= 	0x2017;
+const WSPArrayORDECIMAL = 	0x200E;
+
+//====================================
+//
+[DataTypeByteOrder = LittleEndian]
+Protocol MSWSP =  FormatString( "%s, %s%s",
+								Property.SMBResponse ? "Response" : "Request",
+								MSWSPSummary,
+								MSWSPMessageSummary ? ", " + MSWSPMessageSummary : "")
+{
+	struct MSWSPHeader = MSWSPSummary
+	{
+		[MSWSPSummary = MSWSPMsgTable(Property.SMBResponse, this)]
+		UINT32 MessageId = FormatString("%s, %u(0x%x)",MSWSPMsgTable(Property.SMBResponse, this),this,this);
+		[MSWSPSummary = MSWSPSummary + ", Status: " +  Status.toString]
+		HRESULT Status;
+		[Property.SafeArray = 0]
+		UINT32 ulChecksum;
+		UINT32 ulReserved2;
+	}
+	switch( Property.SMBResponse )
+	{
+		case FALSE: //MSWSP REQUEST
+			switch( MSWSPHeader.MessageId )
+			{
+				case 0x000000C8: MSWSPCPMConnectIn		CPMConnectInRequest;//200
+				case 0x000000C9: struct{};//201
+				case 0x000000CA: MSWSPCPMCreateQueryIn	CPMCreateQueryInRequest;//202
+				case 0x000000CB: MSWSPCPMFreeCursorIn	CPMFreeCursorInRequest;//203
+				case 0x000000CC: [conversation.wspReserved2 = MSWSPHeader.ulReserved2]MSWSPCPMGetRowsIn		CPMGetRowsInRequest;//204
+				case 0x000000CD: MSWSPCPMRatioFinishedIn	CPMRatioFinishedInRequest;//205
+				case 0x000000CE: MSWSPCPMCompareBmkIn	CPMCompareBmkInRequest;//206
+				case 0x000000CF: MSWSPCPMGetApproximatePositionIn	CPMGetApproximatePositionInRequest;//207
+				case 0x000000D0: MSWSPCPMSetBindingsIn		CPMSetBindingsInRequest;//208 
+				case 0x000000D1: struct{};//209
+				case 0x000000D7: MSWSPCPMGetQueryStatusIn	CPMGetQueryStatusInRequest;//215
+				case 0x000000D9: MSWSPCPMCiStateInOut		CPMCiStateInOutRequest;//217
+				case 0x000000E1: MSWSPCPMForceMergeIn		CPMForceMergeInRequest;//225
+				case 0x000000E4: MSWSPCPMFetchValueIn		CPMFetchValueRequest;//228
+				case 0x000000E6: MSWSPCPMUpdateDocumentsIn	CPMUpdateDocumentsInRequest;//230
+				case 0x000000E7: MSWSPCPMGetQueryStatusExIn	CPMGetQueryStatusExInRequest;//231
+				case 0x000000E8: MSWSPCPMRestartPositionIn	CPMRestartPositionInRequest;//232
+				case 0x000000E9: MSWSPCPMStopAsynchIn		CPMStopAsynchInRequest;//233
+				case 0x000000F1: struct{};
+				case 0x000000F2: MSWSPCPMFindIndicesIn CPMFindIndicesIn;
+				case 0x000000F3: MSWSPCPMSetScopePrioritizationIn CPMSetScopePrioritizationIn;
+				case 0x000000F4: struct{};
+				Default:ReportParserError(ParserErrorProtocolClassWindows, "MSWSP", FormatString( "Undefined Message" ) ) ProtocolError;
+			}
+		case TRUE: //MSWSP RESPONSE
+			switch( MSWSPHeader.MessageId )
+			{
+				case 0x000000C8: MSWSPCPMConnectOut			CPMConnectOutResponse;//200
+				case 0x000000CA: MSWSPCPMCreateQueryOut		CPMCreateQueryOutResponse;//202
+				case 0x000000CB: MSWSPCPMFreeCursorOut		CPMFreeCursorOutResponse;//203
+				case 0x000000CC: MSWSPCPMGetRowsOut			CPMGetRowsOutResponse;//204
+				case 0x000000CD: MSWSPCPMRatioFinishedOut	CPMRatioFinishedOutResponse;//205
+				case 0x000000CE: MSWSPCPMCompareBmkOut		CPMCompareBmkOutResponse;//206
+				case 0x000000CF: MSWSPCPMGetApproximatePositionOut	CPMGetApproximatePositionOutResponse;//207
+				case 0x000000D0: struct{};//208
+				case 0x000000D1: struct{};//209
+				case 0x000000D2: MSWSPCPMSendNotifyOut		CPMSendNotifyOutResponse;//210
+				case 0x000000D7: MSWSPCPMGetQueryStatusOut	CPMGetQueryStatusOutResponse;//215
+				case 0x000000D9: struct{};//217
+				case 0x000000E1: struct{};//225
+				case 0x000000E4: MSWSPCPMFetchValueOut		CPMFetchValueRespone;//228
+				case 0x000000E6: struct{};//230
+				case 0x000000E7: MSWSPCPMGetQueryStatusExOut	CPMGetQueryStatusExOutResponse;//231
+				case 0x000000E8: struct{};//232
+				case 0x000000E9: struct{};//233
+				case 0x000000F1: MSWSPCPMGetRowsetNotifyOut CPMGetRowsetNotifyOut;
+				case 0x000000F2: MSWSPCPMFindIndicesOut CPMFindIndicesOut;
+				case 0x000000F3: struct{};
+				case 0x000000F4: MSWSPCPMGetScopeStatisticsOut CPMGetScopeStatisticsOut;
+				Default:ReportParserError(ParserErrorProtocolClassWindows, "MSWSP", FormatString( "Undefined Message" ) ) ProtocolError;
+			}
+	}//main switch	
+	switch
+	{
+		case FrameOffset < FrameLength:
+			struct
+			{
+				ReportParserWarning("MSWSP", "Padding Data Left") ProtocolWarning;
+				BLOB(FrameLength -FrameOffset) PaddingData;
+			}
+	}
+}//protocol
+
+Table MSWSPRestrictionTypeTable( RTType,Description )
+{
+	switch( RTType )
+	{
+		case 0x00000000:FormatString("RTNone (0x%08X) %s",RTType,Description?"The node represents a noise word in a vector query":"");
+		case 0x00000001:FormatString("RTAnd (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNodeRestriction upon which a logical AND operation should be performed":"");
+		case 0x00000002:FormatString("RTOr (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNodeRestriction upon which a logical OR operation should be performed":"");
+		case 0x00000003:FormatString("RTNot (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNotRestriction":"");
+		case 0x00000004:FormatString("RTContent (0x%08X) %s",RTType,Description?"The node contains a MSWSPCContentRestriction":"");
+		case 0x00000005:FormatString("RTProperty (0x%08X) %s",RTType,Description?"The node contains a MSWSPCPropertyRestriction":"");
+		case 0x00000006:FormatString("RTProximity (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNodeRestriction upon which a proximity ranking should be performed":"");
+		case 0x00000007:FormatString("RTVector (0x%08X) %s",RTType,Description?"The node contains a VectorRestriction":"");
+		case 0x00000008:FormatString("RTNatLanguage (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNatLanguageRestriction":"");
+		case 0x00000009:FormatString("RTScope (0x%08X) %s",RTType,Description?"The node contains a MSWSPCScopeRestriction":"");
+		case 0x0000000A:FormatString("RTCoerceAdd (0x%08X) %s",RTType,Description?"The node contains a CCoercionRestriction structure with operation ADD":"");
+		case 0x0000000B:FormatString("RTCoerceMultiply (0x%08X) %s",RTType,Description?"The node contains a CCoercionRestriction structure with operation MULTIPY":"");
+		case 0x0000000C:FormatString("RTCoerce (0x%08X) %s",RTType,Description?"The node contains a MSWSPCCoercionRestriction":"");
+		case 0x0000000D:FormatString("RTProb (0x%08X) %s",RTType,Description?"The node contains a MSWSPCProbRestriction":"");
+		case 0x0000000E:FormatString("RTFeedback (0x%08X) %s",RTType,Description?"The node contains a CFeedbackRestriction structure.":"");
+		case 0x0000000F:FormatString("RTReldoc (0x%08X) %s",RTType,Description?"The node contains a CRelDocRestriction structure.":"");
+		case 0xFFFFFFFA:FormatString("RTInternalProp (0x%08X) %s",RTType,Description?"The node contains a MSWSPCInternalPropertyRestriction":"");
+		case 0xFFFFFFFC:FormatString("RTRange (0x%08X) %s",RTType,Description?"The node contains a MSWSPCRangeRestriction":"");
+		case 0xFFFFFFFD:FormatString("RTPhrase (0x%08X) %s",RTType,Description?"The node contains a MSWSPCNodeRestriction upon which a phrase match should be performed":"");
+		case 0xFFFFFFFE:FormatString("RTSynonym (0x%08X) %s",RTType,Description?"The node contains a MSWSPCSynRestriction":"");
+		case 0xFFFFFFFF:FormatString("RTWord (0x%08X) %s",RTType,Description?"The node contains a MSWSPCWordRestriction":"");
+		default:		FormatString("(0x%08X) %s",RTType,Description?"Undefined Value":"");
+	}
+}
+
+Table MSWSPRelationToPerformTable ( value )
+{
+	switch( value )
+	{
+		case 0x00000000: FormatString("PRLT -- A less then comparision and Value = 0x%08X" , value);
+		case 0x00000001: FormatString("PRLE -- A less then or equal comparision and Value = 0x%08X" , value);
+		case 0x00000002: FormatString("PRGT -- A greater then comparision and Value = 0x%08X" , value);
+		case 0x00000003: FormatString("PRGE -- A greater then comparision and Value = 0x%08X" , value);
+		case 0x00000004: FormatString("PREQ -- An equality comparision and Value = 0x%08X" , value);
+		case 0x00000005: FormatString("PRNE -- A not equal comparision and Value = 0x%08X" , value);
+		case 0x00000006: FormatString("PRRE -- A egular expression comparision and Value = 0x%08X" , value);
+		case 0x00000007: FormatString("PRAllBits -- A bitwise AND that returns the right operand and Value = 0x%08X" , value);
+		case 0x00000008: FormatString("PRSomeBits -- A bitwise AND that returns a nonzero value = 0x%08X" , value);
+		case 0x00000100: FormatString("PRAll -- Operation should be performed on a clumn of a rowset -- only true when opertaion is true for all rows and Value = 0x%08X" , value);
+		case 0x00000200: FormatString("PRAny -- Operation should be performed on a clumn of a rowset -- only true when opertaion is true for any row and Value = 0x%08X" , value);
+		default:		FormatString("Unknown PR type and Value = 0x%08X" , value);
+	}
+}
+
+Table MSWSPupdateFlagTable ( value )
+{
+	switch( value )
+	{
+		case 0x00000000: FormatString("UPD_INCREM = 0x%08X" , value);
+		case 0x00000001: FormatString("UPD_FULL = 0x%08X" , value);
+		case 0x00000002: FormatString("UPD_INIT = 0x%08X" , value);
+		default:		FormatString("Unknown update type and Value = 0x%08X" , value);
+	}
+}
+
+Table MSWSPDbPropOptionsTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x00000000:	FormatString("REQUIRED (0x%02X)%s", value,Description?" The specified property value is required":"");
+		case 0x00000001:	FormatString("OPTIONAL (0x%02X)%s", value,Description?" The specified property value is optional":"");
+		Default:		FormatString("(0x%02X) %s", value,Description?"Undefined value":"");
+	}
+}
+
+/*
+Table MSWSPDbPropStatusTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x00000000:FormatString("OK (0x%02X)%s", value,Description?" The property's value was successfully set":"");
+		case 0x00000001:FormatString("BADCOLUMN (0x%02X)%s", value,Description?" The colid element of the MSWSPDBProp structure was invalid":"");
+		case 0x00000002:FormatString("BADOPTION (0x%02X)%s", value,Description?" The value of dwOptions was invalid":"");
+		case 0x00000003:FormatString("BADVALUE (0x%02X)%s", value,Description?" The data type in vValue was not the data type of the property or was not VT_EMPTY":"");
+		case 0x00000004:FormatString("CONFLICTING (0x%02X)%s", value,Description?" The property's value was not set because doing so would have conflicted with an existing property":"");
+		case 0x00000005:FormatString("NOTALLSETTABLE (0x%02X)%s", value,Description?" A property was specified to be applied to all columns but could not be applied to one or more of them":"");
+		case 0x00000006:FormatString("NOTAVAILABLE (0x%02X)%s", value,Description?" Reserved":"");
+		case 0x00000007:FormatString("NOTSET (0x%02X)%s", value,Description?" The property's value was not set to the specified value because dwOptions was DBPROPOPTIONS_OPTIONAL and setting the property to the specified value was not possible":"");
+		case 0x00000008:FormatString("NOTSETTABLE (0x%02X)%s", value,Description?" The property was read-only, or the consumer attempted to set values of properties in the Initialization property group after the data source object was initialized":"");
+		case 0x00000009:FormatString("NOTSUPPORTED (0x%02X)%s", value,Description?" The property's value was not set":"");
+		default:	FormatString("(0x%02X)%s", value,Description?" Undefined Value":"");
+	}
+}
+*/
+
+Table	MSWSPQuereyTypeTable( value )
+{
+	switch( value )
+	{
+		case 0x00000001:	FormatString("ESequentialand = 0x%08X, cursor can only move forward", value);
+		case 0x00000002:	FormatString("ELocatable = 0x%08X, cursor can move to any location", value);
+		case 0x00000004:	FormatString("EScrollable = 0x%08X, cursor can move and fetch in any direction", value);
+		case 0x00000008:	FormatString("EAsynchrous = 0x%08X, caller will not wait for execution completion", value);
+		case 0x00000020:	FormatString("EWatchable = 0x%08X, Obsolete", value);
+		case 0x00000040:	FormatString("EGenericOptionsString = 0x%08X, Unused", value);
+		case 0x00000080:	FormatString("EFirstRows = 0x%08X, Reurns first row encountred not the best match", value);
+		case 0x00000100:	FormatString("EDistributed = 0x%08X, Querey is distributed over multiple catalogs or servers", value);
+		case 0x00000200:	FormatString("EHoldRows = 0x%08X, Client can hold rows while asking for more" , value);
+		case 0x00000800:	FormatString("EChaptered  = 0x%08X, Rowser supports chapters", value);
+		case 0x00001000:	FormatString("EUseCI = 0x%08X, Only answer the querey from the index, not the file system", value);
+		case 0x00002000:	FormatString("EDeferTrimming = 0x%08X, For queries sorted by rank, do security trimming last", value);
+		case 0x00004000:	FormatString("EExtendedTypes = 0x%08X, Client supports non-automation datatypes in rowset", value);
+		default:	 		FormatString("Unknown Query type and Value = 0x%08X" , value);
+	}
+}
+
+Table	MSWSPQueryPermissionTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000:	FormatString("Query should not examines any subdirectories 0x%08X", value);	
+		case 0x00000001:	FormatString("Query recursivly examines all subdirectories of the path 0x%08", value);
+		default:	        FormatString("Unknown Query type and Value = 0x%08X" , value);	
+	}
+}
+
+Table	MSWSPPathTypeTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000:	FormatString("Lowerpath is the file system path 0x%08X", value);
+		case 0x00000001:	FormatString("Lowerpath is an IIS path 0x%08X", value);		
+		default:			FormatString("Unknown lowerpath type and Value = 0x%08X" , value);
+	}
+}
+
+Table	MSWSPColumnOrderTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x00000000:FormatString("QUERY_SORTASCEND (0x%08X) %s",Value,Description?"Column should be sorted in ascending order":"");
+		case 0x00000001:FormatString("QUERY_DESCEND (0x%08X) %s",Value,Description?"Column should be sorted in descending order":"");		
+		default:		FormatString("(0x%08X) %s",Value,Description?"Undefined Value":"");
+	}
+}
+
+Table MSWSPIsRangeTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000:	FormatString("Keys are prefixes 0x%02X", value);
+		case 0x00000001:	FormatString("Keys are not prefixes 0x%02X", value);		
+		default:			FormatString("Unknown Keys type and Value = 0x%02X" , value);
+	}
+}
+
+Table MSWSPNewRowsTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000:FormatString("Rowset does not contain any new rows (%u)", value); 
+		case 0x00000001:FormatString("New rows are available in the Rowset(%u)", value);		
+		default:		FormatString("Undefined value (%u)" , value);
+	}
+}
+
+Table MSWSPBwdFetchTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000:FormatString("Rows should be fetch in forward order (%u)", value);
+		case 0x00000001:FormatString("Rows should be fetch in reverse order (%u)", value);		
+		default:	 	FormatString("Undefined Value" , value);
+	}
+}
+
+Table MSWSPVersionTable( value )
+{
+	switch
+	{
+		case  value == 0x00000102:
+			FormatString("(0x%08X) %s", value, "OS is either 32-bit Windows Server 2008, or 32-bit Windows Vista.");
+		case 	value == 0x00000109:
+			FormatString("(0x%08X) %s", value, "OS is either 32-bit Windows XP, 32-bit Windows Server 2003, 32-bit Windows Vista with Windows Desktop Search 4, 32-bit Windows Server 2003 with Windows Desktop Search 4.");
+		case 	value == 0x000010102: 
+			FormatString("(0x%08X) %s", value, "64-bit version of Windows Vista or Windows Server 2008.");
+		case 	value == 0x00010109:
+			FormatString("(0x%08X) %s", value, "64-bit version of Windows Vista or Windows Server 2008 with Windows Desktop Search 4 installed.");
+		case  value == 0x00000700:
+			FormatString("(0x%08X) %s", value, "32-bit Windows 7.");
+		case  value == 0x00010700:
+			FormatString("(0x%08X) %s", value, "64-bit Windows 7.");
+		default:	 	
+			FormatString("Undefined (0x%08X)" , value);
+	}
+}
+
+Table MSWSPUpdateTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x00000000:FormatString("UPD_INCREM (0x%08X) %s",Value,Description?"An increment update should be performed":"");
+		case 0x00000001:FormatString("UPD_FULL (0x%08X) %s",Value,Description?"A full update should be performed":"");		
+		case 0x00000002:FormatString("UPD_INIT (0x%08X) %s",Value,Description?"A new initialization should be performed":"");		
+		default:	 	FormatString("(0x%08X) %s",Value,Description?"Undefined Value":"");
+	}
+}
+
+Table MSWSPStateTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x00000001:FormatString("CICAT_STOPPED (0x%08X) %s",Value,Description?"The catalog is stopped":"");
+		case 0x00000002:FormatString("CICAT_READONLY (0x%08X) %s",Value,Description?"The catalog is read only":"");		
+		case 0x00000004:FormatString("CICAT_WRITABLE (0x%08X) %s",Value,Description?"The catalog is writable ":"");		
+		case 0x00000008:FormatString("CICAT_NO_QUERY (0x%08X) %s",Value,Description?"The catalog is not available for query":"");		
+		case 0x00000010:FormatString("CICAT_GET_STATE (0x%08X) %s",Value,Description?"The catalog should only be retrieved and not changed (0x%08X)":"");		
+		case 0x00000020:FormatString("CICAT_ALL_OPENED (0x%08X) %s",Value,Description?"check if all catalogs have been started (0x%08X)":"");		
+		default:		FormatString("(0x%08X) %s",Value,Description?"Undefined value":"");
+	}
+}
+
+Table MSWSPSequentialTable( value )
+{
+	switch( value )
+	{
+		case 0x00:	FormatString("Query can use the index", value);
+		case 0x01:	FormatString("Query will require a sequential scan" , value);		
+		default:	FormatString("Undefined Value" , value);
+	}
+}
+
+Table MSWSPWorkIdUniqueTable( value )
+{
+	switch( value )
+	{
+		case 0x00:	FormatString("The identifiers are unique only throughout the rowset", value);
+		case 0x01:	FormatString("The identifiers are unique throughout the catalog", value);	
+		default:	FormatString("Undefined Value" , value);	
+	}
+}
+
+Table MSWSPComparisionTable( value,Description )
+{
+	switch( value )
+	{
+		case 0x0000000:	FormatString("DBCOMPARE_LT (0x%08X) %s",Value,Description?"First bookmark is positioned before second":"");
+		case 0x0000001:	FormatString("DBCOMPARE_EQ (0x%08X) %s",Value,Description?"First bookmark has same position as second":"");
+		case 0x0000002:	FormatString("DBCOMPARE_GT (0x%08X) %s",Value,Description?"First bookmark is positioned after second":"");
+		case 0x0000003:	FormatString("DBCOMPARE_NE (0x%08X) %s",Value,Description?"First bookmark does not have same position as second":"");
+		case 0x0000004:	FormatString("DBCOMPARE_NOTCOMPARABLE (0x%08X) %s",Value,Description?":first bookmark not comparable to second":"");
+		default:		FormatString("(0x%08X) %s",Value,Description?"Undefined value":"");
+	}
+}
+
+Table	MSWSPThisValueTable( value )
+{
+	switch( value )
+	{
+		case 0x0000000:	FormatString("CiNormal -- a regular querey = 0x%08X", value);
+		case 0x0000001:	FormatString("CiVirtualRoots -- querey for list of virtual roots in Catalog, Requires administrative priviliges = 0x%08X", value);
+		case 0x0000002:	FormatString("CiPhysicalRoots -- Obsolete = 0x%08X", value);
+		case 0x0000003:	FormatString("CiPrperties -- List of all server supported properties = 0x%08X", value);
+		case 0x0000004:	FormatString("CiAdminOP -- this query is an administrative operation = 0x%08X", value);
+		default:		FormatString("Unknown Ci type and Value = 0x%08X" , value);
+	}
+}
+
+Table MSWSPHResultSeverityCodeValues(value)
+{
+	switch(value)
+	{
+		case "..............................00":FormatString( "Success");
+		case "..............................01":FormatString( "Informational");
+		case "..............................10":FormatString( "Warning");
+		case "..............................11":FormatString( "Error");
+		Default:"Undefined";
+	}
+}
+
+Table MSWSPBookmarkValues(Value)
+{
+	switch(value)
+	{
+		case 0xFFFFFFFB:FormatString("0x%08X - Indicates a position before the first row",value);
+		case 0xFFFFFFFC:FormatString("0x%08X - Indicates a position on the first row",value);
+		case 0xFFFFFFFD:FormatString("0x%08X - Indicates a position on the last row",value);
+		case 0xFFFFFFFE:FormatString("0x%08X - Indicates a position after the last row",value);
+		default:FormatString("0x%08X - Undefined Value",Value);
+	}
+}
+
+Table MSWSPStatusValues(Value)
+{
+	switch(Value)
+	{
+		case 0: FormatString("StatusOK (%u)",value);
+		case 1: FormatString("StatusDeferred (%u)",value);
+		case 2: FormatString("StatusNull (%u)",value);
+		Default: "Undefined";
+	}
+}
+
+struct MSWSPVectorOFArrayElement(value)
+{
+	Align4 Pad;
+	MSWSPCBaseStorageVariantBasicData(value & 0x00FF) VectorElement;
+}
+
+struct MSWSPVectorOFArray(value)
+{
+	UINT32 VVectorElements;
+	MSWSPVectorOFArrayElement(value) VectorOFArray[VVectorElements];
+}
+struct MSWSPVTFILETIME
+{
+	FILETIME VTFILETIME;
+}
+struct MSWSPVTBSTR = FormatString("%s",size > 0 ?  "String = " + VTBSTR : "")
+{
+	UINT32 size;
+	Unicodestring VTBSTR;
+}
+struct MSWSPVTINT8 = FormatString("INT8  = %u", VByte)
+{
+	INT8 VByte;
+}
+
+struct MSWSPVTUINT8 = FormatString("UINT8  = %u", VByte)
+{
+	UINT8 VByte;
+}
+
+struct MSWSPVTINT16 = FormatString("INT16  = %u", VWord)
+{
+	INT16 VWord;
+} 
+
+struct MSWSPVTUINT16 = FormatString("UINT16  = %u", VWord)
+{
+	UINT16 VWord;
+} 
+
+struct MSWSPVTBOOL = FormatString("BOOL = %s", VBOOL.toString)
+{
+	UINT16 VBOOL = FormatString("%s", this ? "TRUE" : "FALSE");
+}
+
+struct MSWSPVTINT32 = FormatString("INT32  = %s", VWord.toString)
+{
+	INT32 VWord;
+}
+
+struct MSWSPVTUINT32 = FormatString("UINT32  = %u", VWord)
+{
+	UINT32 VWord;
+}
+
+struct MSWSPVTR4 = FormatString("R4  = %u", VFloat)
+{
+	float VFloat;
+}
+
+struct MSWSPVTR8 = FormatString("R8  = %u", VDouble)
+{
+	double VDouble;
+}
+
+struct MSWSPUTHRESULT = FormatString("HRESULT = %s", hresult)
+{
+	HRESULT hresult;
+}
+
+struct MSWSPVTINT64 = FormatString("INT64  = %u", VDWord)
+{
+	INT64 VDWord;
+} 
+
+struct MSWSPVTUINT64 = FormatString("UINT64  = %u", VDWord)
+{
+	UINT64 VDWord;
+} 
+
+Table MSWSPDecimalSignTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "+";
+		case 0x80: "-";
+		default: "Undefined Sign";
+	}
+}
+struct MSWSPDecimal =  FormatString("%s%d%d%d.%d", MSWSPDecimalSignTable(DecimalSign), Hi, Mid, Lo, DecimalData)
+{
+	UINT32 Hi;
+	UINT32 Lo;
+	UINT32 Mid;
+}
+
+struct MSWSPVTBlob = FormatString("%u bytes BLOB", cbSize)
+{
+	UINT32	cbSize;
+	BLOB(cbSize) BlobData;
+}
+
+struct MSWSPVTCLPWString = FormatString("String = %s", VStrValue)
+{
+	UINT32     VStrLength;
+	switch
+	{
+		case 	VStrLength > 0:
+			UnicodeString VStrValue;
+	}
+}
+
+struct MSWSPVTLPString = FormatString("%s",VStrLength > 0 ?  "String = " + VStrValue : "")
+{
+	UINT32	VStrLength;
+	switch
+	{
+		case 	VStrLength > 0:
+			AsciiString VStrValue;
+	}
+}
+
+struct MSWSPVTLPWString = FormatString("%s",VStrLength > 0 ?  "String = " + VStrValue : "")
+{
+	UINT32	VStrLength;
+	switch
+	{
+		case VStrLength > 0:
+			UnicodeString VStrValue;
+	}
+}
+
+struct MSWSPSafeArray2(type) = FormatString("Dims = %u", cDims)
+{
+	UINT32 cDims;
+	[MaxLoopCount = cDims,Local.Dimcount = 0,Local.CElement= 1]
+	while[Local.Dimcount < cDims]
+	{
+		[Post.Local.Dimcount = Local.Dimcount + 1]
+		struct MSWSPSafeArrayBound = FormatString("CElements = %u,ILbound = %u", CElements,ILbound)
+		{
+			[Local.CElement = Local.CElement*CElements]
+			UINT32	CElements;
+			UINT32	ILbound;
+		}
+	}
+	MSWSPVVariantData(type) SafeArrayData[Local.CElement];
+}
+
+struct MSWSPSafeArray(type) = FormatString("Dims = %u", cDims)
+{
+	UINT16 cDims;
+	UINT16 fFeatures;
+	UINT32 cbElements;
+	[MaxLoopCount = cDims,Local.Dimcount = 0,Local.CElement= 1]
+	while[Local.Dimcount < cDims]
+	{
+		[Post.Local.Dimcount = Local.Dimcount + 1]
+		struct MSWSPSafeArrayBound = FormatString("CElements = %u,ILbound = %u", CElements,ILbound)
+		{
+			[Local.CElement = Local.CElement*CElements]
+			UINT32	CElements;
+			UINT32	ILbound;
+		}
+	}
+	MSWSPVVariantData(type) SafeArrayData[Local.CElement];
+}
+
+struct MSWSPVVariantData(Ttype)
+{
+	Align4 Pad;
+	MSWSPCBaseStorageVariantBasicData(Ttype & 0x00FF) ArrayElement;
+}
+
+Table MSWSPVarTypeBsicValues(Value)
+{
+	switch(value)
+	{
+		case WSPEmptyValue:  "VT_EMPTY";
+		case WSPNullValue:   "VT_NULL";
+		case WSPVTI1:        "VT_I1";
+		case WSPVTUI1:       "VT_UI1";
+		case WSPVTI2:        "VT_I2";
+		case WSPVTUI2:       "VT_UI2";
+		case WSPVTBOOL:      "VT_BOOL";
+		case WSPVTI4:        "VT_I4";
+		case WSPVTUI4:       "VT_UI4";
+		case WSPVTR4:        "VT_R4";
+		case WSPVTINT:       "VT_INT";
+		case WSPVTUINT:      "VT_UINT";
+		case WSPVTERROR:     "VT_ERROR";
+		case WSPVTI8:        "VT_I8";
+		case WSPVTUI8:       "VT_UI8";
+		case WSPVTR8:        "VT_R8";
+		case WSPVTCY:        "VT_CY";
+		case WSPVTDATE:      "VT_DATE";
+		case WSPVTFILETIME:  "VT_FILETIME";
+		case WSPVTDECIMAL:   "VT_DECIMAL";
+		case WSPVTCLSID:     "VT_CLSID";
+		case WSPVTBlob:      "VT_BLOB";
+		case WSPVTBlobObject:"VT_BLOB_OBJECT";
+		case WSPVTBSTR:      "VT_BSTR";
+		case WSPVTLPSTR :    "VT_LPSTR";
+		case WSPVTLPWSTR:    "VT_LPWSTR";
+		case WSPVTCLPWSTR:   "VT_COMPRESSED_LPWSTR";
+		case WSPVTVariant:   "VT_VARIANT";
+		default:"InValid Type";
+	}
+}
+
+Table MSWSPVarTypeValues(Value)
+{
+	switch
+	{
+		case (Value & 0x1000):
+			"VT_VECTOR || " + MSWSPVarTypeBsicValues(Value & 0x00FF);
+		case (Value & 0x2000):
+			"VT_ARRAY || " + MSWSPVarTypeBsicValues(Value & 0x00FF);
+		case (Value & 0x4000):
+			"VT_BYREF || " + MSWSPVarTypeBsicValues(Value & 0x00FF);
+		case (Value & 0x8000):
+			"VT_RESERVED";
+		case Value == 0xFFFF:
+			"VT_ILLEGAL";
+		default:
+			MSWSPVarTypeBsicValues(Value);
+	}
+}
+
+struct MSWSPCBaseStorageVariant = FormatString("%s", MSWSPVarTypeValues(vtype) )
+{
+	[conversation.CBaseStorageVariantvType$[WSPColumncount],Property.typeValue]
+	UINT16 vtype = MSWSPVarTypeValues(this);
+	[DecimalData = UINT8(framedata, frameoffset)]
+	UINT8 Data1 = MustBeSetToTable(this,"0x00");
+	[DecimalSign = UINT8(framedata, frameoffset)]
+	UINT8 Data2 = MustBeSetToTable(this,"0x00");
+	MSWSPCBaseStorageVariantData(vtype) Data;
+}
+
+struct MSWSPCBaseStorageVariantData(value)
+{
+	switch(Value & 0xF000)
+	{
+		case 0x1000:
+			MSWSPVectorOFArray(value) VectorArray;
+		case 0x2000:
+			switch
+			{
+				case Property.IsSafeArray2:
+					MSWSPSafeArray2(value) SafeArray2;
+				default:
+					MSWSPSafeArray(value)	SafeArray1;
+			}
+		case 0x0000:
+			MSWSPCBaseStorageVariantBasicData(value) CBaseStorageVariantBasicData;	
+		default: 
+			ReportParserError(2, "Vtype", "Invalid vType") Error;
+	}
+}
+
+struct MSWSPCBaseStorageVariantBasicData(value)
+{
+	switch(value)
+	{
+		case WSPEmptyValue: struct EmptyValue{};
+		case WSPNullValue: struct NullValue{};
+		case WSPVTI1: MSWSPVTINT8 VTypeI1;
+		case WSPVTUI1: MSWSPVTUINT8 VTypeUI1;
+		case WSPVTI2: MSWSPVTINT16 VTypeI2;
+		case WSPVTUI2: MSWSPVTUINT16 VTypeUI2;
+		case WSPVTBOOL: MSWSPVTBOOL VTypeBOOL;
+		case WSPVTI4: MSWSPVTINT32 VTypeI4;
+		case WSPVTUI4: MSWSPVTUINT32 VTypeUI4;
+		case WSPVTR4: MSWSPVTR4 VTypeR4;  //Float
+		case WSPVTINT: MSWSPVTINT32 VTypeINT;
+		case WSPVTUINT: MSWSPVTUINT32 VTypeUINT;
+		case WSPVTERROR: MSWSPUTHRESULT VTypeERROR;
+		case WSPVTI8: MSWSPVTINT64 VTypeI8;
+		case WSPVTUI8: MSWSPVTUINT64 VTypeUI8;
+		case WSPVTR8: MSWSPVTR8 VTypeR8; //Double
+		case WSPVTCY: MSWSPVTINT64 VTypeCY;
+		case WSPVTDATE: MSWSPVTR8 VTypeDate; //Double
+		case WSPVTFILETIME: MSWSPVTFILETIME VTypeFiletime;
+		case WSPVTDECIMAL: MSWSPDECIMAL vDecimal;
+		case WSPVTCLSID: GUID(TRUE) CLSID;
+		case WSPVTBlob:
+		case WSPVTBlobObject: MSWSPVTBlob vBlob;
+		case WSPVTBSTR: MSWSPVTBSTR vBSTR;
+		case WSPVTLPSTR : MSWSPVTLPString vLPString;
+		case WSPVTLPWSTR: MSWSPVTLPWString vLPWString;
+		case WSPVTCLPWSTR: MSWSPVTCLPWString vCLPWString;
+		case WSPVTVariant: MSWSPCBaseStorageVariant vVariant;
+	}
+}
+
+struct MSWSPCCategorizationSet = FormatString("Count: %u",Count)
+{
+	ALIGN4 align;
+	[CategorizationCount]
+	UINT32 Count;
+	MSWSPCCategorizationSpec	Categories[count];
+}
+
+struct MSWSPCColumnSet = FormatString("Count: %u",Count)
+{
+	Align4      Align;
+	UINT32	Count;
+	UINT32	Indexes[Count];
+}
+
+struct MSWSPCContentRestriction  = FormatString("PwcsPhrase: %s GenerateMethod: %s, Lcid: %s", PwcsPhrase, GenerateMethod, Lcid.toString)
+{
+	MSWSPCFullPropSpec	Property;
+	ALIGN4 Padding1;
+	UINT32			Length;
+	UnicodeString(Length)	PwcsPhrase;
+	Align4 Padding2;
+	UINT32			Lcid = LCIDTable(this);
+	UINT32			GenerateMethod = MSWSPCContentRsGMothodTable(this);
+}
+
+Table MSWSPCContentRsGMothodTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "EXACT";
+		case 0x00000001: "PREFIX";
+		case 0x00000002: "INFLECT";
+		default: "Undefined Mothod";
+	}
+}
+Struct MSWSPUnicodeString = FormatString("String: %s",StringValue.toString) 
+{
+	UINT32 Length;	
+	[MSWSPStringValue = StringValue.toString]
+	UnicodeString StringValue;
+}
+
+struct MSWSPCPropSpec = FormatString("%s",Kind?"PropID: "+PropID:MSWSPStringValue)
+{
+	UINT32	Kind;
+	switch( Kind )
+	{
+		case 0:	MSWSPUnicodeString StringValue;
+		case 1: UINT32	PropID;
+	}
+}
+
+struct MSWSPCFullPropSpec = FormatString("GUID: %s, %s",GuidPropSet.toString,PsPropSpec.toString)
+{
+	ALIGN8 pad;
+	GUID(TRUE)		GuidPropSet; 
+	MSWSPCPropSpec		PsPropSpec; 
+}
+
+struct MSWSPReadGUID = MyGuid.ToString
+{
+	ALIGN8		GuidAlign;
+	GUID(TRUE)	MyGuid;	  
+}
+
+Table MSWSPCDBColldEkindTable(value)
+{
+	switch(value)
+	{
+		case 0:	"DBKIND_GUID_NAME";
+		case 1:	"DBKIND_GUID_PROPID";
+		default: "Undefined EkindValue";
+	}
+}
+
+struct MSWSPCDBColld = MSWSPCDBColldEkindTable(EKind)
+{
+	UINT32 EKind = MSWSPCDBColldEkindTable(this);
+	MSWSPReadGUID Guid;
+	switch ( EKind ) 
+	{
+		case 1:
+			UINT32 UlID;
+		case 0:
+		struct
+		{
+			UINT32 UlID;
+			UniCodeString  vString;
+		}
+	}
+}
+
+struct MSWSPDBProp = FormatString("PropID: %u, PropOptions: %s, PropStatus: %s",DBPropID,MSWSPDbPropOptionsTable( DBPropOptions,FALSE),MustBeSetToTable(DBPropStatus,"0x00000000"))
+{
+	Align4 Padding;
+	UINT32	DBPropID;
+	UINT32	DBPropOptions = MSWSPDbPropOptionsTable( this,TRUE );
+	UINT32	DBPropStatus = MustBeSetToTable(this,"0x00000000");
+	MSWSPCDBColld	ColId;
+	Align4 Pad;
+	MSWSPCBaseStorageVariant VValue;
+}
+
+
+struct	MSWSPCDBPropSet = FormatString("GUID: %s, PropCount: %u", MSWSPCDBPropSetGUIDTable(guidPropertySet.ToDatatypeString),CProperties)
+{
+	GUID(true) guidPropertySet;
+	ALIGN4 padding;
+	UINT32		CProperties;
+	MSWSPDBProp		AProps[CProperties]; 
+}
+
+Table MSWSPCDBPropSetGUIDTable (value)
+{
+	switch(value)
+	{
+		case "{A9BD1526-6A80-11D0-8C9D-0020AF1D740E}": "File System Content Index Framework Property Set";
+		case "{A7AC77ED-F8D7-11CE-A798-0020F8008025}": "Query Extension Property Set";
+		case "{AFAFACA5-B5D1-11D0-8C62-00C04FC2DB8D}": "Content Index Framework Core Property Set";
+		case "{AA6EE6B0-E828-11D0-B23E-00AA0047FC01}": "DBPROPSET_MSIDXS_ROWSETEXT";
+		default: FormatString("%s %s","UndefinedGUID",value );
+	}	
+}
+
+struct	MSWSPCKey = FormatString("PropID = %u", PropID)
+{
+	UINT32	PropID;
+	UINT32	Length;
+	UINT8	Buffer[Length];
+	Align4  Pad;
+}//Doc TDI # 15760
+
+struct MSWSPCNatLanguageRestriction = FormatString("Property: %s Phrase: %s, Lcid: %s", MSWSPCFullPropSpec, Phrase, Lcid.toString)
+{
+	MSWSPCFullPropSpec	Property;
+	ALIGN4 Paddingcc;
+	UINT32			PhraseLength;
+	UnicodeString(PhraseLength)	Phrase;
+	ALIGN4			PadLcid;
+	UINT32			Lcid = LCIDTable(this);
+}
+
+struct	MSWSPCPropertyRestriction = FormatString("Relop: %s, Property: %s, LCID: %s", MSWSPRelationToPerformTable(Relop), Property.toString, lcid.toString)
+{
+	UINT32 Relop = MSWSPRelationToPerformTable( this );
+	MSWSPCFullPropSpec	Property;
+	MSWSPCBaseStorageVariant	PrVal;
+	Align4 Padding;
+	UINT32 lcid = LCIDTable(this);
+}
+
+struct	MSWSPCVectorRestriction = FormatString("Restriction = %s, RankMethod = %s", Pres, UlRankMethod)
+{
+	MSWSPCNodeRestriction	Pres;
+	ALIGN4 Padding;
+	UINT32 UlRankMethod = MSWSPVecRsRankMethodTable(this);
+}
+Table MSWSPVecRsRankMethodTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "MIN";
+		case 0x00000001: "MAX";
+		case 0x00000002: "INNER";
+		case 0x00000003: "DICE";
+		case 0x00000004: "JACCARD";
+		default: "Undefined RankMethod";
+	}
+}
+struct MSWSPCRestrictionArray = FormatString("Count = %u", Count)
+{
+	UINT8 Count = MustBeSetToTable(this,"0x01");
+	UINT8 IsPresent;
+	switch
+	{
+		case IsPresent > 0:
+				MSWSPCRestriction Restriction;
+	}
+}
+struct	MSWSPCRestriction  = FormatString("RestrictionType: %s, Weight: %u",MSWSPRestrictionTypeTable(RestrictionType,FALSE ),weight) {
+	ALIGN4 Padding;
+	UINT32	RestrictionType = MSWSPRestrictionTypeTable( this,TRUE );
+	UINT32	weight;
+	
+	switch( RestrictionType )
+	{
+		case	0x00000001: 
+		case	0x00000002: 
+		case	0x00000006: 
+		case	0xFFFFFFFD:
+			MSWSPCNodeRestriction NodeRestriction;
+		case	0x00000003: 
+			MSWSPCRestriction NotRestriction;
+		case	0x00000004: 
+			MSWSPCContentRestriction ContentRestriction;
+		case	0x00000005: 
+			MSWSPCPropertyRestriction PropertyRestriction;
+		case	0x00000007: 
+			MSWSPCVectorRestriction			VectorRestriction;
+		case	0x00000008: 
+			MSWSPCNatLanguageRestriction		NatLanguageRestriction;
+		case	0x00000009: 
+			MSWSPCScopeRestriction			ScopeRestriction;
+		case 0x00000010: 
+		case 0x00000011: 
+		case	0x00000012: 
+			MSWSPCCoercionRestriction			CoercionRestriction; // new for MSWSP
+		case	0x00000013: 
+			MSWSPCProbRestriction			ProbRestriction; // new for MSWSP
+	 	case 0x00000014:
+	 		MSWSPCFeedbackRestriction CFeedbackRestriction;
+	 	case 0x00000015:
+	 		MSWSPCRelDocRestriction CRelDocRestriction;
+		case	0xFFFFFFFA: 
+			MSWSPCInternalPropertyRestriction 		InternalPropertyRestriction;
+	}
+}
+	
+struct MSWSPCInternalPropertyRestriction = FormatString("Relop: %s, PROPID: %s, Value: %s, Lcid: %s", Relop, PROPID, Prval, Lcid.toString)
+{
+	UINT32			Relop = MSWSPRelationToPerformTable(this);
+	UINT32			PROPID = MSWSPProPIDTable(this);
+	MSWSPCBaseStorageVariant	Prval;
+	align4 padding;
+	UINT32 Lcid = LCIDTable(this);
+	UINT8	RestrictionPresent;
+	switch(  RestrictionPresent )
+	{
+		case 0x01: MSWSPCRestriction	NextRestriction;
+	}
+}
+
+Table MSWSPProPIDTable(value)
+{
+	switch(value)
+	{
+		case 	0xFFFFFFFF: 
+		case 	0xFFFFFFFE: "Represents an invalid property ID and MUST NOT be used.";
+		case 	0x00000000: "Represents any property ID.";			
+	}
+}
+
+struct	MSWSPCRowSeekAt = FormatString("Rows to skip: %u, Bookmark: %u",Skip,bmkOffset)
+{
+	UINT32			bmkOffset = MSWSPBookmarkValues( this );
+	UINT32			Skip;
+	UINT32			hRegion = MustBeSetToTable(this,"0x00000000");
+}
+
+struct	MSWSPCRowSeekAtRatio = FormatString("Numerator: %u, Denominator: %u",ulNumerator,ulDenominator)
+{
+	UINT32	ulNumerator;
+	UINT32	ulDenominator;
+	UINT32	hRegion = MustBeSetToTable(this,"0x00000000");
+}
+
+
+struct	MSWSPCRowSeekByBookmark = FormatString("Bookmarks: %u, maxRet: %u",cBookmarks,maxRet)
+{
+	UINT32	cBookmarks;
+	UINT32	aBookmarks[cBookmarks] = MSWSPBookmarkValues( this );
+	UINT32	maxRet;
+	HRESULT AscRetrieval[maxRet];	//SCODE is same as HRESULT per MSDN
+}
+
+struct	MSWSPCRowSeekNext = FormatString("Rows to skip: %u",Skip)
+{
+//	UINT32	Chapter;
+//	UINT32	hRegion;
+	UINT32	Skip;
+}
+
+struct MSWSPRowsetPropertiesOP = FormatString("0x%08X", UINT32(frameData, offset))
+{
+	UINT32 eSequential:1 = FormatString("       (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The cursor can only be moved forward.");
+	UINT32 eLocatable:1 = FormatString("        (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The cursor can be moved to any position.");
+	UINT32 eScrollable:1 = FormatString("       (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The cursor can be moved to any position and fetch in any direction.");
+	UINT32 eAsynchronous:1 = FormatString("     (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The client will not wait for execution completion.");
+	UINT32 reserved_bit5_7:3 = FormatString("   (%s) Reserved" , this.ToBitString);
+	UINT32 eFirstRows:1 = FormatString("        (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "Return the first rows encountered, not the best matches.");
+	UINT32 reserved_bit9:1 = FormatString("     (%s) Reserved" , this.ToBitString);
+	UINT32 eHoldRows:1 = FormatString("         (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The server MUST NOT discard rows until the client is done with a query.");
+	UINT32 reserved_bit11:1 = FormatString("    (%s) Reserved" , this.ToBitString);
+	UINT32 eChaptered:1 = FormatString("        (%s) %s %s" , this.ToBitString, this ? "Set" : "NOT Set", "The rowset supports chapters.");
+	UINT32 reserved_bit13_32:20 = FormatString(" (%s) Reserved" , this.ToBitString);
+}
+
+struct MSWSPCRowsetProperties = FormatString("BooleanOptions: %s, CmdTimeOut: %s",BooleanOptions.toString ,CmdTimeOut.toString)
+{
+	ALIGN4 align;
+	MSWSPRowsetPropertiesOP	BooleanOptions;
+	UINT32	MaxOpenRows = MustBeSetToTable(this,"0x00000000");
+	UINT32	MemoryUsage = MustBeSetToTable(this,"0x00000000");
+	UINT32	MaxResults;
+	UINT32	CmdTimeout = FormatString("%u seconds",CmdTimeOut);
+}
+
+struct MSWSPCScopeRestriction = FormatString ("LowerPath = %s, FRecursive = %s, PathType = %s",LowerPath, FRecursive, FVirtual)
+{
+	UINT32 LowerPathLength; 
+	UnicodeString(LowerPathLength) LowerPath;
+	Align4 Pad;
+	UINT32 Length;			
+	UINT32 FRecursive = MSWSPQueryPermissionTable( this );	
+	UINT32 FVirtual = MSWSPPathTypeTable( this ); 
+}
+
+//struct	MSWSPCOccRestriction 
+//{
+//	UINT32	Occ;
+//	UINT32	OPrevNoiseWords;
+//	UINT32	CNextNoiseWords;
+//}
+
+//struct	MSWSPCSynRestriction
+//{
+//	MSWSPCOccRestriction	Restriction;
+//	[KeyArrayLength]	
+//	UINT32			MSWSPCKey;
+//	MSWSPCKey			KeyArray[KeyArrayLength];
+//	INT8			IsRange = MSWSPIsRangeTable( this );
+//}
+
+struct	MSWSPCTableColumn = FormatString("FullPropSpec = %s, DataType: %s, Col: %u",
+																		FullPropSpec.toString,MSWSPVarTypeValues(VarType),WSPColumnCountLoop)
+{
+	[WSPColumnCountLoop=WSPColumnCountLoop+1]
+	MSWSPCFullPropSpec	FullPropSpec;
+	[Conversation.WSPTableVarTypeArray$[WSPColumnCountLoop]]
+	UINT32 VarType = MSWSPVarTypeValues(this);
+	UINT8 AggregateUsed;
+	switch(AggregateUsed)
+	{
+		case 0x01:
+		UINT8 AggregateType = MSWSPAggregTypeTable(this);
+	}
+	UINT8 ValueUsed;
+	Align2 Pad1;
+	switch( ValueUsed )
+	{
+		case 0x01:
+		struct
+		{
+			[Conversation.WSPValueOffsetArray$[WSPColumnCountLoop]]
+			UINT16 ValueOffset;
+			UINT16 ValueSize;
+		}
+	}
+	UINT8		StatusUsedFlag;
+	Align2 Pad2;
+	switch( StatusUsedFlag )
+	{
+		case 0x01:
+			struct
+			{
+				[Conversation.WSPStatusOffsetArray$[WSPColumnCountLoop]]
+				UINT16 StatusOffset;
+			}
+	}
+	
+	UINT8		LengthUsedFlag;
+	Align2 Pad3;
+	switch( LengthUsedFlag )
+	{
+		case 0x01:
+			struct
+			{
+				[Conversation.WSPLengthOffsetArray$[WSPColumnCountLoop]]
+				UINT16 LengthOffset;
+			}
+	}
+}
+
+//struct	MSWSPCWordRestriction
+//{
+//	MSWSPCOccRestriction	Kestriction;
+//	MSWSPCKey			Key;
+//	UINT8			IsRange;		
+//	ALIGN4			MyAlign4;
+//}
+
+//struct	MSWSPThisCBaseStorageVariant = VValue
+//{
+//	UINT32	VType;
+//	UINT32	VValue = MSWSPThisValueTable( this );
+//}
+
+//struct	MSWSPDBPropCIQueryType = FormatString("Options = %s, Status = %s, Value = %s", MSWSPDbPropOptionsTable(DBPROPOPTIONS,true), MSWSPDbPropStatusTable(DBPROPSTATUS,true), MyValue)
+//{
+//	UINT32	DBPROPID;
+//	UINT32	DBPROPOPTIONS = MSWSPDbPropOptionsTable( this,TRUE );
+//	UINT32	DBPROPSTATUS = MSWSPDbPropStatusTable( this,TRUE );
+//	MSWSPCDBColld	ColId;
+//	MSWSPThisCBaseStorageVariant MyValue;	
+//}
+
+//struct MSWSPClSIDStorageVariant
+//{
+//	UINT32	VType;
+//	UINT8	VClsid[16];
+//}
+//
+//struct	MSWSPDBPropClientCLSID
+//{
+//	UINT32	DBPROPID;
+//	UINT16	DBPROPOPTIONS = MSWSPDbPropOptionsTable( this,TRUE );
+//	UINT16	DBPROPSTATUS = MSWSPDbPropStatusTable( this,TRUE );
+//	MSWSPCDBColld	ColId;
+//	MSWSPClSIDStorageVariant MyClsid; 
+//}
+
+
+
+[MSWSPMessageSummary = FormatString("WordList: %u, Queries: %u, State: %s",WordList,Queries,State.toString)]
+struct MSWSPCPMCiStateInOut = FormatString("State = %s",State.toString)
+{
+	UINT32	cbStruct = MustBeSetToTable(this,"0x0000003C");
+	UINT32	WordList;
+	UINT32	PersistentIndex;
+	UINT32	Queries;
+	UINT32	Documents;
+	UINT32	FreshTest;
+	UINT32	MergeProgress;
+	UINT32	State = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+	{
+		UINT32	ShadowMerge:1 = FormatString("        (%s) %s", this.ToBitString,this?"A shadow merge is in process":"A shadow merge is NOT in process");
+		UINT32	MasterMerge:1 = FormatString("        (%s) %s", this.ToBitString,this?"A master merge is in process":"A master merge is NOT in process");         
+		UINT32	ContentScanRequired:1 = FormatString("(%s) %s", this.ToBitString,this?"Indexing Service needs to determine which documents have been added, changed, or deleted":"Indexing Service does NOT require scanning of documents");
+		UINT32	AnnealingMerge:1 = FormatString("     (%s) %s", this.ToBitString,this?"An annealing merge is in process":"An annealing merge is NOT in process");      
+		UINT32	Scanning:1 = FormatString("           (%s) %s", this.ToBitString,this?"A scan is in process":"A scan is NOT in process");
+		UINT32	Recovering:1 = FormatString("         (%s) %s", this.ToBitString,this?"The service is starting from the last saved state and is in the process of recovering":"The service is NOT in the process of recovering");
+		UINT32	IndexMigrationMerge:1 = FormatString("(%s) %s", this.ToBitString,this?"The catalog is in the process of being merged for the purpose of migrating the catalog":"The catalog is NOT in the process of merging");
+		UINT32	LowMemory:1 = FormatString("          (%s) %s", this.ToBitString,this?"Most of the virtual memory of the computer running Indexing Service is in use":"Virtual memory of the computer running Indexing Service is NOT highly used");
+		UINT32	HighIO:1 = FormatString("             (%s) %s", this.ToBitString,this?"The level of input/output (I/O) activity on the computer running Indexing Service is relatively high":"The level of input/output (I/O) activity on the computer running Indexing Service is relatively low"); 
+		UINT32	MasterMergePaused:1 = FormatString("  (%s) %s", this.ToBitString,this?"The master merge that was in progress has been paused":"The master merge is in progress");
+		UINT32	ReadOnly:1 = FormatString("           (%s) %s", this.ToBitString,this?"The service has been manually paused":"The service has NOT been manually paused");
+		UINT32	BatteryPower:1 = FormatString("       (%s) %s", this.ToBitString,this?"The service is paused to conserve battery lifetime":"The service is NOT paused");
+		UINT32	UserActive:1 = FormatString("         (%s) %s", this.ToBitString,this?"The service is paused due to high activity by the user (keyboard or mouse)":"The service is NOT paused due to high activity by the user");
+		UINT32	Reserved1:3  = FormatString("           (%s)", this.ToBitString);
+		UINT32	LowDisk:1 = FormatString("           (%s) %s", this.ToBitString,this?"The service is paused due to low disk availability":"The service is NOT paused due to low disk availability");
+		UINT32	HighCPU:1 = FormatString("        (%s) %s", this.ToBitString,this?"The service is paused due to high CPU usage.":"	The service is NOT paused due to high CPU usage.");
+		UINT32	Reserved2:14  = FormatString("           (%s)", this.ToBitString);
+	}
+	UINT32	FilteredDocuments;
+	UINT32	TotalDocuments;
+	UINT32	PendingScans;
+	UINT32	IndexSize;
+	UINT32	UniqueKeys;
+	UINT32	SecQDocuments;
+	UINT32	PropCacheSize;
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMCompareBmkIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+	UINT32		Chapter;
+	UINT32		BookmarkFirst;
+	UINT32		BookmarkSecond;
+}
+
+[MSWSPMessageSummary = FormatString("Comparision: %s",MSWSPComparisionTable( Comparision,TRUE))]
+struct MSWSPCPMCompareBmkOut = FormatString("Comparision: %s",MSWSPComparisionTable( Comparision,TRUE))
+{
+	UINT32		Comparision = MSWSPComparisionTable( this,TRUE ); 
+}
+
+[MSWSPMessageSummary = FormatString("ClientOS: %s, MachineName: %s, UserName: %s",MSWSPVersionTable( ClientOSVersion ),MachineName.toString,UserName.toString)]
+struct MSWSPCPMConnectIn	= FormatString("ClientOS: %s, MachineName: %s, UserName: %s",MSWSPVersionTable( ClientOSVersion ),MachineName.toString,UserName.toString)
+{
+	[Conversation.ClientOSVersion]
+	UINT32	ClientOSVersion = MSWSPVersionTable( this );	
+	BOOL	ClientIsRemote = MustBeSetToTable(this,"0x00000001");
+	UINT32	CbBlob1;	// size of propset1+propset2
+	ALIGN8 paddingcbdBlob2;
+	UINT32	CbBlob2;
+	BLOB(12)	Padding; 
+	UnicodeString	MachineName; 
+	UnicodeString	UserName;
+	ALIGN8	paddingcPropSets;
+	UINT32	CPropSets = MustBeSetToTable(this,"0x00000002");			// value is 2 always.
+	MSWSPCDBPropSet PropertySet1;
+	MSWSPCDBPropSet PropertySet2; 
+	ALIGN8	PaddingExtPropset;
+	UINT32	cExtPropSet;
+	MSWSPCDBPropSet aPropertySets[cExtPropSet];
+}
+
+Table MSWSPWinVerMajorTable(value)
+{
+	switch(value)
+	{
+		case 0x00000006:"WINDOWS_MAJOR_VERSION_6 - The major version of the Windows operating system is 0x00000006.";
+	}
+}
+
+Table MSWSPWinVerMinorTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:"WINDOWS_MINOR_VERSION_0 - The minor version of the Windows operating system is 0x00000000.";
+		case 0x00000001:"WINDOWS_MINOR_VERSION_1 - The minor version of the Windows operating system is 0x00000001.";
+	}
+}
+
+Table MSWSPNLSVerTable(value)
+{
+	switch(value)
+	{
+		case 0x00040500:"NLS_VERSION_40500 - Defined NLS version is 0x00040500.";
+		case 0x00060000:"NLS_VERSION_60000 - Defined NLS version is 0x00060000.";
+	}
+}
+
+[MSWSPMessageSummary = FormatString("ServerVersion: %s",MSWSPVersionTable( ServerVersion ))]
+struct MSWSPCPMConnectOut = FormatString("ServerVersion: %s",MSWSPVersionTable( ServerVersion ))
+{
+	[Conversation.WSPServerVersion]
+	UINT32 ServerVersion = MSWSPVersionTable( this );
+	switch(UINT32(FrameData,FrameOffset))
+	{
+		//server doesn't supports version reporting
+		case 0x00000001: //MSWSPCPMConnectIn's _fClientIsRemote always set to 0x00000001
+			BLOB(FrameLength - FrameOffset) Reserved;
+		//server supports version reporting
+		default:
+		struct
+		{
+			UINT32	dwWinVerMajor = MSWSPWinVerMajorTable(this);
+			UINT32	dwWinVerMinor = MSWSPWinVerMinorTable(this);
+			UINT32	dwNLSVerMajor = MSWSPNLSVerTable(this);
+			UINT32	dwNLSVerMinor = MSWSPNLSVerTable(this);
+		}
+	}
+}
+
+struct	MSWSPCPidMapper = FormatString("Count: %u",Count)
+{
+	ALIGN4 align1;
+	UINT32 Count;
+	align8 paddingPropSpec;
+	MSWSPCFullPropSpec	PropSpec[Count];
+}
+
+[MSWSPMessageSummary = MSWSPCPMCreateQueryIn.toString]
+struct	MSWSPCPMCreateQueryIn = FormatString("RowSetProperties: %s, PidMapper: %s, LCID: %s",RowSetProperties.toString,PidMapper.toString, Lcid.toString)
+{
+	UINT32	Size;
+	UINT8	CColumnSetPresent;
+	switch( CColumnSetPresent )
+	{
+		case 1:MSWSPCColumnSet	ColumnSet;
+	}
+	UINT8	CRestrictionPresent;
+	switch
+	{
+		case CRestrictionPresent > 0: MSWSPCRestrictionArray	MSWSPCRestrictionArray;
+	}
+	UINT8	CSortSetPresent;
+	switch
+	{
+		case CSortSetPresent > 0: MSWSPCSortSet	SortSet;
+	}
+	UINT8	CCategorizationSetPresent;
+	switch
+	{
+		case CCategorizationSetPresent > 0: MSWSPCCategorizationSet	CategorizationSet;			
+	}
+	MSWSPCRowsetProperties	RowSetProperties;
+	MSWSPCPidMapper	PidMapper;
+	MSWSPCColumnGroupArray GroupArray;
+	align4 padding;
+	UINT32 Lcid = LCIDTable (this);
+}
+
+struct MSWSPCColumnGroupArray = FormatString("count = %u", count)
+{
+	UINT32 count;
+	MSWSPAGroupArray aGroupArray[count];
+}
+
+struct MSWSPAGroupArray = FormatString("count = %u", count)
+{
+	UINT32 count;
+	UINT32 groupPid;
+	MSWSPSProperty SProperty[count];
+}
+
+struct MSWSPSProperty = FormatString("pid = %u", pid)
+{
+	UINT32 pid;
+	UINT32 weight;
+}
+
+[MSWSPMessageSummary = FormatString("Sequential: %s, WorkIDUnique: %s, Cursors: %u",MSWSPSequential,MSWSPWorkIDUnique,Cursors)]
+struct MSWSPCPMCreateQueryOut = FormatString("Sequential: %s, WorkIDUnique: %s, Cursors: %u",MSWSPSequential,MSWSPWorkIDUnique,Cursors)
+{
+	[Post.MSWSPSequential = this?"TRUE":"FALSE"]
+	UINT32	TrueSequential = FormatString("%s - %s",this?"TRUE":"FALSE",MSWSPSequentialTable( this ));	
+	[Post.MSWSPWorkIDUnique = this?"TRUE":"FALSE"]
+	BOOL	WorkIDUnique = FormatString("%s - %s",this?"TRUE":"FALSE",MSWSPWorkIdUniqueTable( this ));
+	UINT32 Cursors[CategorizationCount + 1];
+}
+
+[MSWSPMessageSummary = FormatString("WorkID: %s, %s",WorkID,PropSpec.toString)]
+struct MSWSPCPMFetchValueIn = FormatString("WorkID: %s, PropSpec = %s",WorkID,PropSpec.toString)
+{
+	UINT32		WorkID;
+	UINT32		SoFar = FormatString("%u bytes previously transferred",SoFar);
+	UINT32		PropSpecSize;
+	UINT32		Chunk;
+	MSWSPCFullPropSpec	PropSpec;
+	ALIGN4 padding;
+}
+
+[MSWSPMessageSummary = FormatString("MessageSize: %u, MoreExists: %s, ValueExists: %s",ValueSize,MSWSPMoreExists,MSWSPValueExists)]
+struct MSWSPCPMFetchValueOut = FormatString("MessageSize: %u, MoreExists: %s, ValueExists: %s",ValueSize,MoreExists,ValueExists)
+{
+	[Property.IsSafeArray2 = true]
+	UINT32		ValueSize;
+	[Post.MSWSPMoreExists = FormatString("%s",this?"TRUE":"FALSE")]
+	BOOL		MoreExists = FormatString("%s",this?"TRUE - MSWSPCPMFetchValueOut messages are available containing more data":"FALSE - MSWSPCPMFetchValueOut messages are not available");	
+	[Post.MSWSPValueExists = FormatString("%s",this?"TRUE":"FALSE")]
+	BOOL		ValueExists = FormatString("%s",this?"TRUE - Value for the property exists":"FALSE - a value for the property does NOT exist");
+	switch
+	{
+		case ValueExists == 1: MSWSPSERIALIZEDPROPERTYVALUE SERIALIZEDPROPERTYVALUE ;
+	}	
+}
+
+struct MSWSPSERIALIZEDPROPERTYVALUE = FormatString("%s", vtype.toString )
+{
+	UINT32 vtype = MSWSPVarTypeValues(this);
+	MSWSPCBaseStorageVariantData(vtype) CBaseStorageVariantData;
+}
+
+[MSWSPMessageSummary = FormatString("PartitionID: %u",PartitionID)]
+struct MSWSPCPMForceMergeIn = FormatString("PartitionID: %u",PartitionID)
+{
+	UINT32		PartitionID = MustBeSetToTable(this,"0x00000001");
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMFreeCursorIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+}
+
+[MSWSPMessageSummary = FormatString("CursorsRemaining: %u",CursorsRemaining)]
+struct MSWSPCPMFreeCursorOut = FormatString("CursorsRemaining: %u",CursorsRemaining)
+{
+	UINT32		CursorsRemaining;
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMGetApproximatePositionIn = FormatString("Cursor: %u, Bookmark = %s", Cursor, Bookmark.ToString)
+{
+	UINT32		Cursor;
+	UINT32		Chapter;
+	UINT32		Bookmark = MSWSPBookmarkValues( this );
+}
+
+[MSWSPMessageSummary = FormatString("Numerator: %u, Denominator: %u", Numerator,Denominator)]
+struct MSWSPCPMGetApproximatePositionOut = FormatString("Numerator: %u, Denominator: %u", Numerator,Denominator)
+{
+	UINT32		Numerator;
+	UINT32		Denominator;
+}
+
+[MSWSPMessageSummary = FormatString("RowsToTransfer: %u, RowsWidth: %u, Type: %s",RowsToTransfer,RowsWidth,MSWSPCPMGetRowsTypeTable(Type))]
+struct MSWSPCPMGetRowsIn = FormatString("RowsToTransfer: %u, RowsWidth: %u, Type: %s",RowsToTransfer,RowsWidth,MSWSPCPMGetRowsTypeTable(Type))
+{
+	UINT32		Cursor;
+	UINT32		RowsToTransfer;
+	UINT32		RowsWidth;
+	UINT32		Seek;
+	[Conversation.RowsOffset]
+	UINT32		Reserved;
+	UINT32		ReadBuffer;
+	[Conversation.WSPClientBase]
+	UINT32		ClientBase;
+	UINT32		Fetch = MSWSPBwdFetchTable( this );
+	UINT32		Type = MSWSPCPMGetRowsTypeTable(this);
+	UINT32		Chapter;
+	switch( Type )
+	{
+		case 0x00000001:MSWSPCRowSeekNext 		RowSeekNext;
+		case 0x00000002:MSWSPCRowSeekAt			RowSeekAt;
+		case 0x00000003:MSWSPCRowSeekAtRatio		RowSeekAtRatio;
+		case 0x00000004:MSWSPCRowSeekByBookmark	RowSeekByBookmark;
+	}
+}
+
+Table MSWSPCPMGetRowsTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "eRowsSeekNone";
+		case 0x00000001: "eRowSeekNext";
+		case 0x00000002: "eRowSeekAt";
+		case 0x00000003: "eRowSeekAtRatio";
+		case 0x00000004: "eRowSeekByBookmark";
+		default: "Undefined CPMGetRowsIn eType";
+	}
+}
+
+[MSWSPMessageSummary = FormatString("RowsReturned: %u, Type: %s",RowsReturned, Type.toString)]
+struct MSWSPCPMGetRowsOut = FormatString("RowsReturned: %u, Type: %s",RowsReturned, MSWSPCPMGetRowsTypeTable(Type))
+{
+	[
+		Conversation.Reserved2$[FrameNumber] = conversation.wspReserved2,
+		Conversation.RowOffset$[FrameNumber] = Conversation.RowsOffset,
+		Conversation.WSPNumColumn$[FrameNumber] = Conversation.WSPNumColumns,
+		Conversation.WSPRowSizeTable$[FrameNumber] = Conversation.WSPRowSize,
+		Conversation.WSPClientOSVersion$[framenumber] = Conversation.ClientOSVersion,
+		Conversation.WSPServerVersion$[framenumber] = Conversation.WSPServerVersion,
+		Conversation.WSPClientBases$[FrameNumber] = Conversation.WSPClientBase,
+		property.Offset64 = (Conversation.WSPClientOSVersion$[FrameNumber] > 0x00010000) 
+		&& (Conversation.WSPServerVersion$[FrameNumber] > 0x00010000)? true : false,
+		property.tmpClientBase = property.Offset64 ?((Conversation.Reserved2$[FrameNumber] << 32) + Conversation.WSPClientBases$[FrameNumber])
+		:Conversation.WSPClientBases$[FrameNumber]
+	]
+	[Property.Rowscount]
+	UINT32		RowsReturned;
+	UINT32		Type = MSWSPCPMGetRowsTypeTable(this);
+	UINT32		Chapter;
+	switch(Type)
+	{
+		case 0x00000000: _struct SeekDescription{};
+		case 0x00000001:MSWSPCRowSeekNext 		RowSeekNext;
+		case 0x00000002:MSWSPCRowSeekAt			RowSeekAt;
+		case 0x00000003:MSWSPCRowSeekAtRatio		RowSeekAtRatio;
+		case 0x00000004:MSWSPCRowSeekByBookmark	RowSeekByBookmark;
+	}
+	BLOB(Conversation.RowOffset$[FrameNumber]- CurrentProtocolOffset) Padding;
+	MSWSPColumnArray Row[RowsReturned] = FormatString("%u, Columns: %u",WSPRowCount,Conversation.WSPNumColumn$[FrameNumber]);
+	// The Blob contains variant part of Column array, which has been displayed in Column value by looking ahead.
+	Blob(FrameLength-FrameOffset) ColumnVariantData;
+}
+
+Table WSPStatusarraytable(value)
+{
+	switch(value)
+	{
+	case 0x00: FormatString( "StatusOK");
+	case 0x01: FormatString( "StatusDeferred");
+	case 0x02: FormatString( "StatusNull");
+	}
+}
+
+struct MSWSPColumnArray  = FormatString("Rows = %u, Cols = %u",Property.Rowscount , WSPColumncount)
+{
+	[
+		Post.WSPValueOffsetCount=0, Post.WSPLengthOffsetCount=0,Post.WSPVarTypeCount=0, 
+		WSPRowCount = WSPRowCount + 1,local.rowcount=WSPRowCount,
+		WSPStringRowCount = WSPStringRowCount + 1
+	]
+	[local.RowstartOffset = FrameOffset]
+	[Rowendoffset = CurrentProtocolOffset + Conversation.WSPRowSizeTable$[FrameNumber]]
+	[MaxLoopCount = Rowendoffset - CurrentProtocolOffset]
+	while row[ CurrentProtocolOffset < Rowendoffset]
+	{
+		[local.dataConsumed = false, local.startOffset = FrameOffset - local.RowstartOffset, WSPColumncount = 0]
+		[MaxLoopCount = Conversation.WSPNumColumn$[FrameNumber]]
+		while col[ WSPColumncount < Conversation.WSPNumColumn$[FrameNumber]]
+		{
+			[WSPColumncount = WSPColumncount+1]
+			switch
+			{
+				case local.startOffset == Conversation.WSPValueOffsetArray$[WSPColumncount]: 
+				[local.dataConsumed = true]
+				struct Columnvalue = Conversation.WSPTableVarTypeArray$[WSPColumncount] == WSPVTVariant
+				 ?((CRowVariant.vType == WSPVTLPWSTR )?FormatString("Row:%d,Col:%d,ValueType:%s,Columnvalue:%s",WSPRowCount,WSPColumncount,MSWSPVarTypeValues(Conversation.WSPTableVarTypeArray$[WSPColumncount]),WSPColumnValueSummary)
+				:FormatString("Row:%d,Col:%d,ValueType:%s,ColumnValue:%s",WSPRowCount,WSPColumncount,MSWSPVarTypeValues(Conversation.WSPTableVarTypeArray$[WSPColumncount]),WSPColumnValueSummary))
+				:FormatString("Row:%d,Col:%d,ValueType:%s,ColumnValue:%s",WSPRowCount,WSPColumncount,MSWSPVarTypeValues(Conversation.WSPTableVarTypeArray$[WSPColumncount]),WSPColumnValueSummary)
+				{
+					switch(Conversation.WSPTableVarTypeArray$[WSPColumncount])
+					{
+						case WSPEmptyValue:        [WSPColumnValueSummary = "Empty"]struct EmptyValue{};
+						case WSPNullValue:         [WSPColumnValueSummary = "Null"]struct NullValue{};
+						case WSPVTI1:              [WSPColumnValueSummary = VTypeI1.ToString]MSWSPVTINT8 VTypeI1;
+						case WSPVTUI1:             [WSPColumnValueSummary = VTypeUI1.ToString]MSWSPVTUINT8 VTypeUI1;
+						case WSPVTI2:              [WSPColumnValueSummary = VTypeI2.ToString]MSWSPVTINT16 VTypeI2;
+						case WSPVTUI2:             [WSPColumnValueSummary = VTypeUI2.ToString]MSWSPVTUINT16 VTypeUI2;
+						case WSPVTBOOL:            [WSPColumnValueSummary = VTypeBOOL.ToString]MSWSPVTBOOL VTypeBOOL;
+						case WSPVTI4:              [WSPColumnValueSummary = VTypeI4.ToString]MSWSPVTINT32 VTypeI4;
+						case WSPVTUI4:             [WSPColumnValueSummary = VTypeUI4.ToString]MSWSPVTUINT32 VTypeUI4;
+						case WSPVTR4:              [WSPColumnValueSummary = VTypeR4.ToString]MSWSPVTR4 VTypeR4;  //Float
+						case WSPVTINT:             [WSPColumnValueSummary = VTypeINT.ToString]MSWSPVTINT32 VTypeINT;
+						case WSPVTUINT:            [WSPColumnValueSummary = VTypeUINT.ToString]MSWSPVTUINT32 VTypeUINT;
+						case WSPVTERROR:           [WSPColumnValueSummary = VTypeERROR.ToString]MSWSPUTHRESULT VTypeERROR;
+						case WSPVTI8:              [WSPColumnValueSummary = VTypeI8.ToString]MSWSPVTINT64 VTypeI8;
+						case WSPVTUI8:             [WSPColumnValueSummary = VTypeUI8.ToString]MSWSPVTUINT64 VTypeUI8;
+						case WSPVTR8:              [WSPColumnValueSummary = VTypeR8.ToString]MSWSPVTR8 VTypeR8; //Double
+						case WSPVTCY:              [WSPColumnValueSummary = VTypeCY.ToString]MSWSPVTINT64 VTypeCY;
+						case WSPVTDATE:            [WSPColumnValueSummary = VTypeDate.ToString]MSWSPVTR8 VTypeDate; //Double
+						case WSPVTFILETIME:        [WSPColumnValueSummary = VTypeFiletime.ToString]MSWSPVTFILETIME VTypeFiletime;
+						case WSPVTDECIMAL:         [WSPColumnValueSummary = vDecimal.ToString]MSWSPDECIMAL vDecimal;
+						case WSPVTCLSID:           [WSPColumnValueSummary = CLSID.ToString]GUID(TRUE) CLSID;
+						case WSPVTBlob:
+						case WSPVTBlobObject:      [WSPColumnValueSummary = vBlob.ToString]MSWSPVTBlob vBlob;
+						case WSPVTBSTR:            [WSPColumnValueSummary = vBSTR.ToString]MSWSPVTBSTR vBSTR;
+						case WSPVTLPSTR :          [WSPColumnValueSummary = vLPString.ToString]MSWSPVTLPString vLPString;
+						case WSPVTLPWSTR:          [WSPColumnValueSummary = vLPWString.ToString]MSWSPVTLPWString vLPWString;
+						case WSPVTCLPWSTR:         [WSPColumnValueSummary = vCLPWString.ToString]MSWSPVTCLPWString vCLPWString;
+						case WSPVTVariant:         [Post.WSPColumnValueSummary = (CRowVariant.vType != WSPVTLPWSTR)? CRowVariant.toString:VariantData]MSWSPCRowVariant CRowVariant;
+
+						case WSPVectorORI1 :      
+						case WSPVectorORUI1 :     
+						case WSPVectorORI2 :      
+						case WSPVectorORUI2 :     
+						case WSPVectorORBOOL :    
+						case WSPVectorORI4:       
+						case WSPVectorORUI4 :     
+						case WSPVectorORR4 :      
+						case WSPVectorORERROR :   
+						case WSPVectorORI8 :      
+						case WSPVectorORUI8 :     
+						case WSPVectorORR8 :      
+						case WSPVectorORCY :      
+						case WSPVectorORDATE :    
+						case WSPVectorORFILETIME :
+						case WSPVectorORCLSID :   
+						case WSPVectorORBSTR :    
+						case WSPVectorORLPSTR:    
+						case WSPVectorORLPWSTR:   
+						case WSPVectorORCLPWSTR:  
+						case WSPVectorORVARIANT:   [WSPColumnValueSummary = VectorOFArray.ToString]MSWSPVectorOFArray(Conversation.WSPTableVarTypeArray$[WSPColumncount]) VectorOFArray;
+
+						case WSPArrayORI1 :     
+						case WSPArrayORUI1 :    
+						case WSPArrayORI2 :     
+						case WSPArrayORUI2 :    
+						case WSPArrayORBOOL :   
+						case WSPArrayORI4 :     
+						case WSPArrayORUI4 :    
+						case WSPArrayORR4 :     
+						case WSPArrayORERROR :  
+						case WSPArrayORR8 :     
+						case WSPArrayORCY :     
+						case WSPArrayORDATE :   
+						case WSPArrayORBSTR :   
+						case WSPArrayORVARIANT :
+						case WSPArrayORINT :    
+						case WSPArrayORUINT :   
+						case WSPArrayORDECIMAL :   [WSPColumnValueSummary = SafeArray.ToString]MSWSPSafeArray(Conversation.WSPTableVarTypeArray$[WSPColumncount])	SafeArray;
+					}
+				}
+				case local.startOffset == Conversation.WSPStatusOffsetArray$[WSPColumncount]:
+				[local.dataConsumed = true] 
+				struct Columnstatus =FormatString("Row: %d,Col:%d,Status:%s",WSPRowCount,WSPColumncount,WSPStatusarraytable(WSPStatus))
+				{
+					UINT8 WSPStatus;
+				}
+				case local.startOffset == Conversation.WSPLengthOffsetArray$[WSPColumncount] && !IsValueNone(Conversation.WSPLengthOffsetArray$[WSPColumncount]):  
+				[local.dataConsumed = true]
+				struct Columnlength =FormatString("Row: %d,Col:%d,Length:%d",WSPRowCount,WSPColumncount,WSPLength)
+				{
+					UINT32 WSPLength;
+				}
+			}
+		}
+		switch
+		{
+			case !local.dataConsumed:
+				UINT8 Pad;
+		}
+	}
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMGetQueryStatusExIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+	UINT32		Bookmark;
+}
+
+[MSWSPMessageSummary = FormatString("TotalRows: %u, QueryStatus: %s",RowsTotal,QueryStatus.toString)]
+struct MSWSPCPMGetQueryStatusExOut = FormatString("TotalRows: %u, QueryStatus: %s",RowsTotal,QueryStatus.toString)
+{
+	UINT32 QueryStatus = MSWSPCPMStatusTable(this);
+	UINT32 FilterdDocumnets;
+	UINT32 DocumentsToFilter;
+	UINT32 RatioFinishedDenominator;
+	UINT32 RatioFinishedNumerator;
+	UINT32 RowBookmark;
+	UINT32 RowsTotal;
+	UINT32 maxRank;
+	UINT32 ResultsFound;
+	//M 2.2.3.11 CPMGetQueryStatusExOut
+	UINT32 WhereID;
+}
+		
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMGetQueryStatusIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+}
+
+[MSWSPMessageSummary = FormatString("QueryStatus: %s",QueryStatus.toString)]
+struct MSWSPCPMGetQueryStatusOut	= FormatString("QueryStatus: %s",QueryStatus.toString)
+{
+	UINT32	QueryStatus = MSWSPCPMStatusTable(this);
+}
+Table MSWSPCPMStatusTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: FormatString("(0x%08X) %s", value, "NoiseWords: The asynchronous query is still running.");
+		case 0x00000001: FormatString("(0x%08X) %s", value, "Error: The query is in an error state.");
+		case 0x00000002: FormatString("(0x%08X) %s", value, "Done: The query is complete.");
+		case 0x00000003: FormatString("(0x%08X) %s", value, "Refresh: The query is complete, but updates are resulting in additional query computation.");
+		case 0x00000010: FormatString("(0x%08X) %s", value, "NoiseWords: Noise words were replaced by wildcard characters in the content query.");
+		case 0x00000020: FormatString("(0x%08X) %s", value, "ContentOutOfDate: The results of the query might be incorrect because the query involved modified, but un-indexed, files.");
+		case 0x00000040: FormatString("(0x%08X) %s", value, "RefreshInComplete: The content query was too complex to complete or required enumeration instead of use of the content index.");
+		case 0x00000080: FormatString("(0x%08X) %s", value, "ContentQueryInComplete: The content query was too complex to complete or required enumeration instead of use of the content index.");
+		case 0x00000100: FormatString("(0x%08X) %s", value, "TimeLimitExceeded: The results of the query might be incorrect because the query execution time reached the maximum allowable time.");
+		default: FormatString("%s 0x%08X","MSWSPCPMStatus",value );
+	}
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMRatioFinishedIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+	UINT32		Quick = MustBeSetToTable(this,"0x00000001"); 
+}
+
+[MSWSPMessageSummary = FormatString("Numerator: %u, Denominator: %u, Rows: %u",Numerator,Denominator,Rows)]
+struct MSWSPCPMRatioFinishedOut = FormatString("Numerator: %u, Denominator: %u, Rows: %u",Numerator,Denominator,Rows)
+{
+	UINT32		Numerator;
+	UINT32		Denominator;
+	UINT32		Rows;
+	BOOL		NewRows = MSWSPNewRowsTable( this );	
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMRestartPositionIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+	UINT32		Chapter;
+}
+
+struct MSWSPCRowVariant  = FormatString ("vtype = %s",MSWSPVarTypeValues(vType))
+{
+	[Conversation.WSPVarTypeArray$[WSPColumncount]]
+	UINT16 vType = MSWSPVarTypeValues(this);
+	UINT16 reserved1;
+	UINT32 reserved2;
+	switch
+	{
+		case property.offset64:
+		[
+			local.tmpRowOffset64 = UINT64(FrameData, FrameOffset),
+			local.tmpProtocolOffset64 = CurrentProtocolOffset,
+			local.tmp64 = local.tmpRowOffset64 - property.tmpClientBase - local.tmpProtocolOffset64,
+			vType == 0x000C ? VariantData = "CBaseStorageVariantstruct" :(vType == 0x001E ? VariantData = AsciiString(Framedata,FrameOffset+local.tmp64): VariantData = UnicodeString(Framedata,FrameOffset+local.tmp64))
+		]
+		UINT64 RowVariantOffset64;
+		default:
+		[
+			local.tmpRowOffset = UINT32(FrameData, FrameOffset),
+			local.tmpProtocolOffset = CurrentProtocolOffset,
+			local.tmp = local.tmpRowOffset - property.tmpClientBase - local.tmpProtocolOffset,
+			vType == 0x000C ? VariantData = "CBaseStorageVariantstruct" :(vType == 0x001E ? VariantData = AsciiString(Framedata,FrameOffset+local.tmp): VariantData = UnicodeString(Framedata,FrameOffset+local.tmp))
+		]
+		UINT32 RowVariantOffset32;
+	}
+}
+
+[MSWSPMessageSummary = FormatString("Rows: %u, Columns: %u",Rows,Columns)]
+struct MSWSPCPMSetBindingsIn = FormatString("Rows: %u, Columns: %u",Rows,Columns)//Same struct used for Request and Response
+{
+	UINT32	Cursor;
+	[Conversation.WSPRowSize]
+	UINT32	Rows;
+	UINT32	BindingDesc;
+	UINT32	Dummy;
+	[Conversation.WSPNumColumns]
+	UINT32	Columns;
+	[WSPColumnCountLoop=0]
+	MSWSPCTableColumn TableColumn[Columns];
+}
+
+[MSWSPMessageSummary = FormatString("Cursor: %u",Cursor)]
+struct MSWSPCPMStopAsynchIn = FormatString("Cursor: %u",Cursor)
+{
+	UINT32		Cursor;
+}
+
+// Comment on two structures below are not supported by Doc
+//[MSWSPMessageSummary = FormatString("CatalogName: %s, PartitionID: %u, NewState: %s",CatalogName.toString, PartitionID,MSWSPStateTable( NewState,FALSE ))]
+//struct MSWSPCPMSetCatStateIn = FormatString("CatalogName: %s, PartitionID: %u, NewState: %s",CatalogName.toString, PartitionID, MSWSPStateTable( NewState,FALSE))
+//{
+//	UINT32		PartitionID;
+//	UINT32		NewState = MSWSPStateTable( this,TRUE );
+//	UnicodeString	CatalogName;	
+//}
+//
+//[MSWSPMessageSummary = FormatString("OldState: %s",MSWSPStateTable( OldState,FALSE))]
+//struct MSWSPCPMSetCatStateOut = FormatString("OldState: %s",MSWSPStateTable( OldState,FALSE))
+//{
+//	UINT32		OldState = MSWSPStateTable( this,TRUE );
+//}
+
+[MSWSPMessageSummary = FormatString("Flag: %s",MSWSPUpdateTable( Flag,FALSE ))]
+struct	MSWSPCPMUpdateDocumentsIn = FormatString("Flag: %s",MSWSPUpdateTable( Flag,FALSE ))
+{
+	UINT32			Flag = MSWSPUpdateTable( this,TRUE );
+	BOOL			RootPath;
+	UnicodeString	RootPathString;
+}
+
+[MSWSPMessageSummary = FormatString("WatchNotify: %s",WatchNotifyOutTable( WatchNotify ))]
+struct	MSWSPCPMSendNotifyOut = FormatString("WatchNotify = %s", WatchNotify.ToString)
+{
+	UINT32	WatchNotify = WatchNotifyOutTable(this);	
+}
+Table WatchNotifyOutTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001: FormatString("(0x%08X) %s", value, "RowsChanged");
+		case 0x00000002: FormatString("(0x%08X) %s", value, "QueryDone");
+		case 0x00000003: FormatString("(0x%08X) %s", value, "QueryReExecuted");
+		default: FormatString("Undefined Value: (0x%08X)", value);
+	}
+}
+//
+// MSWSP Messages and structures changed from WSP
+//
+//====================================
+struct MSWSPCCategorizationSpec = FormatString("CsColumns: %s, CCategSpec: %s, AggregSet: %s, SortAggregSet: %s, InGroupSortAggregSets: %s, MaxResults: %u", CsColumns, CCategSpec, AggregSet, SortAggregSet, InGroupSortAggregSets, cMaxResults)
+{
+	MSWSPCColumnSet	CsColumns;
+	MSWSPCCategSpec	CCategSpec;
+	MSWSPCAggregSet	AggregSet;
+	MSWSPCSortAggregSet SortAggregSet;
+	MSWSPCInGroupSortAggregSets InGroupSortAggregSets;
+	UINT32 cMaxResults = MustBeSetToTable(this,"0x00000000");
+}
+
+struct MSWSPCInGroupSortAggregSets = FormatString("Count: %u, SortSets: %s", cCount, SortSets.toString)
+{
+	UINT32 cCount;
+	MSWSPCInGroupSortAggregSet SortSets;
+}
+
+struct MSWSPCInGroupSortAggregSet = FormatString("Type: %s, Value: %s, SortAggregSet: %s", Type.toString, inGroupId.toString, SortAggregSet.toString)
+{
+	UINT8 Type = MSWSPCInGroupSortAggregSetTypeTable(this);
+	UINT24 padding;
+	MSWSPCBaseStorageVariant inGroupId;
+	MSWSPCSortAggregSet 	SortAggregSet;
+}
+
+Table MSWSPCInGroupSortAggregSetTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "Default";
+		case 0x01: "MinValue";
+		case 0x02: "Null";
+		case 0x03: "Value";
+		default: FormatString("%s 0x%02X","Undefined MSWSPCInGroupSortAggregSetType",value );
+
+	}
+}
+struct MSWSPCSortAggregSet
+{
+	UINT32 cCount;
+	MSWSPCAggregSortKey CAggregSortKey[cCount];
+}
+struct MSWSPCAggregSortKey = FormatString("order: %s, CAggregSpec: %s", order.toString, CAggregSpec.toString)
+{
+	UINT32 order = MSWSPCAggregSortKeyOrderTable(this);
+	MSWSPCAggregSpec CAggregSpec;
+}
+Table MSWSPCAggregSortKeyOrderTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "ASCEND";
+		case 0x00000001: "DESCEND";
+		default: FormatString("%s 0x%08X","Undefined MSWSPCAggregSortKeyOrder",value );
+	}
+}
+
+//
+struct MSWSPCNodeRestriction  = FormatString("NodeCount: %u",CNode)
+{
+	UINT32 CNode;
+	MSWSPCRestriction PaNode[CNode];
+}
+//
+struct	MSWSPCSortSet = FormatString("Count: %u",Count)
+{
+	UINT32	Count;
+	MSWSPAggregType SortArray[Count];
+}
+//
+struct	MSWSPCSort  = FormatString("csk : %u", csk)
+{
+	UINT32 csk;
+	MSWSPCSortKey ask[csk];
+}
+//
+// New MSWSP Strucutures
+//
+//====================================
+//====================================
+Table MSWSPSpecTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00:FormatString("A CUniqueCategSpec structure");
+		case 0x02:FormatString("A CBucketCategSpec structure");
+		case 0x03:FormatString("A CRangeCategSpec structure");
+		default: FormatString("Undefined Value: (0x%08X)", value);
+	}
+}
+//
+Struct MSWSPCCategSpec// = FormatString("Type = %s, SortKey = %s, CRangeCategSpec : %s", Type.toString, sortKey, CRangeCategSpec) // used by CCategorizationSpec Message
+{
+	UINT32 Type = FormatString( "Type: %s", MSWSPSpecTypeTable(this));
+	MSWSPCsort sortKey;
+	MSWSPCRangeCategSpec CRangeCategSpec;
+}
+struct MSWSPCRangeCategSpec = FormatString("Range = %u", cRange)
+{
+	align4 padding;
+	UINT32 Lcid = LCIDTable(this);
+	UINT32 cRange;
+	MSWSPRangeBoundAry aRangeBegin[cRange];
+}
+struct MSWSPRangeBoundAry = FormatString("Type = %s, Value = %s %s", ulType.toString, prVal.toString, labelPresent ? ",Label = " + Label : "")
+{
+	UINT32 ulType = MSWSPRangBoundAryTypeTable(this);
+	MSWSPCBaseStorageVariant prVal;
+	UINT8 labelPresent;
+	ALIGN4 pad;
+	switch(labelPresent)
+	{
+		case 0x01:
+			UINT32 ccLabel;
+	}
+	switch(labelPresent)
+	{
+		case 0x01:
+			UnicodeString(ccLabel) Label;
+	}
+}
+Table MSWSPRangBoundAryTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "BEFORE";
+		case 0x00000001: "EXACT";
+		case 0x00000002: "AFTER";
+		default: FormatString("Undefined Value: (0x%08X)", value);
+	}
+}
+//====================================
+Table MSWSPAggregTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00:FormatString("None");
+		case 0x01:FormatString("Sum");
+		case 0x02:FormatString("Max");
+		case 0x03:FormatString("Min");
+		case 0x04:FormatString("Average");
+		case 0x05:FormatString("Count");
+		case 0x06:FormatString("ChildCount");
+		default: FormatString("Undefined Value: (0x%02X)", value);
+	}
+}
+//
+Struct MSWSPCAggregSpec = FormatString("Type = %s, Alias = %s", Type.toString, Alias) // used by MSWSPCAggregSet structure
+{
+	UINT8 Type = FormatString( "Type: %s", MSWSPAggregTypeTable(this));  
+	UINT24 padding; 
+	UINT32 ccAlias;  
+	UnicodeString(ccAlias) Alias;  
+	UINT32 idColumn;
+}
+//
+Struct MSWSPCAggregSet // used by CCategorizationSpec message
+{
+	UINT32 Count;
+	MSWSPCAggregSpec Item[count];
+}
+
+//====================================
+//Table BucketTypeTable(value)
+//{
+//	switch(value)
+//	{
+//		case 0x02:FormatString("CATEGORIZE_BUCKETS");
+//		default: FormatString("Undefined Value: (0x%08X)", value);
+//	}
+//}
+//
+//Struct CBucketCategSpec // used by ? structure
+//{
+//	UINT32 CategType = FormatString( "Category Type: %s", BucketTypeTable(this));
+//}
+//====================================
+//Table UCategTypeTable(value)
+//{
+//	switch(value)
+//	{
+//		case 0x00:FormatString("CATEGORIZE_UNIQUE");
+////
+//		default: FormatString("Undefined Value: (0x%08X)", value);
+//	}
+//}
+////
+//Struct CuniqueCategSpec // used by ? structure
+//{
+//	UINT32 CategType = FormatString( "Category Type: %s", UCategTypeTable(this));
+//}
+//====================================
+//Table RangeTypeTable(value)
+//{
+//	switch(value)
+//	{
+//		case 0x03:FormatString("CATEGORIZE_RANGE");
+////
+//		default: FormatString("Undefined Value: (0x%08X)", value);
+//	}
+//}
+////
+//Struct CRangeCategSpec // used by ? structure
+//{
+//	UINT32 CategType = FormatString( "Category Type: %s", RangeTypeTable(this));
+//	UINT32 cRange;
+//	MSWSPCBaseStorageVariant  aRangeBegin[cRange];
+//}
+//====================================
+
+Struct MSWSPAggregType // used by CSortSet Structure
+{
+	ALIGN4 padding;
+	UINT32 pidColumn;
+	UINT32 dwOrder
+	{
+		UINT32 DESCEND:1 = FormatString("(%s) %s",this.ToBitString,
+			this?"The rows are to be sorted in descending order based on the values in the column specified." 
+					: "The rows are to be sorted in ascending order based on the values in the column specified.");
+		UINT32 Reserved:31 = FormatString("(%s) Reserved", this.ToBitString);
+	};
+	UINT32 dwIndividual = MSWSPSSortKeyOrderTable(this);
+	UINT32 locale;
+}
+Table MSWSPSSortKeyOrderTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000: "SORTALL";
+		case 0x00000001: "SORTINDIVIDUAL";
+		default: FormatString("Undefined Value: (0x%08X)", value);
+	}
+}
+//
+Struct MSWSPCSortKey = FormatString("Count = %u",Count) // used by CSort Structure
+{
+	UINT32 Count;
+	MSWSPAggregType sortArray[count];
+}
+
+//====================================
+Struct MSWSPCProbRestriction = FormatString("Property = %s", Property)// used by CRestriction Structure
+{
+	MSWSPCFullPropSpec Property;
+	float f1K1;
+	float f1K2 = MustBeSetToTable(this,"0.0");
+	float f1K3;
+	float f1b;
+	UINT32 cFeedbackDoc;
+	UINT32 ProbQueryPid = MustBeSetToTable(this,"0x00000000");
+}
+
+struct MSWSPCFeedbackRestriction = FormatString("Property = %s", Property)
+{
+	UINT32 cFeedbackDoc;
+	MSWSPCFullPropSpec Property;
+}
+
+struct MSWSPCRelDocRestriction = FormatString("Value = %s", vDocument)
+{
+	MSWSPCBaseStorageVariant vDocument;
+}
+
+//====================================
+Struct MSWSPCCoercionRestriction = FormatString("Restriction = %s", pres) // used by CRestriction Structure
+{
+	float value;
+	MSWSPCRestriction pres;
+}
+
+Table MSWSPCPMInTable(MsgType)
+{
+	switch(MsgType)
+	{
+		case 0x000000C8: "CPMConnectIn";
+		case 0x000000C9: "CPMDisconnect";
+		case 0x000000CA: "CPMCreateQueryIn";
+		case 0x000000CB: "CPMFreeCursorIn";
+		case 0x000000CC: "CPMGetRowsIn";
+		case 0x000000CD: "CPMRatioFinishedIn";
+		case 0x000000CE: "CPMCompareBmkIn";
+		case 0x000000CF: "CPMGetApproximatePositionIn";
+		case 0x000000D0: "CPMSetBindingsIn";
+		case 0x000000D1: "CPMGetNotify";
+		case 0x000000D7: "CPMGetQueryStatusIn";
+		case 0x000000D9: "CPMCIStateInOut";
+		case 0x000000E1: "CPMForceMergeIn";
+		case 0x000000E4: "CPMFetchValueIn";
+		case 0x000000E6: "CPMUpdateDocumentsIn";
+		case 0x000000E7: "CPMGetQueryStatusExIn";
+		case 0x000000E8: "CPMRestartPositionIn";
+		case 0x000000E9: "CPMStopAsynchIn";
+		case 0x000000F1: "CPMGetRowsetNotifyIn";
+		case 0x000000F2: "CPMFindIndicesIn";
+		case 0x000000F3: "CPMSetScopePrioritizationIn";
+		case 0x000000F4: "CPMGetScopeStatisticsIn";
+		default: "UnknownMessageType";
+	}
+}
+
+Table MSWSPCPMOutTable(MsgType)
+{
+	switch(MsgType)
+	{
+		case 0x000000C8: "CPMConnectOut";
+		case 0x000000CA: "CPMCreateQueryOut";
+		case 0x000000CB: "CPMFreeCursorOut";
+		case 0x000000CC: "CPMGetRowsOut";
+		case 0x000000CD: "CPMRatioFinishedOut";
+		case 0x000000CE: "CPMCompareBmkOut";
+		case 0x000000CF: "CPMGetApproximatePositionOut";
+		case 0x000000D0: "CPMSetBindingsIn Header";
+		case 0x000000D1: "CPMGetNotify";
+		case 0x000000D2: "CPMSendNotifyOut";
+		case 0x000000D7: "CPMGetQueryStatusOut";
+		case 0x000000D9: "CPMCIStateInOut";
+		case 0x000000E1: "CPMForceMergeIn Header";
+		case 0x000000E4: "CPMFetchValueOut";
+		case 0x000000E6: "CPMUpdateDocumentsIn Header";
+		case 0x000000E7: "CPMGetQueryStatusExOut";
+		case 0x000000E8: "CPMRestartPositionIn";
+		case 0x000000E9: "CPMStopAsynchIn Header";
+		case 0x000000F1: "CPMGetRowsetNotifyOut";
+		case 0x000000F2: "CPMFindIndicesOut";
+		case 0x000000F3: "CPMSetScopePrioritizationOut";
+		case 0x000000F4: "CPMGetScopeStatisticsOut";
+		default: "UnknownMessageType";
+	}
+}
+
+Table MSWSPMsgTable(Response, MsgType)
+{
+	switch(Response)
+	{
+		case false:
+			MSWSPCPMInTable(MsgType);
+		case true:
+			MSWSPCPMOutTable(MsgType);
+	}
+}
+
+Table MSWSPCPMGetRowsetNotifyIneventTypeTable(Value)
+{
+	switch(value)
+	{
+		case 0: "PROPAGATE_NONE - There were no available rowset events waiting on the server.";
+		case 1: "PROPAGATE_ADD - An item was added to the index that may be of interest to the query originating the rowset.";
+		case 2: "PROPAGATE_DELETE - An item was deleted from the index that may be of interest to the query originating the rowset.";
+		case 3: "PROPAGATE_MODIFY - An item was re-indexed that may be of interest to the query originating the rowset.";
+		case 4: "PROPAGATE_ROWSET -A rowset specific notification whose meaning is interpreted by the rowsetEvent field of this message.";
+		default:"Unknown Type";
+	}
+}
+
+Table MSWSPCPMGetRowsetNotifyInrowsetItemStateTable(Value)
+{
+	switch(value)
+	{
+		case 0:"ROWSETEVENT_ITEMSTATE_NOTINROWSET - wid MUST not have been contained within the originating rowset.";
+		case 1:"ROWSETEVENT_ITEMSTATE_INROWSET - wid MUST be contained within the originating rowset.";
+		case 2:"ROWSETEVENT_ITEMSTATE_UNKNOWN - wid¡¯s containment within the originating rowset has not been specified.";
+		default:"Unknown State";
+	}
+}
+
+Table MSWSPCPMGetRowsetNotifyInchangedItemStateTable(Value)
+{
+	switch(value)
+	{
+		case 0:"ROWSETEVENT_ITEMSTATE_NOTINROWSET - wid would NOT be contained within a subsequent query.";
+		case 1:"ROWSETEVENT_ITEMSTATE_INROWSET - wid would be contained within a subsequent query.";
+		case 2:"ROWSETEVENT_ITEMSTATE_UNKNOWN - Whether or not query has not been specified that wid would be contained within a subsequent.";
+		default:"Unknown State";
+	}
+}
+
+Table MSWSPCPMGetRowsetNotifyInrowsetEventTable(Value)
+{
+	switch(value)
+	{
+		case 0:"ROWSETEVENT_TYPE_DATAEXPIRED - The data backing the rowset is no longer valid. RowsetEventData1 and RowsetEventData2 MUST be set to zero.";
+		case 1:"ROWSETEVENT_TYPE_FOREGROUNDLOST - RowsetEventData1 and RowsetEventData2 MUST be set to zero.";
+		case 2:"ROWSETEVENT_TYPE_SCOPESTATISTICS - The number of indexed items, number of items that need to be indexed, or number of items that need re-indexed has changed.";
+		default:"Unknown EventType";
+	}
+}
+
+[MSWSPMessageSummary = FormatString("wid: %s",wid)]
+struct MSWSPCPMGetRowsetNotifyOut = FormatString("%s,%s,%s,%s",MSWSPCPMGetRowsetNotifyIneventTypeTable(eventType),MSWSPCPMGetRowsetNotifyInrowsetItemStateTable(rowsetItemState),MSWSPCPMGetRowsetNotifyInchangedItemStateTable(changedItemState),MSWSPCPMGetRowsetNotifyInrowsetEventTable(rowsetEvent))
+{
+	UINT32 wid;
+	UINT8 moreEvents:1;
+	UINT8 eventType:7 = MSWSPCPMGetRowsetNotifyIneventTypeTable(this);
+	UINT8 rowsetItemState = MSWSPCPMGetRowsetNotifyInrowsetItemStateTable(this);
+	UINT8 changedItemState = MSWSPCPMGetRowsetNotifyInchangedItemStateTable(this);
+	UINT8 rowsetEvent = MSWSPCPMGetRowsetNotifyInrowsetEventTable(this);
+	UINT64 rowsetEventData1;
+	UINT64 rowsetEventData2;
+}
+
+[MSWSPMessageSummary = FormatString("cWids: %s,cDepthPrev: %s",cWids,cDepthPrev)]
+struct MSWSPCPMFindIndicesIn
+{
+	UINT32 cWids;
+	UINT32 cDepthPrev;
+	UINT32 pwids[cWids];
+	UINT32 prgiRowPrev[cDepthPrev];
+}
+
+[MSMSWSPMessageSummary = FormatString("DepthNext: %s",cDepthNext)]
+struct MSWSPCPMFindIndicesOut
+{
+	UINT32 cDepthNext;
+	UINT32 prgiRowNext[cDepthNext];
+}
+
+Table MSWSPCPMSetScopePrioritizationInpriorityTable(Value)
+{
+	switch(value)
+	{
+		case 0: "PRIORITY_LEVEL_FOREGROUND - Process items that may be relevant to the originating query before others as quickly as possible.";
+		case 1: "PRIORITY_LEVEL_HIGH - Process items that may be relevant to the originating query before others at the normal rate.";
+		case 2: "PRIORITY_LEVEL_LOW - Process items that may be relevant to the originating query before others, but after any other prioritization requests at the normal rate.";
+		case 3: "PRIORITY_LEVEL_DEFAULT - Process items at the normal rate.";
+		default:"Unknown Priority";
+	}
+}
+
+[MSWSPMessageSummary = FormatString("priority: %s",MSWSPCPMSetScopePrioritizationInpriorityTable(priority))]
+struct MSWSPCPMSetScopePrioritizationIn
+{
+	UINT32 priority = MSWSPCPMSetScopePrioritizationInpriorityTable(this);
+	UINT32 eventFrequency;
+}
+
+[MSMSWSPMessageSummary = FormatString("IndexedItems: %s,OutstandingAdds: %s,OustandingModifies: %s",dwIndexedItems,dwOutstandingAdds,dwOustandingModifies)]
+struct MSWSPCPMGetScopeStatisticsOut
+{
+	UINT32 dwIndexedItems;
+	UINT32 dwOutstandingAdds;
+	UINT32 dwOustandingModifies;
+}

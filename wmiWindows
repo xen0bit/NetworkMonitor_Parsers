@@ -1,0 +1,3765 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Windows Management Instrumentation Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WMI]: Windows Management Instrumentation Remote Protocol Specification (6.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 6/22/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol WMI = FormatString( "%s %s%s%s%s%s", 
+	Property.WMIMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.WMISummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.WMISummary : "" )
+{
+	[Property.WMISummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{1C1C45EE-4395-11D2-B60B-00104B703EFD}":
+			[Property.WMIMethodName = "IWbemFetchSmartEnum:" + WMIIWbemFetchSmartEnumMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemFetchSmartEnum
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetSmartEnum
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr SmartEnum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemFetchSmartEnum method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{7C857801-7381-11CF-884D-00AA004B2E24}":
+			[Property.WMIMethodName = "IWbemObjectSink:" + WMIIWbemObjectSinkMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemObjectSink
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Indicate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = Property.FirstCIMclass ? FormatString( "ObjectCount=%d", IObjectCount ):
+												FormatString( "ObjectCount=%d", Property.NumberOfObjects )]
+												Struct
+												{
+													switch
+													{
+														case UINT32(FrameData,Offset) == UINT32(FrameData,Offset + 4):                //First CIM class
+														[Property.FirstCIMclass = true]
+														struct 
+														{
+															UINT32 IObjectCount;
+															NdrConformant Conformant;
+															[local.Objectscount = 0, local.apObjectsPtrcount = 0]
+															While [local.Objectscount < Conformant.Maxcount]
+															{
+																[local.Objectscount = local.Objectscount +1,local.apObjectsPtrcount = apObjectsPtr.ReferentID ? local.apObjectsPtrcount + 1 : local.apObjectsPtrcount]
+																NdrPtr apObjectsPtr;
+															}
+															DCOMMInterfacePointer Object[local.apObjectsPtrcount];
+														};
+														case UINT32(FrameData,Offset) == 0 || UINT32(FrameData,Offset) == 0xFFFFFFFF: // Reconstruct the full CIM class as ObjectArray Structure 
+															[Property.FirstCIMclass = false]
+															WMIObjectArray Objects;					
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct SetStatus
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d Result=%u", Flags, Result )]
+												Struct
+												{
+													INT32 Flags = WMISetStatusFlagsTable(this);
+													HRESULT Result;
+													BSTR StrParam;
+													DCOMMInterfacePointerPtr ObjParam;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemObjectSink method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{44ACA674-E8FC-11D0-A07C-00C04FB68820}":
+			[Property.WMIMethodName = "IWbemContext:" + WMIIWbemContextMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemContext
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemContext method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{44ACA675-E8FC-11D0-A07C-00C04FB68820}":
+			[Property.WMIMethodName = "IWbemCallResult:" + WMIIWbemCallResultMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemCallResult
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetResultObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d", Timeout )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr ResultObject;
+													Align4 pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct GetResultString
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d", Timeout )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													BSTR PstrResultString;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct GetResultService
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d", Timeout )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Services; 
+													Align4 pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct GetCallStatus
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d", Timeout )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Status=%d ReturnValue=%s", Status, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													INT32 Status;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemCallResult method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{C49E32C7-BC8B-11D2-85D4-00105A1F8304}":
+			[Property.WMIMethodName = "IWbemBackupRestore:" + WMIIWbemBackupRestoreMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemBackupRestore
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Backup
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "StrBackupToFile=%s Flags=%d", StrBackupToFile.ToString, Flags )]
+												Struct
+												{
+													NdrWideString StrBackupToFile;
+													Align4 Pad;
+													INT32 Flags;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct Restore
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "StrRestoreFromFile=%s Flags=%d", StrRestoreFromFile.ToString, Flags )]
+												Struct
+												{
+													NdrWideString StrRestoreFromFile;
+													Align4 Pad;
+													INT32 Flags = WMIRestoreFlagsTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemBackupRestore method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{A359DEC5-E813-4834-8A2A-BA7F1D777D76}":
+			[Property.WMIMethodName = "IWbemBackupRestoreEx:" + WMIIWbemBackupRestoreExMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemBackupRestoreEx
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 5:
+						_Struct Pause
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct Resume
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemBackupRestoreEx method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{423EC01E-2E35-11D2-B604-00104B703EFD}":
+			[Property.WMIMethodName = "IWbemWCOSmartEnum:" + WMIIWbemWCOSmartEnumMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemWCOSmartEnum
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Next
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d UCount=%u", Timeout, UCount )]
+												Struct
+												{
+													GUID(TRUE) proxyGUID;
+													INT32 Timeout = WMITimeOutTable(this);
+													UINT32 UCount;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "PuReturned=%u BuffSize=%u ReturnValue=%s", PuReturned, BuffSize, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 PuReturned;
+													UINT32 BuffSize;
+													NdrPtrToConformant BufferPtrSize;
+													switch
+													{
+														case BufferPtrSize.ReferentID > 0:
+															switch
+															{
+																case BufferPtrSize.Maxcount > 0:
+																[DataFieldFrameLength = FrameOffset + BuffSize]
+																WMIObjectArray ObjectArray;
+															}
+													}
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemWCOSmartEnum method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{D4781CD6-E5D3-44DF-AD94-930EFE48A887}":
+			[Property.WMIMethodName = "IWbemLoginClientID:" + WMIIWbemLoginClientIDMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemLoginClientID
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct SetClientInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ClientMachine=%s ClientProcId=%d Reserved=%d", ClientMachine.ToString, ClientProcId, Reserved )]
+												Struct
+												{
+													NdrWideStringPtr ClientMachine;
+													Align4 Pad;
+													INT32 ClientProcId;
+													INT32 Reserved;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemLoginClientID method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{DC12A681-737F-11CF-884D-00AA004B2E24}":
+			[Property.WMIMethodName = "IWbemClassObject:" + WMIIWbemClassObjectMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemClassObject
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemClassObject method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{F309AD18-D86A-11D0-A075-00C04FB68820}":
+			[Property.WMIMethodName = "IWbemLevel1Login:" + WMIIWbemLevel1LoginMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemLevel1Login
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct EstablishPosition
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Reserved1=%s Reserved2=%u", Reserved1.ToString, Reserved2 )]
+												Struct
+												{
+													NdrWideStringPtr Reserved1;
+													Align4 Pad;
+													UINT32 Reserved2;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "LocaleVersion=%u ReturnValue=%s", LocaleVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 LocaleVersion;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct RequestChallenge
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Reserved1=%s Reserved2=%s", Reserved1.ToString, Reserved2.ToString )]
+												Struct
+												{
+													NdrWideStringPtr Reserved1;
+													NdrWideStringPtr Reserved2;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													NdrString Reserved3;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct WBEMLogin
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Reserved1=%s Reserved3=%d", Reserved1.ToString, Reserved3 )]
+												Struct
+												{
+													NdrWideStringPtr Reserved1;
+													NdrStringPtr Reserved2;
+													Align4 Pad;
+													INT32 Reserved3;
+													DCOMMInterfacePointerPtr Reserved4;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Reserved5;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct NTLMLogin
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "NetworkResource=%s PreferredLocale=%s Flags=%d", NetworkResource.ToString, PreferredLocale.ToString, Flags )]
+												Struct
+												{
+													NdrWideStringPtr NetworkResource;
+													NdrWideStringPtr PreferredLocale;
+													Align4 pad;
+													INT32 Flags;
+													DCOMMInterfacePointerPtr Ctx;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Namespace;
+													Align4 pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemLevel1Login method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{027947E1-D731-11CE-A357-000000000001}":
+			[Property.WMIMethodName = "IEnumWbemClassObject:" + WMIIEnumWbemClassObjectMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IEnumWbemClassObject
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Reset
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct Next
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d UCount=%u", Timeout, UCount )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable( this );
+													UINT32 UCount;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "PuReturned=%u ReturnValue=%s", PuReturned, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													WMIApObjects ApObjects;
+													Align4 pad;
+													UINT32 PuReturned;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct NextAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "UCount=%u", UCount )]
+												Struct
+												{
+													UINT32 UCount;
+													DCOMMInterfacePointerPtr Sink;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct Clone
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Enum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct Skip
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Timeout=%d NCount=%u", Timeout, NCount )]
+												Struct
+												{
+													INT32 Timeout = WMITimeOutTable( this );
+													UINT32 NCount;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IEnumWbemClassObject method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{9556DC99-828C-11CF-A37E-00AA003240C7}":
+			[Property.WMIMethodName = "IWbemServices:" + WMIIWbemServicesMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemServices
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct OpenNamespace
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrNamespace;
+													Align4 Pad;
+													INT32 Flags = WMIOpenNamespaceFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr WorkingNamespace;
+													DCOMMInterfacePointerPtrPtr Result;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr WorkingNamespace;
+													DCOMMInterfacePointerPtrPtr Result;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct CancelAsyncCall
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													DCOMMInterfacePointerPtr Sink;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct QueryObjectSink
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													INT32 Flags = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr ResponseHandler;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct GetObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Reserved1:4 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 Reserved2:4 = FormatString("           (%s)",this.ToBitString);										
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");										
+														UINT32 Reserved3:7 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved4:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr Object;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr Object;
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct GetObjectAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Reserved1:7 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:1 = FormatString("           (%s)",this.ToBitString);
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");
+														UINT32 Reserved3:7 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved4:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct PutClass
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Object;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 UpdateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST update a CIM class pObject" : "The server MUST NOT update a CIM class pObject");
+														UINT32 CreateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST create a CIM class pObject" : "The server MUST NOT create a CIM class pObject");
+														UINT32 Reserved1:2 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s",this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 UpdateSafeMode:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The server MUST update the class" : "The server MUST NOT update the class");
+														UINT32 UpdateForceMode:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The server MUST forcefully update the class" : "The server MUST NOT forcefully update the class");
+														UINT32 Reserved2:10 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct PutClassAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Object;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 UpdateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST update a CIM class pObject" : "The server MUST NOT update a CIM class pObject");
+														UINT32 CreateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST create a CIM class pObject" : "The server MUST NOT create a CIM class pObject");
+														UINT32 Reserved1:3 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UpdateSafeMode:1 = FormatString("      (%s) %s",this.ToBitString, this ? "The server MUST update the class" : "The server MUST NOT update the class");
+														UINT32 UpdateForceMode:1 = FormatString("     (%s) %s",this.ToBitString, this ? "The server MUST forcefully update the class" : "The server MUST NOT forcefully update the class");
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:9 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 10:
+						_Struct DeleteClass
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrClass;
+													Align4 Pad;
+													INT32 Flags = WMIDeleteClassFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 11:
+						_Struct DeleteClassAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrClass;
+													Align4 Pad;
+													INT32 Flags = WMIDeleteClassAsyncFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 12:
+						_Struct CreateClassEnum
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrSuperClass;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Shallow:1 = FormatString("             (%s) %s",this.ToBitString, this ? "The server MUST return only classes directly derived from the requested class" : "The server MUST return all classes derived from the requested class and all its subclasses");
+														UINT32 Reserved1:3 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 ForwardOnly:1 = FormatString("         (%s) %s", this.ToBitString, this ? "The server MUST return an enumerator without reset capability" : "The server MUST return an enumerator with reset capability");
+														UINT32 Reserved2:11 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Enum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 13:
+						_Struct CreateClassEnumAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrSuperClass;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Shallow:1 = FormatString("             (%s) %s",this.ToBitString, this ? "The server MUST return only classes directly derived from the requested class" : "The server MUST return all classes derived from the requested class and all its subclasses");
+														UINT32 Reserved1:6 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:9 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 14:
+						_Struct PutInstance
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Inst;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 UpdateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST create a CIM class pObject" : "The server MUST NOT create a CIM class pObject");
+														UINT32 CreateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST update a CIM class pObject" : "The server MUST NOT update a CIM class pObject");
+														UINT32 Reserved1:2 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 Reserved2:12 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 15:
+						_Struct PutInstanceAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Inst;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 UpdateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST create a CIM class pObject" : "The server MUST NOT create a CIM class pObject");
+														UINT32 CreateOnly:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MUST update a CIM class pObject" : "The server MUST NOT update a CIM class pObject");
+														UINT32 Reserved1:5 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:9 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s", this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 16:
+						_Struct DeleteInstance
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													Align4 Pad;
+													INT32 Flags = WMIDeleteInstanceFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 17:
+						_Struct DeleteInstanceAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													Align4 Pad;
+													INT32 Flags = WMIDeleteInstanceAsyncFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 18:
+						_Struct CreateInstanceEnum
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrFilter;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Shallow:1 = FormatString("             (%s) %s",this.ToBitString, this ? "The server MUST return only classes directly derived from the requested class" : "The server MUST return all classes derived from the requested class and all its subclasses");
+														UINT32 Reserved1:3 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 ForwardOnly:1 = FormatString("         (%s) %s", this.ToBitString, this ? "The server MUST return an enumerator without reset capability" : "The server MUST return an enumerator with reset capability");							
+														UINT32 Reserved2:3 = FormatString("           (%s)",this.ToBitString);
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");								
+														UINT32 Reserved3:7 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved4:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Enum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 19:
+						_Struct CreateInstanceEnumAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrSuperClass;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Shallow:1 = FormatString("             (%s) %s",this.ToBitString, this ? "The server MUST return only classes directly derived from the requested class" : "The server MUST return all classes derived from the requested class and all its subclasses");
+														UINT32 Reserved1:6 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:1 = FormatString("           (%s)",this.ToBitString);
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");								
+														UINT32 Reserved3:7 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved4:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 20:
+						_Struct ExecQuery
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrQueryLanguage;
+													BSTR StrQuery;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Reserved1:1 = FormatString("           (%s)",this.ToBitString);										
+														UINT32 Prototype:1 = FormatString("           (%s) %s", this.ToBitString, this ? "The server SHOULD NOT execute the query and instead return an object that looks like a typical result object" : "The server SHOULD execute the query");
+														UINT32 Reserved2:2 = FormatString("           (%s)",this.ToBitString);																				
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 ForwardOnly:1 = FormatString("         (%s) %s", this.ToBitString, this ? "The server MUST return an enumerator without reset capability" : "The server MUST return an enumerator with reset capability");								
+														UINT32 Reserved3:3 = FormatString("           (%s)",this.ToBitString);
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");								
+														UINT32 Reserved4:7 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved5:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Enum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 21:
+						_Struct ExecQueryAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrQueryLanguage;
+													BSTR StrQuery;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Reserved1:1 = FormatString("           (%s)",this.ToBitString);										
+														UINT32 Prototype:1 = FormatString("           (%s) %s", this.ToBitString, this ? "The server SHOULD NOT execute the query and instead return an object that looks like a typical result object" : "The server SHOULD execute the query");
+														UINT32 Reserved2:5 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved3:1 = FormatString("           (%s)",this.ToBitString);
+														UINT32 DirectRead:1 = FormatString("          (%s) %s", this.ToBitString, this ? "The server MUST disregard any derived class when searching the result." : "The implementor MUST consider the entire class hierarchy when returning the result");								
+														UINT32 Reserved4:7 = FormatString("           (%s)",this.ToBitString);								
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved5:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 22:
+						_Struct ExecNotificationQuery
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrQueryLanguage;
+													BSTR StrQuery;
+													Align4 Pad;
+													INT32 Flags
+													{
+														UINT32 Reserved1:4 = FormatString("           (%s)",this.ToBitString);
+														UINT32 ReturnImmediately:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Make the method call semisynchronously" : "Make the method call synchronously");
+														UINT32 ForwardOnly:1 = FormatString("         (%s) %s", this.ToBitString, this ? "The server MUST return an enumerator without reset capability" : "The server MUST return an enumerator with reset capability");								
+														UINT32 Reserved2:11 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved4:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr Enum;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 23:
+						_Struct ExecNotificationQueryAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrQueryLanguage;
+													BSTR StrQuery;
+													Align4 Pad;
+													INT32 Flags = WMIExecNotificationQueryAsyncFlagsTable(this)
+													{
+														UINT32 Reserved1:7 = FormatString("           (%s)",this.ToBitString);
+														UINT32 SendStatus:1 = FormatString("          (%s) %s",this.ToBitString, this ? "The server MAY make intermediate IWbemObjectSink::SetStatus calls on the interfaces pointer prior to call completion." : "The server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer provided in pResponseHandler parameter");
+														UINT32 Reserved2:9 = FormatString("           (%s)",this.ToBitString);
+														UINT32 UseAmendedQualifiers:1 = FormatString("(%s) %s",this.ToBitString, this ? "The server SHOULD return CIM Localizable Information" : "The server SHOULD return no CIM Localizable Information");
+														UINT32 Reserved3:14 = FormatString("           (%s)",this.ToBitString);
+													};
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 24:
+						_Struct ExecMethod
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													BSTR StrMethodName;
+													Align4 Pad;
+													INT32 Flags = WMIExecMethodFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr InParams;
+													DCOMMInterfacePointerPtrPtr OutParams;
+													DCOMMInterfacePointerPtrPtr CallResult;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtrPtr OutParams;
+													DCOMMInterfacePointerPtrPtr CallResult;
+													Align4 Pad;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 25:
+						_Struct ExecMethodAsync
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													BSTR StrObjectPath;
+													BSTR StrMethodName;
+													Align4 Pad;
+													INT32 Flags = WMIExecMethodAsyncFlagsTable(this);
+													DCOMMInterfacePointerPtr Ctx;
+													DCOMMInterfacePointerPtr InParams;
+													DCOMMInterfacePointerPtr ResponseHandler;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemServices method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{541679AB-2E5F-11D3-B34E-00104BCC4B4A}":
+			[Property.WMIMethodName = "IWbemLoginHelper:" + WMIIWbemLoginHelperMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemLoginHelper
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct SetEvent
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "EventToSet=%c", EventToSet )]
+												Struct
+												{
+													NdrString EventToSet;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemLoginHelper method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{F1E9C5B2-F59B-11D2-B362-00105A1F8177}":
+			[Property.WMIMethodName = "IWbemRemoteRefresher:" + WMIIWbemRemoteRefresherMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemRemoteRefresher
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct RemoteRefresh
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													INT32 Flags = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "NumObjects=%d ReturnValue=%s", NumObjects, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													INT32 NumObjects;
+													NdrPtrToConformant ObjectsPtrNumObject;
+													switch
+													{
+														case ObjectsPtrNumObject.ReferentID > 0: WMIWbemRefreshedObject Objects[ObjectsPtrNumObject.Maxcount];
+													}
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct StopRefreshing
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "NumIds=%d Flags=%d", NumIds, Flags )]
+												Struct
+												{
+													INT32 NumIds;
+													NdrConformant NumIdsC;
+													switch
+													{
+														case NumIdsC.Maxcount > 0:
+														INT32 IIds[NumIdsC.Maxcount];
+													}
+													INT32 Flags = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct Opnum5NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d", Flags )]
+												Struct
+												{
+													INT32 Flags = MustBeSetToTable(this,"0");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "ReturnValue=%s", WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													MSRPCGuid Guid;
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemRemoteRefresher method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{2C9273E0-1DC3-11D3-B364-00105A1F8177}":
+			[Property.WMIMethodName = "IWbemRefreshingServices:" + WMIIWbemRefreshingServicesMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IWbemRefreshingServices
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct AddObjectToRefresher
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Path=%s Flags=%d ClientRefrVersion=%u", Path.ToString, Flags, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													NdrWideString Path;
+													Align4 Pad1;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													DCOMMInterfacePointerPtr pContext;
+													Align4 Pad2;
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													WMIWbemRefreshInfo Info;
+													Align4 Pad;
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct AddObjectToRefresherByTemplate
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d ClientRefrVersion=%u", Flags, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													DCOMMInterfacePointerPtr Template;
+													Align4 Pad1;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													DCOMMInterfacePointerPtr Context;
+													Align4 Pad2;
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													WMIWbemRefreshInfo Info;
+													Align4 Pad;
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct AddEnumToRefresher
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Class=%s Flags=%d ClientRefrVersion=%u", Class.ToString, Flags, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													NdrWideString Class;
+													Align4 Pad1;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													DCOMMInterfacePointerPtr pContext;
+													Align4 Pad2;
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													WMIWbemRefreshInfo Info;
+													Align4 Pad;
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct RemoveObjectFromRefresher
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Id=%d Flags=%d ClientRefrVersion=%u", Id, Flags, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													Align4 Pad;
+													INT32 Id;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct GetRemoteRefresher
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d ClientRefrVersion=%u", Flags, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													Align4 Pad;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue) )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr RemRefresher;
+													Align4 Pad;
+													MSRPCGuid Guid;
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct ReconnectRemoteRefresher
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "Flags=%d NumObjects=%d ClientRefrVersion=%u", Flags, NumObjects, ClientRefrVersion )]
+												Struct
+												{
+													WMIWbemRefresherId RefresherId;
+													Align4 Pad;
+													INT32 Flags = ShouldBeSetToTable(this,"0");
+													INT32 NumObjects;
+													UINT32 ClientRefrVersion = ShouldBeSetToTable(this,"2");
+													NdrConformant NumObjectsC1;
+													switch
+													{
+														case NumObjectsC1.Maxcount > 0:
+															WMIWbemReconnectInfo ReconnectInfo;
+													}
+													NdrConformant NumObjectsC2;
+													switch
+													{
+														case NumObjectsC2.Maxcount > 0:
+															WMIWbemReconnectResults ReconnectResults;
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[WMISummary = FormatString( "SvrRefrVersion=%u ReturnValue=%s", SvrRefrVersion, WMIResultErrorCodeNameTable(ReturnValue))]
+												Struct
+												{
+													NdrConformant NumObjectsC;
+													switch
+													{
+														case NumObjectsC.Maxcount > 0:
+															WMIWbemReconnectResults ReconnectResults;
+													}
+													UINT32 SvrRefrVersion = ShouldBeSetToTable(this,"1");
+													UINT32 ReturnValue = WMIResultErrorCodeTable(this);
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("WMI", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown IWbemRefreshingServices method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+	}
+}
+
+Table WMIResultErrorCodeTable( dwValue )
+{
+	switch( dwValue )
+	{
+		case 0x00000000: FormatString( "0x%08X - WBEM_S_NO_ERROR - Indicates a successful completion to the method call.", dwValue );
+		case 0x00000001: FormatString( "0x%08X - WBEM_S_FALSE - Either no more CIM objects are available, the number of returned CIM objects is less than the number requested, or this is the end of an enumeration. ", dwValue );
+		case 0x00040004: FormatString( "0x%08X - WBEM_S_TIMEDOUT - A call timed out. This is not an error condition.", dwValue );
+		case 0x000400FF: FormatString( "0x%08X - WBEM_S_NEW_STYLE - The operation was successful and indicates that the receiver of the call is able to receive optimized IWbemObjectSink::Indicate calls. ", dwValue );
+		case 0x8004100c: FormatString( "0x%08X - WBEM_E_NOT_SUPPORTED - The server MAY return this value.", dwValue );
+		case 0x80041001: FormatString( "0x%08X - WBEM_E_FAILED - The attempt to establish the connection failed.", dwValue );
+		case 0x80041002: FormatString( "0x%08X - WBEM_E_NOT_FOUND - The object is not found.", dwValue );
+		case 0x80041003: FormatString( "0x%08X - WBEM_E_ACCESS_DENIED - Access is denied.", dwValue );
+		case 0x80041008: FormatString( "0x%08X - WBEM_E_INVALID_PARAMETER - The parameter is incorrect.", dwValue );
+		case 0x80041009: FormatString( "0x%08X - WBEM_E_NOT_AVAILABLE - Windows does not implement this method and returns a WBEM_E_NOT_AVAILABLE error code.", dwValue );
+		case 0x80041016: FormatString( "0x%08X - WBEM_E_INVALID_OPERATION - The attempted operation is not valid for this scenario.", dwValue );
+		case 0x80041019: FormatString( "0x%08X - WBEM_E_ALREADY_EXISTS - The object already exists.", dwValue );
+		case 0x8004100D: FormatString( "0x%08X - WBEM_E_INVALID_SUPERCLASS - The parent class is invalid.", dwValue );
+		case 0x8004100E: FormatString( "0x%08X - WBEM_E_INVALID_NAMESPACE - The namespace is invalid.", dwValue );
+		case 0x80041010: FormatString( "0x%08X - WBEM_E_INVALID_CLASS - The class is invalid.", dwValue );
+		case 0x80041017: FormatString( "0x%08X - WBEM_E_INVALID_QUERY - The query is invalid.", dwValue );
+		case 0x80041018: FormatString( "0x%08X - WBEM_E_INVALID_QUERY_TYPE - The query language specified is invalid.", dwValue );
+		case 0x80041025: FormatString( "0x%08X - WBEM_E_CLASS_HAS_CHILDREN - The class cannot be updated because it has derived classes.", dwValue );
+		case 0x80041026: FormatString( "0x%08X - WBEM_E_CLASS_HAS_INSTANCES - The class cannot be updated because it has instances.", dwValue );
+		case 0x8004102D: FormatString( "0x%08X - WBEM_E_INVALID_CIM_TYPE - The CIM Type specified is not valid.", dwValue );
+		case 0x8004102E: FormatString( "0x%08X - WBEM_E_INVALID_METHOD - The method is invalid.", dwValue );
+		case 0x8004102F: FormatString( "0x%08X - WBEM_E_INVALID_METHOD_PARAMETERS - The parameter to method is not valid.", dwValue );
+		case 0x80041032: FormatString( "0x%08X - WBEM_E_CALL_CANCELLED - The server canceled execution of the request.", dwValue );
+		case 0x8004103A: FormatString( "0x%08X - WBEM_E_INVALID_OBJECT_PATH - The object path is invalid.", dwValue );
+		default: HResultErrorCodeTable( dwValue );
+	}
+}
+
+Table WMIResultErrorCodeNameTable( dwValue )
+{
+	switch( dwValue )
+	{
+		case 0x00000000: "WBEM_S_NO_ERROR";
+		case 0x00000001: "WBEM_S_FALSE";
+		case 0x00040004: "WBEM_S_TIMEDOUT";
+		case 0x000400FF: "WBEM_S_NEW_STYLE";
+		case 0x8004100c: "WBEM_E_NOT_SUPPORTED";
+		case 0x80041001: "WBEM_E_FAILED";
+		case 0x80041002: "WBEM_E_NOT_FOUND";
+		case 0x80041003: "WBEM_E_ACCESS_DENIED";
+		case 0x80041008: "WBEM_E_INVALID_PARAMETER";
+		case 0x80041009: "WBEM_E_NOT_AVAILABLE";
+		case 0x80041016: "WBEM_E_INVALID_OPERATION";
+		case 0x80041019: "WBEM_E_ALREADY_EXISTS";
+		case 0x8004100D: "WBEM_E_INVALID_SUPERCLASS";
+		case 0x8004100E: "WBEM_E_INVALID_NAMESPACE";
+		case 0x80041010: "WBEM_E_INVALID_CLASS";
+		case 0x80041017: "WBEM_E_INVALID_QUERY";
+		case 0x80041018: "WBEM_E_INVALID_QUERY_TYPE";
+		case 0x80041025: "WBEM_E_CLASS_HAS_CHILDREN";
+		case 0x80041026: "WBEM_E_CLASS_HAS_INSTANCES";
+		case 0x8004102D: "WBEM_E_INVALID_CIM_TYPE";
+		case 0x8004102E: "WBEM_E_INVALID_METHOD";
+		case 0x8004102F: "WBEM_E_INVALID_METHOD_PARAMETERS";
+		case 0x80041032: "WBEM_E_CALL_CANCELLED";
+		case 0x8004103A: "WBEM_E_INVALID_OBJECT_PATH";
+		default: HResultErrorCodeNameTable( dwValue );
+	}
+}
+
+
+Table WMITimeOutTable( value )
+{
+	switch( value )
+	{
+		case 0: "WBEM_NO_WAIT(Call returns immediately, regardless of whether any objects are available.)";
+		case 0xFFFFFFFF: "WBEM_INFINITE(Call blocks until objects are available.)";
+		default: FormatString( "%d ms(0x%X)", value, value );
+	}
+}
+
+Table WMIDeleteClassAsyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000080: "WBEM_FLAG_SEND_STATUS - If this bit is not set, the server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer that is provided in the pResponseHandler parameter.If this bit is set, the server MAY make intermediate IWbemObjectSink::SetStatus calls on the interface pointer prior to call completion.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIDeleteClassFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000010: "WBEM_FLAG_RETURN_IMMEDIATELY - If this bit is set, the server MUST make the method call semisynchronously.If this bit is not set, the server MUST make the method call synchronously.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIDeleteInstanceAsyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000080: "WBEM_FLAG_SEND_STATUS - If this bit is not set, the server MUST make one final IWbemObjectSink::SetStatus call on the interface pointer that is provided in the pResponseHandler parameter.If this bit is set, the server MAY make intermediate IWbemObjectSink::SetStatus calls on the interface pointer prior to call completion.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIDeleteInstanceFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000010: "WBEM_FLAG_RETURN_IMMEDIATELY - If this bit is not set, the server MUST make the method call synchronously.If this bit is set, the server MUST make the method call semisynchronously.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIExecMethodAsyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000080: "WBEM_FLAG_SEND_STATUS - If this bit is not set, the server MUST make just one final IWbemObjectSink::SetStatus call on the interface pointer that is provided in the pResponseHandler parameter.If this bit is set, the server MAY make intermediate IWbemObjectSink::SetStatus calls on the interface pointer prior to call completion.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIExecMethodFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000010: "WBEM_FLAG_RETURN_IMMEDIATELY - If this bit is not set, the server MUST make the method call synchronously.If this bit is set, the server MUST make the method call semisynchronously.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIExecNotificationQueryAsyncFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00020000: "WBEM_FLAG_USE_AMENDED_QUALIFIERS - If this bit is not set, the server SHOULD return no CIM localizable information.If this bit is set, the server SHOULD return CIM localizable information.";
+		Case 0x00000080: "WBEM_FLAG_SEND_STATUS - This flag is ignored.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIOpenNamespaceFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000010: "WBEM_FLAG_RETURN_IMMEDIATELY - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table WMIRestoreFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "WBEM_FLAG_BACKUP_RESTORE_FORCE_SHUTDOWN - If the bit is not set and if there are any active clients, the server MUST NOT perform the restore.If the bit is set, the server MUST shut down any active clients before performing the restore operation.";
+		Default: "Unknown";
+	}
+}
+
+Table WMISetStatusFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "WBEM_STATUS_COMPLETE - Indicates the end of the asynchronous operation.";
+		Case 0x00000002: "WBEM_STATUS_PROGRESS - Indicates the progress state of the asynchronous operation.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_WBEM_RECONNECT_INFO
+//	NdrAlign
+//
+Struct WMIWbemReconnectInfo
+{
+	INT32 MLType;
+	NdrWideStringPtr  MPwcsPath;
+}
+
+//
+//	_WBEM_RECONNECT_RESULTS
+//	Align4
+//
+Struct WMIWbemReconnectResults
+{
+	INT32 MLId;
+	HRESULT MHr;
+}
+
+//
+//	_WBEM_REFRESHED_OBJECT
+//	Alignment : NdrAlign
+//
+Struct WMIWbemRefreshedObject
+{
+	NdrAlign Pad;
+	INT32 MLRequestId;
+	INT32 MLBlobType = WMIWBEMRefreshedObjectBlobTypeTable( this );
+	INT32 MLBlobLength;
+	NdrPtrToConformant BlobLengthC;
+	switch
+	{
+		case BlobLengthC.ReferentID > 0:
+		switch
+		{
+			case BlobLengthC.Maxcount > 0:
+			switch(MLBlobType)
+			{
+				case 2:
+				WMIRefreshedInstances RefreshedInstances;
+				case 4:
+				WMIWbemInstanceBlobEnumeration WbemInstanceBlobEnumeration;
+			}
+		}
+	}
+}
+
+Table WMIWBEMRefreshedObjectBlobTypeTable( type )
+{
+	switch( type )
+	{
+		case 2: "WBEM_BLOB_TYPE_ALL";
+		case 3: "WBEM_BLOB_TYPE_ERROR";
+		case 4: "WBEM_BLOB_TYPE_ENUM";
+		default: FormatString("%d", type);
+	}
+}
+
+//
+//	_WBEM_REFRESHER_ID
+//	None
+//
+Struct WMIWbemRefresherId
+{
+	NdrPtr MSzMachineNamePtr;
+	UINT32 MDwProcessId;
+	MSRPCGuid MGuidRefresherId;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	switch
+	{
+		case MSzMachineNamePtr.ReferentID > 0:
+			NdrString MachineName;
+	}
+}
+
+//
+//	_WBEM_REFRESH_INFO
+//	NdrAlign
+//
+Struct WMIWbemRefreshInfo
+{
+	INT32 MLType;
+	WMIWbemRefreshInfoUnion MInfo;
+	INT32 MLCancelId;
+	switch( MLType )
+	{
+		case 3:
+		struct
+		{
+			switch
+			{
+				case RemoteRefresher: DCOMMInterfacePointer Refresher;
+			}
+			switch
+			{
+				case RemoteTemplate: DCOMMInterfacePointer Template;
+			}
+		};
+		case 6:
+		struct
+		{
+			switch
+			{
+				case NonHiperfNamespace: NdrWideString namespace;
+			}
+			switch
+			{
+				case NonHiperfTemplate: DCOMMInterfacePointer Template;
+			}			
+		};        
+	}
+}
+
+Table WMIMLTypeTable(value)
+{
+	switch(value)
+	{
+		case 0:"WBEM_REFRESH_TYPE_INVALID ";
+		case 3:"WBEM_REFRESH_TYPE_REMOTE ";
+		case 6:"WBEM_REFRESH_TYPE_NON_HIPERF";
+	}
+}
+
+//
+//	_WBEM_REFRESH_INFO_NON_HIPERF
+//	None
+//
+Struct WMIWbemRefreshInfoNonHiperf
+{
+	[Property.NonHiperfNamespace = MWszNamespacePtr.ReferentID]
+	NdrPtr MWszNamespacePtr;
+	[Property.NonHiperfTemplate = MPTemplatePtr.ReferentID]
+	NdrPtr MPTemplatePtr;
+}
+
+//
+//	_WBEM_REFRESH_INFO_REMOTE
+//	None
+//
+Struct WMIWbemRefreshInfoRemote
+{
+	[Property.RemoteRefresher = MPRefresherPtr.ReferentID]
+	NdrPtr MPRefresherPtr;
+	[Property.RemoteTemplate = MPTemplatePtr.ReferentID]
+	NdrPtr MPTemplatePtr;
+	MSRPCGuid MGuid;
+}
+
+//
+//	_WBEM_REFRESH_INFO_UNION
+//	NdrAlign
+//
+Struct WMIWbemRefreshInfoUnion
+{
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad1;
+	}
+	UINT32 TypeC;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+		Align8 pad;
+	}
+	Switch( TypeC )
+	{
+		Case 3:
+			WMIWbemRefreshInfoRemote MRemote;
+		Case 6:
+			WMIWbemRefreshInfoNonHiperf MNonHiPerf;
+		Case 0:
+			Struct
+			{
+				HRESULT MHres;
+				Switch
+					{
+						case Property.MSRPCNdr64:
+						Align8 pad;
+					}
+			}
+			
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "WMI", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Table WMIIWbemFetchSmartEnumMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "GetSmartEnum";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemObjectSinkMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "Indicate";
+		Case 4: "SetStatus";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemContextMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemCallResultMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "GetResultObject";
+		Case 4: "GetResultString";
+		Case 5: "GetResultService";
+		Case 6: "GetCallStatus";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemBackupRestoreMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "Backup";
+		Case 4: "Restore";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemBackupRestoreExMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 5: "Pause";
+		Case 6: "Resume";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemWCOSmartEnumMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "Next";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemLoginClientIDMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "SetClientInfo";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemClassObjectMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemLevel1LoginMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "EstablishPosition";
+		Case 4: "RequestChallenge";
+		Case 5: "WBEMLogin";
+		Case 6: "NTLMLogin";
+		Default: "unknown";
+	}
+}
+
+Table WMIIEnumWbemClassObjectMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "Reset";
+		Case 4: "Next";
+		Case 5: "NextAsync";
+		Case 6: "Clone";
+		Case 7: "Skip";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemServicesMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "OpenNamespace";
+		Case 4: "CancelAsyncCall";
+		Case 5: "QueryObjectSink";
+		Case 6: "GetObject";
+		Case 7: "GetObjectAsync";
+		Case 8: "PutClass";
+		Case 9: "PutClassAsync";
+		Case 10: "DeleteClass";
+		Case 11: "DeleteClassAsync";
+		Case 12: "CreateClassEnum";
+		Case 13: "CreateClassEnumAsync";
+		Case 14: "PutInstance";
+		Case 15: "PutInstanceAsync";
+		Case 16: "DeleteInstance";
+		Case 17: "DeleteInstanceAsync";
+		Case 18: "CreateInstanceEnum";
+		Case 19: "CreateInstanceEnumAsync";
+		Case 20: "ExecQuery";
+		Case 21: "ExecQueryAsync";
+		Case 22: "ExecNotificationQuery";
+		Case 23: "ExecNotificationQueryAsync";
+		Case 24: "ExecMethod";
+		Case 25: "ExecMethodAsync";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemLoginHelperMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "SetEvent";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemRemoteRefresherMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "RemoteRefresh";
+		Case 4: "StopRefreshing";
+		Case 5: "Opnum5NotUsedOnWire";
+		Default: "unknown";
+	}
+}
+
+Table WMIIWbemRefreshingServicesMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "AddObjectToRefresher";
+		Case 4: "AddObjectToRefresherByTemplate";
+		Case 5: "AddEnumToRefresher";
+		Case 6: "RemoveObjectFromRefresher";
+		Case 7: "GetRemoteRefresher";
+		Case 8: "ReconnectRemoteRefresher";
+		Default: "unknown";
+	}
+}
+
+//
+//	_RefreshedInstances
+//
+struct WMIRefreshedInstances
+{
+	UINT32 blobSize;
+	switch
+	{
+		case blobSize > 0:
+		Blob(blobSize) BlobData;
+		//WMIRefreshedSingleInstance RefreshedSingleInstance;
+	}
+}
+
+
+//
+//	_RefreshedSingleInstance
+//
+//struct WMIRefreshedSingleInstance
+//{
+	//UINT32 InstanceHeapSize;
+	//[Local.WMIOInstanceHeapStartOffset = FrameOffset + (WMIRefreshedInstances.blobSize - 4 - InstanceHeapSize) + 4]
+	//WMIOValueTable(Local.WMIOInstanceHeapStartOffset) ValueTable;
+	//WMIOInstanceQualifierSet(Local.WMIOInstanceHeapStartOffset) InstanceQualifierSet;
+	//WMIOInstanceHeap InstanceHeap;
+//}
+
+//
+//	_WBEM_INSTANCE_BLOB Enumeration
+//
+struct WMIWbemInstanceBlobEnumeration
+{
+	UINT32 Version;
+	UINT32 nubObject;
+	WMIRefreshedInstances Objects[nubObject];
+}
+
+//
+//	_ObjectArray
+//
+[DataTypeByteOrder = ByteOrdering ? BigEndian : LittleEndian]
+struct WMIObjectArray
+{
+	UINT32 ByteOrdering = WMIObjectArrayByteOrderTable( this );  
+	AsciiString(8) Signature;    
+	UINT32 SizeOfHeader1;
+	UINT32 DataSize1;
+	UINT32 Flags;
+	UINT8 Version;
+	UINT8 PacketType = WMIObjectArrayPacketTypeTable( this );
+	UINT32 SizeOfHeader2;
+	UINT32 DataSize2;
+	UINT32 SizeOfHeader3;
+	UINT32 DataSize3;
+	[Property.NumberOfObjects]
+	UINT32 NumberOfObjects;
+	WMIWbemDataPacketObject wbemdata[NumberOfObjects];
+}
+
+Table WMIObjectArrayByteOrderTable(value)
+{
+	switch( value )
+	{
+		case 0x00000000: "The value when byte ordering is little-endian.";
+		case 0xFFFFFFFF: "The value when byte ordering is big-endian.";
+	}
+}
+
+Table WMIObjectArrayPacketTypeTable(value)
+{
+	switch( value )
+	{
+		case 0: "The value in the context of an optimized IWbemObjectSink::Indicate call.";
+		case 1: "The value in the context of an optimized IWbemWCOSmartEnum::Next call.";
+	}
+}
+
+//
+//	_WBEM_DATAPACKET_OBJECT 
+//
+struct WMIWbemDataPacketObject
+{
+	UINT32 SizeOfHeader;
+	[DataPacketBlockEndOffset = FrameOffset + 5 + SizeOfData]
+	UINT32 SizeOfData;
+	[Property.HeapCount = 1]
+	UINT8 ObjectType = WMIWbemDataPacketObjectObjectTypeTable(this);    
+	switch( ObjectType )
+	{
+		case 1: 
+		WMIObjectClass ObjectClass;
+		case 2:
+		WMIObjectInstance ObjectInstance;
+		case 3:
+		WMIObjectInstanceNoClass ObjectInstanceNoClass;
+	}
+	switch
+	{
+		case FrameOffset < DataPacketBlockEndOffset: BLOB(DataPacketBlockEndOffset - FrameOffset) GarbageOctet;
+	}
+}
+
+Table WMIWbemDataPacketObjectObjectTypeTable(value)
+{
+	switch(value)
+	{
+		case 1:"WBEMOBJECT_CLASS.";
+		case 2:"WBEMOBJECT_INSTANCE.";
+		case 3:"WBEMOBJECT_INSTANCE_NOCLASS."; 
+	}
+}
+
+//
+// WBEMOBJECT_CLASS 
+//
+struct WMIObjectClass
+{
+	UINT32 SizeOfHeader;
+	UINT32 SizeOfData;
+	[DataFieldFrameLength = FrameOffset + SizeOfData]
+	struct
+	{
+		WMIOEncodingUnitObjectBlock EncodingUnitObjectBlock;
+		switch
+		{
+			case FrameOffset < FrameLength:
+				Blob(FrameLength - FrameOffset) Pad;
+		}
+	}
+}
+
+//
+// WBEMOBJECT_INSTANCE  
+//
+struct WMIObjectInstance
+{
+	UINT32 SizeOfHeader;
+	UINT32 SizeOfData;
+	[Property.ClassId]
+	GUID(TRUE) ClassId;
+	[DataFieldFrameLength = FrameOffset + SizeOfData]
+	WMIOEncodingUnitObjectBlock EncodingUnitObjectBlock;
+}
+
+//
+// WBEMOBJECT_INSTANCE_NOCLASS  
+//
+struct WMIObjectInstanceNoClass
+{
+	UINT32 SizeOfHeader;
+	UINT32 SizeOfData;
+	[Property.ClassId]
+	GUID(TRUE) ClassId;
+	[WMIInstanceNoClass = TRUE,DataFieldFrameLength = FrameOffset + SizeOfData]
+	WMIOEncodingUnitInstanceNoClass EncodingUnitInstanceNoClass;
+}
+
+struct WMIApObjects
+{
+	NdrConformantVarying CountCon;
+	[Maxloopcount = CountCon.Actualcount]
+	while [true]
+	{
+		[property.apObjects.AddToProperty(apObjectsPtr.ReferentID, 0)]
+		NdrPtr apObjectsPtr;
+	}
+	[Maxloopcount = CountCon.Actualcount,Property.count = 0]
+	while [Property.count < CountCon.Actualcount]
+	{
+		[Property.count = Property.count + 1]
+		switch
+		{
+			case property.apObjects[Property.count - 1] > 0:
+				DCOMMInterfacePointer Objects;
+		}
+	}
+}
+
+//
+//2.2.13.1   IWbemContextBuffer Marshaling Structure
+//
+struct WMIIWbemContextBuffer
+{
+	UINT32 GUIDCount;
+	switch
+	{
+		case GUIDCount > 0: GUID(TRUE) guid[GUIDCount];
+	}
+	UINT32 ObjectCount;
+	switch
+	{
+		case ObjectCount > 0: WMIIWbemContextProperty ObjectList[ObjectCount];
+	}
+}
+
+//
+// 2.2.13.3   IWbemContextString Marshaling Structure
+//
+struct WMIIWbemContextString
+{
+	UINT32 NameLength;
+	[DataFieldByteOrder = LittleEndian]
+	UnicodeString(NameLength) Name;
+}
+
+//
+// 2.2.13.2   IWbemContextProperty Marshaling Structure
+//
+struct WMIIWbemContextProperty
+{
+	WMIIWbemContextString PropertyName ;
+	INT32 PropertyFlags = MustBeSetToTable(this,"0");
+	INT16 PropertyType  = WMIPropertyTypeTable( this );
+	switch
+	{
+		case PropertyType & 0x2000:
+		switch( PropertyType & 0xFF )
+		{
+			case 8:
+			_struct StringArray
+			{
+				Align4	Pad;
+				INT32 NumElements;
+				INT32 ElementSize;
+				WMIIWbemContextString stringValue[NumElements];
+			}
+			case 13:
+			_struct ClassObjectArray
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				WMIOEncodingUnit EncodingUnit[NumElements];
+			}
+			case 16: 
+			_struct INT8Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				INT8 INT8Value[NumElements];
+			}
+			case 2:
+			_struct INT16Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				INT16 INT16Value[NumElements];             
+			}
+			case 3:
+			_struct INT32Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				INT32 INT32Value[NumElements];
+			}
+			case 20:
+			_struct INT64Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				INT64 INT64Value[NumElements];
+			}
+			case 17:
+			_struct UINT8Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				UINT8 UINT8Value[NumElements];
+			}
+			case 18:
+			_struct UINT16Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				UINT16 UINT16Value[NumElements];
+			}
+			case 19:
+			_struct UINT32Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				UINT32 UINT32Value[NumElements];
+			}
+			case 21:
+			_struct UINT64Array
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				UINT64 UINT64Value[NumElements];
+			}
+			default:
+			_struct UnknownArray
+			{
+				INT32 NumElements;
+				INT32 ElementSize;
+				BLOB(ElementSize) UnknownElement[NumElements];
+			}
+		}
+		default:
+		switch( PropertyType & 0xFF )
+		{
+			case 2: INT16 I2;
+			case 3: INT32 I4;
+			case 4: Float R4;
+			case 5: Double R8;
+			case 6: INT64 CY;
+			case 7: FILETIME DATE;
+			case 8: WMIIWbemContextString string;
+			case 9:
+			case 13: WMIOEncodingUnit EncodingUnit;
+			case 10: HRESULT ERROR;
+			case 11: VARIANTBOOL BOOLValue;
+			case 14: BLOB(16) DECIMAL;
+			case 16: INT8 I1;
+			case 17: UINT8 UI1;
+			case 18: UINT16 UI2;
+			case 19: UINT32 UI4;
+			case 20: INT64 I8;
+			case 21: UINT64 UI8;
+			case 22: Integer(4) INT;
+			case 23: UINT32 UINT;
+			case 24: UINT32 Void;
+			case 25: HRESULT RETURN;
+			case 26: INT32 Pointer;
+			case 30: NdrStringPtr stringtype;
+			case 31: NdrWideStringPtr WideStringType;
+			case 37: INT32 INTPTR;
+			case 38: UINT32 UINTPTR;
+			case 64: FILETIME FileTimeValue;
+			case 65:
+			struct BLOBType
+			{
+				UINT32 Length;
+				BLOB(Length) BlobValue;
+			}
+		}
+	}
+}
+
+Table WMIPropertyTypeTable( type )
+{
+	switch( type )
+	{
+		case 0 :         "VT_EMPTY           ";
+		case 1 :         "VT_NULL            ";
+		case 2 :         "VT_I2              ";
+		case 3 :         "VT_I4              ";
+		case 4 :         "VT_R4              ";
+		case 5 :         "VT_R8              ";
+		case 6 :         "VT_CY              ";
+		case 7 :         "VT_DATE            ";
+		case 8 :         "VT_BSTR            ";
+		case 9 :         "VT_DISPATCH        ";
+		case 10:         "VT_ERROR           ";
+		case 11:         "VT_BOOL            ";
+		case 12:         "VT_VARIANT         ";
+		case 13:         "VT_UNKNOWN         ";
+		case 14:         "VT_DECIMAL         ";
+		case 16:         "VT_I1              ";
+		case 17:         "VT_UI1             ";
+		case 18:         "VT_UI2             ";
+		case 19:         "VT_UI4             ";
+		case 20:         "VT_I8              ";
+		case 21:         "VT_UI8             ";
+		case 22:         "VT_INT             ";
+		case 23:         "VT_UINT            ";
+		case 24:         "VT_VOID            ";
+		case 25:         "VT_HRESULT         ";
+		case 26:         "VT_PTR             ";
+		case 27:         "VT_SAFEARRAY       ";
+		case 28:         "VT_CARRAY          ";
+		case 29:         "VT_USERDEFINED     ";
+		case 30:         "VT_LPSTR           ";
+		case 31:         "VT_LPWSTR          ";
+		case 36:         "VT_RECORD          ";
+		case 37:         "VT_INT_PTR         ";
+		case 38:         "VT_UINT_PTR        ";
+		case 64:         "VT_FILETIME        ";
+		case 65:         "VT_BLOB            ";
+		case 66:         "VT_STREAM          ";
+		case 67:         "VT_STORAGE         ";
+		case 68:         "VT_STREAMED_OBJECT ";
+		case 69:         "VT_STORED_OBJECT   ";
+		case 70:         "VT_BLOB_OBJECT     ";
+		case 71:         "VT_CF              ";
+		case 72:         "VT_CLSID           ";
+		case 73:         "VT_VERSIONED_STREAM";
+		case 0x1000:     "VT_VECTOR          ";
+		case 0x2000:     "VT_ARRAY           ";
+	}
+}

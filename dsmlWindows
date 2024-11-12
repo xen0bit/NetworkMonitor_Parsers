@@ -1,0 +1,204 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Directory Services Markup Language
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DSML]: Directory Services Markup Language (DSML) 2.0 Protocol Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 12/09/2009
+//#
+//####
+[Property.SoapBodySummary = "DSML Payload"]
+[ RegisterBefore(SoapBody.DefaultSoapBody, DSML, DSMLSoapActionTable(Property.SOAPAction))]
+Protocol DSML = FormatString("DSML SOAP Message : %s", Property.DSMLSummary)
+{
+	Switch
+	{
+		Case Property.SOAPAction.Contains("batchrequest"):
+			[Property.DSMLSummary = this.ToString]
+			DSMLBatch DSMLBatch;
+		Default:
+			While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+			{
+				XmlElement(true) AnyNode;
+			}
+	}
+}
+
+struct DSMLBatch = FormatString("%s Message", Property.DSMLBatchSummary)
+{
+	[Post.Local.DSMLBatch_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.DSMLBatch_IsEmpty:
+			struct
+			{
+				Switch
+				{
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "BatchResponse"):
+						[Property.DSMLBatchSummary = "Batch Response"]
+						DSMLBatchResponse BatchResponse;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "BatchRequest"):
+						[Property.DSMLBatchSummary = "Batch Request"]
+						DSMLBatchRequest BatchRequest;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Fault"):
+						[Property.DSMLBatchSummary = "Fault Batch Response"]
+						SoapFaultElement FaultBatchElement;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+						[Property.DSMLBatchSummary = "Encrypted Batch Data"]
+						XMLENCEncryptedData EncryptedData;
+					Default:
+						While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) AnyNode;
+						}
+				}
+				
+				XmlTag("Body") ETag;
+			}
+	}
+}
+
+[RegisterBefore(SoapHeader.SoapHeaderNodes.Node, BeginSession, Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "BeginSession"))]
+struct DSMLBeginSession = "XMLElement:<BeginSession>"
+{
+     
+     XmlTag("BeginSession") STag;
+	
+	[ Property.SessionmustUnderstand = Property.XmlElemAttrValues$["mustunderstand"]]
+
+	 switch
+	 {
+		case Property.IsXmlEmptyElement ==  false:
+        struct
+        {
+		  switch
+		  {
+			 case String(FrameData,FrameOffset,Property.XmlEncoding,1) != "<":
+				StringTerm(Property.XMLEncoding, "<", true, false, false) BeginSession;	
+		     case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<": 						
+               while [!contains(StringTerm(FrameData, FrameOffset,Property.XMLEncoding, Property.XMLElementNameTerm, true,true), "BeginSession" )]
+               {XMLElement(true) Node;}
+          }
+          XmlTag("BeginSession") ETag;
+        }
+   }
+}
+
+[RegisterBefore(SoapHeader.SoapHeaderNodes.Node, EndSession, Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EndSession"))]
+struct DSMLEndSession = "XMLElement:<EndSession>"
+{
+  XmlTag("EndSession") STag;
+
+  [ Property.SessionmustUnderstand = Property.XmlElemAttrValues$["mustunderstand"]]
+
+  switch
+	{
+		case Property.IsXmlEmptyElement ==  false:
+
+		struct
+		{
+			switch
+			{
+				case String(FrameData,FrameOffset,Property.XmlEncoding,1) != "<":
+				  StringTerm(Property.XMLEncoding, "<", true, false, false) EndSession;
+				case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<": 						
+                  while [!contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding,Property.XMLElementNameTerm, true,true), "EndSession")]
+                  {XMLElement(true) Node;}
+            }	
+    	XmlTag("EndSession") ETag;
+	  }
+	}  
+}
+
+[RegisterBefore(SoapHeader.SoapHeaderNodes.Node, Session, Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Session"))]
+struct DSMLSession = "XMLElement:<Session>"
+{
+  
+  XmlTag("Session") STag;
+  
+  [ Property.SessionmustUnderstand = Property.XmlElemAttrValues$["mustunderstand"]]
+
+  switch
+	{
+	  case Property.IsXmlEmptyElement ==  false:
+
+	  struct
+	  {
+			switch
+			{
+				case String(FrameData,FrameOffset,Property.XmlEncoding,1) != "<":
+				  StringTerm(Property.XMLEncoding, "<", true, false, false) Session;
+				case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<": 			
+                  while [!contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true,true), "Session")]
+                  {XMLElement(true) Node;}					
+			}			
+			XmlTag("Session") ETag;
+	  }
+	}
+}
+
+struct DSMLBatchRequest = "XMLElement:<BatchRequest>"
+{
+   XmlTag("BatchRequest") STag;
+  
+   //# start OCS logic validation
+	
+	switch
+	{
+		case Property.SessionmustUnderstand !="1" :
+			ReportParserError(ParserErrorProtocolClassMsOffice, "DSML", FormatString("The mustunderstand in the request session must equal to 1")) XmlAttrValueError;
+	}
+	//# end OCS logic validation
+   switch
+	{
+		case Property.IsXmlEmptyElement == false:
+		struct
+		{
+			switch
+			{
+				case String(FrameData,FrameOffset,Property.XmlEncoding,1) != "<":
+                  StringTerm(Property.XMLEncoding, "<", true, false, false) BatchRequest;
+				case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<": 						
+                  while [!contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true,true), "BatchRequest" )]
+                  {XMLElement(true) Node;}					
+            }
+        XmlTag("BatchRequest") ETag;
+	  }
+	}  
+}
+
+struct DSMLBatchResponse = "XMLElement:<BatchResponse>"
+{
+  XmlTag("BatchResponse") STag;
+  switch
+	{
+		case Property.IsXmlEmptyElement == false:
+		struct
+		{
+			switch
+			{
+				case String(FrameData,FrameOffset,Property.XmlEncoding,1) != "<":
+                   StringTerm(Property.XMLEncoding, "<", true, false, false) BatchResponse;
+				case String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<":						
+                  while [!contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true,true), "batchResponse")]
+                  {XMLElement(true) Node;}
+            }
+           XmlTag("BatchResponse") ETag;
+	  }
+	}
+}
+
+Table DSMLSoapActionTable(value)
+{
+	Switch
+	{
+		Case value.Contains("batchrequest"):
+			 true;
+		Default:false;
+	}
+}

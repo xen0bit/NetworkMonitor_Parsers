@@ -1,0 +1,1713 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  End-Point Mapper Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.opengroup.org/onlinepubs/009629399/apdxo.htm
+//#                          CAE Specification
+//#                          DCE 1.1: Remote Procedure Call
+//#                          Document Number: C706
+//#                          Copyright  1997 The Open Group
+//#                          http://www.opengroup.org/onlinepubs/9629399/toc.htm
+//#                          X/Open CAE Specification
+//#                          X/Open DCE: Remote Procedure Call
+//#                          ISBN: 1-85912-041-5
+//#                          Copyright  August 1994, X/Open Company Limited
+//#                          http://www.opengroup.org/pubs/catalog/c309.htm
+//#                          http://www.opengroup.org/tech/rfc/rfc81.3.html
+//#                          DCE ASSIGNED VALUES
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 04/20/2010
+//#
+//####
+
+///////////////////////********************************///////////////////////
+///////////////////////******** EPM Protocol *********///////////////////////
+///////////////////////********************************///////////////////////
+
+	// opnum function name
+	// ----- ----------------------
+	//     0 ept_insert
+	//     1 ept_delete
+	//     2 ept_lookup
+	//     3 ept_map
+	//     4 ept_lookup_handle_free
+	//     5 ept_inq_object
+	//     6 ept_mgmt_delete
+	//     7 ept_map_auth
+	//
+	
+[ EPMSummary = "" ]
+Protocol EPM = FormatString( "%s %s: %s",
+	(Property.MSRPCPType == 0x00) ? "Request:" : "Response:",
+	EPMMethodTable( Property.MSRPCOpnum ),
+	EPMSummary)
+{
+	Switch ( Property.MSRPCOpnum )
+	{
+		Case  0: // ept_insert
+		_struct EptInsert
+		{
+			switch
+			{
+				case framelength - frameoffset > 0:
+				Switch ( Property.MSRPCPType )
+				{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								UINT32              NumEnts;
+								[ Post.EPMSummary = EPMSummary + Property.EPMTowerSummary ]
+								EPMEptEntryTArray   Entries;
+								Align4 Pad2;
+								BOOL        Replace;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								EPMErrorStatusT     Status;
+							}
+					}
+				}
+				}
+			}
+		}
+		Case  1: // ept_delete
+		_struct EptDelete
+		{
+			switch
+			{
+				case framelength - frameoffset > 0:
+				Switch ( Property.MSRPCPType )
+				{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								UINT32              NumEnts;
+								[ Post.EPMSummary = EPMSummary + Property.EPMTowerSummary ]
+								EPMEptEntryTArray   Entries;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								EPMErrorStatusT     Status;
+							}
+					}
+				}
+				}
+			}
+		};
+		Case  2: // ept_lookup
+		_struct EptLookup
+		{
+			Switch ( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								UINT32              InquiryType = EPMInquiryTypeTable(this);
+								[ EPMIgnore = (InquiryType == 0 || InquiryType == 2) ? 1 : 0 ]
+								MSRPCPUuidT         Object;
+								RPCERpcIfIdPtr		IfId;
+								Align4 Pad2;
+								UINT32              VersOption = EPMVersOptionTable( this, EPMIgnore );
+								ContextHandle       EntryHandle;
+								[
+								Post.EPMSummary = EPMInquiryTypeSummaryTable( InquiryType )
+								+ ((InquiryType == 1)
+								? FormatString(", interface: %s", IfId.ToString)
+								: ((InquiryType == 2)
+								? FormatString(", object: %s", Object.ToString)
+								: ((InquiryType == 3)
+								? FormatString(", interface: %s object: %s",
+								IfId.ToString, Object.ToString)
+								: FormatString(", entry handle: %s",
+								EntryHandle.ToString))))
+								]
+								UINT32              MaxEnts;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								ContextHandle       EntryHandle;
+								UINT32              NumEnts;
+								EPMEptEntryTArray   Entries;
+								Align4 Pad;
+								EPMErrorStatusT     Status;
+							}
+					}
+				}
+			}
+
+		};
+		Case  3: // ept_map
+		_struct EptMap
+		{
+			Switch ( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								MSRPCPUuidT			Object;
+								EPMTwrpT(true)		MapTower;
+								Align4 Pad;
+								[ Post.EPMSummary = EPMSummary + Property.EPMTowerSummary ]
+								ContextHandle       EntryHandle;
+								UINT32              MaxTowers;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								ContextHandle       EntryHandle;
+								UINT32              NumTowers;
+								EPMTwrPTArray       Towers;
+								Align4 Pad;
+								[ EPMSummary = Property.EPMTowerSummary ]
+								EPMErrorStatusT     Status;
+							}
+					}
+
+				}
+			}
+
+		}
+		Case  4: // ept_lookup_handle_free
+		_struct EptLookupHandleFree
+		{
+			Switch ( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								ContextHandle       EntryHandle;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								ContextHandle      EntryHandle;
+								EPMErrorStatusT    Status;
+							}
+					}
+
+				}
+			}
+
+		};
+		Case  5: // ept_inq_object
+		_struct EptInqObject
+		{
+			switch
+			{
+				case framelength - frameoffset > 0:
+				Switch ( Property.MSRPCPType )
+				{
+					Case 0x00:
+					_struct Request
+					{
+						Switch 
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+								Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									[ Post.EPMSummary = EPMSummary + EptObject.ToString ]
+									MSRPCUuidT          EptObject;
+								}
+					}
+
+					}
+        	
+					Case 0x02:
+					_struct Response
+					{
+						Switch 
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+								Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									EPMErrorStatusT     Status;
+								}
+						}
+					}
+				}
+			}
+		};
+		Case  6: // ept_mgmt_delete
+		_struct EptMgmtDelete
+		{
+			switch
+			{
+				case framelength - frameoffset > 0:
+				Switch ( Property.MSRPCPType )
+				{
+					Case 0x00:
+					_struct Request
+					{
+						Switch 
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+								Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									BOOL                ObjectSpeced;
+									MSRPCUuidT         Object;
+									[ Post.EPMSummary = EPMSummary + Property.EPMTowerSummary ]
+									EPMTwrT     Tower;
+								}
+					}
+
+					}
+      	
+					Case 0x02:
+					_struct Response
+					{
+						Switch 
+						{
+							Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+							Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+								Blob( FrameLength - FrameOffset ) EncryptedData;
+							Default:
+								struct
+								{
+									EPMErrorStatusT     Status;
+								}
+						}
+					}
+				}
+      }
+		};
+		Case  7: // ept_map_auth
+		_struct EptMapAuth
+		{
+			Switch ( Property.MSRPCPType )
+			{
+				Case 0x00:
+				_struct Request
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								MSRPCUuidT			Object;
+								EPMTwrT      MapTower;
+								[ Post.EPMSummary = EPMSummary + Property.EPMTowerSummary ]
+								SIDPtr pISID;
+								Align4 Pad;
+								ContextHandle       EntryHandle;
+								UINT32              MaxTowers;
+							}
+					}
+
+				}
+
+				Case 0x02:
+				_struct Response
+				{
+					Switch 
+					{
+						Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+						Case Property.MSRPCEncrypted != ConstEncTypeClearData:
+							Blob( FrameLength - FrameOffset ) EncryptedData;
+						Default:
+							struct
+							{
+								ContextHandle       EntryHandle;
+								UINT32              NumTowers;
+								EPMTwrPTArray       Towers;
+								Align4 Pad;
+								[ EPMSummary = Property.EPMTowerSummary ]
+								EPMErrorStatusT     Status;
+							}
+					}
+
+				}
+			}
+
+		};
+	}
+}
+//////////////////////////////////////////////////////////////////////////////
+// epm Tables
+//////////////////////////////////////////////////////////////////////////////
+
+Table EPMMethodTable( value )
+{
+	Switch ( value )
+	{
+		Case  0: "ept_insert";
+		Case  1: "ept_delete";
+		Case  2: "ept_lookup";
+		Case  3: "ept_map";
+		Case  4: "ept_lookup_handle_free";
+		Case  5: "ept_inq_object";
+		Case  6: "ept_mgmt_delete";
+		Case  7: "ept_map_auth";
+		Default: "Unknown Method"; 
+	}
+}
+
+//****************************************************************************
+// X/Open CAE Specification
+// Appendix I : Protocol Identifiers
+//              pp. 615-616
+// Open Software Foundation Registered Single Octet Protocol Identifiers
+//****************************************************************************
+Table EPMProtIdTable( value, floorCount )
+{
+	Switch ( value )
+	{
+		Case 0x00: "OSI Object Identifier [OID]";
+		Case 0x02: "DNA Session Control Phase 4";
+		Case 0x03: "DNA Session Control V3 Phase 5";
+		Case 0x04: "DNA NSP Transport";
+		Case 0x05: "OSI TP4 [T-Selector]";
+		Case 0x06: "OSI CLNS [NSAP]";
+		Case 0x07: "DOD TCP port";						// ncacn_ip_tcp	16-bit big-endian unsigned integer
+		Case 0x08: "DOD UDP port";						// 16-bit big-endian unsigned integer
+		Case 0x09: "DOD IP v4 big-endian";				// 4-octet big-endian integer
+		Case 0x0a: "RPC Connectionless v4";				// Version 4
+		Case 0x0b: "RPC Connection-oriented v5";		// Version 5
+		Case 0x0c: "MS Named Pipes";					// 
+		Case 0x0d: "UUID";
+		Case 0x0e: "ncadg_ipx";							// 
+		Case 0x0f: "NetBIOS Named Pipes";
+		Case 0x10: FormatString("%s", (floorCount != 4)
+		? "MS Named Pipe Name"
+		: "Local InterProcess Communication (LRPC)");
+		Case 0x11: "MS NetBIOS";
+		Case 0x12: "MS NetBEUI";
+		Case 0x13: "Netware SPX";
+		Case 0x14: "Netware IPX";
+		Case 0x15: "NMP_TOWER_ID";						// NMP_TOWER_ID
+		Case 0x16: "Appletalk Stream [endpoint]";		// ncacn_at_dsp		AppleTalk DSP
+		Case 0x17: "Appletalk Datagram [endpoint]";		// ncacn_at_dsp		AppleTalk DSP
+		Case 0x18: "Appletalk [NBP-style Name]";		// ncacn_at_dsp		AppleTalk DSP
+		Case 0x19: "NetBIOS [CL on all protocols]";
+		Case 0x1a: "VINES SPP";							// ncacn_vns_spp	Banyan Vines SPP
+		Case 0x1b: "VINES IPC";							// ??
+		Case 0x1c: "StreetTalk [name]";					// string
+		Case 0x1d: "MSMQ";								// ncadg_mq			Microsoft Message Queuing Services (MSMQ)
+		Case 0x1f: "MS IIS (http)";						// ncacn_http		Microsoft Internet Information Server (IIS)
+		Case 0x20: "Unix Domain socket [pathname]";
+		Case 0x21: "null";
+		Case 0x22: "NetBIOS name";
+		Default:   "Unknown";
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Symbol           Protocol
+// --------------	-------------------------------------------
+// ncacn_at_dsp		AppleTalk DSP
+// ncacn_http		Microsoft Internet Information Server (IIS)
+// ncacn_dnet_nsp	DECnet
+// ncacn_ip_tcp		TCP/IP
+// ncadg_ip_udp		UDP/IP
+// ncadg_ipx		IPX
+// ncadg_mq			Microsoft Message Queuing Services (MSMQ)
+// ncacn_nb_nb		NetBEUI over NetBIOS
+// ncacn_nb_tcp		TCP over NetBIOS
+// ncacn_nb_ipx		NetBIOS over IPX
+// ncacn_np			named pipes
+// ncacn_spx		SPX
+// ncacn_vns_spp	Banyan Vines SPP
+// ncalrpc			local interprocess communication 
+//////////////////////////////////////////////////////////////////////////////
+
+//#---------------------------------------------------------------------------
+//# BUGBUG: Verify!!!
+//# at      0x18	ncacn_at_dsp: Connection-oriented, Appletalk NBP-style
+//#					addresses, Appletalk's data stream protocol. 
+//# dsp     0x16	ncadg_at_ddp: Connectionless, Appletalk NBP-style
+//#					addresses, Appletalk's datagram delivery protocol. 
+//# ddp     0x17	
+//# nb      0x19	ncadg_nb: Connectionless, NetBios (over all available
+//#					protocols).
+//# 				ncacn_nb_stream: Connection-oriented, using NETBIOS
+//#					datagram protocols. 
+//# 				ncadg_nb_dgram: Connectionless, using NETBIOS session
+//#					protocols. 
+//# spp     0x1A	
+//# ipc     0x1B	
+//# vns     0x1C	ncacn_vns_spp: Connection-oriented, VINES StreetTalk
+//#					addresses, VINES SPP protocol.
+//# 				ncadg_vns_ipc: Connectionless, VINES StreetTalk
+//#					addresses, VINES IPC protocol.
+//# unix    0x20	ncacn_unix_stream: Connection-oriented, using Unix
+//#					Domain sockets. 
+//# 				ncadg_unix_dgram: Connectionless, using Unix Domain
+//#					sockets. 
+//# null    0x21	
+//# netbios 0x22	
+//# 				ncacn_osi_mosi: Connection-oriented, over a seven-layer
+//#					minimal OSI (mOSI) stack. 
+//# 				ncadg_osi_clsn: Connectionless, over a seven-layer OSI
+//#					stack.
+//#
+//#---------------------------------------------------------------------------
+Table EPMProtIdSummaryTable( value, floorCount )
+{
+	Switch ( value )
+	{
+		Case 0x00: "OSI IOD";
+		Case 0x02: "DNA Phase 4";
+		Case 0x03: "DNA Phase 5";
+		Case 0x04: "DNA NSP";
+		Case 0x05: "OSI TP4";
+		Case 0x06: "OSI CLNS";
+		Case 0x07: "TCP port"; // 16-bit big-endian unsigned integer
+		Case 0x08: "UDP port"; // 16-bit big-endian unsigned integer
+		Case 0x09: "IPv4"; // 4-octet big-endian integer
+		Case 0x0a: "RPC v4"; // Version 4
+		Case 0x0b: "RPC v5"; // Version 5
+		Case 0x0c: "MS Named Pipes";
+		Case 0x0d: "UUID";
+		Case 0x0f: "NetBIOS Named Pipes";
+		Case 0x10: FormatString("%s", (floorCount != 4)
+		? "MS Named Pipe Name"
+		: "LRPC");
+		Case 0x11: "MS NetBIOS";
+		Case 0x12: "MS NetBEUI";
+		Case 0x13: "Netware SPX";
+		Case 0x14: "Netware IPX";
+		Case 0x16: "Appletalk Stream";
+		Case 0x17: "Appletalk Datagram";
+		Case 0x18: "Appletalk Name";
+		Case 0x19: "NetBIOS";
+		Case 0x1a: "VINES SPP"; // 16-bit big-endian integer
+		Case 0x1b: "VINES IPC"; // 16-bit big-endian integer
+		Case 0x1c: "StreetTalk Name";
+		Case 0x20: "Unix socket";
+		Case 0x21: "null";
+		Case 0x22: "NetBIOS Name";
+		Default:   "Unknown";
+	}
+}
+
+Table EPMKnownProtIdTable( value )
+{
+	Switch
+	{
+		Case value  > 0x22: 0;
+		Case value == 0x01: 0;
+		Case value == 0x0e: 0;
+		Case value == 0x15: 0;
+		Case value == 0x1d: 0;
+		Case value == 0x1e: 0;
+		Case value == 0x1f: 0;
+		Default:            1;
+	}
+}
+
+Table EPMOidTable( value )
+{
+	Switch ( value )
+	{
+		Case "1.3.22.1.1"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) rpc(1)", value );
+		Case "1.3.22.1.1.5" : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) rpc(1) RPC_Codesets(5)", value );
+		Case "1.3.22.1.2"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) gds(2)", value );
+		Case "1.3.22.1.3"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) cds(3)", value );
+		Case "1.3.22.1.5"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) sec(5)", value );
+		Case "1.3.22.1.5.1" : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) sec(5) SEC_Replica(1)", value );
+		Case "1.3.22.1.6"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) xfn(6)", value );
+		Case "1.3.22.1.7"   : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) snmp(7)", value );
+		Case "1.3.22.1.7.1" : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) snmp(7) mib(1)", value );
+		Case "1.3.22.1.7.2" : FormatString("%s : iso(1) identified-org(3) osf(22) dce(1) snmp(7) subagent(2)", value );
+		Default             : value;
+	}
+}
+
+Table EPMOidSummaryTable( value )
+{
+	Switch ( value )
+	{
+		Case "1.3.22.1.1"   : "RPC";
+		Case "1.3.22.1.1.5" : "RPC_Codesets";
+		Case "1.3.22.1.2"   : "GDS";
+		Case "1.3.22.1.3"   : "CDS";
+		Case "1.3.22.1.5"   : "Security";
+		Case "1.3.22.1.5.1" : "SEC_Replica";
+		Case "1.3.22.1.6"   : "Federated Naming";
+		Case "1.3.22.1.7"   : "DCE SNMP";
+		Case "1.3.22.1.7.1" : "DCE MIB";
+		Case "1.3.22.1.7.2" : "DCE Subagent";
+		Default             : value;
+	}
+}
+
+//****************************************************************************
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.3 RPC-Specific Data Types
+//              page 629
+//****************************************************************************
+Table EPMInquiryTypeTable( value )
+{
+	Switch ( value )
+	{
+		Case  0: FormatString("%d (0x%X) rpc_c_ep_all_elts: search all, ignore interface_id, vers_option, object.", value, value );
+		Case  1: FormatString("%d (0x%X) rpc_c_ep_match_by_if: search using interface_id, vers_option; ignore object.", value, value );
+		Case  2: FormatString("%d (0x%X) rpc_c_ep_match_by_obj: search using object uuid; ignore interface_id, vers_option.", value, value );
+		Case  3: FormatString("%d (0x%X) rpc_c_ep_match_by_both: search using interface_id, vers_option, object.", value, value );
+		Default: FormatString("%d (0x%X) Invalid inquiry_type", value, value );
+	}
+}
+
+Table EPMInquiryTypeSummaryTable( value )
+{
+	Switch ( value )
+	{
+		Case  0: "rpc_c_ep_all_elts";
+		Case  1: "rpc_c_ep_match_by_if";
+		Case  2: "rpc_c_ep_match_by_obj";
+		Case  3: "rpc_c_ep_match_by_both";
+		Default: "Invalid inquiry_type";
+	}
+}
+
+//****************************************************************************
+// X/Open CAE Specification
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.3 RPC-Specific Data Types
+//****************************************************************************
+Table EPMVersOptionTable( value, ignore )
+{
+	Switch
+	{
+		Case  value == 1: "rpc_c_vers_all: Match interface_id.uuid, all versions";
+		Case  value == 2: "rpc_c_vers_compatible: Match interface_id.vers_major, vers_minor >= interface_id.vers_minor";
+		Case  value == 3: "rpc_c_vers_exact: Match interface_id.vers_major, interface_id.vers_minor";
+		Case  value == 4: "rpc_c_vers_major_only: Match interface_id.vers_major";
+		Case  value == 5: "rpc_c_vers_upto: Match version <= interface_id vers_minor & vers_minor";
+		Case  value == 6: "rpc_c_vers_upto_compatible: Match vers_major <= interface_id.vers_major";
+		Case ignore == 1: FormatString("Ignored value: %d", value);
+		Default:          FormatString("Invalid vers_option: %d", value);
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// epmp typecasts
+//////////////////////////////////////////////////////////////////////////////
+
+
+// http://osr5doc.ca.caldera.com:457/netguide/dipxD.ipx_addresses.html
+// BigEndian
+// CCCCCCCC:000000000001:0451 (IPX network:IPX Node:IPX Socket).
+//     struct { 
+//         unsigned char net[ 4 ]; 
+//         unsigned char node[ 6 ]; 
+//         unsigned char sock[ 2 ]; 
+//     } ipxAddr_t;
+// ----------------------------------------------
+// Field             Type*          Byte order
+// ----------------------------------------------
+// Network number    uint8[4]       high-to-low
+// Node number       uint8[6]       high-to-low
+// Socket number     uint8[2]       high-to-low
+// ----------------------------------------------
+//
+
+// http://developer.novell.com/wiki/index.php/TID101717_%28VR_LIST%29_-_Virtual_Resources_Listing_%28IPX_SAP%2C_IPX_Sockets_%26_NCP_Extension_Names%29
+Table EPMIpxSpxSocketTable(value)
+{
+	Switch
+	{
+		Case value == 0x0000: "All sockets";
+		Case value == 0x0451: "NetWare Core Protocol (NCP)";
+		Case value == 0x0452: "Service Advertising Protocol (SAP)";
+		Case value == 0x0453: "IPX Routing Information Protocol (RIP)";
+		Case value == 0x0455: "NetBIOS";
+		Case value == 0x0456: "Diagnostic Packet";
+		Case value == 0x0457: "Serialization packet (SER)";
+		Case value == 0x0551: "Netbios Name Management Port Interface (NMPI)";
+		Case value == 0x4004: "Novell watchdog protocol";
+		Case value == 0x4005: "Novell broadcast protocol";
+		Case value == 0x9001: "Novell Link Services Protocol";
+		Case value == 0x9004: "IPXWAN Protocol";
+		Case value  < 0x87A2
+		&& value > 0x879D: "DB2 socket";
+		Case value  > 0x7fff: "Novell assigned well-known socket";
+		Case value  > 0x3fff: "Dynamic socket";
+		Default             : "general socket";
+	}
+}
+
+[DataTypeByteOrder = BigEndian]
+Struct EPMIpxSpxAddress = FormatString("%s:%s", Net, Node)
+{
+	INT32  Net;
+	INT48  Node;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// epmp Structs
+//////////////////////////////////////////////////////////////////////////////
+
+//****************************************************************************
+// floor
+//
+// X/Open CAE Specification
+// Appendix L : Protocol Tower Encoding
+//              page 621
+//
+// |  <- tower floor left hand side ->  | <- tower floor right hand side -> |
+// +------------+-----------------------+------------+----------------------+
+// |  LHS byte  |  protocol identifier  |  RHS byte  | related or address   |
+// |   count    |        data           |   count    |       data           |
+// +------------+-----------------------+------------+----------------------+
+//****************************************************************************
+
+//****************************************************************************
+// floor 1: RPC interface identifier
+//****************************************************************************
+Struct EPMDceRpcFloor1 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  InterfaceIdent = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	Switch ( InterfaceIdent )
+	{
+		Case 0: // OID
+		_struct
+		{
+			AsnBerObjectIdentifier InterfaceOID = EPMOidTable(this);
+			UINT16 MajorVersion;
+			UINT16 RHSBytecount;
+			[
+			EPMFloorSummary = FormatString("%s v%u.%u",
+			EPMOidSummaryTable(InterfaceOID.ToString),
+			MajorVersion,
+			MinorVersion),
+			EPMTowerSummary = EPMFloorSummary
+			]
+			UINT16 MinorVersion;
+		};
+		Default:
+		_struct
+		{
+			[DCEPropUuidName = UUIDTable( InterfaceUuid.ToString ),
+			DCEPropUuidString = InterfaceUuid.ToString]
+			MSRPCUuidT InterfaceUuid;
+			UINT16 MajorVersion;
+			UINT16 RHSBytecount;
+			[
+			EPMFloorSummary = FormatString("%s v%u.%u",
+			(contains(DCEPropUuidName,"nknown")
+			? DCEPropUuidString
+			: DCEPropUuidName + " " + DCEPropUuidString),
+			MajorVersion,
+			MinorVersion),
+			Post.EPMTowerSummary = EPMFloorSummary
+			]
+			UINT16 MinorVersion;
+		}
+	};
+}
+
+//****************************************************************************
+// floor 2: RPC Data representation identifier
+//****************************************************************************
+Struct EPMDceRpcFloor2 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  DrepIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	Switch ( DrepIdentifier )
+	{
+		Case 0:
+		_struct
+		{
+			AsnBerObjectIdentifier DataRepOID = EPMOidTable(this);
+			UINT16 MajorVersion;
+			UINT16 RHSBytecount;
+			[
+			EPMFloorSummary = FormatString("%s %s v%u.%u",
+			EPMProtIdTable(DrepIdentifier,EPMFloorCount),
+			EPMOidSummaryTable(DataRepOID.ToString),
+			MajorVersion,
+			MinorVersion)
+			]
+			UINT16 MinorVersion;
+		};
+		Default:
+		_struct
+		{
+			[DCEPropUuidName = UUIDTable( DataRepUuid.ToString ),
+			DCEPropUuidString = DataRepUuid.ToString]
+			MSRPCUuidT DataRepUuid;
+			UINT16 MajorVersion;
+			UINT16 RHSBytecount;
+			[
+			EPMTowerSummary = FormatString("%s, %s",
+			DCEPropUuidName,
+			EPMTowerSummary),
+			EPMFloorSummary = FormatString("%s %s v%u.%u",
+			EPMProtIdTable(DrepIdentifier,EPMFloorCount),
+			(contains(DCEPropUuidName,"nknown")
+			? DCEPropUuidString
+			: DCEPropUuidName + " " + DCEPropUuidString),
+			MajorVersion,
+			MinorVersion)
+			]
+			UINT16 MinorVersion;
+		}
+	}
+}
+
+//****************************************************************************
+// floor 3: RPC protocol identifier
+//****************************************************************************
+Struct EPMDceRpcFloor3 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  ProtIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+	Post.EPMFloorProp = FormatString("%s%u",
+	(((ProtIdentifier == 0x0b) || (ProtIdentifier == 0x0a))
+	? "."
+	: " v*."),
+	VersionMinor),
+	EPMTowerSummary = FormatString("%s, %s%s",
+	EPMTowerSummary,
+	EPMProtIdSummaryTable(ProtIdentifier,EPMFloorCount),
+	EPMFloorProp),
+	Post.EPMFloorSummary = FormatString("%s%s",
+	EPMProtIdTable(ProtIdentifier,EPMFloorCount),
+	EPMFloorProp)
+	]
+	UINT16 VersionMinor;
+}
+
+//****************************************************************************
+// floor 4: Port address
+// ncacn_ip_tcp, ncadg_ip_udp,ncacn_ipx, ncacn_spx
+//****************************************************************************
+Struct EPMEpPortFloor4 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  PortIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+	Post.EPMFloorSummary = FormatString("port: %s, type: %s",
+	EPMFloorProp,
+	EPMProtIdTable(PortIdentifier,EPMFloorCount))
+	]
+	Switch ( PortIdentifier )
+	{
+		Case 0x07: // "DOD TCP port" 16-bit big-endian unsigned integer
+		Case 0x08: // "DOD UDP port" 16-bit big-endian unsigned integer
+		_struct
+		{
+			[
+			Post.EPMPortProp = IpPort.ToString,
+					//FormatString("%u",
+					//	((UINT8(FrameData,Offset)*256)
+					//	+ UINT8(FrameData,Offset+1))),
+			Post.EPMFloorProp = IpPort.ToString,
+			DataFieldByteOrder = BigEndian
+			]
+			INT16 IpPort = FormatString( "%u (0x%X) [%s]", this, this, PortNameTable(this) );
+		};
+		Case 0x13: // Netware SPX
+		[
+		Post.EPMPortProp = SpxPort.ToString,
+		Post.EPMFloorProp = SpxPort.ToString,
+		DataFieldByteOrder = BigEndian
+		]
+		INT16 SpxPort = FormatString( "%04X [%s]", this, EPMIpxSpxSocketTable(this) );
+		Case 0x14: // Netware IPX
+		[
+		Post.EPMPortProp = IpxPort.ToString,
+		Post.EPMFloorProp = IpxPort.ToString,
+		DataFieldByteOrder = BigEndian
+		]
+		INT16 IpxPort = FormatString( "%04X [%s]", this, EPMIpxSpxSocketTable(this) );
+		Case 0x1a: // VINES SPP  16-bit big-endian integer
+		[
+		Post.EPMPortProp = SppPort.ToString,
+		Post.EPMFloorProp = SppPort.ToString,
+		DataFieldByteOrder = BigEndian
+		]
+		INT16 SppPort;
+		Case 0x1b: // VINES IPC  16-bit big-endian integer
+		[
+		Post.EPMPortProp = IpcPort.ToString,
+		Post.EPMFloorProp = IpcPort.ToString,
+		DataFieldByteOrder = BigEndian
+		]
+		INT16 IpcPort;
+		case 0x1f:
+		[
+				Post.EPMPortProp = FormatString("%u",Blob(FrameData, FrameOffset, RHSBytecount)),
+				Post.EPMFloorProp = Blob(FrameData, FrameOffset, RHSBytecount),
+				DataFieldByteOrder = BigEndian
+		]
+		_struct
+		{
+			switch(RHSBytecount)
+			{
+				case 2:
+					UINT16 Port;
+				default:
+					Blob(RHSBytecount) PortValue;
+			}
+		}
+		default:
+			[ Post.EPMPortProp = FormatString("%u bytes", RHSBytecount) ]
+			Blob(RHSBytecount) Floor4Port;
+	}
+}
+
+//****************************************************************************
+// floor 5: Host address
+// ncacn_ip_tcp, ncadg_ip_udp, ncacn_dnet_nsp, ncacn_ipx, ncacn_spx
+//****************************************************************************
+Struct EPMEpAddrFloor5 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  HostAddressId = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+		// Last floor
+	Post.EPMTowerSummary = FormatString("%s, %s",
+	EPMTowerSummary,
+	EPMAddrProp),
+	Post.EPMFloorSummary = FormatString("address: %s, type: %s",
+	EPMFloorProp,
+	EPMProtIdTable(HostAddressId,EPMFloorCount))
+	]
+	Switch
+	{
+		Case HostAddressId == 0x09: // DOD IP v4 big-endian
+		[
+		Post.EPMAddrProp = FormatString("%s:%s",
+		Ip4addr.ToString,
+		EPMPortProp),
+		Post.EPMFloorProp = Ip4addr.ToString,
+		DataFieldByteOrder = BigEndian
+		]
+		IPv4Address Ip4addr;
+		Case HostAddressId == 0x13: // Netware SPX
+		[
+		Post.EPMAddrProp = FormatString("%s:%s",
+		SpxAddr.ToString,
+		EPMPortProp),
+		Post.EPMFloorProp = SpxAddr.ToString
+		]
+		EPMIpxSpxAddress SpxAddr;
+		Case HostAddressId == 0x14: // Netware IPX
+		[
+		Post.EPMAddrProp = FormatString("%s:%s",
+		IpxAddr.ToString,
+		EPMPortProp),
+		Post.EPMFloorProp = IpxAddr.ToString
+		]
+		EPMIpxSpxAddress IpxAddr;
+		Case EPMKnownProtIdTable(HostAddressId) == 0
+		&& RHSBytecount == 16:
+
+		_struct
+		{
+			[
+			Post.EPMAddrProp = FormatString("%s:%s",
+			Ip6addr.ToString,
+			EPMPortProp),
+			Post.EPMFloorProp = Ip6addr.ToString,
+			DataFieldByteOrder = BigEndian
+			]
+			IPv6Address Ip6addr;
+		};
+		Default:
+		_struct
+		{
+			[
+			Post.EPMAddrProp = FormatString("%u bytes (port: %s)",
+			RHSBytecount,
+			EPMPortProp),
+			Post.EPMFloorProp = FormatString(", address: %u bytes", RHSBytecount)
+			]
+			Blob(RHSBytecount) HostAddress;
+		}
+	}
+}
+
+//****************************************************************************
+// floor 4: Pipe name (ncacn_np)
+//****************************************************************************
+Struct EPMEpPipeFloor4 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  PipeIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+		// last floor if (EPMFloorCount == 4)
+	EPMPortProp = PipeName.ToString,
+	Post.EPMTowerSummary = (EPMFloorCount == 4)
+	? FormatString("%s, %s",
+	EPMTowerSummary,
+	EPMPortProp)
+	: EPMTowerSummary,
+	Post.EPMFloorSummary = FormatString("pipe: %s, type: %s",
+	EPMPortProp,
+	EPMProtIdTable(PipeIdentifier,EPMFloorCount))
+	]
+	AsciiString(RHSBytecount) PipeName;
+}
+
+//****************************************************************************
+//#? TODO: VERIFY
+// floor 4: Host name (MUST BE LAST FLOOR)
+//****************************************************************************
+Struct EPMEpHostFloor4 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  HostNameIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+	Post.EPMTowerSummary = FormatString("%s, %s",
+	EPMTowerSummary,
+	EPMFloorProp),
+	Post.EPMFloorSummary = FormatString("host: %s, type: %s",
+	EPMFloorProp,
+	EPMProtIdTable(HostNameIdentifier,EPMFloorCount))
+	]
+	Switch ( HostNameIdentifier )
+	{
+		Case 0x18: // Appletalk [NBP-style Name]
+		Case 0x1c: // StreetTalk [name]
+		_struct
+		{
+			[ Post.EPMFloorProp = HostName.ToString ]
+			AsciiString(RHSBytecount) HostName;
+		};
+		Default:
+		_struct
+		{
+			[ Post.EPMFloorProp = FormatString(" (%u bytes)", RHSBytecount) ]
+			Blob(RHSBytecount) HostName;
+		}
+	}
+}
+
+//****************************************************************************
+// floor 5: Host name
+//****************************************************************************
+Struct EPMEpHostFloor5 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  HostNameIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+		// Last floor
+	Post.EPMFloorSummary = FormatString("host: %s, type: %s",
+	HostName.ToString,
+	EPMProtIdTable(HostNameIdentifier,EPMFloorCount)),
+	Post.EPMTowerSummary = FormatString("%s, %s%s",
+	EPMTowerSummary,
+	HostName.ToString,
+	EPMPortProp),
+	]
+	AsciiString(RHSBytecount) HostName;
+}
+
+//#
+//# Xp Source: search: sockaddr_dn (dn.h, decnet.c)
+//#
+//# #define DN_MAXNAMEL	16            /* max size of object name */
+//# char	sdn_objname[DN_MAXNAMEL]; /* object name */
+//#
+//****************************************************************************
+// DECNet floor 4: DECNet session control
+//****************************************************************************
+Struct EPMDECNetFloor4 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  SessionIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+	EPMTowerSummary = FormatString("%s, %s: %s",
+	EPMTowerSummary,
+	EPMProtIdSummaryTable(SessionIdentifier,EPMFloorCount),
+	EPMFloorProp),
+	Post.EPMFloorSummary = FormatString("%s: %s",
+	EPMProtIdTable(SessionIdentifier,EPMFloorCount),
+	EPMFloorProp)
+	]
+	Switch ( SessionIdentifier )
+	{
+		Case 0x02: // DNA Session Control (DNA_PHASE_4)
+		[ Post.EPMFloorProp = DNAPhase4SdnObjname.ToString ]
+		AsciiString(RHSBytecount) DNAPhase4SdnObjname;
+		Case 0x03: // DNA Session Control V3 (DNA_PHASE_5)
+		[ Post.EPMFloorProp = DNAPhase5SdnObjname.ToString ]
+		AsciiString(RHSBytecount) DNAPhase5SdnObjname;
+		Default:
+		_struct
+		{
+			[ Post.EPMFloorProp = DNAUnknownSdnObjname.ToString ]
+			AsciiString(RHSBytecount) DNAUnknownSdnObjname;
+		}
+	}
+}
+
+//#
+//# Xp Source: search: sockaddr_dn (dn.h, decnet.c)
+//#
+Struct EPMNspFlags = Property.EPMSdnFlagsProp
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		Case LittleEndian:
+		Struct
+		{
+			UINT8 Wild:1 = FormatString("    (%s) %s a wild card object.",
+			this.ToBitString, this ? "Is"  : "Is not" );
+			UINT8 Proxy:1 = FormatString("   (%s) Address %s eligible for proxy.",
+			this.ToBitString, this ? "is"  : "is not" );
+			UINT8 UicProxy:1 = FormatString("(%s) %s uic-based proxy.",
+			this.ToBitString, this ? "Use" : "Do not use" );
+			UINT8 Access:1 = FormatString("  (%s) %s access control.",
+			this.ToBitString, this ? "Got" : "No" );
+			[
+			EPMSdnFlagsProp = "("
+			+  Wild     ? "Wild"       : "Not Wild"
+			+ Proxy    ? ", Proxy"    : ", No Proxy"
+			+ UicProxy ? ", UicProxy" : ", No UicProxy"
+			+ Access   ? ", Access)"  : ", No Access)"
+			]
+			UINT8 Unused:4 = FormatString("  (%s) Bit 4-8.",  this.ToBitString );
+		}
+		Default:
+		Struct
+		{
+			UINT8 Unused:4 = FormatString("  (%s) Bit 4-8.",  this.ToBitString );
+			UINT8 Access:1 = FormatString("  (%s) %s access control.",
+			this.ToBitString, this ? "Got" : "No" );
+			UINT8 UicProxy:1 = FormatString("(%s) %s uic-based proxy.",
+			this.ToBitString, this ? "Use" : "Do not use" );
+			UINT8 Proxy:1 = FormatString("   (%s) Address %s eligible for proxy.",
+			this.ToBitString, this ? "is"  : "is not" );
+			[
+			EPMSdnFlagsProp = "("
+			+ Wild     ? "Wild"       : "Not Wild"
+			+ Proxy    ? ", Proxy"    : ", No Proxy"
+			+ UicProxy ? ", UicProxy" : ", No UicProxy"
+			+ Access   ? ", Access)"  : ", No Access)"
+			]
+			UINT8 Wild:1     = FormatString("(%s) %s a wild card object.",
+			this.ToBitString, this ? "Is"  : "Is not" );
+		}
+	}
+}
+
+//#? BUGBUG: This appears correct, but are there 2-octet port numbers?
+//#
+//# Xp Source: search: sockaddr_dn (dn.h, decnet.c)
+//#
+//# #define SDF_WILD       1 /* wild card object */
+//# #define SDF_PROXY      2 /* address eligible for proxy */
+//# #define SDF_UICPROXY   4 /* use uic-based proxy */
+//# #define SDF_ACCESS     8 /* if set, got access control */
+//# unsigned char sdn_flags; /* flags */
+//#
+//****************************************************************************
+// DECNet floor 5: Transport - Network Services Protocol
+//****************************************************************************
+Struct EPMDECNetFloor5 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  TransportIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+	EPMTowerSummary = FormatString("%s, %s: %s",
+	EPMTowerSummary,
+	EPMProtIdSummaryTable(TransportIdentifier,EPMFloorCount),
+	EPMFloorProp),
+	Post.EPMFloorSummary = FormatString("%s: %s",
+	EPMProtIdTable(TransportIdentifier,EPMFloorCount),
+	EPMFloorProp)
+	]
+	Switch
+	{
+		Case 0x04 && RHSBytecount == 1: // DNA NSP Transport (ncacn_dnet_nsp)
+		[ Post.EPMFloorProp = SdnFlags.ToString ]
+		EPMNspFlags SdnFlags;
+		Default:
+		_struct
+		{
+			[ Post.EPMFloorProp = FormatString("%u bytes", RHSBytecount) ]
+			UINT8 DNAUnknownTransport[RHSBytecount];
+		}
+	}
+}
+
+//#
+//# Xp Source: search: sockaddr_dn (dn.h, decnet.c)
+//#
+//# Format: area.node. For example, 50.4 is node 4 in area 50.
+//# All addresses are in decimal. 
+//# Area 1-63, Node 1-1023
+//#
+//# #define DN_MAXADDL  2             /* max size of DECnet address */
+//# unsigned char a_addr[DN_MAXADDL]; /* address as bytes */
+//#
+//****************************************************************************
+// DecNet floor 6: DecNet routing - Network Service Access Point (NSAP)
+//****************************************************************************
+Struct EPMDECNetFloor6 = Property.EPMFloorSummary
+{
+	UINT16 LHSBytecount;
+	UINT8  RoutingIdentifier = FormatString("%s: %u (0x%X)",
+	EPMProtIdTable(this,EPMFloorCount), this, this );
+	UINT16 RHSBytecount;
+	[
+		// Last floor, Post.EPMTowerSummary
+	Post.EPMTowerSummary = FormatString("%s, %s: %s",
+	EPMTowerSummary,
+	EPMProtIdSummaryTable(RoutingIdentifier,EPMFloorCount),
+	EPMFloorProp),
+	Post.EPMFloorSummary = FormatString("%s: %s",
+	EPMProtIdTable(RoutingIdentifier,EPMFloorCount),
+	EPMFloorProp)
+	]
+	//#
+	//# octets aaaaaann nnnnnnnn
+	//# where: aaaaaa      = area
+	//#        nn nnnnnnnn = node
+	//#  area:  ((octet0 >> 0x02) &  0x3f)
+	//#  node: (((octet0  & 0x03) << 0x08) + octet1)
+	//#
+	[ Post.EPMFloorProp = NetworkServiceAccessPoint.ToString ]
+	UINT8 NetworkServiceAccessPoint[RHSBytecount] = FormatString("%u:%u",
+	((UINT8(FrameData,Offset) >> 0x02) &  0x3f),
+	(((UINT8(FrameData,Offset)  & 0x03) << 0x08)
+	+ UINT8(FrameData,Offset+1)));
+}
+
+//****************************************************************************
+// tower_octet_string
+//
+// X/Open CAE Specification
+// Appendix L : Protocol Tower Encoding
+//              page 621
+//
+// +-------------+---------+---------+---------+---------+---------+
+// | floor count | floor 1 | floor 2 | floor 3 | ...     | floor n |
+// +-------------+---------+---------+---------+---------+---------+
+//****************************************************************************
+Struct EPMTowerOctetString = Property.EPMTowerSummary
+{
+	[ EPMFloorCount ]
+	UINT16             FloorCount;
+	Switch
+	{
+		Case EPMFloorCount > 2:
+		_struct
+		{
+			[ EPMFloor = 4 ]
+			EPMDceRpcFloor1 InterfaceIdentifier;
+			EPMDceRpcFloor2 DataRepresentation;
+			EPMDceRpcFloor3 ProtocolIdentifier;
+		}
+	}
+	Switch ( EPMFloorCount )
+	{
+		Case 4:
+		_struct
+		{
+			[ EPMFloor = 4 ]
+			Switch ( UINT8(FrameData,Offset+2) )
+			{
+//#? TODO: VERIFY
+				Case 0x0f: //#? NetBIOS Named Pipes
+				Case 0x10: // MS Named Pipe Name
+				Case 0x0c: // ncalrpc : local interprocess communication
+				EPMEpPipeFloor4 PipeName;
+//#? TODO: VERIFY - StreetTalk? AppleDSP?
+				Default:   EPMEpHostFloor4 HostName;
+			}
+		};
+		Case 5:
+		_struct
+		{
+			[ EPMFloor = 5 ]
+			Switch ( UINT8(FrameData,Offset+2) )
+			{
+				Case 0x0c: // MS Named Pipes
+				Case 0x0f: // NetBIOS Named Pipes
+				Case 0x10: // MS Named Pipe Name
+				EPMEpPipeFloor4 PipeName;
+				Default:
+				EPMEpPortFloor4 PortAddr;
+			}
+			Switch ( UINT8(FrameData,Offset+2) )
+			{
+				Case 0x11: // MS NetBIOS
+				Case 0x12: // MS NetBEUI
+				Case 0x22: // NetBIOS Name
+				EPMEpHostFloor5 HostName;
+				Default:
+				EPMEpAddrFloor5 HostAddr;
+			}
+		};
+		Case 6:
+		_struct
+		{
+			[ EPMFloor = 6 ]
+			EPMDECNetFloor4 DECNetSessionCtrl;
+			EPMDECNetFloor5 DECNetNSPTransport;
+			EPMDECNetFloor6 DECNetNSAPRouting;
+		}
+	}
+	Switch
+	{
+		Case EPMFloor < EPMFloorCount && Offset < EPMEndOffset:
+		_struct
+		{
+			BLOB(EPMEndOffset - Offset) UnhandledData;
+			ReportParserError(ParserErrorProtocolClassWindows, "EPM", "corrupt or undefined tower format" ) ProtocolError;
+		}
+	}
+}
+
+//****************************************************************************
+// twr_t
+//
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.1 Basic Data Type Declarations
+//              page 625
+//
+//    typedef struct {
+//        unsigned32          tower_length;
+//        [size_is(tower_length)]
+//        byte                tower_octet_string[];
+//    } twr_t, *twr_p_t;
+//****************************************************************************
+Struct EPMTwrT = Property.EPMTowerSummary
+{
+	NdrConformant Length;
+	UINT32   TowerLength;
+	[
+	EPMEndOffset = Offset + TowerLength,
+	EPMFloor = 0,
+	]
+	EPMTowerOctetString Floors;
+}
+
+//****************************************************************************
+// twr_p_t
+//
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.1 Basic Data Type Declarations
+//              page 625
+//****************************************************************************
+Struct EPMTwrPT(InstanceTower) = TwrTPointer.ToString
+{
+	[ EPMPointeeExists = (TwrTPointer.ReferentID > 0) ? TRUE : FALSE ]
+	NdrPtr TwrTPointer;
+	Switch
+	{
+		Case InstanceTower != FALSE && EPMPointeeExists != FALSE:
+		EPMTwrT Tower;
+	}
+}
+
+Struct EPMTwrPTArray = FormatString( "%d Elements", ArrayInfo.ActualCount )
+{
+	[ EPMNumArrayEntries = ArrayInfo.ActualCount ]
+	NdrConformantVarying ArrayInfo;
+	NdrPtr TwrPtr[ ArrayInfo.ActualCount ];
+	[local.count = 0]
+	[MaxLoopCount = ArrayInfo.ActualCount]
+	while [local.count < ArrayInfo.ActualCount]
+	{
+		[post.local.count = local.count + 1]
+		switch
+		{
+			case TwrPtr[local.count].ReferentId > 0:
+			EPMTwrT Tower;
+		}
+	}
+}
+
+//****************************************************************************
+// CharString
+//
+// for conformant AsciiString[sized] parameters
+//****************************************************************************
+Struct EPMCharString = Length.ActualCount > 0 ? StringValue.ToString : "<Empty>"
+{
+	NdrVarying Length;
+	Switch
+	{
+		Case Length.ActualCount > 0:
+		AsciiString(Length.ActualCount) StringValue;
+	}
+}
+
+//****************************************************************************
+// ept_entry_t
+//
+// X/Open CAE Specification
+// Appendix O : Endpoint Mapper Interface Definition
+//              N.1 Basic Data Type Declarations
+//              page 631
+//
+// const long ept_max_annotation_size = 64;
+// typedef struct
+// {
+//              uuid_t  object;
+//              twr_p_t tower;
+//     [string] char    annotation[ept_max_annotation_size];
+// } ept_entry_t, *ept_entry_p_t;
+//
+//****************************************************************************
+
+//
+//	http://www.opengroup.org/onlinepubs/009629399/apdxo.htm ept_entry_t
+//	Alignment:NdrAlign
+//
+Struct EPMEptEntryT = Property.EPMSummary
+{
+	MSRPCUuidT      Object;
+	EPMTwrPT(FALSE) TwrP;
+	[
+	Post.EPMSummary = FormatString("%s",(annotation.ToString == "")	? Property.EPMTowerSummary
+	: annotation.ToString + ": " + Property.EPMTowerSummary)
+	]
+	EPMCharString   Annotation;
+}
+
+Struct EPMEptEntryTArray = FormatString("%u", ArrayInfo.ActualCount )
+{
+	NdrConformantVarying ArrayInfo;
+	[ EPMNumArrayEntries = ArrayInfo.ActualCount ]
+	While condition[ EPMNumArrayEntries > 0 ]
+	{
+		NdrAlign Pad;
+		[ EPMNumArrayEntries = EPMNumArrayEntries - 1 ]
+		[post.property.EptEntryTReferent$[EPMNumArrayEntries+1] = EPMPointeeExists]
+		EPMEptEntryT Entry;
+	}
+	[ EPMNumArrayEntries = ArrayInfo.ActualCount ]
+	[ MaxLoopCount = EPMNumArrayEntries ]
+	While condition[ EPMNumArrayEntries > 0 ]
+	{
+		[ EPMNumArrayEntries = EPMNumArrayEntries - 1 ]
+		switch
+		{
+			case property.EptEntryTReferent$[EPMNumArrayEntries+1]:
+				EPMTwrT       Tower;
+		}
+	}
+}
+
+//****************************************************************************
+// EPM_error_status_t
+// module specific modification of:
+//
+// error_status_t
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.1 Basic Data Type Declarations
+//              page 625
+// typedef unsigned long error_status_t;
+// const long error_status_ok = 0;
+//****************************************************************************
+Struct EPMErrorStatusT = EPMDceCommStatusTable(status)
+{
+	[
+	Post.EPMSummary = (status != 0 || (EPMSummary == ""))
+	? status.ToString
+	: EPMSummary
+	]
+	UINT32 status = EPMDceCommStatusTable(this);
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+// DCE Error Codes
+//////////////////////////////////////////////////////////////////////////////
+
+//****************************************************************************
+// X/Open CAE Specification
+// Appendix N : IDL Data Type Declarations
+//              N.2 Status Codes
+//              pp. 627-628
+//****************************************************************************
+//    http://www.opengroup.org/tech/rfc/rfc81.3.html
+//    DCE ASSIGNED VALUES
+//
+// Note: items commented out are in MSRPCRejectStatusCodes
+//
+//****************************************************************************
+Table EPMDceStatusCodeTable( value )
+{
+	Switch ( value )
+	{
+		// X/Open CAE Specification
+		Case 0x00000000: FormatString( "0x%08X - error_status_ok", value);
+		Case 0x1c000001: FormatString( "0x%08X - nca_s_fault_int_div_by_zero", value);
+		Case 0x1c000002: FormatString( "0x%08X - nca_s_fault_addr_error", value);
+		Case 0x1c000003: FormatString( "0x%08X - nca_s_fault_fp_div_zero", value);
+		Case 0x1c000004: FormatString( "0x%08X - nca_s_fault_fp_underflow", value);
+		Case 0x1c000005: FormatString( "0x%08X - nca_s_fault_fp_overflow", value);
+		Case 0x1c000006: FormatString( "0x%08X - nca_s_fault_invalid_tag", value);
+		Case 0x1c000007: FormatString( "0x%08X - nca_s_fault_invalid_bound", value);
+		//Case 0x1c000008: FormatString( "0x%08X - nca_s_rpc_version_mismatch", value);
+		//Case 0x1c000009: FormatString( "0x%08X - nca_s_unspec_reject: call rejected, but no more detail", value);
+		//Case 0x1c00000a: FormatString( "0x%08X - nca_s_bad_actid", value);
+		//Case 0x1c00000b: FormatString( "0x%08X - nca_s_who_are_you_failed", value);
+		//Case 0x1c00000c: FormatString( "0x%08X - nca_s_manager_not_entered", value);
+		Case 0x1c00000d: FormatString( "0x%08X - nca_s_fault_cancel", value);
+		Case 0x1c00000e: FormatString( "0x%08X - nca_s_fault_ill_inst", value);
+		Case 0x1c00000f: FormatString( "0x%08X - nca_s_fault_fp_error", value);
+		Case 0x1c000010: FormatString( "0x%08X - nca_s_fault_int_overflow", value);
+		Case 0x1c000011: FormatString( "0x%08X - unused", value);
+		Case 0x1c000012: FormatString( "0x%08X - nca_s_fault_unspec", value);
+		Case 0x1c000013: FormatString( "0x%08X - nca_s_fault_remote_comm_failure", value);
+		Case 0x1c000014: FormatString( "0x%08X - nca_s_fault_pipe_empty", value);
+		Case 0x1c000015: FormatString( "0x%08X - nca_s_fault_pipe_closed", value);
+		Case 0x1c000016: FormatString( "0x%08X - nca_s_fault_pipe_order", value);
+		Case 0x1c000017: FormatString( "0x%08X - nca_s_fault_pipe_discipline", value);
+		Case 0x1c000018: FormatString( "0x%08X - nca_s_fault_pipe_comm_error", value);
+		Case 0x1c000019: FormatString( "0x%08X - nca_s_fault_pipe_memory", value);
+		Case 0x1c00001a: FormatString( "0x%08X - nca_s_fault_context_mismatch", value);
+		Case 0x1c00001b: FormatString( "0x%08X - nca_s_fault_remote_no_memory", value);
+		Case 0x1c00001c: FormatString( "0x%08X - nca_s_invalid_pres_context_id", value);
+		Case 0x1c00001d: FormatString( "0x%08X - nca_s_unsupported_authn_level", value);
+		//Case 0x1c00001f: FormatString( "0x%08X - nca_s_invalid_checksum", value);
+		//Case 0x1c000020: FormatString( "0x%08X - nca_s_invalid_crc", value);
+		Case 0x1c000021: FormatString( "0x%08X - ncs_s_fault_user_defined", value);
+		Case 0x1c000022: FormatString( "0x%08X - nca_s_fault_tx_open_failed", value);
+		Case 0x1c000023: FormatString( "0x%08X - nca_s_fault_codeset_conv_error", value); 
+		Case 0x1c000024: FormatString( "0x%08X - nca_s_fault_object_not_found", value);
+		Case 0x1c000025: FormatString( "0x%08X - nca_s_fault_no_client_stub", value);
+		Case 0x1c010001: FormatString( "0x%08X - nca_s_comm_failure: unable to get response from server", value);
+		//Case 0x1c010002: FormatString( "0x%08X - nca_s_op_rng_error: bad operation number in call", value);
+		//Case 0x1c010003: FormatString( "0x%08X - nca_s_unk_if: unknown interface", value);
+		//Case 0x1c010006: FormatString( "0x%08X - nca_s_wrong_boot_time: client passed server wrong server boot time", value);
+		//Case 0x1c010009: FormatString( "0x%08X - nca_s_you_crashed: a restarted server called back a client", value);
+		//Case 0x1c01000b: FormatString( "0x%08X - nca_s_proto_error: someone messed up the protocol", value);
+		//Case 0x1c010013: FormatString( "0x%08X - nca_s_out_args_too_big: output args too big", value);
+		//Case 0x1c010014: FormatString( "0x%08X - nca_s_server_too_busy: server is too busy to handle call", value);
+		Case 0x1c010015: FormatString( "0x%08X - nca_s_fault_string_too_long: string argument longer than declared max len", value);
+		//Case 0x1c010017: FormatString( "0x%08X - nca_s_unsupported_type: no implementation of generic operation for object", value);
+		Default: MSRPCRejectStatusCodes( value);
+	}
+}
+
+//****************************************************************************
+// X/Open CAE Specification
+// Appendix E : Reject Status Codes and Parameters
+//              E.2.2  fault_status Parameter
+//              p. 604
+//****************************************************************************
+Table EPMDceFaultStatusTable( value )
+{
+	Switch ( value )
+	{
+		Case 0x00000000: FormatString("0x%08X - error_status_ok", value);
+		Case 0x16c9a031: FormatString("0x%08X - rpc_s_call_cancelled", value);
+		Case 0x16c9a074: FormatString("0x%08X - rpc_s_fault_addr_error", value);
+		Case 0x16c9a075: FormatString("0x%08X - rpc_s_fault_context_mismatch", value);
+		Case 0x16c9a076: FormatString("0x%08X - rpc_s_fault_fp_div_by_zero", value);
+		Case 0x16c9a077: FormatString("0x%08X - rpc_s_fault_fp_error", value);
+		Case 0x16c9a078: FormatString("0x%08X - rpc_s_fault_fp_overflow", value);
+		Case 0x16c9a079: FormatString("0x%08X - rpc_s_fault_fp_underflow", value);
+		Case 0x16c9a07a: FormatString("0x%08X - rpc_s_fault_ill_inst", value);
+		Case 0x16c9a07b: FormatString("0x%08X - rpc_s_fault_int_div_by_zero", value);
+		Case 0x16c9a07c: FormatString("0x%08X - rpc_s_fault_int_overflow", value);
+		Case 0x16c9a07d: FormatString("0x%08X - rpc_s_fault_invalid_bound", value);
+		Case 0x16c9a07e: FormatString("0x%08X - rpc_s_fault_invalid_tag", value);
+		Case 0x16c9a07f: FormatString("0x%08X - rpc_s_fault_pipe_closed", value);
+		Case 0x16c9a080: FormatString("0x%08X - rpc_s_fault_pipe_comm_error", value);
+		Case 0x16c9a081: FormatString("0x%08X - rpc_s_fault_pipe_discipline", value);
+		Case 0x16c9a082: FormatString("0x%08X - rpc_s_fault_pipe_empty", value);
+		Case 0x16c9a083: FormatString("0x%08X - rpc_s_fault_pipe_memory", value);
+		Case 0x16c9a084: FormatString("0x%08X - rpc_s_fault_pipe_order", value);
+		Case 0x16c9a086: FormatString("0x%08X - rpc_s_fault_remote_no_memory", value);
+		Case 0x16c9a087: FormatString("0x%08X - rpc_s_fault_unspec", value);
+		Default:         EPMDceStatusCodeTable( value);
+	}
+}
+
+//****************************************************************************
+// X/Open CAE Specification
+// Appendix E : Reject Status Codes and Parameters
+//              E.2.1  comm_status Parameter
+//              p. 603
+//****************************************************************************
+Table EPMDceCommStatusTable( value )
+{
+	Switch ( value )
+	{
+//#?**************************************************************************
+//#? From Microsoft idl files
+//#?**************************************************************************
+		Case 0x00000000: FormatString("0x%08X - EP_S_SUCCESS", value);
+		Case 0x16c9a0cd: FormatString("0x%08X - EP_S_CANT_PERFORM_OP", value);
+		Case 0x16c9a0cf: FormatString("0x%08X - EP_S_DATABASE_INVALID", value);
+		Case 0x16c9a0d0: FormatString("0x%08X - EP_S_CANT_CREATE", value);
+		Case 0x16c9a0d1: FormatString("0x%08X - EP_S_CANT_ACCESS", value);
+		Case 0x16c9a0d3: FormatString("0x%08X - EP_S_BAD_ENTRY", value);
+		Case 0x16c9a0d4: FormatString("0x%08X - EP_S_UPDATA_FAILED", value);
+		Case 0x16c9a0d6: FormatString("0x%08X - EP_S_NOT_REGISTERED", value);
+		Case 0x16c9a0d7: FormatString("0x%08X - EP_S_SERVER_UNAVAILABLE", value);
+//#?**************************************************************************
+//#? From X/Open CAE Specification
+//#?**************************************************************************
+		Case 0x16c9a001: FormatString("0x%08X - rpc_s_op_rng_error", value);
+		Case 0x16c9a006: FormatString("0x%08X - rpc_s_wrong_boot_time", value);
+		Case 0x16c9a012: FormatString("0x%08X - rpc_s_no_memory", value);
+		Case 0x16c9a016: FormatString("0x%08X - rpc_s_comm_failure", value);
+		Case 0x16c9a02c: FormatString("0x%08X - rpc_s_unknown_if", value);
+		Case 0x16c9a02d: FormatString("0x%08X - rpc_s_unsupported_type", value);
+		Case 0x16c9a030: FormatString("0x%08X - rpc_s_cancel_timeout", value);
+		Case 0x16c9a036: FormatString("0x%08X - rpc_s_connection_closed", value);
+		Case 0x16c9a041: FormatString("0x%08X - rpc_s_connect_timed_out", value);
+		Case 0x16c9a042: FormatString("0x%08X - rpc_s_connect_rejected", value);
+		Case 0x16c9a043: FormatString("0x%08X - rpc_s_network_unreachable", value);
+		Case 0x16c9a044: FormatString("0x%08X - rpc_s_connect_no_resources", value);
+		Case 0x16c9a045: FormatString("0x%08X - rpc_s_rem_network_shutdown", value);
+		Case 0x16c9a046: FormatString("0x%08X - rpc_s_too_many_rem_connects", value);
+		Case 0x16c9a047: FormatString("0x%08X - rpc_s_no_rem_endpoint", value);
+		Case 0x16c9a048: FormatString("0x%08X - rpc_s_rem_host_down", value);
+		Case 0x16c9a049: FormatString("0x%08X - rpc_s_host_unreachable", value);
+		Case 0x16c9a04a: FormatString("0x%08X - rpc_s_access_control_info_inv", value);
+		Case 0x16c9a04b: FormatString("0x%08X - rpc_s_loc_connect_aborted", value);
+		Case 0x16c9a04c: FormatString("0x%08X - rpc_s_connect_closed_by_rem", value);
+		Case 0x16c9a04d: FormatString("0x%08X - rpc_s_rem_host_crashed", value);
+		Case 0x16c9a085: FormatString("0x%08X - rpc_s_fault_remote_comm_failure", value);
+		Case 0x16c9a0a8: FormatString("0x%08X - rpc_s_no_ns_permission", value);
+		Case 0x16c9a0b5: FormatString("0x%08X - rpc_s_no_more_bindings", value);
+		Default:         EPMDceFaultStatusTable( value);
+	}
+}

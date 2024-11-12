@@ -1,0 +1,1156 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Group Management Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 988, 1075, 1112, 2236, 3376
+//#                          http://www.iana.org/assignments/igmp-type-numbers
+//#                          draft-ietf-idmr-dvmrp-v3-11, IGMPType 0x13
+//#                          draft-ietf-idmr-pim-spec-01, IGMPType 0x14
+//#                          draft-ietf-idmr-traceroute-ipm-07, IGMPType 0x1E~0x1F
+//#                          draft-ietf-idmr-msnip-00, IGMPType 0x23~0x25
+//#                          draft-ietf-magma-mrdisc-07, IGMPType 0x30~0x31
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol IGMP = FormatString("%s",IGMPTypeTable(Type))
+{
+	[IGMPType]
+	UINT8 Type = FormatString("%s, %d(0x%X)", IGMPTypeTable(this), this, this);
+	switch
+	{
+		case Property.IGMPType == 0x01 :
+			IGMPCreateGroupRequest CreateGroupRequest;
+
+		case Property.IGMPType == 0x03 ||
+			 Property.IGMPType == 0x05 ||
+			 Property.IGMPType == 0x07 :
+			 	IGMPV0Request V0Request;
+
+		case Property.IGMPType == 0x02 ||
+			 Property.IGMPType == 0x04 ||
+			 Property.IGMPType == 0x06 ||
+			 Property.IGMPType == 0x08 :
+			 	IGMPV0Reply V0Reply;
+
+		case Property.IGMPType == 0x11 &&
+			 frameLength - ProtocolOffset >= 12 :
+				IGMPV3MembershipQuery V3MembershipQuery;
+
+		case Property.IGMPType == 0x11 &&
+			 frameLength - ProtocolOffset == 8 &&
+			 !(UINT8( Framedata, Offset ) == 0 )||
+			 Property.IGMPType == 0x15 ||
+			 Property.IGMPType == 0x16 ||
+			 Property.IGMPType == 0x17 :
+			 	IGMPV2Header Igmpv2;
+
+		case Property.IGMPType == 0x11 &&
+			 frameLength - ProtocolOffset == 8 &&
+			 UINT8( Framedata, Offset ) == 0 ||
+			 Property.IGMPType == 0x12 :
+			 	IGMPV1Header Igmpv1;
+
+		case Property.IGMPType == 0x13 &&
+			 UINT8( Framedata, Offset + 5 ) == 0xFF &&
+			 UINT8( Framedata, Offset + 6 ) == 0x03:
+			 	IGMPDVMRPV3 DVMRPV3;
+		case Property.IGMPType == 0x13 :
+			IGMPDVMRPV1 DVMRPV1;
+		case Property.IGMPType == 0x14 :
+			IGMPPIMV1 PIMV1;
+		case Property.IGMPType == 0x1E ||
+			 Property.IGMPType == 0x1F :
+			 	IGMPMTraceroute Traceroute;
+		case Property.IGMPType == 0x22 :
+			IGMPMembershipReport MembershipReport;
+		case Property.IGMPType == 0x23 :
+			IGMPGroupMap GroupMap;
+		case Property.IGMPType == 0x24 :
+			IGMPInterestSolicitation InterestSolicitation;
+		case Property.IGMPType == 0x25 :
+			IGMPReceiverMembershipReport ReceiverMembershipReport;
+		case Property.IGMPType == 0x30 :
+			IGMPMulticastRouterAdvertisement MulticastRouterAdvertisement;
+		case Property.IGMPType == 0x31 :
+			IGMPMulticastRouterSolicitation MulticastRouterSolicitation;
+		case Property.IGMPType == 0x32 :
+			IGMPMulticastRouterTermination MulticastRouterTermination;
+		case Property.IGMPType == 0x40 ||
+			 Property.IGMPType == 0x41 ||
+			 Property.IGMPType == 0x42 :
+			 	IGMPIGAP IGAP;
+		default :
+			AsciiString(FrameLength - offset) IGMPData;
+	}
+}
+Table IGMPRecordTypeTable( type )
+{
+	switch(type)
+	{
+		case 1: FormatString("%s, %d(0x%X)","MODE_IS_INCLUDE",type,type);
+		case 2: FormatString("%s, %d(0x%X)","MODE_IS_EXCLUDE",type,type);
+		case 3: FormatString("%s, %d(0x%X)","CHANGE_TO_INCLUDE_MODE",type,type);
+		case 4: FormatString("%s, %d(0x%X)","CHANGE_TO_EXCLUDE_MODE",type,type);
+		case 5: FormatString("%s, %d(0x%X)","ALLOW_NEW_SOURCES",type,type);
+		case 6: FormatString("%s, %d(0x%X)","BLOCK_OLD_SOURCES",type,type);
+		default: FormatString("Undefined type %d(0x%X)",type,type);
+	}
+}
+
+//http://www.iana.org/assignments/igmp-type-numbers
+//draft-ietf-idmr-msnip-00.txt, type 0x23~0x25
+Table IGMPTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x01:  "Create Group Request (Obsoleted)";
+		case 0x02:  "Create Group Reply (Obsoleted)";
+		case 0x03:  "Join Group Request (Obsoleted)";
+		case 0x04:  "Join Group Reply (Obsoleted)";
+		case 0x05:  "Leave Group Request (Obsoleted)";
+		case 0x06:  "Leave Group Reply (Obsoleted)";
+		case 0x07:  "Confirm Group Request (Obsoleted)";
+		case 0x08:  "Confirm Group Reply (Obsoleted)";
+		case 0x11:  "IGMP Membership query";
+		case 0x12:  "IGMPv1 membership report";
+		case 0x13:  "DVMRP";
+		case 0x14:  "PIM version 1";
+		case 0x15:  "Cisco Trace Messages";
+		case 0x16:  "IGMPv2 Membership Report";
+		case 0x17:  "IGMPv2 Leave Group";
+		case 0x1E:  "Multicast Traceroute Response";
+		case 0x1F:  "Multicast Traceroute";
+		case 0x22:  "IGMPv3 Membership Report";
+		case 0x23:  "Multicast Group Map";
+		case 0x24:  "Interest Solicitation";
+		case 0x25:  "Receiver Membership Report";
+		case 0x30:  "Multicast Router Advertisement";
+		case 0x31:  "Multicast Router Solicitation";
+		case 0x32:  "Multicast Router Termination";
+		case 0x40:  "IGAP Membership Report (IGAP Join)";
+		case 0x41:  "IGAP Membership Query";
+		case 0x42:  "IGAP Leave Group";
+		default  :  "Experimental IGMPType";
+	}
+}
+
+Table IGMPV0RequestCodeTable(code)
+{
+	switch(code)
+	{
+		case  0: FormatString("Public Group, %d(0x%X)", code, code);
+		case  1: FormatString("Private Group, %d(0x%X)", code, code);
+		default: FormatString("%d(0x%X)", code, code);
+	}
+}
+
+Table IMGPV0ReplyTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x00: FormatString("%s, %d(0x%X)","Request granted",type,type);
+		case 0x01: FormatString("%s, %d(0x%X)","Request denied,  no resources",type,type);
+		case 0x02: FormatString("%s, %d(0x%X)","Request denied,  invalid code",type,type);
+		case 0x03: FormatString("%s, %d(0x%X)","Request denied,  invalid group address",type,type);
+		case 0x04: FormatString("%s, %d(0x%X)","Request denied,  invalid access key",type,type);
+		default  : FormatString("%s, %d(0x%X)","Request pending, retry in this many seconds",type,type);
+	}
+}
+
+Table IGMPDVMRPCodeTable(type)
+{
+	switch(type)
+	{
+		case 0x1:  FormatString(" %d(0x%X)",type,type);
+		case 0x2:  FormatString(" %d(0x%X)",type,type);
+		case 0x5:  FormatString(" %d(0x%X)",type,type);
+		case 0x6:  FormatString(" %d(0x%X)",type,type);
+		case 0x7:  FormatString(" %d(0x%X)",type,type);
+		case 0x8:  FormatString(" %d(0x%X)",type,type);
+		case 0x9:  FormatString(" %d(0x%X)",type,type);
+		default :  FormatString("Unknown Code %d(0x%X)",type,type);
+	}
+}
+
+Table IGMPDVMRPV1SubtypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","Response",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Request",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","Non-membership report",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","Non-membership cancellation",value,value);
+		default  : FormatString("Unknown Subtype %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPDVMRPV1CommandTable(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("%s, %d(0x%X)","NULL",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Address Family Indicator",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","Subnetmask",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","Metric",value,value);
+		case 0x05: FormatString("%s, %d(0x%X)","Flags0",value,value);
+		case 0x06: FormatString("%s, %d(0x%X)","Infinity",value,value);
+		case 0x07: FormatString("%s, %d(0x%X)","Destination Address",value,value);
+		case 0x08: FormatString("%s, %d(0x%X)","Requested Destination Address",value,value);
+		case 0x09: FormatString("%s, %d(0x%X)","Non Membership Report",value,value);
+		case 0x0A: FormatString("%s, %d(0x%X)","Non Membership Report Cancel",value,value);
+		default  : FormatString("Unknown DVMRPV1Command %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPDVMRPV3CodeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","Probe",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Report",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","Ask Neighbors",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","Neighbors",value,value);
+		case 0x05: FormatString("%s, %d(0x%X)","Ask Neighbors 2",value,value);
+		case 0x06: FormatString("%s, %d(0x%X)","Neighbors 2",value,value);
+		case 0x07: FormatString("%s, %d(0x%X)","Prune",value,value);
+		case 0x08: FormatString("%s, %d(0x%X)","Graft",value,value);
+		case 0x09: FormatString("%s, %d(0x%X)","Graft Ack",value,value);
+		default  : FormatString("Unknown DVMRPV3Code %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPPIMV1CodeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("%s, %d(0x%X)","Router-Query",value,value);
+		case 0x01: FormatString("%s, %d(0x%X)","Register (SM only)",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Register-Stop (SM only)",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","Join/Prune",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","RP-Reachibility (SM only)",value,value);
+		case 0x05: FormatString("%s, %d(0x%X)","Assert",value,value);
+		case 0x06: FormatString("%s, %d(0x%X)","Graft",value,value);
+		case 0x07: FormatString("%s, %d(0x%X)","Graft-ACK",value,value);
+		default  : FormatString("Unknown PIMV1Code %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPPIMV1ModeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("%s, %d(0x%X)","Dense Mode",value,value);
+		case 0x01: FormatString("%s, %d(0x%X)","Sparse Mode",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Sparse-Dense Mode",value,value);
+		default  : FormatString("Unknown PIMV1Mode %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPMulticastTracerouteRtgProtocolTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","DVMRP",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","MOSPF",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","PIM",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","CBT",value,value);
+		case 0x05: FormatString("%s, %d(0x%X)","PIM using special routing table",value,value);
+		case 0x06: FormatString("%s, %d(0x%X)","PIM using a static route",value,value);
+		case 0x07: FormatString("%s, %d(0x%X)","DVMRP using a static route",value,value);
+		case 0x08: FormatString("%s, %d(0x%X)","PIM using MBGP (aka BGP4+) route",value,value);
+		case 0x09: FormatString("%s, %d(0x%X)","CBT using special routing table",value,value);
+		case 0x0A: FormatString("%s, %d(0x%X)","CBT using a static route",value,value);
+		case 0x0B: FormatString("%s, %d(0x%X)","PIM using state created by Assert processing",value,value);
+		default  : FormatString("Unknown MulticastTracerouteRtgProtocol %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPMulticastTracerouteForwardingCodeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: FormatString("%s, %d(0x%X)","NO_ERROR",value,value);
+		case 0x01: FormatString("%s, %d(0x%X)","WRONG_IF",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","PRUNE_SENT",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","PRUNE_RCVD",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","SCOPED",value,value);
+		case 0x05: FormatString("%s, %d(0x%X)","NO_ROUTE",value,value);
+		case 0x06: FormatString("%s, %d(0x%X)","WRONG_LAST_HOP",value,value);
+		case 0x07: FormatString("%s, %d(0x%X)","NOT_FORWARDING",value,value);
+		case 0x08: FormatString("%s, %d(0x%X)","REACHED_RP",value,value);
+		case 0x09: FormatString("%s, %d(0x%X)","RPF_IF",value,value);
+		case 0x0A: FormatString("%s, %d(0x%X)","NO_MULTICAST",value,value);
+		case 0x0B: FormatString("%s, %d(0x%X)","INFO_HIDDEN",value,value);
+		case 0x81: FormatString("%s, %d(0x%X)","NO_SPACE",value,value);
+		case 0x82: FormatString("%s, %d(0x%X)","OLD_ROUTER",value,value);
+		case 0x83: FormatString("%s, %d(0x%X)","ADMIN_PROHIB",value,value);
+		default  : FormatString("Unknown MulticastTracerouteForwardingCode %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPMSNIPRecordTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","TRANSMIT: Request to start transmitting to destination",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","HOLD: Request to stop transmitting to destination ",value,value);
+		default  : FormatString("Unknown RecordType %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPMRDISCOptionTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","Query Interval Advertisement",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","Robustness Variable Advertisement",value,value);
+		default  : FormatString("Unknown OptionType %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPIGAPReportTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x01: FormatString("%s, %d(0x%X)","Basic Join",value,value);
+		case 0x02: FormatString("%s, %d(0x%X)","PAP Join Authentication Request",value,value);
+		case 0x03: FormatString("%s, %d(0x%X)","CHAP Join Challenge Request",value,value);
+		case 0x04: FormatString("%s, %d(0x%X)","CHAP Join Response",value,value);
+		case 0x21: FormatString("%s, %d(0x%X)","Basic Query",value,value);
+		case 0x22: FormatString("%s, %d(0x%X)","User Specific Query",value,value);
+		case 0x23: FormatString("%s, %d(0x%X)","CHAP Challenge",value,value);
+		case 0x24: FormatString("%s, %d(0x%X)","Authentication Message",value,value);
+		case 0x25: FormatString("%s, %d(0x%X)","Accounting Message",value,value);
+		case 0x26: FormatString("%s, %d(0x%X)","Notification Message",value,value);
+		case 0x27: FormatString("%s, %d(0x%X)","Error Message",value,value);
+		case 0x41: FormatString("%s, %d(0x%X)","Basic Leave",value,value);
+		case 0x42: FormatString("%s, %d(0x%X)","PAP Leave Authentication Request",value,value);
+		case 0x43: FormatString("%s, %d(0x%X)","CHAP Leave Challenge Request",value,value);
+		case 0x44: FormatString("%s, %d(0x%X)","CHAP Leave Response",value,value);
+		default  : FormatString("Unknown IGAPRecordType %d(0x%X)",value,value);
+	}
+}
+
+Table IGMPIGAPAuthResultTable(value)
+{
+	switch(Value)
+	{
+		case 0x11: FormatString("%s, %d(0x%X)","Authentication Success",value,value);
+		case 0x21: FormatString("%s, %d(0x%X)","Authentication Reject",value,value);
+		default  : FormatString("%s, %d(0x%X)","vendor specific",value,value);
+	}
+}
+
+Table IGMPIGAPAccountStatusTable(value)
+{
+	switch(value)
+	{
+		case 0x11: FormatString("%s, %d(0x%X)","Accounting Start",value,value);
+		case 0x21: FormatString("%s, %d(0x%X)","Accounting Stop",value,value);
+		default  : FormatString("%s, %d(0x%X)","vendor specific",value,value);
+	}
+}
+
+Table IGMPMaxResqCodeTable(value,mant,exp)
+{
+	switch
+	{
+		case value < 128 : FormatString("Max Resp Time is %d.%d seconds",value/10 ,value%10);
+		case value >= 128: FormatString("Max Resp Time is %d.%d seconds",((mant | 0x10)<<(exp + 3))/10 , ((mant | 0x10)<<(exp + 3))%10);
+	}
+}
+
+struct IGMPCreateGroupRequest
+{
+	UINT8 Code = IGMPV0RequestCodeTable(this);
+	UINT16 CheckSum;
+	UINT32 Identifier;
+	IPv4Address GroupAddress;
+	INT64 AccessKey;
+}
+
+struct IGMPV0Request
+{
+	UINT8 Code;
+	UINT16 CheckSum;
+	UINT32 Identifier;
+	IPv4Address GroupAddress;
+	INT64 AccessKey;
+}
+
+struct IGMPV0Reply
+{
+	UINT8 Reply = IMGPV0ReplyTypeTable(this);
+	UINT16 CheckSum;
+	UINT32 Identifier;
+	IPv4Address GroupAddress;
+	INT64 AccessKey;
+}
+
+//rfc 3376 , page 9
+struct IGMPV3MembershipQuery
+{
+	//UINT8 MaxResqCode = FormatString("Max Resp Time is %d seconds",this < 128 ? this : (this.mant | 0x10)<<(this.exp + 3) )
+	UINT8 MaxResqCode = IGMPMaxResqCodeTable(this,mant,exp)
+	{
+		UINT8 mant:4 = FormatString("(%s) %d", this.ToBitString, this);
+		UINT8 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 Rsv:1 = FormatString(" (%s)", this.ToBitString);
+	};
+	UINT16 CheckSum;
+	IPv4Address GroupAddress;
+	UINT8 Flags
+	{
+		UINT8 Resv:4 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+		UINT8 S:1 = FormatString("   (%s) %s", this.ToBitString,
+										this ? "S: Supress router side processing":"S: Do not supress router side processing");
+		UINT8 QRV:3 = FormatString(" (%s) %s", this.ToBitString, this);
+	};
+	UINT8 QQIC = FormatString("Querier's Query Interval %#x (%d seconds)", this, this < 128 ? this : (this.mant | 0x10)<<(this.exp + 3) )
+	{
+		UINT8 mant:4 = FormatString("(%s) %d", this.ToBitString, this);
+		UINT8 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 Rsv:1 = FormatString(" (%s)", this.ToBitString);
+	};
+	UINT16 NumOfSources;
+	switch
+	{
+		case NumOfSources > 0:
+			struct SourceAddresses
+			{
+				IPv4Address IPAddress[ NumOfSources ];
+			}
+	}
+}
+
+// rfc 3376 , page 14
+struct IGMPGroupRecord
+{
+	UINT8 RecordType = IGMPRecordTypeTable(this);
+	UINT8 AuxDataLen;
+	UINT16 NumOfSources;
+	Ipv4Address MulticastAddress;
+	switch
+	{
+		case NumOfSources > 0:
+			struct SourceAddresses
+			{
+				IPv4Address IPAddress[ NumOfSources ];
+			}
+	}
+	switch
+	{
+		case AuxDataLen: AsciiString(AuxDataLen * 4) AuxData = FormatString("%d bytes",FrameLength - FrameOffset< AuxDataLen * 4 ? FrameLength - FrameOffset: AuxDataLen * 4 );
+	}
+}
+
+// rfc 3376 , page 12
+struct IGMPMembershipReport
+{
+	UINT8 Reserved1;
+	UINT16 CheckSum;
+	UINT16 Reserved2;
+	UINT16 NumOfGroupRecords;
+	switch
+	{
+		case NumOfGroupRecords > 0:
+			struct GroupRecords
+			{
+				IGMPGroupRecord GroupRecord[NumOfGroupRecords];
+			};
+	}
+}
+
+//draft-ietf-idmr-traceroute-ipm-07
+struct IGMPMTraceroute
+{
+	UINT8 MaxNumOfHops;
+	UINT16 CheckSum;
+	IPv4Address GroupAddress;
+	IPv4Address SourceAddress;
+	IPv4Address DestinationAddress;
+	IPv4Address ResponseAddress;
+	UINT8 ResponseTTL;
+	UINT24 QueryID;
+	while opration[ FrameOffset+ 32 <= FrameLength ]
+	{
+		struct ResponseData
+		{
+			UINT32 QueryArrivalTime;
+			IPv4Address IncomingInterfaceAddress;
+			IPv4Address OutgoingInterfaceAddress;
+			IPv4Address PreviousHopRouterAddress;
+			UINT32 InputPacketCountOnIncomingInterface;
+			UINT32 OutputPacketCountOnOutgoingInterface;
+			UINT32 TotalNumberOfPackets;
+			UINT8 RoutingProtocol = IGMPMulticastTracerouteRtgProtocolTable(this);
+			UINT8 ForwardTTL;
+			UINT8 Flags
+			{
+				UINT8 fMustBeZero:1 = FormatString("(%s) %s", this.ToBitString, FormatString("MBZ: %d ",this));
+				UINT8 fSource:1 = FormatString("    (%s) %s", this.ToBitString, FormatString("S: %d ",this));
+				UINT8 SrcMask:6 = FormatString("    (%s) %s", this.ToBitString, FormatString("Src Mask: %d ",this));
+			};
+			UINT8  ForwardingCode = IGMPMulticastTracerouteForwardingCodeTable(this);
+		}
+	}
+}
+
+//draft-ietf-idmr-dvmrp-v3-11
+struct IGMPDVMRPV3
+{
+	[DVMRPCode]
+	UINT8  DVMRPCode = IGMPDVMRPV3CodeTable(this);
+	UINT16 CheckSum;
+	switch(DVMRPCode)
+	{
+		case 0x01:
+		case 0x06:
+			_struct DVMRPV3Neighbors2
+			{
+				UINT8 Reserved;
+				UINT8 Capability
+				{
+					UINT8 Reserved:3 = FormatString("(%s) %s", this.ToBitString, "Reserved");
+					UINT8 Snmp:1 = FormatString("    (%s) %s", this.ToBitString,
+													this ? "SNMP: This router supports the DVMRP MIB"
+														: "SNMP: This router doesn't supports the DVMRP MIB");
+															
+					UINT8 Mtrace:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "MTRACE: This router handles Mtrace requests"
+														: "MTRACE: This router doesn't handles Mtrace requests");
+															
+					UINT8 GenId:1 = FormatString("   (%s) %s", this.ToBitString,
+													this ? "GENID: This router sends Generation Id's"
+														: "GENID: This router doesn't sends Generation Id's");
+															
+					UINT8 Prune:1 = FormatString("   (%s) %s", this.ToBitString,
+													this ? "PRUNE: This router understands pruning"
+														: "PRUNE: This router doesn't understands pruning");
+															
+					UINT8 Leaf:1 = FormatString("    (%s) %s", this.ToBitString,
+													this ? "LEAF: This is a leaf router"
+														: "LEAF: This is not a leaf router");
+				};
+			};
+		default: UINT16 Reserved;
+	}
+	UINT8 MinorVersion;
+	UINT8 MajorVersion;
+	switch(DVMRPCode)
+	{
+		case 0x07: IGMPDVMRPContent DVMRPPrune;
+		case 0x08: IGMPDVMRPContent DVMRPGraft;
+		case 0x09: IGMPDVMRPContent DVMRPGraftAck;
+		case 0x01:
+			struct DVMRPProbe
+			{
+				UINT32 GenerationID;
+				while opration[ FrameOffset< FrameLength ]
+				{
+					IPv4Address NeighborIP;
+				}
+			};
+
+		case 0x02:
+			struct DVMRPReport
+			{
+				while opration[ FrameOffset+ 4 < FrameLength ]
+				{
+					struct Route
+					{
+						[Metric = 0]
+						UINT24 NetworkMask = FormatString("255.%d.%d.%d",this[2],this[1],this[0]);
+						while condition[( Property.Metric & 0x80 ) == 0 ]
+						{
+							switch
+							{
+								case (NetworkMask & 0x0000FF) && (NetworkMask & 0x00FF00) &&
+									 (NetworkMask & 0xFF0000):
+									_struct DVMRPReport4BytesSubnetMask
+									{
+										IPv4Address SourceNetwork;
+									};
+								case !(NetworkMask & 0x0000FF) && (NetworkMask & 0x00FF00) &&
+									 (NetworkMask & 0xFF0000):
+									_struct DVMRPReport3BytesSubnetMask1
+									{
+										UINT24 SourceNetwork = FormatString("%d.%d.%d.0",this[2],
+																				this[1],this[0]);
+									};
+								case (NetworkMask & 0x0000FF) && !(NetworkMask & 0x00FF00) &&
+									 (NetworkMask & 0xFF0000):
+									_struct DVMRPReport3BytesSubnetMask2
+									{
+										UINT24 SourceNetwork = FormatString("%d.%d.0.%d",this[2],
+																				this[1],this[0]);
+									};
+								case (NetworkMask & 0x0000FF) && (NetworkMask & 0x00FF00) &&
+									 !(NetworkMask & 0xFF0000):
+									_struct DVMRPReport3BytesSubnetMask3
+									{
+										UINT24 SourceNetwork = FormatString("%d.0.%d.%d",this[2],
+																				this[1],this[0]);
+									};
+								case !(NetworkMask & 0x0000FF) && !(NetworkMask & 0x00FF00) &&
+									 (NetworkMask & 0xFF0000):
+									_struct DVMRPReport2BytesSubnetMask1
+									{
+										UINT16 SourceNetwork = FormatString("%d.%d.0.0",this[1],this[0]);
+									};
+								case !(NetworkMask & 0x0000FF) && (NetworkMask & 0x00FF00) &&
+									 !(NetworkMask & 0xFF0000):
+									_struct DVMRPReport2BytesSubnetMask2
+									{
+										UINT16 SourceNetwork = FormatString("%d.0.%d.0",this[1],this[0]);
+									};
+								case (NetworkMask & 0x0000FF) && !(NetworkMask & 0x00FF00) &&
+									 !(NetworkMask & 0xFF0000):
+									_struct DVMRPReport2BytesSubnetMask3
+									{
+										UINT16 SourceNetwork = FormatString("%d.0.0.%d",this[1],this[0]);
+									};
+								case !(NetworkMask & 0x0000FF) && !(NetworkMask & 0x00FF00) &&
+									 !(NetworkMask & 0xFF0000):
+									_struct DVMRPReport1BytesSubnetMask
+									{
+										UINT8 SourceNetwork = FormatString("%d.0.0.0",this);
+									};
+							} //end of switch
+							[Metric]
+							UINT8 Metric;
+							//#? UINT8 Metric = FormatString("%u (0x%X)",this & 0x7F,this & 0x7F);
+						} //end of while condition[ Property.Metric & 0x80 == 0 ]
+					} //end of struct
+				} //end of while opration[ FrameOffset+ 4 < FrameLength ]
+			}
+
+		case 0x06:
+			struct DVMRPNeighbors2
+			{
+				while opration[ FrameOffset+ 4 < FrameLength ]
+				{
+					struct LogicalInterface
+					{
+						IPv4Address LocalAddress;
+						UINT8 Metric;
+						UINT8 Threshold;
+						UINT8 Flags
+						{
+							UINT8 Leaf:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Leaf: A leaf":"Leaf: No a leaf");
+							UINT8 Querier:1 = FormatString("    (%s) %s", this.ToBitString, 
+															this ? "Querier: Querier for interface"
+																: "Querier: No querier for interface");
+																	
+							UINT8 Disabled:1 = FormatString("   (%s) %s", this.ToBitString,
+															this ? "Disabled: Administrative status down"
+																: "Disabled: Administrative status OK");
+																	
+							UINT8 Down:1 = FormatString("       (%s) %s", this.ToBitString,
+															this ? "Down: Operational status down"
+																: "Down: Operational status OK");
+																	
+							UINT8 Reserved1:1 = FormatString("  (%s) %s", this.ToBitString, "Reserved");
+							UINT8 Reserved2:1 = FormatString("  (%s) %s", this.ToBitString, "Reserved");
+								
+							UINT8 SourceRoute:1 = FormatString("(%s) %s", this.ToBitString,
+															this ? "Source Route: Tunnel uses IP source routing"
+																: "Source Route: Tunnel doesn't uses IP source routing");
+																	
+							UINT8 Tunnel:1 = FormatString("     (%s) %s", this.ToBitString,
+															this ? "Tunnel: Neighbor reached via tunnel"
+																: "Tunnel: Neighbor not reached via tunnel");
+						};
+						UINT8 NeighborCount;
+						IPv4Address NeighborIP[NeighborCount];
+					}
+				};
+			};
+		default:
+			switch
+			{
+				case FrameLength > FrameOffset:
+					_struct UnhandledCode
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "IGMP", "IGMPDvmrpv3 Code Error") IGMPDvmrpv3CodeError;
+						BLOB( FrameLength - FrameOffset ) UnknownData;
+					}
+			}
+	}
+}
+
+struct IGMPDVMRPContent
+{
+	IPv4Address SourceAddr;
+	IPv4Address GroupAddr;
+	switch(Property.DVMRPCode)
+	{
+		case 0x07: UINT32 PruneLifetime;
+	}
+	IPv4Address SourceNetworkMask;
+};
+
+//rfc 1075
+struct IGMPDVMRPV1
+{
+	UINT8 Subtype = IGMPDVMRPV1SubtypeTable(this);
+	UINT16 CheckSum;
+	while condition[ FrameOffset< FrameLength ]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case 0x0:
+				struct NULLCommand
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Ignored;
+				}
+			case 0x02:
+				struct AFI
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 AddressFamily = FormatString("%s, %d(0x%X)"," IPv4 address family",this,this);
+				}
+			case 0x04:
+				struct Metric
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Value;
+				}
+			case 0x06:
+				struct Infinity
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Value;
+				}
+			case 0x05:
+				struct Flags0
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Value
+					{
+						UINT8 Reserved:6 = FormatString(" (%s)", this.ToBitString);
+						UINT8 Split:1 = FormatString("    (%s) %s", this.ToBitString,
+														this ? "Split Horizon concealed route"
+															: "Not split Horizon concealed route");
+																
+						UINT8 Reachable:1 = FormatString("(%s) %s", this.ToBitString,
+														this ? "Destination is unreachable"
+															: "Destination is reachable");
+					};
+				}
+			case 0x03:
+				struct Subnetmask
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Count;
+					IPv4Address Subnetmask[Count];
+				}
+			case 0x07:
+				struct DestinationAddress
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Count;
+					IPv4Address DestAddress[Count];
+				}
+			case 0x08:
+				struct RequestedDestinationAddress
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Count;
+					IPv4Address RequestedDestAddress[Count];
+				}
+			case 0x09:
+				struct NonMembershipReport
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Count;
+					struct NonMembershipReport[Count]
+					{
+						IPv4Address MulticastAddress;
+						UINT32 HoldDownTime;
+					};
+				}
+			case 0x0A:
+				struct NonMembershipReportCancel
+				{
+					UINT8 Command = IGMPDVMRPV1CommandTable(this);
+					UINT8 Count;
+					IPv4Address MulticastAddress[Count];
+				}
+			Default: AsciiString(FrameLength - offset) UnhandledDVMRPV1Command;
+		}// End of switch
+	}// End of while
+}
+
+// rfc 1054 , page 10
+struct IGMPV1Header
+{
+	UINT8 Unused;
+	UINT16 CheckSum;
+	Ipv4Address MulticastAddress;
+}
+
+// rfc 2236
+struct IGMPV2Header
+{
+	//UINT8 MaxResqCode = FormatString("Max Resp Time is %d seconds",this < 128 ? this : (this.mant | 0x10)<<(this.exp + 3) )
+	UINT8 MaxResqCode = IGMPMaxResqCodeTable(this,mant,exp)
+	{
+		UINT8 id:1 = FormatString("  (%s) %d", this.ToBitString, this);
+		UINT8 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 mant:4 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	UINT16 CheckSum;
+	Ipv4Address MulticastAddress;
+}
+
+struct IGMPPimV1Address
+{
+	UINT16 Flags
+	{
+		UINT16 Reserved:8 = FormatString("  (%s) %s", this.ToBitString, this);
+		UINT16 SparseMode:1 = FormatString("(%s) %s", this.ToBitString,
+												this ? "Indicates sparse mode group"
+													: "Don't indicates sparse mode group");
+														
+		UINT16 Wildcard:1 = FormatString("  (%s) %s", this.ToBitString,
+												this ? "Indicates join/prune applies to (*, G) entry"
+													: "Don't indicates join/prune applies to (*, G) entry");
+														
+		UINT16 RP:1 = FormatString("        (%s) %s", this.ToBitString,
+												this ? "Indicates this join/prune should be sent up the Shared Tree towards the RP"
+													: "Indicates this join/prune should not be sent up the Shared Tree towards the RP");
+														
+		UINT16 MaskLength:5 = FormatString("(%s) %s", this.ToBitString, this);
+	};
+	Ipv4Address Address;
+}
+
+struct IGMPGroup
+{
+	Ipv4Address Group;
+	Ipv4Address Mask;
+	UINT16 NumOfJoin;
+	UINT16 NumOfPrune;
+	IGMPPimV1Address Join[NumOfJoin];
+	IGMPPimV1Address Prune[NumOfPrune];
+}
+
+struct IGMPPIMV1
+{
+	UINT8 PIMType = IGMPPIMV1CodeTable(this);
+	UINT16 CheckSum;
+	UINT8 PIMVersion = FormatString("%d",(this & 0xf0)>>4);
+	UINT24 Reserved1;
+	switch(PIMType)
+	{
+		//Router-Query
+		case 0:
+			_struct IGMPPIMV1RouterQuery
+			{
+				UINT16 Mode = IGMPPIMV1ModeTable((this & 0xF000) >> 12);
+				UINT16 HoldTime;
+			};
+
+		//Register (SM only)
+		case 1:
+			_struct IGMPPIMV1Register
+			{
+				switch(( UINT8( Framedata, Offset ) & 0xF0 ) >> 4)
+				{
+					//Packet-pim.c , line 267
+					case 4: Ipv4 Ipv4Protocol;
+					case 6: Ipv6 Ipv6Protocol;
+					// case 0:
+				}
+			};
+
+		//Register-Stop (SM only)
+		case 2:
+			_struct IGMPPIMV1RegisterStop
+			{
+				Ipv4Address GroupAddress;
+				Ipv4Address SourceAddress;
+			};
+
+		//Join/Prune , Graft , Graft-ACK
+		case 3:
+		case 6:
+		case 7:
+			_struct IGMPPIMV1JoinPruneGraftGraftACK
+			{
+				Ipv4Address UpstreamNeighbor;
+				UINT16 Reserved2;
+				UINT16 HoldTime;
+				UINT8 Reserved3;
+				UINT8 MaskLength;
+				UINT8 AddressLength;
+				UINT8 NumOfGroups;
+				IGMPGroup Group[NumOfGroups];
+			};
+
+		//RP-Reachibility
+		case 4:
+			_struct IGMPPIMV1RPReachibility
+			{
+				Ipv4Address GroupAddress;
+				Ipv4Address GroupMask;
+				Ipv4Address RPAddress;
+				UINT16 Reserved2;
+				UINT16 HoldTime;
+			};
+
+		//Assert
+		case 5:
+			_struct IGMPPIMV1Assert
+			{
+				Ipv4Address GroupAddress;
+				Ipv4Address GroupMask;
+				UINT32 SparseMode
+				{
+					UINT32 SparseMode:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Assert down RP Tree":"Assert Down SPT");
+					UINT32 MetricPreference:31 = FormatString("(%s) %s", this.ToBitString, this);
+				};
+				UINT32 Metric;
+			};
+		default:
+			switch
+			{
+				case FrameLength > FrameOffset:
+					_struct UnhandledType
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "IGMP", "IGMPPIMV1 Type Error") IGMPPIMV1TypeError;
+						BLOB( FrameLength - FrameOffset ) UnknownData;
+					}
+			}
+	}
+}
+
+struct IGMPGroupRangeRecord
+{
+	Ipv4Address MulticastAddress;
+	UINT8 MaskLength;
+	UINT24 Unused;
+}
+
+//draft-ietf-idmr-msnip-00.txt, page 12
+struct IGMPGroupMap
+{
+	UINT8 GroupCount;
+	UINT16 CheckSum;
+	UINT32 HoldTime;
+	IGMPGroupRangeRecord Record[GroupCount];
+};
+
+//draft-ietf-idmr-msnip-00.txt, page 13
+struct IGMPInterestSolicitation
+{
+	UINT8 Reserved;
+	UINT16 CheckSum;
+	UINT16 HoldTime;
+	UINT16 GenerationID;
+};
+
+//draft-ietf-idmr-msnip-00.txt, page 14
+struct IGMPReceiverMembershipReport
+{
+	UINT8 GroupCount;
+	UINT16 CheckSum;
+	UINT16 HoldTime;
+	UINT16 Reserved;
+	while condition[ frameLength - FrameOffset>= 8]
+	{
+		struct GroupAddress
+		{
+			UINT8 RecordType = IGMPMSNIPRecordTypeTable(this);
+			UINT24 Unused;
+			Ipv4Address MulticastGroupAddress;
+		}
+	}
+};
+
+//draft-ietf-idmr-igmp-mrdisc-10.txt, page 6
+/*
+struct IGMPMRDISCOption
+{
+	UINT8 OptionType = IGMPMRDISCOptionTypeTable(this);
+	UINT8 Length;
+	switch(OptionType)
+	{
+		case 0x01: UINT16 IGMPQueryInterval;
+		case 0x02: UINT16 RobustnessVariable;
+	}
+	//AsciiString(Length) OptionData;
+}
+*/
+//draft-ietf-magma-mrdisc-07.txt, page 7
+struct IGMPMulticastRouterAdvertisement
+{
+	UINT8 AdvertisingInterval;
+	UINT16 CheckSum;
+	UINT16 QueryInterval = FormatString("%d senconds",this);
+	UINT16 RobustnessVariable;
+	//draft-ietf-idmr-igmp-mrdisc-10.txt, page 5
+	//UINT16 NumOfOptions;
+	//IGMPMRDISCOption Option[NumOfOptions];
+};
+
+//draft-ietf-magma-mrdisc-07.txt, page 10
+struct IGMPMulticastRouterSolicitation
+{
+	UINT8 Reserved;
+	UINT16 CheckSum;
+};
+
+//draft-ietf-magma-mrdisc-07.txt, page 12
+struct IGMPMulticastRouterTermination
+{
+	UINT8 Reserved;
+	UINT16 CheckSum;
+};
+
+
+
+Table IGAPPacketTypeTable(IGMPType, GroupAddress, ReportType)
+{
+	switch
+	{
+		case IGMPType == 0x40 && ReportType == 0x01: "Basic Join";
+		case IGMPType == 0x40 && ReportType == 0x02: "PAP Join Authentication Request";
+		case IGMPType == 0x40 && ReportType == 0x03: "CHAP Join Challenge Request";
+		case IGMPType == 0x40 && ReportType == 0x04: "CHAP Join Response";
+		case IGMPType == 0x41 && ReportType == 0x21 && GroupAddress == 0: "General-and-Basic Query";
+		case IGMPType == 0x41 && ReportType == 0x21 && GroupAddress != 0: "Group-Specific-and-Basic Query";
+		case IGMPType == 0x41 && ReportType == 0x22 && GroupAddress == 0: "General-and-User-Specific Query";
+		case IGMPType == 0x41 && ReportType == 0x22 && GroupAddress != 0: "Group-and-User-Specific Query";
+		case IGMPType == 0x41 && ReportType == 0x23: "CHAP Challenge";
+		case IGMPType == 0x41 && ReportType == 0x24: "Authentication Message";
+		case IGMPType == 0x41 && ReportType == 0x25: "Accounting Message";
+		case IGMPType == 0x41 && ReportType == 0x26: "Notification Message";
+		case IGMPType == 0x41 && ReportType == 0x27: "Error Message";
+		case IGMPType == 0x42 && ReportType == 0x41: "Basic Leave";
+		case IGMPType == 0x42 && ReportType == 0x42: "PAP Leave Authentication Request";
+		case IGMPType == 0x42 && ReportType == 0x43: "CHAP Leave Challenge Request";
+		case IGMPType == 0x42 && ReportType == 0x44: "CHAP Leave Response";
+		default: "Unknown IGAP Packet Type";
+	}
+}
+
+struct IGMPIGAP = IGAPPacketTypeTable(Property.IGMPType, GroupAddress, ReportType)
+{
+	//UINT8 MaxResqCode = FormatString("Max Resp Time is %d seconds",this < 128 ? this : (this.mant | 0x10)<<(this.exp + 3) )
+	UINT8 MaxResqCode = IGMPMaxResqCodeTable(this,mant,exp)
+	{
+		UINT8 id:1 = FormatString("  (%s) %d", this.ToBitString, this);
+		UINT8 exp:3 = FormatString(" (%s) %d", this.ToBitString, this);
+		UINT8 mant:4 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	UINT16 CheckSum;
+	//this field's name should be corrected in future
+	IPv4Address GroupAddress;
+	UINT8 Version;
+	UINT8 ReportType = IGMPIGAPReportTypeTable(this);
+	UINT8 Reserved1;
+	UINT8 CHAPID;
+	UINT8 AccountSize;
+	[MessageSize]
+	UINT8 MessageSize;
+	UINT16 Reserved2;
+
+	//The size of this field is 16 bytes.If the size value occupies less than 16 bytes, the value is followed by 0xff.
+	switch
+	{
+		case AccountSize > 0: AsciiString(AccountSize) UserAccount;
+	};
+	switch
+	{
+		case AccountSize < 16: AsciiString(16 - AccountSize) AccountPadding;
+	};
+
+	//The size of this field is 16 bytes.If the size value occupies less than 16 bytes, the value is followed by 0xff.
+	switch
+	{
+		case MessageSize > 0:
+			_struct IGMPIGAPMessage
+			{
+				switch(ReportType)
+				{
+					case 0x02:
+					case 0x42:
+						AsciiString(MessageSize) UserPassword; //not encrypted
+					case 0x04:
+					case 0x44:
+						AsciiString(MessageSize) ResponseValue;
+					case 0x23:
+						AsciiString(MessageSize) ChallengeValue;
+					case 0x24:
+						switch(MessageSize)
+						{
+							case  1:
+								_struct IGAPAuthentication1ByteMessageSize
+								{
+									UINT8 AuthStatus = IGMPIGAPAuthResultTable(this);
+								}
+							case  2:
+								_struct IGAPAuthentication2BytesMessageSize
+								{
+									UINT16 AuthStatus = IGMPIGAPAuthResultTable(this);
+								}
+							case  3:
+								_struct IGAPAuthentication3BytesMessageSize
+								{
+									UINT24 AuthStatus = IGMPIGAPAuthResultTable(this);
+								}
+							case  4:
+								_struct IGAPAuthentication4BytesMessageSize
+								{
+									UINT32 AuthStatus = IGMPIGAPAuthResultTable(this);
+								}
+							default:
+								AsciiString(MessageSize) AuthStatus;
+						}
+						//Integer(MessageSize) AuthStatus = IGMPIGAPAuthResultTable(this);
+					case 0x25:
+						switch(MessageSize)
+						{
+							case  1:
+								_struct IGAPAccounting1ByteMessageSize
+								{
+									UINT8 AccountStatus = IGMPIGAPAccountStatusTable(this);
+								}
+							case  2:
+								_struct IGAPAccounting2BytesMessageSize
+								{
+									UINT16 AccountStatus = IGMPIGAPAccountStatusTable(this);
+								}
+							case  3:
+								_struct IGAPAccounting3BytesMessageSize
+								{
+									UINT24 AccountStatus = IGMPIGAPAccountStatusTable(this);
+								}
+							case  4:
+								_struct IGAPAccounting4BytesMessageSize
+								{
+									UINT32 AccountStatus = IGMPIGAPAccountStatusTable(this);
+								}
+							default:
+								AsciiString(MessageSize) AccountStatus;
+						}
+						//Integer(MessageSize) AccountStatus = IGMPIGAPAuthResultTable(this);
+					default:
+						AsciiString(MessageSize) Message;
+				}
+			};
+	};
+	switch
+	{
+		case MessageSize < 16: AsciiString(16 - MessageSize) MessagePadding;
+	};
+}

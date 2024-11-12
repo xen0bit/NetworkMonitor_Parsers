@@ -1,0 +1,316 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Network News Transfer Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 977, 2980
+//#  Microsoft References:   [MS-NNTP]: NT LAN Manager (NTLM) Authentication: Network News Transfer Protocol (NNTP) Extension
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol NNTP = FormatString("%s", Property.NNTPPayloadSummary )
+{
+	switch
+	{
+		case Property.DestinationPort == 119:
+			[NNTPCommandLength = AsciiString(framedata,Offset,18) == "LIST DISTRIBUTIONS" ? 18 :
+								 AsciiString(framedata,Offset,18) == "LIST SUBSCRIPTIONS" ? 18 :
+								 AsciiString(framedata,Offset,17) == "LIST DISTRIB.PATS" ? 17 :
+								 AsciiString(framedata,Offset,17) == "LIST ACTIVE.TIMES" ? 17 :
+								 AsciiString(framedata,Offset,17) == "LIST OVERVIEW.FMT" ? 17 :
+								 AsciiString(framedata,Offset,16) == "AUTHINFO GENERIC" ? 16 :
+								 AsciiString(framedata,Offset,15) == "AUTHINFO SIMPLE" ? 15 :
+								 AsciiString(framedata,Offset,15) == "LIST NEWSGROUPS" ? 15 :
+								 AsciiString(framedata,Offset,13) == "AUTHINFO USER" ? 13 :
+								 AsciiString(framedata,Offset,13) == "AUTHINFO PASS" ? 13 :
+								 AsciiString(framedata,Offset,11) == "MODE STREAM" ? 11 :
+								 AsciiString(framedata,Offset,11) == "MODE READER" ? 11 :
+								 AsciiString(framedata,Offset,11) == "LIST ACTIVE" ? 11 :
+								 AsciiString(framedata,Offset, 9) == "LISTGROUP" ? 9 :
+								 AsciiString(framedata,Offset, 9) == "NEWGROUPS" ? 9 :
+								 AsciiString(framedata,Offset, 8) == "TAKETHIS" ? 8 :
+								 AsciiString(framedata,Offset, 8) == "AUTHINFO" ? 8 :
+								 AsciiString(framedata,Offset, 7) == "XREPLIC" ? 7 :
+								 AsciiString(framedata,Offset, 7) == "XGTITLE" ? 7 :
+								 AsciiString(framedata,Offset, 7) == "XTHREAD" ? 7 :
+								 AsciiString(framedata,Offset, 7) == "ARTICLE" ? 7 :
+								 AsciiString(framedata,Offset, 7) == "NEWNEWS" ? 7 :
+								 AsciiString(framedata,Offset, 6) == "XINDEX" ? 6 :
+								 AsciiString(framedata,Offset, 6) == "XROVER" ? 6 :
+								 AsciiString(framedata,Offset, 5) == "XPATH" ? 5 :
+								 AsciiString(framedata,Offset, 5) == "CHECK" ? 5 :
+								 AsciiString(framedata,Offset, 5) == "GROUP" ? 5 :
+								 AsciiString(framedata,Offset, 5) == "IHAVE" ? 5 :
+								 AsciiString(framedata,Offset, 5) == "SLAVE" ? 5 :
+								 AsciiString(framedata,Offset, 5) == "XOVER" ? 5 :
+								 AsciiString(framedata,Offset, 4) == "DATE" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "XPAT" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "BODY" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "HEAD" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "HELP" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "LAST" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "LIST" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "NEXT" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "POST" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "QUIT" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "STAT" ? 4 :
+								 AsciiString(framedata,Offset, 4) == "XHDR" ? 4 :
+								 (frameLength - offset == 2) &&
+								 UINT8( Framedata, Offset ) == 0x0D &&
+								 UINT8( Framedata, Offset + 1 ) == 0x0A ? 0 : -1
+			]
+			switch
+			{
+				case NNTPCommandLength > 0:
+					_struct NNTPCommand
+					{
+						[Post.NNTPPayloadSummary = FormatString("Command, %s, %d bytes", Command.ToString, FrameLength - offset)]
+						AsciiString(NNTPCommandLength) Command = NNTPCommandTable(this);
+						switch(UINT16(FrameData, FrameOffset))
+						{
+							case 0x0D0A: AsciiStringTerm("\r\n") NoParameter;
+							default:
+								_struct CommandParameter
+								{
+									while [UINT8(FrameData, FrameOffset) == 0x20]
+									{
+										CHAR WhiteSpace;
+									};									
+									switch(AsciiString(FrameData, FrameOffset, 10))
+									{
+										case "TlRMTVNTUA":
+											AsciiStringTerm("\r\n") NLMPAuthentication
+											{
+												[NTLMSSPAuthentication = TRUE, Property.NNTPPayloadSummary = NNTPPayloadSummary + " ,NLMP Authentication"]
+												NLMP NLMP;
+											};
+										default:									
+											AsciiStringTerm("\r\n") CommandParameter;
+									}
+								}
+						}
+						While Conditions[offset < frameLength]
+						{
+							AsciiStringTerm("\r\n") Text;
+						}
+					};
+				case NNTPCommandLength == 0:
+					[NNTPPayloadSummary = "Cmd completed, 2 bytes"]
+					AsciiString CommandCompleted = "";
+				default:
+					_struct OtherCommand
+					{
+						[Post.NNTPPayloadSummary = FormatString("Command, %s, %d bytes", Command, FrameLength - offset)]
+						AsciiStringTerm("\r\n") Command;
+						While Conditions[offset < frameLength]
+						{
+							AsciiStringTerm("\r\n") Text;
+						}
+					}
+			};
+		//ResponseCode Format: xyz x:1~5 y:0~9 z:0~9
+		case Property.SourcePort == 119 &&
+			(UINT8( Framedata, Offset ) >= 0x31 && UINT8( Framedata, Offset ) <= 0x35)&&
+			(UINT8( Framedata, Offset + 1 ) >= 0x30 && UINT8( Framedata, Offset + 1 ) <= 0x39)&&
+			(UINT8( Framedata, Offset + 2 ) >= 0x30 && UINT8( Framedata, Offset + 2 ) <= 0x39)&&
+			(UINT8( Framedata, Offset + 3 ) == 0x0D && UINT8( Framedata, Offset + 4 ) == 0x0A ||
+			 UINT8( Framedata, Offset + 3 ) == 0x20 ):
+				_struct Response
+				{
+					//Reply-line = Reply-code [ SP text ] CRLF
+					[Post.NNTPPayloadSummary = FormatString("Response, %s, %d bytes", ResponseCode.ToString, FrameLength - offset)]
+					AsciiString(3) ResponseCode = NNTPResponseCodeTable(this, UINT24(frameData, offset));
+					switch
+					{
+						case UINT16(FrameData,offset) == 0x0D0A:
+							struct ResponseNoParameterEnd {  AsciiStringTerm("\r\n") NoReplyMessage; };
+						default:
+							struct ResponseParameter 
+							{
+								while [UINT8(FrameData, FrameOffset) == 0x20]
+								{
+									CHAR WhiteSpace;
+								};								 
+								switch(AsciiString(FrameData, FrameOffset, 10))
+								{
+									case "TlRMTVNTUA":
+										AsciiStringTerm("\r\n") NLMPAuthentication
+										{
+											[NTLMSSPAuthentication = TRUE, Property.NNTPPayloadSummary = NNTPPayloadSummary + " ,NLMP Authentication"]
+											NLMP NLMP;
+										};
+									default:
+										AsciiStringTerm("\r\n") ReplyMessage; 
+								}
+							};
+					}
+					While Conditions[offset < frameLength]
+					{
+						AsciiStringTerm("\r\n") Text;
+					}
+				};
+		
+		default:
+			switch
+			{
+				case FrameLength - offset > 0:
+					[NNTPPayloadSummary = FormatString("Text, %d bytes", FrameLength - offset)]
+					struct DataPayLoad
+					{
+						While Conditions[offset < frameLength]
+						{
+							AsciiStringTerm("\r\n") Text;
+						};
+					};
+			}
+	}
+}
+Table NNTPCommandTable(Command)
+{
+	switch
+	{
+		//rfc 977
+		case Command.Contains("ARTICLE")           :FormatString("%s - Get article", Command);
+		case Command.Contains("AUTHINFO")          :FormatString("%s - Authority information", Command);
+		case Command.Contains("BODY")              :FormatString("%s - Get article body", Command);
+		case Command.Contains("GROUP")             :FormatString("%s - Get article group", Command);
+		case Command.Contains("HEAD")              :FormatString("%s - Get article head", Command);
+		case Command.Contains("HELP")              :FormatString("%s - Get help", Command);
+		case Command.Contains("IHAVE")             :FormatString("%s - I have an article", Command);
+		case Command.Contains("LAST")              :FormatString("%s - Get last article", Command);
+		case Command.Contains("LIST")              :FormatString("%s - List newsgroups", Command);
+		case Command.Contains("NEWGROUPS")         :FormatString("%s - List new groups", Command);
+		case Command.Contains("NEWNEWS")           :FormatString("%s - Get articles since...", Command);
+		case Command.Contains("NEXT")              :FormatString("%s - Get next article", Command);
+		case Command.Contains("POST")              :FormatString("%s - Request to post an article", Command);
+		case Command.Contains("QUIT")              :FormatString("%s - Quit reading news", Command);
+		case Command.Contains("SLAVE")             :FormatString("%s - This client is a slave", Command);
+		case Command.Contains("STAT")              :FormatString("%s - Set current article", Command);
+		case Command.Contains("XOVER")             :FormatString("%s - Extract article", Command);
+		case Command.Contains("XHDR")              :FormatString("%s - Extract header", Command);
+		//rfc 2980
+		case Command.Contains("CHECK")             :FormatString("%s - Discover if the article should be sent using TAKETHIS", Command);
+		case Command.Contains("MODE STREAM")       :FormatString("%s - Suspend the lock step conversational nature of NNTP and send commands in streams", Command);
+		case Command.Contains("TAKETHIS")          :FormatString("%s - Send articles when in streaming mode", Command);
+		case Command.Contains("XREPLIC")           :FormatString("%s - Duplicate the news spool structure in another server", Command);
+		case Command.Contains("LIST ACTIVE")       :FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST ACTIVE.TIMES") :FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST DISTRIBUTIONS"):FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST DISTRIB.PATS") :FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST NEWSGROUPS")   :FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST OVERVIEW.FMT") :FormatString("%s - Extensions to the LIST command", Command);
+		case Command.Contains("LIST SUBSCRIPTIONS"):FormatString("%s - Get a default subscription list for new users", Command);
+		case Command.Contains("LISTGROUP")         :FormatString("%s - Get a listing of all the article numbers in a particular news group", Command);
+		case Command.Contains("MODE READER")       :FormatString("%s - This is a news reading client", Command);
+		case Command.Contains("XGTITLE")           :FormatString("%s - Retrieve news group descriptions for specific news groups", Command);
+		case Command.Contains("XINDEX")            :FormatString("%s - Retrieve an index file", Command);
+		case Command.Contains("XPAT")              :FormatString("%s - Retrieve headers based on pattern matching on the contents of the header", Command);
+		case Command.Contains("XPATH")             :FormatString("%s - Determine the filenames in which an article is filed", Command);
+		case Command.Contains("XROVER")            :FormatString("%s - Returns reference information from the overview database", Command);
+		case Command.Contains("XTHREAD")           :FormatString("%s - Retrieve threading information", Command);
+		case Command.Contains("AUTHINFO USER")     :FormatString("%s - Inform about the identity of a user", Command);
+		case Command.Contains("AUTHINFO PASS")     :FormatString("%s - Inform about the Password of a user", Command);
+		case Command.Contains("AUTHINFO SIMPLE")   :FormatString("%s - Inform about the identity and Password of a user", Command);
+		case Command.Contains("AUTHINFO GENERIC")  :FormatString("%s - Identify a specific entity", Command);
+		case Command.Contains("DATE")              :FormatString("%s - Find out the current time", Command);
+		default                                    :FormatString("%s - UNHANDLED NNTP Command.", Command);
+	}
+}
+
+Table NNTPResponseCodeXTable(code)
+{
+	switch(code)
+	{
+		case 0x31:FormatString("%c - Informative message", code);
+		case 0x32:FormatString("%c - Command ok", code);
+		case 0x33:FormatString("%c - Command ok so far, send the rest of it", code);
+		case 0x34:FormatString("%c - Command was correct, but couldn't be performed for some reason.", code);
+		case 0x35:FormatString("%c - Command unimplemented/incorrect/a serious program error occurred", code);
+		default  :FormatString("%c - UNHANDLED NNTP ResponseCode X", code);
+	}
+}
+
+Table NNTPResponseCodeYTable(code)
+{
+	switch(code)
+	{
+		case 0x30:FormatString("%c - Connection, setup, and miscellaneous messages", code);
+		case 0x31:FormatString("%c - Newsgroup selection", code);
+		case 0x32:FormatString("%c - Article selection", code);
+		case 0x33:FormatString("%c - Distribution functions", code);
+		case 0x34:FormatString("%c - Posting", code);
+		case 0x38:FormatString("%c - Nonstandard extensions", code);
+		case 0x39:FormatString("%c - Debugging output", code);
+		default  :FormatString("%c - UNHANDLED NNTP ResponseCode Y", code);
+	}
+}
+
+Table NNTPResponseCodeTable(ResponseCode, Code)
+{
+	switch
+	{
+		case ResponseCode.contains("100"):FormatString("%s - help text", ResponseCode);
+		case ResponseCode.contains("190"):FormatString("%s - debug output", ResponseCode);
+		case ResponseCode.contains("199"):FormatString("%s - debug output", ResponseCode);
+		case ResponseCode.contains("200"):FormatString("%s - server ready (posting allowed)", ResponseCode);
+		case ResponseCode.contains("201"):FormatString("%s - server ready (no posting allowed)", ResponseCode);
+		case ResponseCode.contains("202"):FormatString("%s - slave status noted", ResponseCode);
+		case ResponseCode.contains("203"):FormatString("%s - Streaming is OK", ResponseCode);
+		case ResponseCode.contains("205"):FormatString("%s - closing connection (goodbye)", ResponseCode);
+		case ResponseCode.contains("211"):FormatString("%s - group selected", ResponseCode);
+		case ResponseCode.contains("215"):FormatString("%s - list of newsgroups follows", ResponseCode);
+		case ResponseCode.contains("220"):FormatString("%s - article retrieved (head and body follow)", ResponseCode);
+		case ResponseCode.contains("221"):FormatString("%s - article retrieved (head follows)", ResponseCode);
+		case ResponseCode.contains("222"):FormatString("%s - article retrieved (body follows)", ResponseCode);
+		case ResponseCode.contains("223"):FormatString("%s - article retrieved (request text separately)", ResponseCode);
+		case ResponseCode.contains("224"):FormatString("%s - data follows", ResponseCode);
+		case ResponseCode.contains("230"):FormatString("%s - list of new articles by message-id follows", ResponseCode);
+		case ResponseCode.contains("231"):FormatString("%s - list of new newsgroups follows", ResponseCode);
+		case ResponseCode.contains("235"):FormatString("%s - article transferred ok", ResponseCode);
+		case ResponseCode.contains("238"):FormatString("%s - no such article found, please send it to me",ResponseCode);
+		case ResponseCode.contains("239"):FormatString("%s - article transferred ok",ResponseCode);
+		case ResponseCode.contains("240"):FormatString("%s - article posted ok", ResponseCode);
+		case ResponseCode.contains("281"):FormatString("%s - Ok", ResponseCode);
+		case ResponseCode.contains("288"):FormatString("%s - Binary data to follow",ResponseCode);
+		case ResponseCode.contains("282"):FormatString("%s - list of groups and descriptions follows", ResponseCode);
+		case ResponseCode.contains("335"):FormatString("%s - send article to be transferred.", ResponseCode);
+		case ResponseCode.contains("340"):FormatString("%s - send article to be posted.", ResponseCode);
+		case ResponseCode.contains("381"):FormatString("%s - Password Required.", ResponseCode);
+		case ResponseCode.contains("400"):FormatString("%s - service discontinued", ResponseCode);
+		case ResponseCode.contains("411"):FormatString("%s - no such news group", ResponseCode);
+		case ResponseCode.contains("412"):FormatString("%s - no newsgroup has been selected", ResponseCode);
+		case ResponseCode.contains("420"):FormatString("%s - no current article has been selected", ResponseCode);
+		case ResponseCode.contains("421"):FormatString("%s - no next article in this group", ResponseCode);
+		case ResponseCode.contains("422"):FormatString("%s - no previous article in this group", ResponseCode);
+		case ResponseCode.contains("423"):FormatString("%s - no such article number in this group", ResponseCode);
+		case ResponseCode.contains("430"):FormatString("%s - no such article found", ResponseCode);
+		case ResponseCode.contains("431"):FormatString("%s - try sending it again later",ResponseCode);
+		case ResponseCode.contains("435"):FormatString("%s - article not wanted (do not send it)", ResponseCode);
+		case ResponseCode.contains("436"):FormatString("%s - transfer failed (try again later)", ResponseCode);
+		case ResponseCode.contains("437"):FormatString("%s - article rejected (do not try again)", ResponseCode);
+		case ResponseCode.contains("438"):FormatString("%s - already have it, please don't send it to me",ResponseCode);
+		case ResponseCode.contains("439"):FormatString("%s - article transfer failed", ResponseCode);
+		case ResponseCode.contains("440"):FormatString("%s - posting not allowed", ResponseCode);
+		case ResponseCode.contains("441"):FormatString("%s - posting failed", ResponseCode);
+		case ResponseCode.contains("480"):FormatString("%s - Transfer permission denied",ResponseCode);
+		case ResponseCode.contains("481"):FormatString("%s - Groups and descriptions unavailable", ResponseCode);
+		case ResponseCode.contains("500"):FormatString("%s - command not recognized", ResponseCode);
+		case ResponseCode.contains("501"):FormatString("%s - command syntax error", ResponseCode);
+		case ResponseCode.contains("502"):FormatString("%s - access restriction or permission denied", ResponseCode);
+		case ResponseCode.contains("503"):FormatString("%s - program fault (command not performed)", ResponseCode);
+		default                          :
+			FormatString("%s (x=%s,y=%s,z=%c) ",
+						ResponseCode,
+						NNTPResponseCodeXTable(Code[2]),
+						NNTPResponseCodeYTable(Code[1]),
+						Code[0]
+						);
+	}
+}
+
+

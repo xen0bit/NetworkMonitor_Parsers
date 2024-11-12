@@ -1,0 +1,2727 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Message Queuing (MSMQ): Queue Manager Client Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQMP]: Message Queuing (MSMQ): Queue Manager Client Protocol Specification
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1991.0	
+//#
+//#  Revision Class and Date:Major, 11/24/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol MQMP = FormatString( "%s %s%s%s%s%s", 
+	Property.MQMPMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.MQMPSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.MQMPSummary : "" )
+{
+	[Property.MQMPSummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{76D12B80-3467-11D3-91FF-0090272F9EA3}":
+			[Property.MQMPMethodName = "qmcomm2:" + MQMPqmcomm2MethodNameTable( Property.MSRPCOpnum )]
+			_Struct qmcomm2
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 0:
+						_Struct QMSendMessageInternalEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													MQMQCommonQueueFormat QueueFormat;
+													MQMQCommonQueueFormatRef QueueFormatRef;
+													NdrAlign Pad;
+													MQMPCACTransferBufferV2 Ptb;
+													MQMPCACTransferBufferV2Ref PtbRef;
+													NdrPtr MessageIDPtr;
+													Switch
+													{
+														Case MessageIDPtr.ReferentID > 0:
+															MQMQCommonObjectID MessageID;
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													NdrPtr MessageIDPtr;
+													Switch
+													{
+														Case MessageIDPtr.ReferentID > 0:
+															MQMQCommonObjectID MessageID;
+													}
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 1:
+						_Struct RpcACSendMessageEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Queue;
+													MQMPCACTransferBufferV2 Ptb;
+													MQMPCACTransferBufferV2Ref PtbRef;
+													NdrPtr MessageIDPtr;
+													Switch
+													{
+														Case MessageIDPtr.ReferentID > 0:
+															MQMQCommonObjectID MessageID;
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													NdrPtr MessageIDPtr;
+													Switch
+													{
+														Case MessageIDPtr.ReferentID > 0:
+															MQMQCommonObjectID MessageID;
+													}
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 2:
+						_Struct RpcACReceiveMessageEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "QMContext=%u", QMContext )]
+												Struct
+												{
+													UINT32 QMContext;
+													NdrAlign Pad;
+													MQMPCACTransferBufferV2 Ptb;
+													MQMPCACTransferBufferV2Ref PtbRef;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													MQMPCACTransferBufferV2 Ptb;
+													MQMPCACTransferBufferV2Ref PtbRef;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 3:
+						_Struct RpcACCreateCursorEx
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Queue;
+													MQMPCACCreateRemoteCursor Pcc;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													MQMPCACCreateRemoteCursor Pcc;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							case IsValueNone(Property.MSRPCOpnum):
+								struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("MQMP", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "MQMP", "Unknown qmcomm2 method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+		Case "{FDB3A030-065F-11D1-BB9B-00A024EA5525}":
+			[Property.MQMPMethodName = "qmcomm:" + MQMPqmcommMethodNameTable( Property.MSRPCOpnum )]
+			_Struct qmcomm
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 1:
+						_Struct RQMGetRemoteQueueName
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Queue=%u", Queue )]
+												Struct
+												{
+													UINT32 Queue;
+													NdrPtr LplpRemoteQueueNamePtr;
+													Switch
+													{
+														Case LplpRemoteQueueNamePtr.ReferentID > 0:
+															NdrWideStringPtr LplpRemoteQueueName;
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													NdrPtr LplpRemoteQueueNamePtr;
+													Switch
+													{
+														Case LplpRemoteQueueNamePtr.ReferentID > 0:
+															NdrWideStringPtr LplpRemoteQueueName;
+													}
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 2:
+						_Struct RQMOpenRemoteQueue
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "CallingProcessID=%u DesiredAccess=%u ShareMode=%u MQS=%u", CallingProcessID, DesiredAccess, ShareMode, MQS )]
+												Struct
+												{
+													NdrPtr QueueFormatPtr;
+													Switch
+													{
+														Case QueueFormatPtr.ReferentID > 0:
+															Struct QueueFormat
+ 															{
+																MQMQCommonQueueFormat QueueFormat;
+																MQMQCommonQueueFormatRef QueueFormatRef;
+															}
+													}
+													Align4 Pad;
+													UINT32 CallingProcessID;
+													UINT32 DesiredAccess = MQMPRQMOpenRemoteQueueDesiredAccessTable(this);
+													UINT32 ShareMode = MQMPRQMOpenRemoteQueueShareModeTable(this);
+													MSRPCGuid LicGuid;
+													UINT32 MQS = MQMPRQMOpenRemoteQueueMQSTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Context1=%u DwpQueue=%u Queue=%u ReturnValue=%s", Context1, DwpQueue, Queue, ReturnValue.ToString )]
+												Struct
+												{
+													ContextHandle Context;
+													UINT32 Context1;
+													UINT32 DwpQueue;
+													UINT32 Queue;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 3:
+						_Struct RQMCloseRemoteQueueContext
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Context;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Context;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct RQMCreateRemoteCursor
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Queue=%u", Queue )]
+												Struct
+												{
+													MQMPCACTransferBufferV1 Ptb1;
+													MQMPCACTransferBufferV1Ref Ptb1Ref;
+													Align4 Pad;
+													UINT32 Queue;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cursor=%u ReturnValue=%s", Cursor, ReturnValue.ToString )]
+												Struct
+												{
+													UINT32 Cursor;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct RQMCreateObjectInternal
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ObjectType=%u LpwcsPathName=%s SDSize=%u Cp=%u", ObjectType, LpwcsPathName.ToString, SDSize, Cp )]
+												Struct
+												{
+													UINT32 ObjectType = MQMPRQMCreateObjectInternalObjectTypeTable(this);
+													NdrWideString LpwcsPathName;
+													Align4 Pad1;
+													UINT32 SDSize;
+													NdrPtr SecurityDescriptorPtr;
+													Switch
+													{
+														Case SecurityDescriptorPtr.ReferentID > 0:
+															Struct SecurityDescriptor
+															{
+																NDRConformant SecurityDescriptorConf;
+																[ Property.MQMPSecurityDescriptorOffset = FrameOffSet ]
+																NdrSecurityDescriptor SecurityDescriptor;
+																Switch
+																{
+																	Case ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) < SecurityDescriptorConf.MaxCount:
+																		Blob( SecurityDescriptorConf.MaxCount - ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) ) AdditionalData;
+																}
+															}
+													}
+													Align4 Pad2;
+													UINT32 Cp;
+													Struct Prop = formatstring("Property count: %d", PropConf.MaxCount)
+													{
+														NDRConformant PropConf;
+														Switch
+														{
+															Case PropConf.MaxCount > 0:
+																[ Local.MQMPPropCount = 0, MaxLoopCount = PropConf.MaxCount ]
+																While [ Local.MQMPPropCount < PropConf.MaxCount ]
+																{
+																	[ Local.MQMPPropCount = Local.MQMPPropCount + 1 ]
+																	UINT32 Prop = MQMQCommonDirectoryObjectPROPIDTable(this);
+																}
+														}
+													}
+													Struct Var = formatstring("Variant count: %d", VarConf.MaxCount)
+													{
+														NDRConformant VarConf;
+														Switch
+														{
+															Case VarConf.MaxCount > 0:
+																Struct
+																{
+																	[ Property.MQMPVarCount = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0, MaxLoopCount = VarConf.Maxcount ]
+																	While[ Property.MQMPVarCount < VarConf.Maxcount ]
+																	{
+																		
+																		[Post.Property.MQMPVarCount = Property.MQMPVarCount + 1]
+																		MQMQCommonPropVariant PropertyValue;
+																	}
+																	[Property.MQMPVarRefCount = 0,MaxLoopCount=VarConf.Maxcount]
+																	While[ Property.MQMPVarRefCount < Property.MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[Post.Property.MQMPVarRefCount = Property.MQMPVarRefCount + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMPVarRefCount] ) PropertyValueRef;
+																	}
+																}
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct RQMSetObjectSecurityInternal
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "SecurityInformation=%u SDSize=%u", SecurityInformation, SDSize )]
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+													Align4 Pad;
+													UINT32 SecurityInformation;
+													UINT32 SDSize;
+													NdrPtr SecurityDescriptorPtr;
+													Switch
+													{
+														Case SecurityDescriptorPtr.ReferentID > 0:
+															Struct SecurityDescriptor
+															{
+																NDRConformant SecurityDescriptorConf;
+																[ Property.MQMPSecurityDescriptorOffset = FrameOffSet ]
+																NdrSecurityDescriptor SecurityDescriptor;
+																Switch
+																{
+																	Case ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) < SecurityDescriptorConf.MaxCount:
+																		Blob( SecurityDescriptorConf.MaxCount - ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) ) AdditionalData;
+																}
+															}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 8:
+						_Struct RQMGetObjectSecurityInternal
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "RequestedInformation=%u Length=%u", RequestedInformation, Length )]
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+													Align4 Pad;
+													MQMQSecurityInformation RequestedInformation;
+													UINT32 Length;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "LpnLengthNeeded=%u ReturnValue=%s", LpnLengthNeeded, ReturnValue.ToString )]
+												Struct
+												{
+													Struct SecurityDescriptor
+													{
+														NDRConformant SecurityDescriptorConf;
+														[ Property.MQMPSecurityDescriptorOffset = FrameOffSet ]
+														NdrSecurityDescriptor SecurityDescriptor;
+														Switch
+														{
+															Case ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) < SecurityDescriptorConf.MaxCount:
+																Blob( SecurityDescriptorConf.MaxCount - ( FrameOffSet - Property.MQMPSecurityDescriptorOffset ) ) AdditionalData;
+														}
+													}
+													Align4 Pad;
+													UINT32 LpnLengthNeeded;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 9:
+						_Struct RQMDeleteObject
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 10:
+						_Struct RQMGetObjectProperties
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cp=%u", Cp )]
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+													Align4 Pad;
+													UINT32 Cp;
+													Struct Prop = formatstring("Property count: %d", PropConf.MaxCount)
+													{
+														NDRConformant PropConf;
+														Switch
+														{
+															Case PropConf.MaxCount > 0:
+																[ Local.MQMPPropCount = 0, MaxLoopCount = PropConf.MaxCount ]
+																While [ Local.MQMPPropCount < PropConf.MaxCount ]
+																{
+																	[ Local.MQMPPropCount = Local.MQMPPropCount + 1 ]
+																	UINT32 Prop = MQMQCommonDirectoryObjectPROPIDTable(this);
+																}
+														}
+													}
+													Struct Var = formatstring("Variant count: %d", VarConf.MaxCount)
+													{
+														NDRConformant VarConf;
+														Switch
+														{
+															Case VarConf.MaxCount > 0:
+																Struct
+																{
+																	[ Property.MQMPVarCount = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0, MaxLoopCount = VarConf.Maxcount ]
+																	While[ Property.MQMPVarCount < VarConf.Maxcount ]
+																	{
+																		
+																		[Post.Property.MQMPVarCount = Property.MQMPVarCount + 1]
+																		MQMQCommonPropVariant PropertyValue;
+																	}
+																	[Property.MQMPVarRefCount = 0,MaxLoopCount=VarConf.Maxcount]
+																	While[ Property.MQMPVarRefCount < Property.MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[Post.Property.MQMPVarRefCount = Property.MQMPVarRefCount + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMPVarRefCount] ) PropertyValueRef;
+																	}
+																}
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													Struct Var = formatstring("Variant count: %d", VarConf.MaxCount)
+													{
+														NDRConformant VarConf;
+														Switch
+														{
+															Case VarConf.MaxCount > 0:
+																Struct
+																{
+																	[ Property.MQMPVarCount = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0, MaxLoopCount = VarConf.Maxcount ]
+																	While[ Property.MQMPVarCount < VarConf.Maxcount ]
+																	{
+																		
+																		[Post.Property.MQMPVarCount = Property.MQMPVarCount + 1]
+																		MQMQCommonPropVariant PropertyValue;
+																	}
+																	[Property.MQMPVarRefCount = 0,MaxLoopCount=VarConf.Maxcount]
+																	While[ Property.MQMPVarRefCount < Property.MQMQCommonPropVariantPointerReferenceCount ]
+																	{
+																		[Post.Property.MQMPVarRefCount = Property.MQMPVarRefCount + 1]
+																		MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMPVarRefCount] ) PropertyValueRef;
+																	}
+																}
+														}
+													}
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 11:
+						_Struct RQMSetObjectProperties
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cp=%u", Cp )]
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+													Align4 Pad;
+													UINT32 Cp;
+													NdrPtr PropPtr;
+													Switch
+													{
+														Case PropPtr.ReferentID > 0:
+															Struct Prop = formatstring("Property count: %d", PropConf.MaxCount)
+															{
+																NDRConformant PropConf;
+																Switch
+																{
+																	Case PropConf.MaxCount > 0:
+																		[ Local.MQMPPropCount = 0, MaxLoopCount = PropConf.MaxCount ]
+																		While [ Local.MQMPPropCount < PropConf.MaxCount ]
+																		{
+																			[ Local.MQMPPropCount = Local.MQMPPropCount + 1 ]
+																			UINT32 Prop = MQMQCommonDirectoryObjectPROPIDTable(this);
+																		}
+																}
+															}
+													}
+													NdrPtr VarPtr;
+													Switch
+													{
+														Case VarPtr.ReferentID > 0:
+															Struct Var
+															{
+																NDRConformant VarConf;
+																Switch
+																{
+																	Case VarConf.MaxCount > 0:
+																		Struct
+																		{
+																			[ Property.MQMPVarCount = 0, Property.MQMQCommonPropVariantPointerReferenceCount = 0, MaxLoopCount = VarConf.Maxcount ]
+																			While[ Property.MQMPVarCount < VarConf.Maxcount ]
+																			{
+																				
+																				[Post.Property.MQMPVarCount = Property.MQMPVarCount + 1]
+																				MQMQCommonPropVariant PropertyValue;
+																			}
+																			[Property.MQMPVarRefCount = 0,MaxLoopCount=VarConf.Maxcount]
+																			While[ Property.MQMPVarRefCount < Property.MQMQCommonPropVariantPointerReferenceCount ]
+																			{
+																				[Post.Property.MQMPVarRefCount = Property.MQMPVarRefCount + 1]
+																				MQMQCommonPropVariantReferencedValues( MQMQCommonPropVariantPointerReferenceArray$[Property.MQMPVarRefCount] ) PropertyValueRef;
+																			}
+																		}
+																}
+															}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 12:
+						_Struct RQMObjectPathToObjectFormat
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "LpwcsPathName=%s", LpwcsPathName.ToString )]
+												Struct
+												{
+													NdrWideString LpwcsPathName;
+													NdrALign Pad;
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													MQMPObjectFormat ObjectFormat;
+													MQMPObjectFormatRef ObjectFormatRef;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 14:
+						_Struct RQMGetTmWhereabouts
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "BufSize=%u", BufSize )]
+												Struct
+												{
+													UINT32 BufSize;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Whereabouts1=%u ReturnValue=%s", Whereabouts1, ReturnValue.ToString )]
+												Struct
+												{
+													Struct
+													{
+														NDRConformant WhereaboutsConf;
+														Switch
+														{
+															Case WhereaboutsConf.MaxCount > 0:
+																[ Property.MQMPWhereaboutsOffset = FrameOffSet ]
+																DTCOSWhereabouts Whereabouts;
+														}
+														Switch
+														{
+															Case ( FrameOffSet - Property.MQMPWhereaboutsOffset ) < WhereaboutsConf.MaxCount:
+																Blob( WhereaboutsConf.MaxCount - ( FrameOffSet - Property.MQMPWhereaboutsOffset ) ) AdditionalData;
+														}
+													}
+													Align4 Pad;
+													UINT32 Whereabouts1;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 15:
+						_Struct RQMEnlistTransaction
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cookie=%u", Cookie )]
+												Struct
+												{
+													GUID(TRUE) Uow;
+													UINT32 Cookie;
+													Struct
+													{
+														NDRConformant CookieConf;
+														Switch
+														{
+															Case CookieConf.MaxCount > 0:
+																BLOB( CookieConf.MaxCount ) Cookie;
+														}
+													}
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 16:
+						_Struct RQMEnlistInternalTransaction
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													GUID(TRUE) Uow;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													ContextHandle IntXact;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 17:
+						_Struct RQMCommitTransaction
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle IntXact;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													ContextHandle IntXact;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 18:
+						_Struct RQMAbortTransaction
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle IntXact;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													ContextHandle IntXact;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 19:
+						_Struct RpcQMOpenQueueInternal
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "DesiredAccess=%u ShareMode=%u RemoteQueue=%u DwpQueue=%u ClientName=%s RemoteProtocol=%u DwpRemoteContext=%u", DesiredAccess, ShareMode, RemoteQueue, DwpQueue, ClientName.ToString, RemoteProtocol, DwpRemoteContext )]
+												Struct
+												{
+													MQMQCommonQueueFormat QueueFormat;
+													MQMQCommonQueueFormatRef QueueFormatRef;
+													Align4 Pad1;
+													UINT32 DesiredAccess = MQMPRpcQMOpenQueueInternalDesiredAccessTable(this);
+													UINT32 ShareMode = MQMPRpcQMOpenQueueInternalShareModeTable(this);
+													UINT32 RemoteQueue;
+													NdrPtr LplpRemoteQueueNamePtr;
+													Switch
+													{
+														Case LplpRemoteQueueNamePtr.ReferentID > 0:
+															NdrWideStringPtr LplpRemoteQueueName;
+													}
+													Align4 Pad2;
+													UINT32 DwpQueue;
+													GUID(TRUE) LicGuid;
+													NdrWideString ClientName;
+													Align4 Pad3;
+													UINT32 RemoteProtocol = MQMPRpcQMOpenQueueInternalRemoteProtocolTable(this);
+													UINT32 DwpRemoteContext;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "QMContext=%u ReturnValue=%s", QMContext, ReturnValue.ToString )]
+												Struct
+												{
+													NdrPtr LplpRemoteQueueNamePtr;
+													Switch
+													{
+														Case LplpRemoteQueueNamePtr.ReferentID > 0:
+															NdrWideStringPtr LplpRemoteQueueName;
+													}
+													Align4 Pad;
+													UINT32 QMContext;
+													ContextHandle Queue;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 20:
+						_Struct RpcACCloseHandle
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Queue;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													ContextHandle Queue;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 22:
+						_Struct RpcACCloseCursor
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cursor=%u", Cursor )]
+												Struct
+												{
+													ContextHandle Queue;
+													UINT32 Cursor;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 23:
+						_Struct RpcACSetCursorProperties
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Cursor=%u RemoteCursor=%u", Cursor, RemoteCursor )]
+												Struct
+												{
+													ContextHandle Proxy;
+													UINT32 Cursor;
+													UINT32 RemoteCursor;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 26:
+						_Struct RpcACHandleToFormatName
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "FormatNameRPCBufferLen=%u Length=%u", FormatNameRPCBufferLen, Length )]
+												Struct
+												{
+													ContextHandle Queue;
+													UINT32 FormatNameRPCBufferLen;
+													NdrPtr LpwcsFormatNamePtr;
+													Switch
+													{
+														Case LpwcsFormatNamePtr.ReferentID > 0:
+															Struct LpwcsFormatName
+															{
+																NdrConformantVarying LpwcsFormatNameConf;
+																Switch
+																{
+																	Case LpwcsFormatNameConf.ActualCount > 0:
+																		UnicodeString( LpwcsFormatNameConf.ActualCount ) LpwcsFormatName;
+																}
+															}
+													}
+													Align4 Pad;
+													UINT32 Length;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "Length=%u ReturnValue=%s", Length, ReturnValue.ToString )]
+												Struct
+												{
+													NdrPtr LpwcsFormatNamePtr;
+													Switch
+													{
+														Case LpwcsFormatNamePtr.ReferentID > 0:
+															Struct LpwcsFormatName
+															{
+																NdrConformantVarying LpwcsFormatNameConf;
+																Switch
+																{
+																	Case LpwcsFormatNameConf.ActualCount > 0:
+																		UnicodeString( LpwcsFormatNameConf.ActualCount ) LpwcsFormatName;
+																}
+															}
+													}
+													
+													Align4 Pad;
+													UINT32 Length;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 27:
+						_Struct RpcACPurgeQueue
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												Struct
+												{
+													ContextHandle Queue;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 28:
+						_Struct RQMQueryQMRegistryInternal
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "QueryType=%u", QueryType )]
+												Struct
+												{
+													UINT32 QueryType = MQMPRQMQueryQMRegistryInternalQueryTypeTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "LplpMQISServer=%s ReturnValue=%s", LplpMQISServer.ToString, ReturnValue.ToString )]
+												Struct
+												{
+													NdrWideStringPtr LplpMQISServer;
+													Align4 Pad;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 31:
+						_Struct RQMGetRTQMServerPort
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "IP=%u", IP )]
+												Struct
+												{
+													UINT32 IP = MQMPRQMGetRTQMServerPortIPTable(this);
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+											Default:
+												[MQMPSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+												Struct
+												{
+													UINT32 ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0:
+					Case 5:
+					Case 13:
+					Case 21:
+					Case 24:
+					Case 25:
+					Case 29:
+					Case 30:
+					Case 32:
+					Case 33:
+					Case 34:
+						Struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[MQMPSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									_Struct Request
+									{
+										ReportParserWarning("MQMP", "Invalid qmcomm method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[MQMPSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									_Struct Response
+									{
+										ReportParserWarning("MQMP", "Invalid qmcomm method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					
+					Default:
+						Switch
+						{
+							Case IsValueNone(Property.MSRPCOpnum):
+								Struct
+								{
+									Blob( FrameLength - Offset ) data;
+									ReportParserWarning("MQMP", "Property MSRPCOpnum is missing") ParserWarning;
+								}
+							default:
+								ReportParserError( ParserErrorProtocolClassWindows, "MQMP", "Unknown qmcomm method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+						}
+				}
+			}
+		
+	}
+}
+
+//
+//	CACCreateRemoteCursor
+//  Alignment: 4
+//
+Struct MQMPCACCreateRemoteCursor
+{
+	UINT32 Cursor;
+	UINT32 SrvHACQueue;
+	UINT32 CliPQMQueue;
+}
+
+//
+//	CACTransferBufferV1
+//  Alignment: Ndr
+//
+Struct MQMPCACTransferBufferV1
+{
+	UINT32 UTransferType = MQMPCACTsfrBufV1TransTypeTable(this);
+	MQMPCACTransferBufferV1Union TransferInfor;
+	[Property.MQMPClassPtr = this.ReferentId]
+	NdrPtr ClassPtr;
+	[Property.MQMPMessageIDPtr = this.ReferentId]
+	NdrPtr MessageIDPtr;
+	[Property.MQMPCorrelationIDPtr = this.ReferentId]
+	NdrPtr CorrelationIDPtr;
+	[Property.MQMPSentTimePtr = this.ReferentId]
+	NdrPtr SentTimePtr;
+	[Property.MQMPArrivedTimePtr = this.ReferentId]
+	NdrPtr ArrivedTimePtr;
+	[Property.MQMPPriorityPtr = this.ReferentId]
+	NdrPtr PriorityPtr;
+	[Property.MQMPDeliveryPtr = this.ReferentId]
+	NdrPtr DeliveryPtr;
+	[Property.MQMPAcknowledgePtr = this.ReferentId]
+	NdrPtr AcknowledgePtr;
+	[Property.MQMPAuditingPtr = this.ReferentId]
+	NdrPtr AuditingPtr;
+	[Property.MQMPApplicationTagPtr = this.ReferentId]
+	NdrPtr ApplicationTagPtr;
+	[Property.MQMPBodyPtr = this.ReferentId]
+	NdrPtr BodyPtr;
+	UINT32 BodyBufferSizeInBytes;
+	UINT32 AllocBodyBufferInBytes;
+	[Property.MQMPBodySizePtr = this.ReferentId]
+	NdrPtr BodySizePtr;
+	[Property.MQMPTitlePtr = this.ReferentId]
+	NdrPtr TitlePtr;
+	UINT32 TitleBufferSizeInWCHARs;
+	[Property.MQMPTitleBufferSizeInWCHARsPtr = this.ReferentId]
+	NdrPtr TitleBufferSizeInWCHARsPtr;
+	UINT32 AbsoluteTimeToQueue;
+	[Property.MQMPRelativeTimeToQueuePtr = this.ReferentId]
+	NdrPtr RelativeTimeToQueuePtr;
+	UINT32 RelativeTimeToLive;
+	[Property.MQMPRelativeTimeToLivePtr = this.ReferentId]
+	NdrPtr RelativeTimeToLivePtr;
+	[Property.MQMPTracePtr = this.ReferentId]
+	NdrPtr TracePtr;
+	[Property.MQMPSenderIDTypePtr = this.ReferentId]
+	NdrPtr SenderIDTypePtr;
+	[Property.MQMPSenderIDPtr = this.ReferentId]
+	NdrPtr SenderIDPtr;
+	[Property.MQMPSenderIDLenPropPtr = this.ReferentId]
+	NdrPtr SenderIDLenPropPtr;
+	[Property.MQMPPrivLevelPtr = this.ReferentId]
+	NdrPtr PrivLevelPtr;
+	UINT32 AuthLevel;
+	[Property.MQMPAuthenticatedPtr = this.ReferentId]
+	NdrPtr AuthenticatedPtr;
+	[Property.MQMPHashAlgPtr = this.ReferentId]
+	NdrPtr HashAlgPtr;
+	[Property.MQMPEncryptAlgPtr = this.ReferentId]
+	NdrPtr EncryptAlgPtr;
+	[Property.MQMPSenderCertPtr = this.ReferentId]
+	NdrPtr SenderCertPtr;
+	UINT32 SenderCertLen;
+	[Property.MQMPSenderCertLenPropPtr = this.ReferentId]
+	NdrPtr SenderCertLenPropPtr;
+	[Property.MQMPPpwcsProvNamePtr = this.ReferentId]
+	NdrPtr PpwcsProvNamePtr;
+	UINT32 ProvNameLen;
+	[Property.MQMPAuthProvNameLenPropPtr = this.ReferentId]
+	NdrPtr AuthProvNameLenPropPtr;
+	[Property.MQMPProvTypePtr = this.ReferentId]
+	NdrPtr ProvTypePtr;
+	INT32 DefaultProvider;
+	[Property.MQMPSymmKeysPtr = this.ReferentId]
+	NdrPtr SymmKeysPtr;
+	UINT32 SymmKeysSize;
+	[Property.MQMPSymmKeysSizePropPtr = this.ReferentId]
+	NdrPtr SymmKeysSizePropPtr;
+	CHAR Encrypted;
+	CHAR Authenticated1;
+	UINT16 USenderIDLen;
+	[Property.MQMPSignaturePtr = this.ReferentId]
+	NdrPtr SignaturePtr;
+	UINT32 SignatureSize;
+	[Property.MQMPSignatureSizePropPtr = this.ReferentId]
+	NdrPtr SignatureSizePropPtr;
+	[Property.MQMPSrcQMIDPtr = this.ReferentId]
+	NdrPtr SrcQMIDPtr;
+	[Property.MQMPUowPtr = this.ReferentId]
+	NdrPtr UowPtr;
+	[Property.MQMPMsgExtensionPtr = this.ReferentId]
+	NdrPtr MsgExtensionPtr;
+	UINT32 MsgExtensionBufferInBytes;
+	[Property.MQMPMsgExtensionSizePtr = this.ReferentId]
+	NdrPtr MsgExtensionSizePtr;
+	[Property.MQMPConnectorTypePtr = this.ReferentId]
+	NdrPtr ConnectorTypePtr;
+	[Property.MQMPBodyTypePtr = this.ReferentId]
+	NdrPtr BodyTypePtr;
+	[Property.MQMPVersionPtr = this.ReferentId]
+	NdrPtr VersionPtr;
+}
+
+Struct MQMPCACTransferBufferV1Ref
+{
+	MQMPCACTransferBufferV1UnionRef TransferInforRef;
+	Switch
+	{
+		Case Property.MQMPClassPtr > 0:
+			UINT16 Class = MQMPCACTransferBufferV1ClassTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPMessageIDPtr > 0:
+			Struct MessageID
+			{
+				NdrPtr MessageIDPtr;
+				Switch
+				{
+					Case MessageIDPtr.ReferentID > 0:
+						Struct
+						{
+							MQMQCommonObjectID MessageID;
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPCorrelationIDPtr > 0:
+			Struct CorrelationID
+			{
+				NdrPtr CorrelationIDPtr;
+				Switch
+				{
+					Case CorrelationIDPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformantVarying CorrelationIDConf;
+							MQMQCommonObjectID CorrelationID;
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPSentTimePtr > 0:
+			UINT32 SentTime;
+	}
+	Switch
+	{
+		Case Property.MQMPArrivedTimePtr > 0:
+			UINT32 ArrivedTime;
+	}
+	Switch
+	{
+		Case Property.MQMPPriorityPtr > 0:
+			UINT8 Priority = formatstring("Priority: %u(Range should be 0x00 to 0x07, default is 0x03)", this);
+	}
+	Switch
+	{
+		Case Property.MQMPDeliveryPtr > 0:
+			UINT8 Delivery = MQMPCACTransferBufferV1DeliveryTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPAcknowledgePtr > 0:
+			UINT8 Acknowledge = MQMPCACTransferBufferV1AcknowledgeTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPAuditingPtr > 0:
+			UINT8 Auditing = MQMPCACTransferBufferV1AuditingTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPApplicationTagPtr > 0:
+			UINT32 ApplicationTag;
+	}
+	Switch
+	{
+		Case Property.MQMPBodyPtr > 0:
+			Struct Body
+			{
+				NdrPtr BodyPtr;
+				Switch
+				{
+					Case BodyPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformantVarying BodyConf;
+							Switch
+							{
+								Case BodyConf.ActualCount > 0:
+									BLOB( BodyConf.ActualCount ) Body;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPBodySizePtr > 0:
+			UINT32 BodySize;
+	}
+	Switch
+	{
+		Case Property.MQMPTitlePtr > 0:
+			Struct Title
+			{
+				NdrPtr TitlePtr;
+				Switch
+				{
+					Case TitlePtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformantVarying TitleConf;
+							Switch
+							{
+								Case TitleConf.ActualCount > 0:
+									UnicodeString( TitleConf.ActualCount ) Title;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPTitleBufferSizeInWCHARsPtr > 0:
+			UINT32 TitleBufferSizeInWCHARs;
+	}
+	Switch
+	{
+		Case Property.MQMPRelativeTimeToQueuePtr > 0:
+			UINT32 RelativeTimeToQueue;
+	}
+	Switch
+	{
+		Case Property.MQMPRelativeTimeToLivePtr > 0:
+			UINT32 RelativeTimeToLive;
+	}
+	Switch
+	{
+		Case Property.MQMPTracePtr > 0:
+			UINT8 Trace = MQMPCACTransferBufferV1TraceTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPSenderIDTypePtr > 0:
+			[ Property.MQMPSenderIDType ]
+			UINT32 SenderIDType = MQMPCACTransferBufferV1SenderIDTypeTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPSenderIDPtr > 0:
+			Struct SenderID
+			{
+				NdrPtr SenderIDPtr;
+				Switch
+				{
+					Case SenderIDPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformant SenderIDConf;
+							Switch
+							{
+								Case SenderIDConf.MaxCount > 0:
+									Switch( Property.MQMPSenderIDType )
+									{
+										Case 0x00000001:
+											Struct
+											{
+												SID(false) SenderID_SID;
+												//Workaround
+												Switch
+												{
+													Case SenderIDConf.MaxCount > 12:
+														Blob( SenderIDConf.MaxCount - 12 ) AdditionalData;
+												}
+											}
+										Case 0x00000002:
+											GUID(TRUE) SenderID_GUID;
+										//Workaround
+										Default:
+											Blob( SenderIDConf.MaxCount ) SenderID;
+									}
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPSenderIDLenPropPtr > 0:
+			UINT32 SenderIDLenProp;
+	}
+	Switch
+	{
+		Case Property.MQMPPrivLevelPtr > 0:
+			UINT32 PrivLevel = MQMPCACTransferBufferV1PrivLevelTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPAuthenticatedPtr > 0:
+			UINT8 Authenticated = MQMPCACTransferBufferV1AuthenticatedTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPHashAlgPtr > 0:
+			UINT32 HashAlg = MQMPCACTransferBufferV1HashAlgTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPEncryptAlgPtr > 0:
+			UINT32 EncryptAlg = MQMPCACTransferBufferV1EncryptAlgTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPSenderCertPtr > 0:
+			Struct SenderCert
+			{
+				NdrPtr SenderCertPtr;
+				Switch
+				{
+					Case SenderCertPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformant SenderCertConf;
+							Switch
+							{
+								Case SenderCertConf.MaxCount > 0:
+									[ Property.MQMPSenderCertOffset = FrameOffSet ]
+									X509Certificate SenderCert;
+							}
+							Switch
+							{
+								Case ( FrameOffSet - Property.MQMPSenderCertOffset ) < SenderCertConf.MaxCount:
+									Blob( SenderCertConf.MaxCount - ( FrameOffSet - Property.MQMPSenderCertOffset ) ) AdditionalData;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPSenderCertLenPropPtr > 0:
+			UINT32 SenderCertLenProp;
+	}
+	Switch
+	{
+		Case Property.MQMPPpwcsProvNamePtr > 0:
+			Struct ProvName
+			{
+				NdrPtr ProvNamePtr;
+				Switch
+				{
+					Case ProvNamePtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformant ProvNameConf;
+							Switch
+							{
+								Case ProvNameConf.MaxCount > 0:
+									UnicodeString( ProvNameConf.MaxCount ) ProvName;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPAuthProvNameLenPropPtr > 0:
+			UINT32 AuthProvNameLenProp;
+	}
+	Switch
+	{
+		Case Property.MQMPProvTypePtr > 0:
+			UINT32 ProvType = MQMPCACTransferBufferV1ProvTypeTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPSymmKeysPtr > 0:
+			Struct SymmKeys
+			{
+				NdrPtr SymmKeysPtr;
+				Switch
+				{
+					Case SymmKeysPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformant SymmKeysConf;
+							Switch
+							{
+								Case SymmKeysConf.MaxCount > 0:
+									BLOB( SymmKeysConf.MaxCount ) SymmKeys;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPSymmKeysSizePropPtr > 0:
+			UINT32 SymmKeysSizeProp;
+	}
+	Switch
+	{
+		Case Property.MQMPSignaturePtr > 0:
+			Struct Signature
+			{
+				NdrPtr SignaturePtr;
+				Switch
+				{
+					Case SignaturePtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformant SignatureConf;
+							Switch
+							{
+								Case SignatureConf.MaxCount > 0:
+									BLOB( SignatureConf.MaxCount ) Signature;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPSignatureSizePropPtr > 0:
+			UINT32 SignatureSizeProp;
+	}
+	Switch
+	{
+		Case Property.MQMPSrcQMIDPtr > 0:
+			Struct SrcQMID
+			{
+				NdrPtr SrcQMIDPtr;
+				Switch
+				{
+					Case SrcQMIDPtr.ReferentID > 0:
+						GUID(TRUE) SrcQMID;
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPUowPtr > 0:
+			GUID(TRUE) Uow;
+	}
+	Switch
+	{
+		Case Property.MQMPMsgExtensionPtr > 0:
+			Struct MsgExtension
+			{
+				NdrPtr MsgExtensionPtr;
+				Switch
+				{
+					Case MsgExtensionPtr.ReferentID > 0:
+						Struct
+						{
+							NdrConformantVarying MsgExtensionConf;
+							Switch
+							{
+								Case MsgExtensionConf.ActualCount > 0:
+									BLOB( MsgExtensionConf.ActualCount ) MsgExtension;
+							}
+						}
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPMsgExtensionSizePtr > 0:
+			UINT32 MsgExtensionSize;
+	}
+	Switch
+	{
+		Case Property.MQMPConnectorTypePtr > 0:
+			Struct ConnectorType
+			{
+				NdrPtr ConnectorTypePtr;
+				Switch
+				{
+					Case ConnectorTypePtr.ReferentID > 0:
+						GUID(TRUE) ConnectorType;
+				}
+			}
+	}
+	Switch
+	{
+		Case Property.MQMPBodyTypePtr > 0:
+			UINT32 BodyType = MQMQCommonDirectoryObjectPropertyValueTypeTable(this);
+	}
+	Switch
+	{
+		Case Property.MQMPVersionPtr > 0:
+			UINT32 Version = MQMPCACTransferBufferV1VersionTable(this);
+	}
+}
+
+
+
+Struct MQMPCACTransferBufferV1Union
+{
+	Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 Pad1;
+	}
+	[Property.MQMPTransferType]
+	UINT32 TransferType = MQMPCACTsfrBufV1TransTypeTable( this );
+	Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 Pad2;
+	}
+	Switch( TransferType )
+	{
+	Case 0: // CACTBSEND
+		Struct
+		{
+			[Property.MQMPAdminQueueFormatPtr = AdminQueueFormatPtr.ReferentId]
+			NdrPtr AdminQueueFormatPtr;
+			[Property.MQMPResponseQueueFormatPtr = ResponseQueueFormatPtr.ReferentId]
+			NdrPtr ResponseQueueFormatPtr;
+		}
+	Case 1: // CACTBRECEIVE
+		Struct
+		{
+			UINT32 RequestTimeout = FormatString( "%u milliseconds", this );
+			UINT32 Action = MQMPCACTsfrBufV1ActionTable( this );
+			UINT32 Asynchronous = MQMPCACTsfrBufV1AsynchronousTable( this );
+			UINT32 Cursor;
+			UINT32 ResponseFormatNameLength;
+			[Property.MQMPResponeFormatNamePtr = this.ReferentId]
+			NdrPtr	ResponeFormatNamePtr;
+			[Property.MQMPResponseFormatNameLenPropPtr =this.ReferentId]
+			NdrPtr	ResponseFormatNameLenPropPtr;
+			UINT32 AdminFormatNameLength;
+			[Property.MQMPAdminFormatNamePtr = this.ReferentId]
+			NdrPtr	AdminFormatNamePtr;
+			[Property.MQMPAdminFormatNamePtrLenProp = this.ReferentId]
+			NdrPtr AdminFormatNameLenPropPtr;
+			UINT32 DestFormatNameLength;
+			[Property.MQMPDestFormatNamePtr = this.ReferentId]
+			NdrPtr DestFormatNamePtr;
+			[Property.MQMPDestFormatNameLenPropPtr = this.ReferentId]
+			NdrPtr DestFormatNameLenPropPtr;
+			UINT32 OrderingFormatNameLength;
+			[Property.MQMPOrderingFormatNamePtr = this.ReferentId]
+			NdrPtr OrderingFormatNamePtr;
+			[Property.MQMPOrderingFormatNameLenPropPtr = this.ReferentId]
+			NdrPtr OrderingFormatNameLenPropPtr;
+		}
+	Case 2: // CACTBCREATECURSOR
+		MQMPCACCreateRemoteCursor		CreateCursor;
+	}
+}
+
+Struct MQMPCACTransferBufferV1UnionRef
+{
+	Switch(Property.MQMPTransferType)
+	{
+		Case 0:  // CACTBSEND
+		Struct
+		{
+			Switch
+			{
+				Case Property.MQMPAdminQueueFormatPtr:
+					Struct
+					{
+						MQMQCommonQueueFormat AdminQueueFormat;
+						MQMQCommonQueueFormatRef AdminQueueFormatRef;
+					}
+			}
+			Switch
+			{
+				Case Property.MQMPResponseQueueFormatPtr:
+					Struct
+					{
+						MQMQCommonQueueFormat ResponseQueueFormat;
+						MQMQCommonQueueFormatRef ResponseQueueFormatRef;
+					}
+			}			
+		}
+		
+		Case 1:  // CACTBRECEIVE
+		Struct
+		{
+			Switch
+			{
+				Case Property.MQMPResponeFormatNamePtr > 0: 
+					Struct
+					{
+						NdrPtr ResponeFormatNamePtr;
+						Switch
+						{
+							Case ResponeFormatNamePtr.ReferentID > 0: 
+								Struct
+								{
+									NDRConformant ResponeFormatNameConf;
+									UnicodeString( ResponeFormatNameConf.MaxCount) ResponeFormatName;
+								}
+						}
+					}
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPResponseFormatNameLenPropPtr:
+					UINT32 ResponseFormatNameLenProp;
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPAdminFormatNamePtr > 0:
+					Struct
+					{
+						NdrPtr AdminFormatNamePtr;
+						Switch
+						{
+							Case AdminFormatNamePtr.ReferentID > 0: 
+								Struct
+								{
+									NDRConformant AdminFormatNameConf;
+									UnicodeString( AdminFormatNameConf.MaxCount) AdminFormatName;
+								}
+						}
+					}
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPAdminFormatNamePtrLenProp:
+					UINT32 AdminFormatNameLenProp;
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPDestFormatNamePtr > 0:
+					Struct
+					{
+						NdrPtr DestFormatNamePtr;
+						Switch
+						{
+							Case DestFormatNamePtr.ReferentID > 0: 
+								Struct
+								{
+									NDRConformant DestFormatNameConf;
+									UnicodeString( DestFormatNameConf.MaxCount) DestFormatName;
+								}
+						}
+					}
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPDestFormatNameLenPropPtr:
+					UINT32 DestFormatNameLenProp;
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPOrderingFormatNamePtr:
+					Struct
+					{
+						NdrPtr OrderingFormatNamePtr;
+						Switch
+						{
+							Case OrderingFormatNamePtr.ReferentID > 0: 
+								Struct
+								{
+									NDRConformant OrderingFormatNameConf;
+									UnicodeString( OrderingFormatNameConf.MaxCount) OrderingFormatName;
+								}
+						}
+					}
+			}	
+			
+			Switch
+			{
+				Case Property.MQMPOrderingFormatNameLenPropPtr:
+					UINT32 OrderingFormatNameLenProp;
+			}	
+		}
+	}
+}
+
+Table MQMPCACTsfrBufV1TransTypeTable( value )
+{
+	Switch( value )
+	{
+	Case 0x00000000: "CactbSend -  Send (message placed in queue for delivery) operation to be performed";
+	Case 0x00000001: "CactbReceive - Receive (message read from queue) operation to be performed";
+	Case 0x00000002: "CactbCreateCursor - Cursor creation to be performed";
+	}
+}
+
+Table MQMPCACTsfrBufV1ActionTable( value )
+{
+	Switch( value )
+	{
+	Case 0x00000000: "MqActionReceive";
+	Case 0x80000000: "MqActionPeekCurrent";
+	Case 0x80000001: "MqActionPeekNext";
+	}
+}
+
+Table MQMPCACTransferBufferV1AcknowledgeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "MQMSG_ACKNOWLEDGMENT_NONE - No acknowledgment needed. This value corresponds to Message.AcknowledgementsRequested.None as defined in [MS-MQDMPR] section .";
+		Case 0x01: "MQMSG_ACKNOWLEDGMENT_POS_ARRIVAL - Positive acknowledgment is to be sent when the message is placed in the destination queue. This value corresponds to Message.AcknowledgementsRequested.AckPosArrival as defined in [MS-MQDMPR] section .";
+		Case 0x02: "MQMSG_ACKNOWLEDGMENT_POS_RECEIVE - Positive acknowledgment is to be sent when the message is received from the destination queue. This value corresponds to Message.AcknowledgementsRequested.AckPosReceive as defined in [MS-MQDMPR] section .";
+		Case 0x04: "MQMSG_ACKNOWLEDGMENT_NEG_ARRIVAL - Negative acknowledgment is to be sent when the message fails to arrive at the destination queue. This value corresponds to Message.AcknowledgementsRequested.AckNegArrival as defined in [MS-MQDMPR] section .";
+		//Case 0x04: "MQMSG_ACKNOWLEDGMENT_NACK_REACH_QUEUE - Negative acknowledgment is to be sent when the message fails to arrive at the destination queue. This value corresponds to Message.AcknowledgementsRequested.AckNegArrival as defined in [MS-MQDMPR] section .";
+		Case 0x05: "MQMSG_ACKNOWLEDGMENT_FULL_REACH_QUEUE - Positive acknowledgment is to be sent when the message is placed in the destination queue and/or negative acknowledgment is to be sent when the message fails to arrive at the destination queue. This value corresponds to a combination of Message.AcknowledgementsRequested.AckPosArrival and AckNegArrival as defined in [MS-MQDMPR] section .";
+		Case 0x08: "MQMSG_ACKNOWLEDGMENT_NEG_RECEIVE - Negative acknowledgment is to be sent when the message fails to be received from the destination queue. This value corresponds to Message.AcknowledgementsRequested.AckNegReceive as defined in [MS-MQDMPR] section .";
+		Case 0x0C: "MQMSG_ACKNOWLEDGMENT_NACK_RECEIVE - Negative acknowledgment is to be sent when the message fails to arrive at the destination queue or when a receive for the message from the destination queue fails. This value corresponds to a combination of Message.AcknowledgementsRequested.AckNegReceive and AckNegArrival as defined in [MS-MQDMPR] section .";
+		Case 0x0E: "MQMSG_ACKNOWLEDGMENT_FULL_RECEIVE - Positive acknowledgment is to be sent when the message is received from the destination queue and a negative acknowledgment is to be sent when the message fails to arrive at the destination queue or a negative acknowledgment is to be sent when a receive for the message from the destination queue fails. This value corresponds to a combination of Message.AcknowledgementsRequested.AckNegReceive, AckNegArrival, and AckPosReceive as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1AuditingTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "MQMSG_JOURNAL_NONE - Do not store copies. This value corresponds to a Message.PositiveJournalingRequested value of False and a Message.NegativeJournalingRequested value of False, as defined in [MS-MQDMPR] section .";
+		Case 0x01: "MQMSG_DEADLETTER - Store copy in dead-letter queue on failure. This value corresponds to a Message.PositiveJournalingRequested value of False and a Message.NegativeJournalingRequested value of True, as defined in [MS-MQDMPR] section .";
+		Case 0x02: "MQMSG_JOURNAL - Store copy in queue journal upon successful delivery to next computer. This value corresponds to a Message.PositiveJournalingRequested value of True and a Message.NegativeJournalingRequested value of False, as defined in [MS-MQDMPR] section .";
+		Case 0x03: "MQMSG_DEADLETTER|MQMSG_JOURNAL - Store copy in queue journal upon successful delivery to next computer. Store copy in dead-letter queue on failure. This value corresponds to a Message.PositiveJournalingRequested value of True and a Message.NegativeJournalingRequested value of True, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1AuthenticatedTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "MQMSG_AUTHENTICATION_NOT_REQUESTED - Authentication has not been performed. This value corresponds to Message.AuthenticationLevel value of None, as defined in [MS-MQDMPR] section .";
+		Case 0x01: "MQMSG_AUTHENTICATED_SIG10 - Authentication has been performed using an MSMQ 1.0 digital signature. This value corresponds to Message.AuthenticationLevel value of Sig10, as defined in [MS-MQDMPR] section .";
+		Case 0x03: "MQMSG_AUTHENTICATED_SIG20 - Authentication has been performed using an MSMQ 2.0 digital signature. This value corresponds to Message.AuthenticationLevel value of Sig20, as defined in [MS-MQDMPR] section .";
+		Case 0x05: "MQMSG_AUTHENTICATED_SIG30 - Authentication has been performed using an MSMQ 3.0 digital signature. This value corresponds to Message.AuthenticationLevel value of Sig30, as defined in [MS-MQDMPR] section .";
+		Case 0x09: "MQMSG_AUTHENTICATED_SIGXML - Authentication has been performed using an XML digital signature. This value corresponds to Message.AuthenticationLevel value of XMLSig, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1ClassTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "MQMSG_CLASS_NORMAL - Normal";
+		Case 0x0001: "MQMSG_CLASS_REPORT - Report";
+		Case 0x0002: "MQMSG_CLASS_ACK_REACH_QUEUE - AckReachQueue";
+		Case 0x4000: "MQMSG_CLASS_ACK_RECEIVE - AckReceive";
+		Case 0x8000: "MQMSG_CLASS_NACK_BAD_DST_Q - NackBadDestQueue";
+		Case 0x8001: "MQMSG_CLASS_NACK_DELETED - NackPurged";
+		Case 0x8002: "MQMSG_CLASS_NACK_REACH_QUEUE_TIMEOUT - NackReachQueueTimeout";
+		Case 0x8003: "MQMSG_CLASS_NACK_Q_EXCEED_QUOTA - NackQueueExceedQuota";
+		Case 0x8004: "MQMSG_CLASS_NACK_ACCESS_DENIED - NackAccessDenied";
+		Case 0x8005: "MQMSG_CLASS_NACK_HOP_COUNT_EXCEEDED - NackHopCountExceeded";
+		Case 0x8006: "MQMSG_CLASS_NACK_BAD_SIGNATURE - NackBadSignature";
+		Case 0x8007: "MQMSG_CLASS_NACK_BAD_ENCRYPTION - NackBadEncryption";
+		Case 0x8009: "MQMSG_CLASS_NACK_NOT_TRANSACTIONAL_Q - NackNotTransactionalQueue";
+		Case 0x800a: "MQMSG_CLASS_NACK_NOT_TRANSACTIONAL_MSG - NackNotTransactionalMessage";
+		Case 0x800b: "MQMSG_CLASS_NACK_UNSUPPORTED_CRYPTO_PROVIDER - NackUnsupportedCryptoProvider";
+		Case 0xc000: "MQMSG_CLASS_NACK_Q_DELETED - NackQueueDeleted";
+		Case 0xc001: "MQMSG_CLASS_NACK_Q_PURGED - NackQueuePurged";
+		Case 0xc002: "MQMSG_CLASS_NACK_RECEIVE_TIMEOUT - NackReceiveTimeout";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1DeliveryTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "V1 - A value of 0x00 specifies that the message is not recoverable. The message can remain in volatile storage and is subject to loss in the event of a system crash. This value corresponds to Message.DeliveryGuarantee.Express as defined in [MS-MQDMPR] section .";
+		Case 0x01: "V2 - A value of 0x01 specifies that the message is recoverable and is to be written to non-volatile storage as it moves through the network to its destination and can survive a system crash. Recoverable messages do not have to be part of a transaction. This value corresponds to Message.DeliveryGuarantee.Recoverable as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1EncryptAlgTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00006602: "MQMSG_CALG_RC2 - Use the RC2 encryption algorithm as specified in [RFC2268]. This value corresponds to Message.EncryptionAlgorithm value of RC2, as defined in [MS-MQDMPR] section .";
+		Case 0x00006801: "MQMSG_CALG_RC4 - Use the RC4 encryption algorithm as specified in [RC4]. This value corresponds to Message.EncryptionAlgorithm value of RC4, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1HashAlgTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00008001: "MQMSG_CALG_MD2 - Use the MD2 algorithm as specified in [RFC1319]. This value corresponds to the Message.HashAlgorithm value of MD2, as defined in [MS-MQDMPR] section .";
+		Case 0x00008002: "MQMSG_CALG_MD4 - Use the MD4 algorithm as specified in [RFC1320]. This value corresponds to the Message.HashAlgorithm value of MD4, as defined in [MS-MQDMPR] section .";
+		Case 0x00008003: "MQMSG_CALG_MD5 - Use the MD5 algorithm as specified in [RFC1321]. This value corresponds to the Message.HashAlgorithm value of MD5, as defined in [MS-MQDMPR] section .";
+		Case 0x00008004: "MQMSG_CALG_SHA1 - Use the SHA-1 algorithm as specified in [RFC3174]. This value corresponds to the Message.HashAlgorithm value of SHA1, as defined in [MS-MQDMPR] section .";
+		Case 0x0000800C: "MQMSG_CALG_SHA_256 - Use the SHA-256 algorithm, as specified in [FIPS180-2]. This value corresponds to the Message.HashAlgorithm value of SHA_256, as defined in [MS-MQDMPR] section .";
+		Case 0x0000800E: "MQMSG_CALG_SHA_512 - Use the SHA-512 algorithm, as specified in [FIPS180-2]. This value corresponds to the Message.HashAlgorithm value of SHA_512, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1PrivLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQMSG_PRIV_LEVEL_NONE - The message is not private. This value corresponds to Message.PrivacyLevel value of None, as defined in [MS-MQDMPR] section .";
+		Case 0x00000001: "MQMSG_PRIV_LEVEL_BODY_BASE - The message is private and the Cryptographic Service Provider (CSP) will use a 40-bit encryption key to encrypt and decrypt the message body. This value corresponds to Message.PrivacyLevel value of Base, as defined in [MS-MQDMPR] section .";
+		Case 0x00000002: "MQMSG_PRIV_LEVEL_BODY_ENHANCED - The message is private and the CSP will use a 128-bit encryption key to encrypt and decrypt the message body. This value corresponds to Message.PrivacyLevel value of Enhanced, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1ProvTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "PROV_RSA_FULL - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1SenderIDTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQMSG_SENDERID_TYPE_NONE - No sender ID is present. This value corresponds to Message.SenderIdentifierType value of None, as defined in [MS-MQDMPR] section .";
+		Case 0x00000001: "MQMSG_SENDERID_TYPE_SID - The sender ID is a SID. This value corresponds to Message.SenderIdentifierType value of Sid, as defined in [MS-MQDMPR] section .";
+		Case 0x00000002: "MQMSG_SENDERID_TYPE_QM - The sender ID is the GUID assigned to a queue manager. This value corresponds to Message.SenderIdentifierType value of QueueManagerIdentifier, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1TraceTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "V1 - A value of 0x00 MUST be used to specify that tracing is not active. This value corresponds to Message.TracingRequested value of False, as defined in [MS-MQDMPR] section .";
+		Case 0x01: "V2 - A value of 0x01 MUST be used to specify that tracing is active. This value corresponds to Message.TracingRequested value of True, as defined in [MS-MQDMPR] section .";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPCACTransferBufferV1VersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000010: "FALCON_PACKET_VERSION - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	CACTransferBufferV2
+//  Alignment: Ndr
+//
+Struct MQMPCACTransferBufferV2
+{
+	MQMPCACTransferBufferV1 Old;
+	[ Property.MQMPFirstInXactPtr = this.ReferentID ]
+	NdrPtr FirstInXactPtr;
+	[ Property.MQMPLastInXactPtr = this.ReferentID ]
+	NdrPtr LastInXactPtr;
+	[ Property.MQMPXactIDPtr = this.ReferentID ]
+	NdrPtr XactIDPtr;
+}
+
+Struct MQMPCACTransferBufferV2Ref
+{
+	MQMPCACTransferBufferV1Ref OldRef;
+	Switch
+	{
+		Case Property.MQMPFirstInXactPtr != 0:
+			UINT8 FirstInXact;
+	}
+	Switch
+	{
+		Case Property.MQMPLastInXactPtr != 0:
+			UINT8 LastInXact;
+	}
+	Switch
+	{
+		Case Property.MQMPXactIDPtr != 0:
+			Struct XactID
+			{
+				NdrPtr XactIDPtr;
+				Switch
+				{
+					Case XactIDPtr.ReferentID > 0:
+						MQMQCommonObjectID XactID;
+				}
+			}
+	}
+}
+
+Table MQMPNestedReceiveNestedCACTransferBufferV11ActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_ACTION_RECEIVE - Possible value.";
+		Case 0x80000000: "MQ_ACTION_PEEK_CURRENT - Possible value.";
+		Case 0x80000001: "MQ_ACTION_PEEK_NEXT - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	OBJECT_FORMAT
+//  Alignment: Ndr
+//
+Struct MQMPObjectFormat
+{
+	UINT32 ObjType = MQMPObjectFormatObjTypeTable(this);
+	Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 Pad1;
+	}
+	UINT32 SwitchValue;
+		Switch
+	{
+		Case Property.MSRPCNdr64:
+			Align8 Pad2;
+	}
+	Switch( SwitchValue )
+	{
+		Case 1:
+			[ Property.MQMPQueueFormatPtr = this.ReferentID ]
+			NdrPtr QueueFormatPtr;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "MQMP", "Unknown Union Switch Value" ) Unknown;
+	}
+}
+
+Struct MQMPObjectFormatRef
+{
+	Switch
+	{
+		Case Property.MQMPQueueFormatPtr > 0:
+			Struct
+			{
+				MQMQCommonQueueFormat QueueFormat;
+				MQMQCommonQueueFormatRef QueueFormatRef;
+			}
+	}
+}
+
+Table MQMPObjectFormatObjTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRpcQMOpenQueueInternalDesiredAccessTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "MQ_RECEIVE_ACCESS - The server MUST permit only the following operations using the returned queue handle:Message peekMessage receive (peek and delete)Queue purge";
+		Case 0x00000002: "MQ_SEND_ACCESS - The server MUST permit only message send operations using the returned queue handle.";
+		Case 0x00000020: "MQ_PEEK_ACCESS - The server MUST permit only message peek operations using the returned queue handle.";
+		Case 0x00000081: "MQ_RECEIVE_ACCESS|MQ_ADMIN_ACCESS - The returned queue handle MUST perform operations on the outgoing queue associated with the queue identified by pQueueFormat. Additionally, the server MUST permit only the following operations using the returned queue handle:Message peekMessage receive (peek and delete)Queue purge";
+		Case 0x000000a0: "MQ_PEEK_ACCESS|MQ_ADMIN_ACCESS - The returned queue handle MUST perform operations on the outgoing queue associated with the queue identified by pQueueFormat. Additionally, the server MUST permit only message peek operations using the returned queue handle.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRpcQMOpenQueueInternalRemoteProtocolTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - The TCP/IP protocol sequence is to be used.";
+		Case 0x00000003: "V2 - The IPX/SPX protocol sequence is to be used.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRpcQMOpenQueueInternalShareModeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_DENY_NONE - The queue is not opened exclusively.";
+		Case 0x00000001: "MQ_DENY_RECEIVE_SHARE - The queue is opened for exclusive read access. If the queue has already been opened for read access, the server MUST return a failure HRESULT. If the queue is opened successfully for exclusive read access, subsequent attempts to open the same queue for read access MUST return a failure HRESULT until the queue has been closed.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMCreateObjectInternalObjectTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - Possible value.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMGetRTQMServerPortIPTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "IP_HANDSHAKE - Requests that the server return the RPC port number for the qmcomm and qmcomm2 interfaces bound to TCP/IP. The default port number is 2103.";
+		Case 0x00000001: "IP_READ - Requests that the server return the RPC port number for the qm2qm interface, as specified in [MS-MQQP], bound to TCP/IP. The default port number is 2105.";
+		Case 0x00000002: "IPX_HANDSHAKE - Requests that the server return the RPC port number for the qmcomm and qmcomm2 interfaces bound to SPX.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, and windows_server_2008.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, windows_server_2008, windows_7, and windows_server_7.The server returns 0x00000000 to indicate failure.The default port number is 2103.";
+		Case 0x00000003: "IPX_READ - Requests that the server return the RPC port number for the qm2qm interface, as specified in [MS-MQQP], bound to SPX.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, and windows_server_2008.RPC over SPX is supported only by windows_nt and windows_2000. This value is not supported by windows_xp, windows_server_2003, windows_server_2008, windows_7, and windows_server_7.The server returns 0x00000000 to indicate failure.The default port number is 2105.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMOpenRemoteQueueDesiredAccessTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "MQ_RECEIVE_ACCESS - The returned queue handle MUST only permit message peek, message receive (peek and delete), and queue purge operations.";
+		Case 0x00000020: "MQ_PEEK_ACCESS - The returned queue handle MUST only permit message peek operations.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMOpenRemoteQueueMQSTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Yes - None. The operating system (OS) version is not declared.";
+		Case 0x00000100: "Yes0 - For supported operating systems.A non-Microsoft OS.";
+		Case 0x00000200: "Yes1 - For supported operating systems.Any edition of windows_95, windows_98, or windows_me.";
+		Case 0x00000300: "Yes2 - For supported operating systems.windows_nt_workstation, windows_2000_professional, windows_xp, or windows_vistaor windows_7.";
+		Case 0x00000400: "No - For supported operating systems.windows_nt_server, windows_2000_server, windows_vista, or windows_server_2008windows_7, or windows_server_7.";
+		Case 0x00000500: "No0 - For supported operating systems.Any premium, advanced, or data center edition of an NT-class windows_server OS.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMOpenRemoteQueueShareModeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "MQ_DENY_NONE - The queue is not opened exclusively.";
+		Case 0x00000001: "MQ_DENY_RECEIVE_SHARE - The queue is to be opened for exclusive read access. If the queue has already been opened for read access, the server MUST return STATUS_SHARING_VIOLATION (0xc0000043). If the queue is opened successfully for exclusive read access, subsequent attempts to open the same queue for read access MUST return STATUS_SHARING_VIOLATION (0xc0000043) until the queue has been closed.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPRQMQueryQMRegistryInternalQueryTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "V1 - A comma-delimited list of MQIS server names configured on the supporting server. This value is retrieved from the DirectoryServerList attribute of the server'sQueueManager.";
+		Case 0x00000001: "V2 - The server's default time-to-reach-queue message property value, expressed in seconds, converted to a string.For windows_nt and windows_2000_server, this value defaults to \"7776000\" (90 days). For windows_server_2003 and longhorn_server, the default value is \"345600\" (4 days).windowsservers store and retrieve these values from the registry.";
+		Case 0x00000002: "V3 - The GUID which represents the entire MSMQ forest.windowsservers store and retrieve these values from the registry.See below for the curly braced GUID string representation to use. The string must use the \"braceless\" format.";
+		Case 0x00000003: "V4 - A string representation of the supporting server version.This value is supported by windows_2000, windows_xp, windows_server_2003, windows_vista, and windows_server_2008, windows_7, and windows_server_7. windows_ntservers return a failure HRESULT.";
+		Case 0x00000004: "V5 - The content of the Identifier attribute of the server'sQueueManager. The curly braced GUID string representation uses a \"braceless\" format given below.This value is supported by windows_2000, windows_xp, windows_server_2003, windows_vista, and windows_server_2008, windows_7, and windows_server_7. windows_ntservers return a failure HRESULT.windowsservers store and retrieve these values from the registry.";
+		Default: "Unknown";
+	}
+}
+
+Table MQMPqmcomm2MethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "QMSendMessageInternalEx";
+		Case 1: "rpc_ACSendMessageEx";
+		Case 2: "rpc_ACReceiveMessageEx";
+		Case 3: "rpc_ACCreateCursorEx";
+		Default: "unknown";
+	}
+}
+
+Table MQMPqmcommMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Opnum0NotUsedOnWire";
+		Case 1: "R_QMGetRemoteQueueName";
+		Case 2: "R_QMOpenRemoteQueue";
+		Case 3: "R_QMCloseRemoteQueueContext";
+		Case 4: "R_QMCreateRemoteCursor";
+		Case 5: "Opnum5NotUsedOnWire";
+		Case 6: "R_QMCreateObjectInternal";
+		Case 7: "R_QMSetObjectSecurityInternal";
+		Case 8: "R_QMGetObjectSecurityInternal";
+		Case 9: "R_QMDeleteObject";
+		Case 10: "R_QMGetObjectProperties";
+		Case 11: "R_QMSetObjectProperties";
+		Case 12: "R_QMObjectPathToObjectFormat";
+		Case 13: "Opnum13NotUsedOnWire";
+		Case 14: "R_QMGetTmWhereabouts";
+		Case 15: "R_QMEnlistTransaction";
+		Case 16: "R_QMEnlistInternalTransaction";
+		Case 17: "R_QMCommitTransaction";
+		Case 18: "R_QMAbortTransaction";
+		Case 19: "rpc_QMOpenQueueInternal";
+		Case 20: "rpc_ACCloseHandle";
+		Case 21: "Opnum21NotUsedOnWire";
+		Case 22: "rpc_ACCloseCursor";
+		Case 23: "rpc_ACSetCursorProperties";
+		Case 24: "Opnum24NotUsedOnWire";
+		Case 25: "Opnum25NotUsedOnWire";
+		Case 26: "rpc_ACHandleToFormatName";
+		Case 27: "rpc_ACPurgeQueue";
+		Case 28: "R_QMQueryQMRegistryInternal";
+		Case 29: "Opnum29NotUsedOnWire";
+		Case 30: "Opnum30NotUsedOnWire";
+		Case 31: "R_QMGetRTQMServerPort";
+		Case 32: "Opnum32NotUsedOnWire";
+		Case 33: "Opnum33NotUsedOnWire";
+		Case 34: "Opnum34NotUsedOnWire";
+		Default: "unknown";
+	}
+}
+
+Table MQMPCACTsfrBufV1AsynchronousTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "FALSE";
+		Default: "TRUE";
+	}
+}
+
+struct MQMPXACTUOW
+{
+	UINT8		RGB[16];
+}
+
+struct MQMPDirectoryObjectPropertyValue( inputPropertyId )
+{
+	MQMQCommonPropVariant		Value = MQMQCommonDirectoryObjectPROPIDTable( inputPropertyId );
+}

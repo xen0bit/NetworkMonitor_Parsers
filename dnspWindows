@@ -1,0 +1,4313 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Domain Name System (DNS) Server Management Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-DNSP]: Domain Name System (DNS) Server Management Protocol Specification Version 0.1 (7.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 6/19/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+//
+//  2.2.1.1.1	DNS_RPC_TYPEID
+//
+const DNSPDnssrvTypeidAny = 0xFFFFFFFF;
+const DNSPDnssrvTypeidNull = 0x00000000;
+const DNSPDnssrvTypeidDword = 0x00000001;
+const DNSPDnssrvTypeidLpstr = 0x00000002;
+const DNSPDnssrvTypeidLpwstr = 0x00000003;
+const DNSPDnssrvTypeidIparray = 0x00000004;
+const DNSPDnssrvTypeidBuffer = 0x00000005;
+const DNSPDnssrvTypeidServerInfoW2k = 0x00000006;
+const DNSPDnssrvTypeidStats = 0x00000007;
+const DNSPDnssrvTypeidForwardersW2k = 0x00000008;
+const DNSPDnssrvTypeidZoneW2k = 0x00000009;
+const DNSPDnssrvTypeidZoneInfoW2k = 0x0000000A;
+const DNSPDnssrvTypeidZoneSecondariesW2k = 0x0000000B;
+const DNSPDnssrvTypeidZoneDatabaseW2k = 0x0000000C;
+const DNSPDnssrvTypeidZoneTypeResetW2k = 0x0000000D;
+const DNSPDnssrvTypeidZoneCreateW2k = 0x0000000E;
+const DNSPDnssrvTypeidNameAndParam = 0x0000000F;
+const DNSPDnssrvTypeidZoneListW2k = 0x00000010;
+const DNSPDnssrvTypeidZoneRename = 0x00000011;
+const DNSPDnssrvTypeidZoneExport = 0x00000012;
+const DNSPDnssrvTypeidServerInfoDotnet = 0x00000013;
+const DNSPDnssrvTypeidForwardersDotnet = 0x00000014;
+const DNSPDnssrvTypeidZone = 0x00000015;
+const DNSPDnssrvTypeidZoneInfoDotnet = 0x00000016;
+const DNSPDnssrvTypeidZoneSecondariesDotnet = 0x00000017;
+const DNSPDnssrvTypeidZoneDatabase = 0x00000018;
+const DNSPDnssrvTypeidZoneTypeResetDotnet = 0x00000019;
+const DNSPDnssrvTypeidZoneCreateDotnet = 0x0000001A;
+const DNSPDnssrvTypeidZoneList = 0x0000001B;
+const DNSPDnssrvTypeidDpEnum = 0x0000001C;
+const DNSPDnssrvTypeidDpInfo = 0x0000001D;
+const DNSPDnssrvTypeidDpList = 0x0000001E;
+const DNSPDnssrvTypeidEnlistDp = 0x0000001F;
+const DNSPDnssrvTypeidZoneChangeDp = 0x00000020;
+const DNSPDnssrvTypeidEnumZonesFilter = 0x00000021;
+const DNSPDnssrvTypeidAddrarray = 0x00000022;
+const DNSPDnssrvTypeidServerInfo = 0x00000023;
+const DNSPDnssrvTypeidZoneInfo = 0x00000024;
+const DNSPDnssrvTypeidForwarders = 0x00000025;
+const DNSPDnssrvTypeidZoneSecondaries = 0x00000026;
+const DNSPDnssrvTypeidZoneTypeReset = 0x00000027;
+const DNSPDnssrvTypeidZoneCreate = 0x00000028;
+const DNSPDnssrvTypeidIpValidate = 0x00000029;
+const DNSPDnssrvTypeidAutoconfigure = 0x0000002A;
+const DNSPDnssrvTypeidUtf8StringList = 0x0000002B;
+const DNSPDnssrvTypeidUnicodeStringList = 0x0000002C;
+
+const DNSPDnsZoneTypeCache = 0x00000000;
+const DNSPDnsZoneTypePrimary = 0x00000001;
+const DNSPDnsZoneTypeSecondary = 0x00000002;
+const DNSPDnsZoneTypeStub = 0x00000003;
+const DNSPDnsZoneTypeForwarder = 0x00000004;
+const DNSPDnsZoneTypeSecondaryCache = 0x00000005; 
+
+Protocol DNSP = FormatString( "%s %s%s%s%s%s", 
+	Property.DNSPMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.DNSPSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.DNSPSummary : "" )
+{
+	[Property.DNSPSummary = ""]
+	[Property.DNSPMethodName = DNSPMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct R_DnssrvOperation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ServerName=%s Zone=%s Context=0x%X Operation=%s TypeId=0x%X", ServerName, Zone, Context, Operation, TypeId )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										Align4 Pad1;
+										UINT32 Context = ZONEREQUESTFILTERSContextTable( this );
+										NdrStringPtr Operation;
+										Align4 Pad2;
+										UINT32 TypeId = DNSPDnsRpcTypeidTable( this );
+										DNSPDNSSRVRPCUNION(0) Data;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 1:
+			_Struct R_DnssrvQuery
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ServerName=%s Zone=%s Operation=%s", ServerName, Zone, Operation )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr Operation;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "TypeId=0x%X", TypeId )]
+									Struct
+									{
+										UINT32 TypeId = DNSPDnsRpcTypeidTable( this );
+										DNSPDNSSRVRPCUNION(0) Data;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 2:
+			_Struct R_DnssrvComplexOperation
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ServerName=%s Zone=%s Operation=%s TypeIn=0x%X", ServerName, Zone, Operation, TypeIn )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr Operation;
+										Align4 Pad;
+										UINT32 TypeIn;
+										DNSPDNSSRVRPCUNION(0) DataIn;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "TypeOut=0x%X", TypeOut )]
+									Struct
+									{
+										UINT32 TypeOut;
+										DNSPDNSSRVRPCUNION(0) DataOut;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 3:
+			_Struct R_DnssrvEnumRecords
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ServerName=%s Zone=%s NodeName=%s StartChild=%s WRecordType=0x%X SelectFlag=0x%X FilterStart=%s FilterStop=%s", ServerName, Zone, NodeName, StartChild, WRecordType, SelectFlag, FilterStart, FilterStop )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr NodeName;
+										NdrStringPtr StartChild;
+										Align2 Pad;
+										UINT16 WRecordType = DNSPDnsRecordTypeTable(this);
+										Align4 Pad2;
+										UINT32 SelectFlag = DNSPSelectFlagTable(this);
+										NdrStringPtr FilterStart;
+										NdrStringPtr FilterStop;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+								[DNSPSummary = FormatString( "BufferLength=0x%X", BufferLength )]
+								Struct
+								{
+									UINT32 BufferLength;
+									NdrPtr Bufferptr;
+									switch
+									{
+										case BufferPtr.ReferentID > 0:
+										_struct
+										{
+											NdrConformant BufferLengthc;
+											[Bufferstart = frameoffset]
+											DNSPDNSRPCNODE BufferHeader;										
+											DNSPDnsRpcRecord DnsRpcRecord[RecordCount];
+											Blob(BufferLengthc.Maxcount-(frameoffset-Bufferstart)) Buffer;
+										}
+									}
+									Align4 pad;
+									UINT32 ReturnValue = WinErrorCodeTable(this);
+								}
+							}
+						}
+				}
+
+			}
+
+		Case 4:
+			_Struct R_DnssrvUpdateRecord
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ServerName=%s Zone=%s NodeName=%s", ServerName, Zone, NodeName )]
+									Struct
+									{
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrString NodeName;
+										DNSPDnsRpcRecordPtr AddRecord;
+										DNSPDnsRpcRecordPtr DeleteRecord;										
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 5:
+			_Struct R_DnssrvOperation2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ClientVersion=0x%X SettingFlags=0x%X ServerName=%s Zone=%s Context=0x%X Operation=%s TypeId=0x%X", conversation.ClientVersion, SettingFlags, ServerName, Zone, Context, Operation, TypeId )]
+									Struct
+									{
+										[Property.DNSPClientVersion = UINT32(FrameData,FrameOffset)]
+										DNSPDnsRpcCurrentClientVer CurrentClientVer; //"Reserved for future use"
+										UINT32 SettingFlags;
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										Align4 Pad1;
+										UINT32 Context;
+										NdrStringPtr Operation;
+										Align4 Pad2;
+										UINT32 TypeId = DNSPDnsRpcTypeidTable(this);
+										DNSPDNSSRVRPCUNION(Property.DNSPClientVersion) Data;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 6:
+			_Struct R_DnssrvQuery2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ClientVersion=0x%X SettingFlags=0x%X ServerName=%s Zone=%s Operation=%s", conversation.ClientVersion, SettingFlags, ServerName, Zone, Operation )]
+									Struct
+									{
+										[Conversation.DNSPClientVersion = UINT32(FrameData,FrameOffset)]
+										DNSPDnsRpcCurrentClientVer CurrentClientVer;
+										UINT32 SettingFlags;
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr Operation;										
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "TypeId=0x%X", TypeId )]
+									Struct
+									{
+										UINT32 TypeId;
+										[conversation.DNSPClientVersionPerFrame$[FrameNumber] = Conversation.DNSPClientVersion]
+										DNSPDNSSRVRPCUNION(conversation.DNSPClientVersionPerFrame$[FrameNumber]) Data;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 7:
+			_Struct R_DnssrvComplexOperation2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ClientVersion=0x%X SettingFlags=0x%X ServerName=%s Zone=%s Operation=%s TypeIn=0x%X", conversation.ClientVersion, SettingFlags, ServerName, Zone, Operation, TypeIn )]
+									Struct
+									{
+										[Conversation.DNSPClientVersion = UINT32(FrameData,FrameOffset)]
+										DNSPDnsRpcCurrentClientVer CurrentClientVer;
+										UINT32 SettingFlags;
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr Operation;
+										Align4 Pad;
+										UINT32 TypeIn;
+										DNSPDNSSRVRPCUNION(Conversation.DNSPClientVersion) DataIn;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "TypeOut=0x%X", TypeOut )]
+									Struct
+									{
+										UINT32 TypeOut;
+										DNSPDNSSRVRPCUNION(Conversation.ClientVersion) DataOut;
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Case 8:
+			_Struct R_DnssrvEnumRecords2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ClientVersion=0x%X SettingFlags=0x%X ServerName=%s Zone=%s NodeName=%s StartChild=%s WRecordType=0x%X SelectFlag=0x%X FilterStart=%s FilterStop=%s", conversation.ClientVersion, SettingFlags, ServerName, Zone, NodeName, StartChild, WRecordType, SelectFlag, FilterStart, FilterStop )]
+									Struct
+									{
+										DNSPDnsRpcCurrentClientVer CurrentClientVer;
+										UINT32 SettingFlags;
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrStringPtr NodeName;
+										NdrStringPtr StartChild;
+										Align2 Pad;
+										UINT16 WRecordType;
+										Align4 Pad2;
+										UINT32 SelectFlag;
+										NdrStringPtr FilterStart;
+										NdrStringPtr FilterStop;
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "BufferLength=0x%X", BufferLength )]
+									Struct
+									{
+										UINT32 BufferLength;
+										NdrPtr BufferPtr;
+										switch
+										{
+											case BufferPtr.ReferentID > 0:
+											_struct
+											{
+												NdrConformant BufferLengthc;
+												[Bufferstart = frameoffset]
+												DNSPDNSRPCNODE BufferHeader;
+												DNSPDnsRpcRecord DnsRpcRecord[RecordCount];
+												Blob(BufferLengthc.Maxcount-(frameoffset-Bufferstart)) Buffer;
+												}
+										}
+										Align4 pad;
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+			
+		Case 9:
+			_Struct R_DnssrvUpdateRecord2
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									[DNSPSummary = FormatString( "ClientVersion=0x%X SettingFlags=0x%X ServerName=%s Zone=%s NodeName=%s", conversation.ClientVersion, SettingFlags, ServerName, Zone, NodeName )]
+									Struct
+									{
+										DNSPDnsRpcCurrentClientVer CurrentClientVer;
+										UINT32 SettingFlags;
+										NdrWIDESTRINGPtr ServerName;
+										NdrStringPtr Zone;
+										NdrString NodeName;
+										DNSPDnsRpcRecordPtr AddRecord;
+										DNSPDnsRpcRecordPtr DeleteRecord;									
+									}
+							}
+						}
+
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+								Default:
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable(this);
+									}
+							}
+						}
+				}
+			}
+
+		Default:
+			ReportParserError (2, "DNSP", "Unknown dnsserver method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+	}
+}
+
+//
+//	2.2.1.1.2   DNS_RPC_TYPEID
+//
+Table DNSPDnsRpcTypeidTable(value)
+{
+	switch(value)
+	{
+		case 0xFFFFFFFF:"DNSPDnssrvTypeidAny,Type is invalid.";
+		case 0x00000000:"DNSPDnssrvTypeidNull,No data is provided.";
+		case 0x00000001:"DNSSRV_TYPEID_DWORD,A DWORD value.";
+		case 0x00000002:"DNSSRV_TYPEID_LPSTR,A pointer to a null-terminated UTF-8 string.";
+		case 0x00000003:"DNSSRV_TYPEID_LPWSTR,A pointer to a null-terminated Unicode string.";
+		case 0x00000004:"DNSSRV_TYPEID_IPARRAY,An array of IPv4 addresses.";
+		case 0x00000005:"DNSSRV_TYPEID_BUFFER,A pointer to a DNS_RPC_BUFFER.";
+		case 0x00000006:"DNSSRV_TYPEID_SERVER_INFO_W2K,A pointer to a structure of type DNS_RPC_FORWARDERS_W2K";
+		case 0x00000007:"DNSSRV_TYPEID_STATS,A pointer to a structure of type DNSSRV_STAT";
+		case 0x00000008:"DNSSRV_TYPEID_FORWARDERS_W2K,A pointer to a structure of type DNS_RPC_FORWARDERS_W2K ";
+		case 0x00000009:"DNSSRV_TYPEID_ZONE_W2K,A pointer to a structure of type DNS_RPC_ZONE_W2K ";
+		case 0x0000000A:"DNSSRV_TYPEID_ZONE_INFO_W2K,A pointer to a structure of type DNS_RPC_ZONE_INFO_W2K";
+		case 0x0000000B:"DNSSRV_TYPEID_ZONE_SECONDARIES_W2K,A pointer to a structure of type DNS_RPC_ZONE_SECONDARIES_W2K";
+		case 0x0000000C:"DNSSRV_TYPEID_ZONE_DATABASE_W2K,A pointer to a structure of type DNS_RPC_ZONE_DATABASE_W2K";
+		case 0x0000000E:"DNSSRV_TYPEID_ZONE_CREATE_W2K,A pointer to a structure of type DNS_RPC_ZONE_CREATE_INFO_W2K";
+		case 0x0000000F:"DNSSRV_TYPEID_NAME_AND_PARAM,A pointer to a structure of type DNS_RPC_NAME_AND_PARAM ";
+		case 0x00000010:"DNSSRV_TYPEID_ZONE_LIST_W2K,A pointer to a structure of type DNS_RPC_ZONE_LIST_W2K ";
+		case 0x00000012:"DNSSRV_TYPEID_ZONE_EXPORT,A pointer to a structure of type DNS_RPC_ZONE_EXPORT_INFO ";
+		case 0x00000013:"DNSSRV_TYPEID_SERVER_INFO_DOTNET,A pointer to a structure of type DNS_RPC_SERVER_INFO_DOTNET";
+		case 0x00000014:"DNSSRV_TYPEID_FORWARDERS_DOTNET,A pointer to a structure of type DNS_RPC_FORWARDERS_DOTNET";
+		case 0x00000015:"DNSSRV_TYPEID_ZONE,A pointer to a structure of type DNS_RPC_ZONE ";
+		case 0x00000016:"DNSSRV_TYPEID_ZONE_INFO_DOTNET,A pointer to a structure of type DNS_RPC_ZONE_INFO_DOTNET";
+		case 0x00000017:"DNSSRV_TYPEID_ZONE_SECONDARIES_DOTNET,A pointer to a structure of type DNS_RPC_ZONE_SECONDARIES_DOTNET";
+		case 0x00000018:"DNSSRV_TYPEID_ZONE_DATABASE,A pointer to a structure of type DNS_RPC_ZONE_DATABASE";
+		case 0x0000001A:"DNSSRV_TYPEID_ZONE_CREATE_DOTNET,A pointer to a structure of type DNS_RPC_ZONE_CREATE_INFO_DOTNET";
+		case 0x0000001B:"DNSSRV_TYPEID_ZONE_LIST,A pointer to a structure of type DNS_RPC_ZONE_LIST";
+		case 0x0000001C:"DNSSRV_TYPEID_DP_ENUM,A pointer to a structure of type DNS_RPC_DP_ENUM ";
+		case 0x0000001D:"DNSSRV_TYPEID_DP_INFO,A pointer to a structure of type DNS_RPC_DP_INFO ";
+		case 0x0000001E:"DNSSRV_TYPEID_DP_LIST,A pointer to a structure of type DNS_RPC_DP_LIST ";
+		case 0x0000001F:"DNSSRV_TYPEID_ENLIST_DP,A pointer to a structure of type DNS_RPC_ENLIST_DP ";
+		case 0x00000020:"DNSSRV_TYPEID_ZONE_CHANGE_DP,A pointer to a structure of type DNS_RPC_ZONE_CHANGE_DP ";
+		case 0x00000021:"DNSSRV_TYPEID_ENUM_ZONES_FILTER,A pointer to a structure of type DNS_RPC_ENUM_ZONES_FILTER";
+		case 0x00000022:"DNSSRV_TYPEID_ADDRARRAY,A pointer to a structure of type DNS_ADDR_ARRAY ";
+		case 0x00000023:"DNSSRV_TYPEID_SERVER_INFO,A pointer to a structure of type DNS_RPC_SERVER_INFO";
+		case 0x00000024:"DNSSRV_TYPEID_ZONE_INFO,A pointer to a structure of type DNS_RPC_ZONE_INFO ";
+		case 0x00000025:"DNSSRV_TYPEID_FORWARDERS,A pointer to a structure of type DNS_RPC_FORWARDERS";
+		case 0x00000026:"DNSSRV_TYPEID_ZONE_SECONDARIES,A pointer to a structure of type DNS_RPC_ZONE_SECONDARIES";
+		case 0x00000028:"DNSSRV_TYPEID_ZONE_CREATE,A pointer to a structure of type DNS_RPC_ZONE_CREATE_INFO";
+		case 0x00000029:"DNSSRV_TYPEID_IP_VALIDATE,A pointer to a structure of type DNS_RPC_RPC_IP_VALIDATE";
+		case 0x0000002A:"DNSSRV_TYPEID_AUTOCONFIGURE,A pointer to a structure of type DNS_RPC_AUTOCONFIGURE";
+		case 0x0000002B:"DNSSRV_TYPEID_UTF8_STRING_LIST,A pointer to a structure of type DNS_RPC_UTF8_STRING_LIST";
+		default:"Unknown";
+	}
+}
+
+//
+//  2.2.2.1.1	DNS_RECORD_TYPE
+//
+Table DNSPDnsRecordTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x0000:"DNS_TYPE_ZERO,An empty record type";
+		case 0x0001:"DNS_TYPE_A,An A record type, used for storing an IP address";
+		case 0x0002:"DNS_TYPE_NS,Authoritative name-server record type";
+		case 0x0003:"DNS_TYPE_MD,Mail-destination record type";
+		case 0x0004:"DNS_TYPE_MF,Mail forwarder record type";
+		case 0x0005:"DNS_TYPE_CNAME,A record type that contains the canonical name of a DNS alias";
+		case 0x0006:"DNS_TYPE_SOA,A Start of Authority, record type";
+		case 0x0007:"DNS_TYPE_MB,Mailbox record type";
+		case 0x0008:"DNS_TYPE_MG,Mail group member record type";
+		case 0x0009:"DNS_TYPE_MR,Mail-rename domain name record type";
+		case 0x000B:"DNS_TYPE_WKS,A record type for a well-known service";
+		case 0x000C:"DNS_TYPE_PTR,A record type containing domain name pointer ";
+		case 0x000D:"DNS_TYPE_HINFO,Host information record type";
+		case 0x000E:"DNS_TYPE_MINFO,Mailbox or mailing list information record type";
+		case 0x000F:"DNS_TYPE_MX,Mail-exchanger record type";
+		case 0x0010:"DNS_TYPE_TXT,A record type containing a text string";
+		case 0x0011:"DNS_TYPE_RP,Responsible-person record type";
+		case 0x0012:"DNS_TYPE_AFSDB,A record type containing AFS database location";
+		case 0x0013:"DNS_TYPE_X25,X25 PSDN address record type";
+		case 0x0014:"DNS_TYPE_ISDN,ISDN address record type";
+		case 0x0015:"DNS_TYPE_RT,Route through record type";
+		case 0x0018:"DNS_TYPE_SIG,Cryptographic public key signature record type";
+		case 0x0019:"DNS_TYPE_KEY,A record type containing public key used in DNSSEC ";
+		case 0x001C:"DNS_TYPE_AAAA,IPv6 address record type";
+		case 0x001D:"DNS_TYPE_LOC,Location information record type";
+		case 0x001E:"DNS_TYPE_NXT,Next-domain record type";
+		case 0x0021:"DNS_TYPE_SRV,Server selection record type";
+		case 0x0022:"DNS_TYPE_ATMA,ATM (Asynchronous Transfer Mode) addresses record type ";
+		case 0x0023:"DNS_TYPE_NAPTR,NAPTR record type";
+		case 0x0027:"DNS_TYPE_DNAME,DNAME record type";
+		case 0x002B:"DNS_TYPE_DS,A DS record type";
+		case 0x002E:"DNS_TYPE_RRSIG,an RRSIG record type";
+		case 0x002F:"DNS_TYPE_NSEC,An NSEC record type";
+		case 0x0030:"DNS_TYPE_DNSKEY,A DNSKEY record type";
+		case 0x0031:"DNS_TYPE_DHCID,A DHCID record type";
+		case 0xFF01:"DNS_TYPE_WINS,A record type containing WINS forward lookup data ";
+		case 0xFF02:"DNS_TYPE_WINSR,A record type containing WINS reverse lookup data";
+		case 0x00FF:"DNS_TYPE_ALL,All record types";
+		default:"unknown";
+	}
+}
+
+//
+//  2.2.4.1.1	DNS_BOOT_METHODS
+//
+Table DNSPDnsBootMethodsTable(value)
+{
+	switch(value)
+	{
+		case 0x01:"BOOT_METHOD_FILE,Server obtains boot information to populate its database from a file based persistent storage";
+		case 0x02:"BOOT_METHOD_REGISTRY,Server obtains boot information to populate its database from the registry file located on the server";
+		case 0x03:"BOOT_METHOD_DIRECTORY,Server obtains boot information to populate its database from the directory server";
+		default:"unknown";
+	}
+}
+
+//
+//  2.2.4.1.2	DNS_NAME_CHECK_FLAGS
+//
+Table DNSPDnsNameCheckFlagsTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:"DNS_ALLOW_RFC_NAMES_ONLY,The DNS server will accept DNS names that only contain the ASCII characters 'a-z', 'A-Z', and '0-9'";
+		case 0x00000001:"DNS_ALLOW_NONRFC_NAMES,The DNS server will accept any printable ASCII character in a name";
+		case 0x00000002:"DNS_ALLOW_MULTIBYTE_NAMES,The DNS server will accept all characters specified above and also UTF-8 characters in names";
+		case 0x00000003:"DNS_ALLOW_ALL_NAMES,The DNS server will not restrict the set of characters that may appear in names";
+		default:"unknown";
+	}
+}
+
+//
+//  2.2.5.1.1	DNS_ZONE_TYPE
+//
+Table DNSPDNSZONETYPETable(value)
+{
+	switch(value)
+	{
+		case DNSPDnsZoneTypeCache:"This zone is used to store all cached DNS records received from remote DNS servers during normal query processing.";
+		case DNSPDnsZoneTypePrimary:"The DNS server is a primary DNS server for this zone.";
+		case DNSPDnsZoneTypeSecondary:"The DNS server is acting as a secondary DNS server for this zone.";
+		case DNSPDnsZoneTypeStub:"Zone is a stub zone, i.e., it contains only those resource records that are necessary to identify authoritative DNS servers for that zone.";
+		case DNSPDnsZoneTypeForwarder:"The DNS server is a forwarder for this zone, i.e., the server does not have authoritative information for resource records in this zone. ";
+		case DNSPDnsZoneTypeSecondaryCache:"This zone is used to hold cached records for some implementation-specific purpose.";
+		default:"Unknow";
+	}
+}
+
+//
+//  2.2.1.2.1	DNS_RPC_CURRENT_CLIENT_VER
+//
+Struct DNSPDnsRpcCurrentClientVer = FormatString("%s",DNSPDnsRpcCurrentClientVerDNSRPCClientMajorVersionTable(DNSRPCClientMajorVersion))
+{
+	UINT16 DNSRPCClientMajorVersion = DNSPDnsRpcCurrentClientVerDNSRPCClientMajorVersionTable(this);
+	[conversation.ClientVersion = (DNSRPCClientMinorVersion << 16)]
+	UINT16 DNSRPCClientMinorVersion;
+}
+
+Table DNSPDnsRpcCurrentClientVerDNSRPCClientMajorVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Client requests RPC structures associated with DNS Server Management Protocol which does not require specific version numbers.";
+		Case 0x00060000: "Client requests RPC structures associated with DNS Server Management Protocol version 6.";
+		Case 0x00070000: "Client requests RPC structures associated with DNS Server Management Protocol version 7.";
+		Default: "unknown";
+	}
+}
+
+//
+//  2.2.2.2.1	DNS_RPC_NAME
+//
+Struct DNSPDnsrpcname = FormatString("DNS Rpc Name:%s",DnsName.ToString)
+{
+	UINT8 cchNameLength;
+	MbcString(cchNameLength) DnsName;
+}
+
+//
+//	2.2.2.1.2   DNS_RPC_NODE_FLAGS
+//
+struct DNSPDNSRPCNodeFlags
+{
+	UINT32 Flags
+	{
+		UINT32 Reserve1:16 = FormatString("                   (%s) %s", this.ToBitString,this );
+		UINT32 DNSRPCFLAGSUPPRESSNOTIFY:1 = FormatString("   (%s) %s", this.ToBitString, this ? "This flag is set when updating a record to disable zone-update notifications for a zone. " : "This flag is not set when updating a record to disable zone-update notifications for a zone. ");
+		UINT32 DNSRPCFLAGAGINGON:1 = FormatString("          (%s) %s", this.ToBitString, this ? "This flag is set when updating a record to enable or disable aging for a record. " : "This flag is not set when updating a record to enable or disable aging for a record. ");
+		UINT32 DNSRPCFLAGOPENACL:1 = FormatString("          (%s) %s", this.ToBitString, this ? "This flag is set when updating a record to disable access control for a record. " : "This flag is not set when updating a record to disable access control for a record. ");
+		UINT32 Reserve2:4 = FormatString("                   (%s) %s", this.ToBitString,this );
+		UINT32 DNSRPCFLAGNODECOMPLETE:1 = FormatString("     (%s) %s", this.ToBitString, this ? "This flag is set when the requested enumeration is completed with the buffer being returned. " : "This flag is not set when the requested enumeration is completed with the buffer being returned. ");
+		UINT32 DNSRPCFLAGNODESTICKY:1 = FormatString("       (%s) %s", this.ToBitString, this ? "This flag is set when enumerating a node that is at the domain root. " : "This flag is not set when enumerating a node that is at the domain root. ");
+		UINT32 DNSRPCFLAGRECORDCREATE_PTR:1 = FormatString(" (%s) %s", this.ToBitString, this ? "This flag is set when adding or deleting a record. " : "This flag is not set when adding or deleting a record. ");
+		UINT32 DNSRPCFLAGRECORDTTL_CHANGE:1 = FormatString(" (%s) %s", this.ToBitString, this ? "This flag is set when updating a record to update  the TTL value for the record. " : "This flag is not set when updating a record to update  the TTL value for the record. ");
+		UINT32 DNSRPCFLAGRECORDDEFAULT_TTL:1 = FormatString("(%s) %s", this.ToBitString, this ? "Record should use zone default TTL value. " : "Record should not use zone default TTL value. ");
+		UINT32 DNSRPCFLAGZONEDELEGATION:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Data is from enumeration performed at a node that it represents in a delegated sub-zone. " : "Data is not from enumeration performed at a node that it represents in a delegated sub-zone. ");
+		UINT32 DNSRPCFLAGAUTHZONE_ROOT:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Data is from enumeration performed at the zone-root. " : "Data is not from enumeration performed at the zone-root. ");
+		UINT32 DNSRPCFLAGZONEROOT:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Data is from enumeration performed at the zone-root. " : "Data is not from enumeration performed at the zone-root. ");
+		UINT32 DNSRPCFLAGCACHEDATA:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Data is from the DNS cache." : "Data is not from the DNS cache.");
+		
+	};
+}
+
+//
+//  2.2.2.2.2	DNS_RPC_NODE
+//
+struct DNSPDnsRpcNode = FormatString("RecordCount = %u,ChildCount = %u,DNS Rpc Name = %s",wRecordCount,dwChildCount,DNSPDnsRpcName.DnsName)
+{
+	UINT16 wLength;
+	[RecordCount]
+	UINT16 wRecordCount;
+	DNSPDNSRPCNodeFlags Flags;
+	UINT32 dwChildCount;
+	DNSPDnsRpcName DNSPDnsRpcName;
+	Align4 Pad;
+}
+
+//
+//  2.2.2.2.3.1	DNS_RPC_RECORD_A
+//
+Struct DNSPDnsRpcRecordA = FormatString("IPAddress = %s",IPv4Address.ToString)
+{
+	IPv4Address IPv4Address;
+}
+
+//
+//  2.2.2.2.3.2	DNS_RPC_RECORD_NODE_NAME
+//
+Struct DNSPDnsRpcRecordNodeName = FormatString("Name = %s",nameNode.DnsName)
+{
+	DNSPDnsRpcName nameNode;
+}
+
+//
+//  2.2.2.2.3.3	DNS_RPC_RECORD_SOA
+//
+Struct DNSPDnsRpcRecordSoa = FormatString("Primary Server Dns Rpc Name = %s,AdministratorEmailDnsRpcName = %s",namePrimaryServer.DnsName,zoneAdministratorEmail.DnsName)
+{
+	UINT32 dwSerialNo;
+	UINT32 dwRefresh;
+	UINT32 dwRetry;
+	UINT32 dwExpire;
+	UINT32 dwMinimumTtl;
+	DNSPDnsRpcName namePrimaryServer;
+	DNSPDnsRpcName zoneAdministratorEmail;
+}
+
+//
+//  2.2.2.2.3.4	DNS_RPC_RECORD_NULL
+//
+Struct DNSPDnsRpcRecordNull
+{
+	BLOB(520) bData;
+}
+
+//
+//  2.2.2.2.3.5	DNS_RPC_RECORD_WKS
+//
+Struct DNSPDnsRpcRecordWks(wDataLength) = FormatString("IpAddress = %s,ProtocolNo = %u",ipAddress.ToString,chProtocol)
+{
+	IPv4Address ipAddress;
+	UINT8 chProtocol;
+	Blob(wDataLength - 5) bBitMask1;
+}
+
+//
+//  2.2.2.2.3.6	DNS_RPC_RECORD_STRING
+//
+Struct DNSPDnsRpcRecordString(wDataLength)
+{	
+	[Local.FO=FrameOffset]
+	while [FrameOffset < Local.FO + wDataLength]
+	{
+		DNSPDnsRpcName stringData;
+	}
+}
+
+//
+//  2.2.2.2.3.7	DNS_RPC_RECORD_MAIL_ERROR
+//
+Struct DNSPDnsRpcRecordMailError = FormatString("MailBox = %s,ErrorMailBox = %s",nameMailBox.DnsName,ErrorMailBox.DnsName)
+{
+	DNSPDnsRpcName nameMailBox;
+	DNSPDnsRpcName ErrorMailBox;
+}
+
+//
+//  2.2.2.2.3.8	DNS_RPC_RECORD_NAME_PREFERENCE
+//
+Struct DNSPDnsRpcRecordNamePreference = FormatString("NameExchangeDnsRpcName = %s",nameExchange.DnsName)
+{
+	UINT16 wPreference;
+	DNSPDnsRpcName nameExchange;
+}
+
+//
+//  2.2.2.2.3.9	DNS_RPC_RECORD_SIG
+//
+Struct DNSPDnsRpcRecordSig(wDataLength) = FormatString("TypeCovered = %u,Algorithm = %s,LabelCount = %u",wTypeCovered,DNSSECAlgorithemTable(chAlgorithm),chLabelCount)
+{	
+	[Property.Localoffset = CurrentProtocolOffset]
+	UINT16 wTypeCovered;
+	UINT8 chAlgorithm = DNSSECAlgorithemTable(this);
+	UINT8 chLabelCount;
+	UINT32 dwOriginalTtl;
+	UNIXTIMESTAMP dwSigExpiration;
+	UNIXTIMESTAMP dwSigInception;
+	UINT16 wKeyTag;
+	DNSPDnsrpcname nameSigner;
+	Blob(Localoffset + wDataLength - CurrentProtocolOffset) SignatureInfo;
+}
+
+//
+//	2.2.2.2.3.10   DNS_RPC_RECORD_RRSIG
+//
+Struct DNSPDnsRpcRecordRrsig
+{
+	UINT16 wTypeCovered ;
+	UINT8 chAlgorithm = DNSKeyRRAlgorithmTable(this);
+	UINT8 chLabelCount;
+	UINT32 dwOriginalTtl;
+	UINT32 dwSigExpiration;
+	UINT32 dwSigInception;
+	UINT16 wKeyTag;
+	DNSPDnsRpcName nameSigner;
+	BLOB(DNSRREndOffset - FrameOffset) SignatureInfo;
+}
+
+//
+//	2.2.2.2.3.11   DNS_RPC_RECORD_NSEC
+//
+Struct DNSPDnsRpcRecordNsec
+{
+	DNSPDnsRpcName nameSigner;
+	BLOB(DNSRREndOffset - FrameOffset) SignatureInfo;
+}
+
+//
+//	2.2.2.2.3.12   DNS_RPC_RECORD_DS
+//
+Struct DNSPDnsRpcRecordDs
+{
+	UINT16 wKeyTag;
+	UINT8 chAlgorithm;
+	UINT8 chDigestType;
+	BLOB(DNSRREndOffset - FrameOffset) Digest;
+}
+
+//
+//  2.2.2.2.3.13	DNS_RPC_RECORD_KEY
+//
+Struct DNSPDnsRpcRecordKey(wDataLength) = FormatString("ProtocolNo = %u,Algorithm = %s",chProtocol,DNSSECAlgorithemTable(chAlgorithm))
+{
+	UINT16 wFlags;
+	UINT8 chProtocol;
+	UINT8 chAlgorithm = DNSSECAlgorithemTable(this);
+	BLOB(wDataLength - 4) bKey;	
+}
+
+//
+//  2.2.2.2.3.16	DNS_RPC_RECORD_AAAA
+//
+Struct DNSPDnsRpcRecordAaaa = FormatString("IpAddress = %s",ipv6Address.ToString)
+{
+	IPv6Address ipv6Address;
+}
+
+//
+//  2.2.2.2.3.17	DNS_RPC_RECORD_NXT
+//
+Struct DNSPDnsRpcRecordNxt = FormatString("RecordTypes = %u,NextName = %s",wNumRecordTypes,nextName.DnsName)
+{
+	UINT16 wNumRecordTypes;
+	[Datafieldbyteorder = LittleEndian]
+	UINT16 wTypeWords[wNumRecordTypes];
+	DNSPDnsRpcName nextName;
+}
+
+//
+//  2.2.2.2.3.18	DNS_RPC_RECORD_SRV
+//
+Struct DNSPDnsRpcRecordSrv = FormatString("PortNum = %u,NameTarget = %s",wPort,nameTarget.DnsName)
+{
+	UINT16 wPriority;
+	UINT16 wWeight;
+	UINT16 wPort;
+	DNSPDnsRpcName nameTarget;
+}
+
+//
+//  2.2.2.2.3.19	DNS_RPC_RECORD_ATMA
+//
+Struct DNSPDNSRPCRECORDATMA(wDataLength)
+{
+	UINT8 chFormat;
+	BLOB(wDataLength - 1) bAddress;
+}
+
+//
+//  2.2.2.2.3.20	DNS_RPC_RECORD_NAPTR
+//
+Struct DNSPDnsRpcRecordNaptr = FormatString("NameServices = %s,NameSubstirution = %s,NameReplaceMent = %s",nameServices.DnsName,nameSubstitution.DnsName,nameReplacement.DnsName)
+{
+	UINT16 wOrder;
+	UINT16 wpreference;
+	NdrPtr nameFlagsPointer;
+	NdrPtr nameServicesPointer;
+	NdrPtr nameSubstitutionPointer;
+	NdrPtr nameReplacementPointer;
+	switch
+	{
+		case nameFlagsPointer.ReferentID:DNSPDnsRpcName nameFlags;
+	}
+	switch
+	{
+		case nameServicesPointer.ReferentID:	DNSPDnsRpcName nameServices;
+	}
+	switch
+	{
+		case nameSubstitutionPointer.ReferentID:	DNSPDnsRpcName nameSubstitution;
+	}
+	switch
+	{
+		case nameReplacementPointer.ReferentID:	DNSPDnsRpcName nameReplacement;
+	}
+}
+
+//
+//  2.2.2.2.3.21	DNS_RPC_RECORD_WINS
+//
+Struct DNSPDnsRpcRecordWins = FormatString("%s,%s",dwMappintFlag.DNSWINSFLAGSCOPE?"Server forwards lookup requests to remote WINS servers.":"Server doesn't forward lookup requests to remote WINS servers.",
+																									dwMappintFlag.DNSWINSFLAGLOCAL?"Server performs WINS lookups locally.":"Server doesn't perform WINS lookups locally.")
+{
+	UINT32 dwMappintFlag
+	{
+		UINT32 DNSWINSFLAGSCOPE:1 = FormatString("(%s),%s",this.ToBitString,this?"Server forwards lookup requests to remote WINS servers.":"Server doesn't forward lookup requests to remote WINS servers.");
+		UINT32 Reserver1:14 =FormatString("       (%s),%s",this.ToBitString,this);
+		UINT32 DNSWINSFLAGLOCAL:1 =FormatString(" (%s),%s",this.ToBitString,this?"Server performs WINS lookups locally.":"Server doesn't perform WINS lookups locally."); 
+		UINT32 Reserver2:16 =FormatString("       (%s),%s",this.ToBitString,this);
+	};
+	UINT32 dwLookupTimeout;
+	UINT32 dwCacheTimeout;
+	UINT32 cWinsServerCount;
+	IPv4Address aipWinsServers[cWinsServerCount];
+}
+
+//
+//  2.2.2.2.3.22	DNS_RPC_RECORD_WINSR
+//
+Struct DNSPDnsRpcRecordWinsr = FormatString("%s,%s,%s",dwMappintFlag.DNSWINSFLAGSCOPE?"Server forwards lookup requests to remote WINS servers.":"Server doesn't forward lookup requests to remote WINS servers.",
+																										dwMappintFlag.DNSWINSFLAGLOCAL?"Server performs WINS lookups locally.":"Server doesn't perform WINS lookups locally.",
+																										NameResultDomain.DnsName)
+{
+	UINT32 dwMappintFlag
+	{
+		UINT32 DNSWINSFLAGSCOPE:1 = FormatString("(%s),%s",this.ToBitString,this?"Server forwards lookup requests to remote WINS servers.":"Server doesn't forward lookup requests to remote WINS servers.");
+		UINT32 Reserver1:14 =FormatString("       (%s),%s",this.ToBitString,this);
+		UINT32 DNSWINSFLAGLOCAL:1 =FormatString(" (%s),%s",this.ToBitString,this?"Server performs WINS lookups locally.":"Server doesn't perform WINS lookups locally."); 
+		UINT32 Reserver2:16 =FormatString("       (%s),%s",this.ToBitString,this);
+	};
+	UINT32 dwLookupTimeout;
+	UINT32 dwCacheTimeout;
+	DNSPDnsrpcname nameResultDomain;
+}
+
+//
+//	2.2.2.2.3.14 DNS_RPC_RECORD_DHCID
+//
+
+Table DNSPRpcRecordDhcidDigestType(value)
+{
+	switch(value)
+	{
+		case 0: "reserved";
+		case 1: "SHA-256";
+	}
+}
+Struct DNSPRpcRecordDhcid
+{
+	UINT16 IdentifierType;
+	UINT8 DigestType = DNSPRpcRecordDhcidDigestType(this);
+	//RFC 4034 3.1
+	BLOB(DNSRREndOffset - FrameOffset) Key;
+}
+
+//
+//	2.2.2.2.3.15   DNS_RPC_RECORD_DNSKEY
+//
+
+Struct DNSPRpcRecordDnskey
+{
+	UINT16 wFlags;
+	UINT8 chProtocol;
+	UINT8 chAlgorithm = DNSKeyRRAlgorithmTable(this);
+	BLOB(DNSRREndOffset - FrameOffset) Key;
+}
+
+//
+//  2.2.2.2.3.23	DNS_RPC_RECORD_TS
+//
+Struct DNSPDnsRpcRecordTs
+{
+	UINT64 EntombedTime;
+}
+//
+//  2.2.4.2.1	DNSSRV_VERSION
+//
+Struct DNSPDnssrvVersion = FormatString("Version = %u.%u",OSMajorVersion,OSMinorVersion)
+{
+	UINT16 OSRevision;
+	UINT8 OSMinorVersion;
+	UINT8 OSMajorVersion;
+}
+
+//
+//  2.2.1.2.2	DNS_RPC_BUFFER
+//
+struct DNSPDnsRpcBuffer = FormatString("BufferLength = %u",dwLength)
+{
+	NdrConformant dwLengthC;
+	[Property.BufferLength]
+	UINT32  dwLength;
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+	UINT8 Buffer[Property.BufferLength];
+}
+//
+//  2.2.1.2.3	DNS_RPC_UTF8_STRING_LIST
+//	Alignment:	NdrAlign
+//
+Struct DNSPDnsrpcutf8stringlist = FormatString("StringCount = %u",Local.count)
+{
+	NdrConformant dwCountC;
+	UINT32 dwCount;
+	[Local.count = 0,property.DNSPDnsRpcUtf8StringListCount = 0]
+	While[property.DNSPDnsRpcUtf8StringListCount < dwCountC.Maxcount]
+	{
+		[property.DNSPDnsRpcUtf8StringListCount = property.DNSPDnsRpcUtf8StringListCount + 1,Local.count = pszStringsPtr.ReferentId ? Local.count + 1 : Local.count]
+		NdrPtr pszStringsPtr;
+	}
+	MBCstringCV pszStrings[Local.count];
+}
+
+Struct MBCstringCV
+{
+	NdrConformantVarying pszStringconfirm;
+	MBCstring pszString;
+}
+//
+//  2.2.1.2.5	DNSSRV_RPC_UNION
+//
+Struct DNSPDnssrvrpcunion(ClientVersion) = FormatString("Type = %s",DNSPDnsRpcTypeidTable(SwitchValue))
+{
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	UINT32 SwitchValue;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch( SwitchValue )
+	{
+		case DNSPDnssrvTypeidNull: UINT8Ptr null;
+		case DNSPDnssrvTypeidDword: UINT32 Dword;
+		case DNSPDnssrvTypeidLpstr: NdrStringPtr string;
+		case DNSPDnssrvTypeidLpwstr: NdrWIDESTRINGPtr WideString;
+		case DNSPDnssrvTypeidIparray: 
+			struct IpArrayStruct
+			{
+				NdrPtr IpArrayPointer;
+				switch
+				{
+					case IpArrayPointer.ReferentID:DNSPIp4Array IpArray;
+				}
+			}
+		case DNSPDnssrvTypeidBuffer: 
+			struct BufferStruct
+			{
+				NdrPtr BufferPointer;
+				switch
+				{
+					case BufferPointer.ReferentID:DNSPDnsRpcBuffer Buffer;
+				}
+			}
+		case DNSPDnssrvTypeidServerInfoW2k: 
+			struct ServerInfoW2kStruct
+			{
+				NdrPtr ServerInfoW2kPointer;
+				switch
+				{
+					case ServerInfoW2kPointer.ReferentID:DNSPDnsRpcServerInfoW2k ServerInfoW2k;							
+				}
+			}
+		case DNSPDnssrvTypeidStats: 
+			struct StatsStruct
+			{
+				NdrPtr StatsPointer;
+				switch
+				{
+					case StatsPointer.ReferentID:DNSPDnssrvStat(ClientVersion) Stat;
+				}
+			}
+		case DNSPDnssrvTypeidForwardersW2k: 
+			struct ForwarkersW2kStruct
+			{
+				NdrPtr ForwarkersW2kPointer;
+				switch
+				{
+					case ForwarkersW2kPointer.ReferentID:DNSPDnsRpcForwardersW2k ForwarkersW2k;
+				}
+			}
+		case DNSPDnssrvTypeidZoneW2k: 
+			struct ZoneW2kStruct
+			{
+				NdrPtr ZoneW2kPointer;
+				switch
+				{
+					case ZoneW2kPointer.ReferentID:DNSPDnsRpcZoneW2k ZoneW2k;
+				}
+			}
+		case DNSPDnssrvTypeidZoneInfoW2k: 
+			struct ZoneInfoW2kStruct
+			{
+				NdrPtr ZoneInfoW2kPointer;
+				switch
+				{
+					case ZoneInfoW2kPointer.ReferentID:DNSPDnsRpcZoneInfoW2k ZoneInfoW2k;
+				}
+			}
+		case DNSPDnssrvTypeidZoneSecondariesW2k: 
+			struct SecondariesW2kStruct
+			{
+				NdrPtr SecondariesW2kPointer;
+				switch
+				{
+					case SecondariesW2kPointer.ReferentID:DNSPDnsRpcZoneSecondariesW2k SecondariesW2k;
+				}
+			}
+		case DNSPDnssrvTypeidZoneDatabaseW2k: 
+			struct DatabaseW2kStruct
+			{
+				NdrPtr DatabaseW2kPointer;
+				switch
+				{
+					case DatabaseW2kPointer.ReferentID:DNSPDnsRpcZoneDatabaseW2k DatabaseW2k;
+				}
+			}
+		case DNSPDnssrvTypeidZoneCreateW2k: 
+			struct ZoneCreateW2kStruct
+			{
+				NdrPtr ZoneCreateW2kPointer;
+				switch
+				{
+					case ZoneCreateW2kPointer.ReferentID:DNSPDnsRpcZoneCreateInfoW2k ZoneCreateW2k;
+				}
+			}
+		case DNSPDnssrvTypeidNameAndParam: 
+			struct NameAndParamStruct
+			{
+				NdrPtr NameAndParamPointer;
+				switch
+				{
+					case NameAndParamPointer.ReferentID:DNSPDnsRpcNameAndParam NameAndParam;
+				}
+			}
+		case DNSPDnssrvTypeidZoneListW2k: 
+			struct ZoneListW2kStruct
+			{
+				NdrPtr ZoneListW2kPointer;
+				switch
+				{
+					case ZoneListW2kPointer.ReferentID:DNSPDnsRpcZoneListW2k ZoneListW2k;
+				}
+			}
+		case DNSPDnssrvTypeidServerInfoDotnet: 
+			struct ServerInfoDotnetStruct
+			{
+				NdrPtr ServerInfoDotnetPointer;
+				switch
+				{
+					case ServerInfoDotnetPointer.ReferentID:DNSPDnsRpcServerInfoDotnet ServerInfoDotnet;
+				}
+			}
+		case DNSPDnssrvTypeidForwardersDotnet: 
+			struct ForwardersDotnerStruct
+			{
+				NdrPtr ForwardersDotnerPointer;
+				switch
+				{
+					case ForwardersDotnerPointer.ReferentID:DNSPDnsRpcForwardersDotnet ForwardersDotner;
+				}
+			}
+		case DNSPDnssrvTypeidZone: 
+			struct ZoneStruct
+			{
+				NdrPtr ZonePointer;
+				switch
+				{
+					case ZonePointer.ReferentID:DNSPDnsrpczonedotnet Zone;
+				}
+			}
+		case DNSPDnssrvTypeidZoneInfoDotnet: 
+			struct ZoneInfoDotnetStruct
+			{
+				NdrPtr ZoneInfoDotnetPointer;
+				switch
+				{
+					case ZoneInfoDotnetPointer.ReferentID:DNSPDnsRpcZoneInfoDotnet ZoneInfoDotnet;
+				}
+			}
+		case DNSPDnssrvTypeidZoneSecondariesDotnet: 
+			struct SecondariesDotnetStruct
+			{
+				NdrPtr SecondariesDotnetPointer;
+				switch
+				{
+					case SecondariesDotnetPointer.ReferentID:DNSPDnsRpcZoneSecondariesDotnet SecondariesDotnet;
+				}
+			}
+		case DNSPDnssrvTypeidZoneDatabase: 
+			struct DatabaseStruct
+			{
+				NdrPtr DatabasePointer;
+				switch
+				{
+					case DatabasePointer.ReferentID:DNSPDnsrpcZoneDatabase(ClientVersion) Database;
+				}
+			}
+		case DNSPDnssrvTypeidZoneCreateDotnet:
+			struct ZoneCreateDotnetStruct
+			{
+				NdrPtr ZoneCreateDotnetPointer;
+				switch
+				{
+					case ZoneCreateDotnetPointer.ReferentID:DNSPDnsRpcZoneCreateInfoDotnet ZoneCreateDotnet;
+				}
+			} 
+		case DNSPDnssrvTypeidZoneList: 
+			struct ZoneListStruct
+			{
+				NdrPtr ZoneListPointer;
+				switch
+				{
+					case ZoneListPointer.ReferentID:DNSPDnsrpczonelist(ClientVersion) ZoneList;
+				}
+			}
+		case DNSPDnssrvTypeidZoneExport: 
+			struct ZoneExportStruct
+			{
+				NdrPtr ZoneExportPointer;
+				switch
+				{
+					case ZoneExportPointer.ReferentID:DNSPDnsRpcZoneExportinfo ZoneExport;
+				}
+			}
+		case DNSPDnssrvTypeidDpInfo: 
+			struct DirectoryPartitionStruct
+			{
+				NdrPtr DirectoryPartitionPointer;
+				switch
+				{
+					case DirectoryPartitionPointer.ReferentID:DNSPDnsRpcDpInfo DirectoryPartition;
+				}
+			}
+		case DNSPDnssrvTypeidDpEnum: 
+			struct DirectoryPartitionEnumStruct
+			{
+				NdrPtr DirectoryPartitionEnumPointer;
+				switch
+				{
+					case DirectoryPartitionEnumPointer.ReferentID:DNSPDnsRpcDpEnum DirectoryPartitionEnum;
+				}
+			}
+		case DNSPDnssrvTypeidDpList: 
+			struct DirectoryPartitionListStruct
+			{
+				NdrPtr DirectoryPartitionListPointer;
+				switch
+				{
+					case DirectoryPartitionListPointer.ReferentID:DNSPDnsRpcDpList DirectoryPartitionList;
+				}
+			}
+		case DNSPDnssrvTypeidEnlistDp: 
+			struct EnlistDirectoryPartitionStruct
+			{
+				NdrPtr EnlistDirectoryPartitionPointer;
+				switch
+				{
+					case EnlistDirectoryPartitionPointer.ReferentID:DNSPDnsRpcEnlistDp EnlistDirectoryPartition;
+				}
+			}
+		case DNSPDnssrvTypeidZoneChangeDp: 
+			struct ZoneChangeDirectoryPartitionStruct
+			{
+				NdrPtr ZoneChangeDirectoryPartitionPointer;
+				switch
+				{
+					case ZoneChangeDirectoryPartitionPointer.ReferentID:DNSPDnsRpcZoneChangeDp ZoneChangeDirectoryPartition;
+				}
+			}
+		case DNSPDnssrvTypeidEnumZonesFilter: 
+			struct EnumZonesFilterStruct
+			{
+				NdrPtr EnumZonesFilterPointer;
+				switch
+				{
+					case EnumZonesFilterPointer.ReferentID:DNSPDnsRpcEnumZonesFilter EnumZonesFilter;
+				}
+			}
+		case DNSPDnssrvTypeidAddrarray: 
+			struct AddrArrayStruct
+			{
+				NdrPtr AddrArrayPointer;
+				switch
+				{
+					case AddrArrayPointer.ReferentID:DNSPDnsAddrArray AddrArray;
+				}
+			}
+		case DNSPDnssrvTypeidServerInfo: 
+			struct ServerInfoStruct
+			{
+				NdrPtr ServerInfoPointer;
+				switch
+				{
+					case ServerInfoPointer.ReferentID: DNSPDnsRpcServerInfo(ClientVersion) ServerInfo;
+				}
+			}
+		case DNSPDnssrvTypeidZoneCreate:
+			struct ZoneCreateStruct
+			{
+				NdrPtr ZoneCreatePointer;
+				switch
+				{
+					case ZoneCreatePointer.ReferentID:DNSPDnsrpcZoneCreateInfoLongHorn ZoneCreate;
+				}
+			} 
+		case DNSPDnssrvTypeidForwarders: 
+			struct ForwardersStruct
+			{
+				NdrPtr ForwardersPointer;
+				switch
+				{
+					case ForwardersPointer.ReferentID:DNSPDnsRpcForwarders(ClientVersion) Forwarders;
+				}
+			}
+		case DNSPDnssrvTypeidZoneSecondaries: 
+			struct SecondariesStruct
+			{
+				NdrPtr SecondariesPointer;
+				switch
+				{
+					case SecondariesPointer.ReferentID:DNSPDnsrpcZoneSecondaries(ClientVersion) Secondaries;
+				}
+			}
+		case DNSPDnssrvTypeidIpValidate: 
+			struct IpValidateStruct
+			{
+				NdrPtr IpValidatePointer;
+				switch
+				{
+					case IpValidatePointer.ReferentID:DNSPDnsrpcipvalidatelonghorn IpValidate;
+				}
+			}
+		case DNSPDnssrvTypeidZoneInfo:
+			struct ZoneInfoStruct
+			{
+				NdrPtr ZoneInfoPointer;
+				switch
+				{
+					case ZoneInfoPointer.ReferentID: DNSPDnsrpczoneINFO(ClientVersion) ZoneInfo;
+				}
+			}
+		case DNSPDnssrvTypeidAutoconfigure: 
+			struct AutoconfigureStruct
+			{
+				NdrPtr AutoconfigurePointer;
+				switch
+				{
+					case AutoconfigurePointer.ReferentID:DNSPDnsRpcAutoconfigure Autoconfigure;
+				}
+			}
+		case DNSPDnssrvTypeidUtf8StringList: 
+			struct Utf8StringListStruct
+			{
+				NdrPtr Utf8StringListPointer;
+				switch
+				{
+					case Utf8StringListPointer.ReferentID:DNSPDnsRpcUtf8StringList Utf8StringList;
+				}
+			}
+	}
+}
+
+//
+//  2.2.5.2.10	DNS_RPC_FORWARDERS 
+//  Alignment:	NdrAlign
+//
+Struct DNSPDnsRpcForwarders(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:DNSPDNSRPCFORWARDERSW2K DNSRPCFORWARDERSW2K;
+		case 0x00060000:DNSPDNSRPCFORWARDERSDOTNET DNSRPCFORWARDERSDOTNET;
+		case 0x00070000:DNSPDNSRPCFORWARDERSLONGHORN DNSRPCFORWARDERSLONGHORN;
+	}
+}
+
+//
+//  2.2.5.2.10.2	DNS_RPC_FORWARDERS_DOTNET:
+//  Alignment:		NdrAlign 
+//
+Struct DNSPDNSRPCFORWARDERSDOTNET = FormatString ("Rpc Structure Version = %u",RpcStructureVersion)
+{
+	UINT32 RpcStructureVersion = DNSPDnssrvrpcforwardersdotnetRpcStructureVersionTable(this);
+	UINT32 Reserved0;
+	UINT32 RecurseAfterForwarding;
+	UINT32 ForwardTimeout;
+	NDRPtr aipForwardersPtr;
+	switch
+	{
+		case aipForwardersPtr.ReferentID:
+					DNSPIP4ARRAY  aipForwarders;
+	}
+}
+
+//
+//  2.2.5.2.10.3	DNS_RPC_FORWARDERS_LONGHORN
+//  Alignment:		NdrAlign
+//
+Struct DNSPDnsrpcforwarderslonghorn = FormatString ("Rpc Structure Version = %u",RpcStructureVersion)
+{
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 Slave;
+	UINT32 ForwardTimeout;
+	NDRPTR AipForwardersPtr;
+	switch 
+	{
+		Case AipForwardersPtr.ReferentID:
+			DNSPDnsAddrArray AipForwarders;
+	}
+}
+
+//
+//  2.2.1.2.4	DNS_RPC_NAME_AND_PARAM
+//  Alignment:  NdrAlign
+//
+Struct DNSPDnsRpcNameAndParam = FormatString("ParamValue = %u,NodeName = %s",dwParam,pszNodeName)
+{
+	UINT32 dwParam;
+	NDRPtr pszNodeNamePtr;
+	switch
+	{
+		case pszNodeNamePtr.ReferentID:
+			NdrString pszNodeName;
+	}
+}
+
+//
+//  2.2.5.2.10.1	DNS_RPC_FORWARDERS_W2K
+//  Alignment: NdrAlign
+//
+Struct DNSPDnsRpcForwardersW2k
+{
+	UINT32  fRecurseAfterForwarding;
+	UINT32  dwForwardTimeout;
+	NdrPtr  aipForwardersPtr;
+	switch
+	{
+		case aipForwardersPtr.ReferentID:
+			DNSPIP4ARRAY  aipForwarders;
+	}
+}
+
+//
+//  2.2.2.2.4	DNS_RPC_RECORD
+//  Alignment:	4
+//
+Struct DNSPDnsrpcrecord = FormatString("DataType = %s, %u Bytes Data",DNSPDnsRecordTypeTable(wType),wDataLength)
+{	
+	Align4	Pad;
+	UINT16 wDataLength;
+	UINT16 wType =  DNSPDnsRecordTypeTable(this);
+	DNSPDNSRPCNodeFlags Flags;
+	UINT32 dwSerial = MustBeSetToTable(this,"0");
+	UINT32 dwTtlSeconds;
+	UNIXTIMESTAMP dwTimeStamp;
+	UINT32 dwReserved = MustBeSetToTable(this,"0");
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+	[Property.Localoffset = CurrentProtocolOffset,DNSRREndOffset = FrameOffset + wDataLength]
+	switch
+	{
+		case wDataLength > 0:
+			struct
+			{
+				switch(wType)
+				{
+					case 0x0000:DNSPDnsRpcRecordTs DNSTYPEZero;
+					case 0x0001:DNSPDnsRpcRecordA DNSTYPEA;
+					case 0x0002:DNSPDnsRpcRecordNodeName DNSTYPENS;
+					case 0x0003:DNSPDnsRpcRecordNodeName DNSTYPEMD;
+					case 0x0004:DNSPDnsRpcRecordNodeName DNSTYPEMF;
+					case 0x0005:DNSPDnsRpcRecordNodeName DNSTYPECNAME;
+					case 0x0006:DNSPDNSRPCRECORDSOA DNSTYPESOA;
+					case 0x0007:DNSPDnsRpcRecordNodeName DNSTYPEMB;
+					case 0x0008:DNSPDnsRpcRecordNodeName DNSTYPEMG;
+					case 0x0009:DNSPDnsRpcRecordNodeName DNSTYPEMR;
+					case 0x000A:DNSPDnsRpcRecordNull DNSPDnsRpcRecordNull;
+					case 0x000B:DNSPDnsRpcRecordWks(wDataLength) DNSPDnsRpcRecordWks;
+					case 0x000C:DNSPDnsRpcRecordNodeName DNSTYPEPTR;
+					case 0x000D:DNSPDnsRpcRecordString(wDataLength) DNSTYPEHINFO;
+					case 0x000E:DNSPDNSRPCRECORDMAILERROR DNSTYPEMINFO;
+					case 0x000F:DNSPDnsRpcRecordNamePreference DNSTYPEMX;
+					case 0x0010:DNSPDnsRpcRecordString(wDataLength) DNSTYPETXT;
+					case 0x0011:DNSPDnsRpcRecordMailError DNSPDnsRpcRecordMailError;
+					case 0x0012:DNSPDnsRpcRecordNamePreference DNSTYPEAFSDB;
+					case 0x0013:DNSPDnsRpcRecordString(wDataLength) DNSTYPEX25;
+					case 0x0014:DNSPDnsRpcRecordString(wDataLength) DNSPDnsRpcRecordString;
+					case 0x0015:DNSPDnsRpcRecordNamePreference DNSPDnsRpcRecordNamePreference;
+					case 0x0018:DNSPDnsRpcRecordSig(wDataLength) DNSPDnsRpcRecordSig;
+					case 0x0019:DNSPDnsRpcRecordKey(wDataLength) DNSPDnsRpcRecordKey;
+					case 0x001c:DNSPDnsRpcRecordAAAA DNSPDnsRpcRecordAAAA;
+					case 0x001E:DNSPDnsRpcRecordNxt DNSPDnsRpcRecordNxt;
+					case 0x0021:DNSPDnsRpcRecordSrv DNSPDnsRpcRecordSrv;
+					case 0x0022:DNSPDnsRpcRecordAtma(wDataLength) DNSPDnsRpcRecordAtma;
+					case 0x0023:DNSPDnsRpcRecordNaptr DNSPDnsRpcRecordNaptr;
+					case 0x0027:DNSPDnsRpcRecordNodeName DNSPDnsRpcRecordNodeName;
+					case 0x002B:DNSPDnsRpcRecordDs DnsRpcRecordDs;
+					case 0x002E:DNSPDnsRpcRecordRrsig DnsRpcRecordRrsig;
+					case 0x002F:DNSPDnsRpcRecordNsec DnsRpcRecordNsec;
+					case 0x0030:DNSPRpcRecordDnskey RpcRecordDnskey;
+					case 0x0031:DNSPRpcRecordDhcid RpcRecordDhcid;
+					case 0xFF01:DNSPDnsRpcRecordWins DNSPDnsRpcRecordWins;
+					case 0xFF02:DNSPDnsRpcRecordWinsr DNSPDnsRpcRecordWinsr;
+				}
+			}
+	}
+	switch
+	{
+		case ((Localoffset + wDataLength) != CurrentProtocolOffset):
+			Blob(Localoffset + wDataLength - CurrentProtocolOffset) Padding;
+	}
+	Align4 Pad1;
+}
+
+Table DNSPDnssrvrpcrecordBufferTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000: "DNS_TYPE_ZERO - DNS_RPC_RECORD_TS";
+		Case 0x0001: "DNS_TYPE_A - DNS_RPC_RECORD_A";
+		Case 0x0002: "DNS_TYPE_NS - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0003: "DNS_TYPE_MD - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0004: "DNS_TYPE_MF - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0005: "DNS_TYPE_CNAME - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0006: "DNS_TYPE_SOA - DNS_RPC_RECORD_SOA";
+		Case 0x0007: "DNS_TYPE_MB - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0008: "DNS_TYPE_MG - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x0009: "DNS_TYPE_MR - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x000A: "DNS_TYPE_NULL - DNS_RPC_RECORD_NULL";
+		Case 0x000B: "DNS_TYPE_WKS - DNS_RPC_RECORD_WKS";
+		Case 0x000C: "DNS_TYPE_PTR - DNS_RPC_RECORD_NODE_NAME";
+		Case 0x000D: "DNS_TYPE_HINFO - DNS_RPC_RECORD_STRING";
+		Case 0x000E: "DNS_TYPE_MINFO - DNS_RPC_RECORD_MAIL_ERROR";
+		Case 0x000F: "DNS_TYPE_MX - DNS_RPC_RECORD_NAME_PREFERENCE";
+		Case 0x0010: "DNS_TYPE_TXT - DNS_RPC_RECORD_STRING";
+		Case 0x0011: "DNS_TYPE_RP - DNS_RPC_RECORD_MAIL_ERROR";
+		Case 0x0012: "DNS_TYPE_AFSDB - DNS_RPC_RECORD_NAME_PREFERENCE";
+		Case 0x0013: "DNS_TYPE_X25 - DNS_RPC_RECORD_STRING";
+		Case 0x0014: "DNS_TYPE_ISDN - DNS_RPC_RECORD_STRING";
+		Case 0x0015: "DNS_TYPE_RT - DNS_RPC_RECORD_NAME_PREFERENCE";
+		Case 0x0018: "DNS_TYPE_SIG - DNS_RPC_RECORD_SIG";
+		Case 0x0019: "DNS_TYPE_KEY - DNS_RPC_RECORD_KEY";
+		Case 0x001C: "DNS_TYPE_AAAA - DNS_RPC_RECORD_AAAA";
+		Case 0x001E: "DNS_TYPE_NXT - DNS_RPC_RECORD_NXT";
+		Case 0x0021: "DNS_TYPE_SRV - DNS_RPC_RECORD_SRV";
+		Case 0x0022: "DNS_TYPE_ATMA - DNS_RPC_RECORD_ATMA";
+		Case 0x0023: "DNS_TYPE_NAPTR - DNS_RPC_RECORD_NAPTR";
+		Case 0x0027: "DNS_TYPE_DNAME - DNS_RPC_RECORD_NODE_NAME";
+		Case 0xFF01: "DNS_TYPE_WINS - DNS_RPC_RECORD_WINS";
+		Case 0xFF02: "DNS_TYPE_WINSR - DNS_RPC_RECORD_WINSR";
+		Default: "unknown";
+	}
+}
+
+//
+//  2.2.3.1.1	IP4_ARRAY
+//  Alignment:  NdrAlign
+//
+Struct DNSPIp4Array = FormatString("%u Address(es)",AddrCount)
+{
+	NdrConformant AddrCountC;
+	UINT32 AddrCount;
+	IPv4Address AddrArray[AddrCountC.Maxcount];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+}
+
+//
+//  2.2.3.2.2	DNS_ADDR
+//
+Struct DNSPDnsaddr
+{
+	DNSPMaxSa MaxSa;
+	DNSPDnsAddrUserDword AddrUserDword;
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+}
+
+Struct DNSPMaxSa = FormatString("AddressFamily = %s,PortNumber = %u,IpAddress = %s",AddressFamily == 0x0002?"Ip4Address":AddressFamily == 0x0017?"Ip6Address":"unknown IpAddress",PortNumber,
+                                 AddressFamily == 0x0002?ipv4Address:AddressFamily == 0x0017?ipv6Address:"unknown IpAddress")
+{
+	UINT16 AddressFamily;
+	UINT16 PortNumber;
+	IPv4Address ipv4Address;
+	IPv6Address ipv6Address;
+	BLOB(8) Padding;
+}
+
+Struct DNSPDnsAddrUserDword = FormatString("SockAddLength = %u,SubnetLength = %u",SockaddrLength,SubnetLength)
+{
+	UINT32 SockaddrLength;
+	UINT32 SubnetLength;
+	UINT32 Flag
+	{
+		UINT32 TCP:1 = FormatString("              (%S) %S",this.ToBitString,this?"DNS over UDP is available from the remote DNS server":"DNS over TCP is not available from the remote DNS server ");
+		UINT32 Zero:7 = FormatString("             (%S) %S",this.ToBitString,this);
+		UINT32 RTT:12 = FormatString("             (%S) %S",this.ToBitString,this?"Round trip time to the remote DNS server for a UDP query":"No round trip time to the remote DNS server for a UDP query");
+		UINT32 validationStatus:12 = FormatString("(%S) %S",this.ToBitString,this);
+	}
+	BLOB(20) Padding;
+}
+
+Table DNSPValidationStatusTable(value)
+{
+	switch(value)
+	{
+		case 0x001:"The remote IP address is not a valid IP address";
+		case 0x002:"The remote IP address is not reachable";
+		case 0x003:"he remote IP address appears to be valid and reachable but no DNS response was received";
+		case 0x004:"The DNS server at the remote IP address is not authoritative for the zone specified by pszContextName in the DNS_RPC_IP_VALIDATE structure";
+		case 0x0FF:"An unknown error occurred during IP validation";
+		default:"unknown";
+	}
+}
+
+//
+//  2.2.3.1.3	DNS_ADDR_ARRAY
+//  Alignment	NdrAlign
+//
+Struct DNSPDnsaddrarray = FormatString("%u Address(es) = ",MaxCount)
+{
+	NdrConformant AddrCountc;
+	UINT32 MaxCount;
+	UINT32 AddrCount;
+	UINT32 Tag;
+	UINT16 Family;
+	UINT16 WordReserved;
+	UINT32 Flags;
+	UINT32 MatchFlag;
+	UINT32 Reserved1;
+	UINT32 Reserved2;
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+	DNSPDnsAddr AddrArray[AddrCountc.Maxcount];
+}
+//
+//  2.2.3.1.4	DNS_RPC_IP_VALIDATE
+//	Alignment:	NdrAlign
+//
+Struct DNSPDnsrpcipvalidatelonghorn = FormatString("DNS management structure version number = %u,context = %s",RpcStructureVersion,DNSPDnsrpcipvalidatelonghornContextTable(Context))
+{
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 Context = DNSPDnsrpcipvalidatelonghornContextTable( this );
+	UINT32 Reserved1;
+	NDRPTR ContextNamePtr;
+	NDRPTR AipValidateAddrsPtr;
+	Switch 
+	{
+		case ContextNamePtr.ReferentID:
+			NdrString ContextName;
+	}
+	Switch 
+	{
+		case AipValidateAddrsPtr.ReferentID:
+			DNSPDnsAddrArray AipValidateAddrs;
+	}
+}
+
+Table DNSPDnsrpcipvalidatelonghornContextTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "DNS_IPVAL_DNS_SERVERS - Validate that IP addresses are reachable and operational by the DNS servers.";
+		Case 0x00000001: "DNS_IPVAL_DNS_ROOTHINTS - Validate that IP addresses are suitable as root-hints.";
+		Case 0x00000002: "DNS_IPVAL_DNS_FORWARDERS - Validate that IP addresses are server level forwarders.";
+		Case 0x00000003: "DNS_IPVAL_DNS_ZONE_MASTERS - Validate that IP addresses are remote DNS servers hosting a zone, named as pointed to by pszContextName.";
+		Case 0x00000004: "DNS_IPVAL_DNS_DELEGATIONS - Validate that IP addresses are remote DNS servers are name-server for the delegated zone, named as pointed to by pszContextName.";
+		Default: "unknown";
+	}
+}
+
+//
+//  2.2.4.2.2	DNS_RPC_SERVER_INFO
+//
+table DNSPdwRpcStructureVersionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000001:"Structure is of type DNS_SERVER_INFO_DOTNET";
+		case 0x00000002:"Structure is of type DNS_SERVER_INFO_LONGHORN";
+		default:"unknown";
+	}
+}
+
+table DNSPdwDsForestVersionTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:"The DNS server MUST store root hints in the default directory partition, and stub and forwarder zones MUST NOT exist in the default directory partition";
+		default:"The DNS server MUST store root hints in the DNS domain partition, and stub and forwarder zones can exist in any directory partition";
+	}
+}
+
+//
+//  2.2.4.2.2  DNS_RPC_SERVER_INFO
+//
+struct DNSPDnsRpcServerInfo(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:			
+			DNSPDnsRpcServerInfoW2k DNSPDnsRpcServerInfoW2k;
+		case 0x00060000:
+			DNSPDnsRpcServerInfoDotnet DNSPDnsRpcServerInfoDotnet;
+		case 0x00070000:
+			DNSPDnsRpcServerInfoLonghorn DNSPDnsRpcServerInfoLonghorn;
+	}
+}
+
+//
+//  2.2.4.2.2.1	DNS_RPC_SERVER_INFO_W2K
+//  Alignment: NdrAlign
+//
+Struct DNSPDnsrpcserverinfow2k = FormatString("DNS server version = %s,BootMethod = %s,%s,%s,%s",Version.ToString,DNSPDnsBootMethodsTable(BootMethod),
+                                               AdminConfigured?"DNS server has been configured by an administrator":"DNS server has NOT been configured by an administrator",
+                                               AllowUpdate?"DNS server allows dynamic DNS updates":"DNS server NOT allows dynamic DNS updates",
+                                               DsAvailable?"Directory server is available to the DNS server":"Directory server is NOT available to the DNS server")
+{	
+	DNSPDnssrvVersion Version;
+	UINT8 BootMethod = DNSPDnsBootMethodsTable(this);
+	Boolean AdminConfigured;
+	Boolean AllowUpdate;
+	Boolean DsAvailable;
+	NDRPTR ServerNamePtr;
+	NDRPTR DsContainerPtr;
+	NDRPTR AipServerAddrsPtr;
+	NDRPTR AipListenAddrsPtr;
+	NDRPTR AipForwardersPtr;
+	NDRPTR Extension1Ptr;
+	NDRPTR Extension2Ptr;
+	NDRPTR Extension3Ptr;
+	NDRPTR Extension4Ptr;
+	NDRPTR Extension5Ptr;
+	UINT32 LogLevel = DNSPDnsLogLevelsTable(this)
+	{
+		UINT32 Query : 1 = FormatString("         (%s) %s",this.toBitString,this?"The server logs information for query packet":"The server doen'tlog information for query packet");
+		UINT32 UnusedBit2_4 : 3 = FormatString("  (%s) %s",this.toBitString,"Unused");
+		UINT32 Notify : 1 = FormatString("        (%s) %s",this.toBitString,this?"The server logs information to the log file for packet exchanges related to zone exchange":"The server doesn't log information to the log file for packet exchanges related to zone exchange");
+		UINT32 Update : 1 = FormatString("        (%s) %s",this.toBitString,this?"The server logs information to the log file for packet exchanges related to zone updates":"The server doesn't log information to the log file for packet exchanges related to zone updates");
+		UINT32 UnusedBit7_8 : 2 = FormatString("  (%s) %s",this.toBitString,"Unused");
+		UINT32 Question : 1 = FormatString("      (%s) %s",this.toBitString,this?"The server logs information to the log file for packets containing questions":"The server doesn't log information to the log file for packets containing questions");
+		UINT32 Answer : 1 = FormatString("        (%s) %s",this.toBitString,this?"The server logs information to the log file for packets containing answers":"The server doesn't log information to the log file for packets containing answers");
+		UINT32 UnusedBit11_12 : 2 = FormatString("(%s) %s",this.toBitString,"Unused");
+		UINT32 Send : 1 = FormatString("          (%s) %s",this.toBitString,this?"The server logs information for send packet":"The server doesn't log information for send packet");
+		UINT32 Recv : 1 = FormatString("          (%s) %s",this.toBitString,this?"The server logs information for Reseive packet":"The server doesn't log information for send packet");
+		UINT32 UDP : 1 = FormatString("           (%s) %s",this.toBitString,this?"The server logs information for UDP packet":"The server doesn't log information for UDP packet");
+		UINT32 TCP : 1 = FormatString("           (%s) %s",this.toBitString,this?"The server logs information for TCP packet":"The server doesn't log information for TCP packet");
+		UINT32 UnusedBit17_24 : 8 = FormatString("(%s) %s",this.toBitString,"Unused");
+		UINT32 FullPacket : 1 = FormatString("    (%s) %s",this.toBitString,this?"The server logs the entire packet to the log file":"The server doesn't log the entire packet to the log file");
+		UINT32 RESPONSE:1 = FormatString("(%s) %s",this.toBitString,"the server logs response packets that do not match any outstanding query");
+		UINT32 UnusedBit26_31 : 5 = FormatString("(%s) %s",this.toBitString,"Unused");
+		UINT32 WriteThrough : 1 = FormatString("  (%s) %s",this.toBitString,this?"The server saves packet logging information to persistent storage":"The server doesn't save packet logging information to persistent storage");
+	};
+	UINT32 DebugLevel;
+	UINT32 ForwardTimeout;
+	UINT32 RpcProtocol;
+	UINT32 NameCheckFlag;
+	UINT32 CAddressAnswerLimit;
+	UINT32 RecursionRetry;
+	UINT32 RecursionTimeout;
+	UINT32 MaxCacheTtl;
+	UINT32 DsPollingInterval;
+	UINT32 ScavengingInterval;
+	UINT32 DefaultRefreshInterval;
+	UINT32 DefaultNoRefreshInterval;
+	UINT32 ReserveArray[10];
+	Boolean AutoReverseZones;
+	Boolean AutoCacheUpdate;
+	Boolean RecurseAfterForwarding;
+	Boolean ForwardDelegations;
+	Boolean NoRecursion;
+	Boolean SecureResponses;
+	Boolean RoundRobin;
+	Boolean LocalNetPriority;
+	Boolean BindSecondaries;
+	Boolean WriteAuthorityNs;
+	Boolean StrictFileParsing;
+	Boolean LooseWildcarding;
+	Boolean DefaultAgingState;
+	Boolean ReserveArray2[15];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch 
+	{
+		Case ServerNamePtr.ReferentID:
+			NdrString ServerName;
+	}
+	Switch 
+	{
+		Case DsContainerPtr.ReferentID:
+			NdrWideString DsContainer;
+	}
+	Switch 
+	{
+		Case AipServerAddrsPtr.ReferentID:
+			DNSPIp4Array AipServerAddrs;
+	}
+	Switch 
+	{
+		Case AipListenAddrsPtr.ReferentID:
+			DNSPIp4Array AipListenAddrs;
+	}
+	Switch 
+	{
+		Case AipForwardersPtr.ReferentID:
+			DNSPIp4Array AipForwarders;
+	}
+	Switch 
+	{
+		Case Extension1Ptr.ReferentID:
+			UINT32 Extension1;
+	}
+	Switch 
+	{
+		Case Extension2Ptr.ReferentID:
+			UINT32 Extension2;
+	}
+	Switch 
+	{
+		Case Extension3Ptr.ReferentID:
+			UINT32 Extension3;
+	}
+	Switch 
+	{
+		Case Extension4Ptr.ReferentID:
+			UINT32 Extension4;
+	}
+	Switch 
+	{
+		Case Extension5Ptr.ReferentID:
+			UINT32 Extension5;
+	}
+}
+
+//
+//  2.2.4.2.2.2	DNS_RPC_SERVER_INFO_DOTNET
+//	Alignment NdrAlign
+//
+Struct DNSPDnsrpcserverinfodotnet = FormatString("RPC structure version = %s,BootMethod = %s,%s,%s,%s",DNSPDnsrpcserverinfodotnetRpcStructureVersionTable(RpcStructureVersion),DNSPDnsBootMethodsTable(BootMethod),
+                                               AdminConfigured?"DNS server has been configured by an administrator":"DNS server has NOT been configured by an administrator",
+                                               AllowUpdate?"DNS server allows dynamic DNS updates":"DNS server NOT allows dynamic DNS updates",
+                                               DsAvailable?"Directory server is available to the DNS server":"Directory server is NOT available to the DNS server")
+{
+	UINT32 RpcStructureVersion = DNSPDnsrpcserverinfodotnetRpcStructureVersionTable( this );
+	UINT32 Reserved0;
+	DNSPDnssrvVersion Version;
+	UINT8 BootMethod = DNSPDnsBootMethodsTable(this);
+	Boolean AdminConfigured;
+	Boolean AllowUpdate;
+	Boolean DsAvailable;
+	NDRPTR ServerNamePtr;
+	NDRPTR DsContainerPtr;
+	NDRPTR AipServerAddrsPtr;
+	NDRPTR AipListenAddrsPtr;
+	NDRPTR AipForwardersPtr;
+	NDRPTR AipLogFilterPtr;
+	NDRPTR LogFilePathPtr;
+	NDRPTR DomainNamePtr;
+	NDRPTR ForestNamePtr;
+	NDRPTR DomainDirectoryPartitionPtr;
+	NDRPTR ForestDirectoryPartitionPtr;
+	[local.count = 0,property.DNSPDnsRpcServerInfoDotnetCount = 0]
+	While [property.DNSPDnsRpcServerInfoDotnetCount < 6]
+	{
+		[property.DNSPDnsRpcServerInfoDotnetCount = property.DNSPDnsRpcServerInfoDotnetCount + 1,local.count = ExtensionsPtr.ReferentID ? local.count + 1 : local.count]
+		NDRPTR ExtensionsPtr;
+	}
+	UINT32 LogLevel;
+	UINT32 DebugLevel;
+	UINT32 ForwardTimeout;
+	UINT32 RpcProtocol;
+	UINT32 NameCheckFlag;
+	UINT32 CAddressAnswerLimit;
+	UINT32 RecursionRetry;
+	UINT32 RecursionTimeout;
+	UINT32 MaxCacheTtl;
+	UINT32 DsPollingInterval;
+	UINT32 LocalNetPriorityNetMask;
+	UINT32 ScavengingInterval;
+	UINT32 DefaultRefreshInterval;
+	UINT32 DefaultNoRefreshInterval;
+	UINT32 LastScavengeTime;
+	UINT32 EventLogLevel
+	{
+		UINT32 SUCCESS : 1 = FormatString("         (%s) %s",this.toBitString,this?"log events for all successful operations" : " ");
+		UINT32 WARNINGTYPE : 1 = FormatString("        (%s) %s",this.toBitString,this?"log events for all operations that result in a warning":" ");
+		UINT32 INFORMATIONTYPE : 1 = FormatString("        (%s) %s",this.toBitString,this?" log events for all operations for informative purposes":" ");
+		UINT32 Unused : 29 = FormatString("  (%s) %s",this.toBitString,"Unused");
+	}
+	UINT32 LogFileMaxSize;
+	UINT32 DsForestVersion;
+	UINT32 DsDomainVersion;
+	UINT32 DsDsaVersion;
+	UINT32 ReserveArray[4];
+	Boolean AutoReverseZones;
+	Boolean AutoCacheUpdate;
+	Boolean RecurseAfterForwarding;
+	Boolean ForwardDelegations;
+	Boolean NoRecursion;
+	Boolean SecureResponses;
+	Boolean RoundRobin;
+	Boolean LocalNetPriority;
+	Boolean BindSecondaries;
+	Boolean WriteAuthorityNs;
+	Boolean StrictFileParsing;
+	Boolean LooseWildcarding;
+	Boolean DefaultAgingState;
+	Boolean ReserveArray2[15];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch 
+	{
+		Case ServerNamePtr.ReferentID:
+			NdrString ServerName;
+	}
+	Switch 
+	{
+		Case DsContainerPtr.ReferentID:
+			NdrWideString DsContainer;
+	}
+	Switch 
+	{
+		Case AipServerAddrsPtr.ReferentID:
+			DNSPIp4Array AipServerAddrs;
+	}
+	Switch 
+	{
+		Case AipListenAddrsPtr.ReferentID:
+			DNSPIp4Array AipListenAddrs;
+	}
+	Switch 
+	{
+		Case AipForwardersPtr.ReferentID:
+			DNSPIp4Array AipForwarders;
+	}
+	Switch 
+	{
+		Case AipLogFilterPtr.ReferentID:
+			DNSPIp4Array AipLogFilter;
+	}
+	Switch 
+	{
+		Case LogFilePathPtr.ReferentID:
+			NdrWideString LogFilePath;
+	}
+	Switch 
+	{
+		Case DomainNamePtr.ReferentID:
+			NdrString DomainName;
+	}
+	Switch 
+	{
+		Case ForestNamePtr.ReferentID:
+			NdrString ForestName;
+	}
+	Switch 
+	{
+		Case DomainDirectoryPartitionPtr.ReferentID:
+			NdrString DomainDirectoryPartition;
+	}
+	Switch 
+	{
+		Case ForestDirectoryPartitionPtr.ReferentID:
+			NdrString ForestDirectoryPartition;
+	}
+	NdrString Extensions[local.count];
+}
+
+Table DNSPDnsrpcserverinfodotnetRpcStructureVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Structure is of type DNS_SERVER_INFO_DOTNET.";
+		Case 0x00000002: "Structure is of type DNS_SERVER_INFO_LONGHORN.";
+		Default: "unknown";
+	}
+}
+
+//
+//  2.2.4.2.2.3	DNS_RPC_SERVER_INFO_LONGHORN:
+//  Alignment:	NdrAling
+//
+Struct DNSPDnsrpcserverinfolonghorn = FormatString("RPC structure version = %s,BootMethod = %s,%s,%s,%s",DNSPDnsrpcserverinfodotnetRpcStructureVersionTable(RpcStructureVersion),DNSPDnsBootMethodsTable(BootMethod),
+                                               AdminConfigured?"DNS server has been configured by an administrator":"DNS server has NOT been configured by an administrator",
+                                               AllowUpdate?"DNS server allows dynamic DNS updates":"DNS server NOT allows dynamic DNS updates",
+                                               DsAvailable?"Directory server is available to the DNS server":"Directory server is NOT available to the DNS server")
+
+{
+	UINT32 RpcStructureVersion = DNSPDnsrpcserverinfodotnetRpcStructureVersionTable( this );
+	UINT32 Reserved0;
+	DNSPDnssrvVersion Version;
+	UINT8 BootMethod = DNSPDnsBootMethodsTable(this);
+	Boolean AdminConfigured;
+	Boolean AllowUpdate;
+	Boolean DsAvailable;
+	NDRPTR ServerNamePtr;
+	NDRPTR DsContainerPtr;
+	NDRPTR AipServerAddrsPtr;
+	NDRPTR AipListenAddrsPtr;
+	NDRPTR AipForwardersPtr;
+	NDRPTR AipLogFilterPtr;
+	NDRPTR LogFilePathPtr;
+	NDRPTR DomainNamePtr;
+	NDRPTR ForestNamePtr;
+	NDRPTR DomainDirectoryPartitionPtr;
+	NDRPTR ForestDirectoryPartitionPtr;
+	[local.count = 0,property.DNSPDnsRpcServerInfoLonghornCount = 0]
+	while [property.DNSPDnsRpcServerInfoLonghornCount < 6]
+	{
+		[property.DNSPDnsRpcServerInfoLonghornCount = property.DNSPDnsRpcServerInfoLonghornCount + 1]
+		[local.count = ExtensionsPtr.ReferentID?local.count +1:local.count ]
+		NDRPTR ExtensionsPtr;
+	}
+	UINT32 LogLevel;
+	UINT32 DebugLevel;
+	UINT32 ForwardTimeout;
+	UINT32 RpcProtocol;
+	UINT32 NameCheckFlag;
+	UINT32 CAddressAnswerLimit;
+	UINT32 RecursionRetry;
+	UINT32 RecursionTimeout;
+	UINT32 MaxCacheTtl;
+	UINT32 DsPollingInterval;
+	UINT32 LocalNetPriorityNetMask;
+	UINT32 ScavengingInterval;
+	UINT32 DefaultRefreshInterval;
+	UINT32 DefaultNoRefreshInterval;
+	UINT32 LastScavengeTime;
+	UINT32 EventLogLevel;
+	UINT32 LogFileMaxSize;
+	UINT32 DsForestVersion;
+	UINT32 DsDomainVersion;
+	UINT32 DsDsaVersion;
+	Boolean ReadOnlyDC;
+	Align4 Pad2;
+	UINT32 ReserveArray[3];
+	Boolean AutoReverseZones;
+	Boolean AutoCacheUpdate;
+	Boolean Slave;
+	Boolean ForwardDelegations;
+	Boolean NoRecursion;
+	Boolean SecureResponses;
+	Boolean RoundRobin;
+	Boolean LocalNetPriority;
+	Boolean BindSecondaries;
+	Boolean WriteAuthorityNs;
+	Boolean StrictFileParsing;
+	Boolean LooseWildcarding;
+	Boolean DefaultAgingState;
+	Boolean ReserveArray2[15];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch 
+	{
+		Case ServerNamePtr.ReferentID:
+			NdrString ServerName;
+	}
+	Switch 
+	{
+		Case DsContainerPtr.ReferentID:
+			NdrWideString DsContainer;
+	}
+	Switch 
+	{
+		Case AipServerAddrsPtr.ReferentID:
+			DNSPDnsAddrArray AipServerAddrs;
+	}
+	Switch 
+	{
+		Case AipListenAddrsPtr.ReferentID:
+			DNSPDnsAddrArray AipListenAddrs;
+	}
+	Switch 
+	{
+		Case AipForwardersPtr.ReferentID:
+			DNSPDnsAddrArray AipForwarders;
+	}
+	Switch 
+	{
+		Case AipLogFilterPtr.ReferentID:
+			DNSPDnsAddrArray AipLogFilter;
+	}
+	Switch 
+	 {
+		Case LogFilePathPtr.ReferentID:
+			NdrWideString LogFilePath;
+	}
+	Switch 
+	{
+		Case DomainNamePtr.ReferentID:
+			NdrString DomainName;
+	}
+	Switch 
+	{
+		Case ForestNamePtr.ReferentID:
+			NdrString ForestName;
+	}
+	Switch 
+	{
+		Case DomainDirectoryPartitionPtr.ReferentID:
+			NdrString DomainDirectoryPartition;
+	}
+	Switch 
+	{
+		Case ForestDirectoryPartitionPtr.ReferentID:
+			NdrString ForestDirectoryPartition;
+	}
+	NdrString Extensions[local.count];
+}
+
+//
+//  2.2.5.2.1	DNS_RPC_ZONE
+//  Alignment:  NdrAlign
+//
+Struct DNSPDnsrpczone(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:DNSPDnsrpczonew2k DNSRPCZONEW2K;
+		case 0x00060000:
+		case 0x00070000:DNSPDnsrpczonedotnet DNSRPCZONEDOTNET ;
+	}
+}
+
+//
+//  2.2.5.2.1.1	DNS_RPC_ZONE_W2K
+//  Alignment: NdrAlign
+//
+Struct DNSPDnsrpczonew2k = FormatString("ZoneType = %s,ZoneName = %s",DNSPDNSZONETYPETable(ZoneType),ZoneName)
+{
+
+	NDRPTR ZoneNamePtr;
+	UINT32 DNSPDnsRpcZoneFlags
+	{
+		UINT32 Paused:1 = FormatString("      (%s) %s", this.ToBitString, this ? "This zone is currently administratively paused." : "This zone is not currently administratively paused.");
+		UINT32 Shutdown:1 = FormatString("    (%s) %s", this.ToBitString, this ? "This DNS zone is currently shut down. " : "This DNS zone is not currently shut down. " );
+		UINT32 Reverse:1 = FormatString("     (%s) %s", this.ToBitString, this ? "This is a reverse lookup zone." : "This is not a reverse lookup zone.");
+		UINT32 AutoCreated:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Zone was auto-created." : "Zone was not auto-created.");
+		UINT32 DsIntegrated:1 = FormatString("(%s) %s", this.ToBitString, this ? "Zone is stored in a directory server." : "Zone is not stored in a directory server.");
+		UINT32 Aging:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Zone has aging enabled for resource records." : "Zone has not aging enabled for resource records.");
+		UINT32 Update:2 = FormatString("      (%s) %s", this.ToBitString, this ? "The type of updates are supported on this zone. " : "The type of updates are not supported on this zone. ");
+		UINT32 ReadOnly:1 = FormatString("    (%s) %s", this.ToBitString, this ? "This zone is operating in read-only mode. " : "This zone is not operating in read-only mode. ");
+		UINT32 Unused:23 = FormatString("     (%s) %s", this.ToBitString,this );
+	};
+	UINT8 ZoneType = DNSPDNSZONETYPETable(this);
+	UINT8 Version;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrWideString ZoneName;
+	}
+}
+
+//
+//  2.2.5.2.1.2	DNS_RPC_ZONE_DOTNET
+//
+Struct DNSPDnsrpczonedotnet = FormatString("ZoneType = %s,ZoneName = %s",DNSPDNSZONETYPETable(ZoneType),ZoneName)
+{
+	NdrAlign Pad;	
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	NDRPTR ZoneNamePtr;
+	UINT32 DNSPDnsRpcZoneFlags
+	{
+		UINT32 Paused:1 = FormatString("      (%s) %s", this.ToBitString, this ? "This zone is currently administratively paused." : "This zone is not currently administratively paused.");
+		UINT32 Shutdown:1 = FormatString("    (%s) %s", this.ToBitString, this ? "This DNS zone is currently shut down. " : "This DNS zone is not currently shut down. " );
+		UINT32 Reverse:1 = FormatString("     (%s) %s", this.ToBitString, this ? "This is a reverse lookup zone." : "This is not a reverse lookup zone.");
+		UINT32 AutoCreated:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Zone was auto-created." : "Zone was not auto-created.");
+		UINT32 DsIntegrated:1 = FormatString("(%s) %s", this.ToBitString, this ? "Zone is stored in a directory server." : "Zone is not stored in a directory server.");
+		UINT32 Aging:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Zone has aging enabled for resource records." : "Zone has not aging enabled for resource records.");
+		UINT32 Update:2 = FormatString("      (%s) %s", this.ToBitString, this ? "The type of updates are supported on this zone. " : "The type of updates are not supported on this zone. ");
+		UINT32 ReadOnly:1 = FormatString("    (%s) %s", this.ToBitString, this ? "This zone is operating in read-only mode. " : "This zone is not operating in read-only mode. ");
+		UINT32 Unused:23 = FormatString("     (%s) %s", this.ToBitString,this );
+	};
+	UINT8 ZoneType = DNSPDNSZONETYPETable(this);
+	UINT8 Version;
+	Align4 Pad1;
+	UINT32 DpFlags
+	{
+		UINT32 DNSDPAUTOCREATED:1 = FormatString("  (%s) %s", this.ToBitString, this ? "The directory partition was automatically created." : "The directory partition was not automatically created.");
+		UINT32 DNSDPLEGACY:1 = FormatString("       (%s) %s", this.ToBitString, this ? "The directory partition with the default naming in the directory server. " : "The directory partition with the default naming isn't in the directory server. " );
+		UINT32 DNSDPDOMAINDEFAULT:1 = FormatString("(%s) %s", this.ToBitString, this ? "Default directory partition with scope of the local domain of the directory server." : "Default directory isn't partition with scope of the local domain of the directory server.");
+		UINT32 DNSDPFORESTDEFAULT:1 = FormatString("(%s) %s", this.ToBitString, this ? "Default directory partition with scope of the local forest of the directory server." : "Default directory isn't partition with scope of the local forest of the directory server.");
+		UINT32 DNSDPENLISTED:1 = FormatString("     (%s) %s", this.ToBitString, this ? "DNS server is enlisted in this directory partition." : "DNS server is not enlisted in this directory partition.");
+		UINT32 DNSDPDELETED:1 = FormatString("      (%s) %s", this.ToBitString, this ? "This directory partition is in the process of being deleted." : "This directory partition is not in the process of being deleted.");
+		UINT32 Unused:26 = FormatString("           (%s) %s", this.ToBitString,this );
+	};
+	NDRPTR DpFqdnPtr;
+	Switch 
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrWideString ZoneName;
+	}
+	Switch 
+	{
+		Case DpFqdnPtr.ReferentID > 0:
+			NdrString DpFqdn;
+	}
+}
+
+//
+//  2.2.5.2.3	DNS_RPC_ZONE_LIST
+//  Alignment:   NdrAlign
+//
+Struct DNSPDnsrpczonelist(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:DNSPDnsrpczonelistw2k DNSRPCZONEW2K;
+		case 0x00060000:
+		case 0x00070000:DNSPDnsrpczonelistdotnet DNSRPCZONEDOTNET ;
+	}
+}
+
+//
+//  2.2.5.2.3.1	DNS_RPC_ZONE_LIST_W2K
+//  Alignment:  NdrAlign
+//
+Struct DNSPDnsrpczonelistw2k = FormatString("ZoneCount = %u",ZoneCount)
+{
+	NdrConformant ZoneCountc;	
+	UINT32 ZoneCount;
+	[local.count = 0,property.DNSPDnsRpcZoneListW2kCount = 0]
+	While [property.DNSPDnsRpcZoneListW2kCount < ZoneCountc.Maxcount]
+	{
+		[property.DNSPDnsRpcZoneListW2kCount = property.DNSPDnsRpcZoneListW2kCount +1,local.count = ZoneArrayPtr.ReferentID ? local.count + 1 : local.count]
+		NDRPTR ZoneArrayPtr;
+	}
+	DNSPDnsRpcZoneW2k ZoneArray[local.count];
+}
+
+//
+//  2.2.5.2.3.2	DNS_RPC_ZONE_LIST_DOTNET
+//	Alignment:	NdrAlign
+//
+Struct DNSPDnsrpczonelistdotnet = FormatString("ZoneCount = %u",ZoneCount)
+{
+	NdrConformant ZoneCountc;
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 ZoneCount;
+	Ndrptr pZoneArray[ZoneCount];
+	DNSPDnsRpcZoneDotnet ZoneArray[ZoneCount];
+}
+
+//
+//  2.2.5.2.4	DNS_RPC_ZONE_INFO
+//	Alignment:	NdrAlign
+//
+Struct DNSPDnsrpczoneINFO(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:DNSPDnsrpczoneinfow2k DNSRPCZONEW2K;
+		case 0x00060000:DNSPDnsrpczoneinfodotnet DNSRPCZONEDOTNET ;
+		case 0x00070000:DNSPDnsrpczoneinfolonghorn DNSRPCZONELonghorn ;
+	}
+}
+
+//
+//  2.2.5.2.4.1	DNS_RPC_ZONE_INFO_W2K
+//  Alignment: NdrAlign 
+//
+Struct DNSPDnsrpczoneinfow2k = FormatString("ZoneType = %s,ZoneName = %s",DNSPDNSZONETYPETable(ZoneType),ZoneName)
+{
+	NDRPTR ZoneNamePtr;
+	UINT32 ZoneType = DNSPDNSZONETYPETable(this);
+	UINT32 Reverse = FormatString(" %s ", this ? " reverse lookup zone ":"forward lookup zone");
+	UINT32 AllowUpdate;
+	UINT32 Paused;
+	UINT32 Shutdown;
+	UINT32 AutoCreated;
+	UINT32 UseDatabase;
+	NDRPTR DataFilePtr;
+	NDRPTR AipMastersPtr;
+	UINT32 SecureSecondaries;
+	UINT32 NotifyLevel;
+	NDRPTR AipSecondariesPtr;
+	NDRPTR AipNotifyPtr;
+	UINT32 UseWins;
+	UINT32 UseNbstat;
+	UINT32 Aging;
+	UINT32 NoRefreshInterval;
+	UINT32 RefreshInterval;
+	UINT32 AvailForScavengeTime;
+	NDRPTR AipScavengeServersPtr;
+	UINT32 PvReserved1;
+	UINT32 PvReserved2;
+	UINT32 PvReserved3;
+	UINT32 PvReserved4;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch 
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrString ZoneName;
+	}
+	Switch 
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrString DataFile;
+	}
+	Switch 
+	{
+		Case AipMastersPtr.ReferentID > 0:
+			DNSPIp4Array AipMasters;
+	}
+	Switch 
+	{
+		Case AipSecondariesPtr.ReferentID > 0:
+			DNSPIp4Array AipSecondaries;
+	}
+	Switch 
+	{
+		Case AipNotifyPtr.ReferentID > 0:
+			DNSPIp4Array AipNotify;
+	}
+	Switch 
+	{
+		Case AipScavengeServersPtr.ReferentID > 0:
+			DNSPIp4Array AipScavengeServers;
+	}
+}
+
+//
+//  2.2.5.2.4.2	DNS_RPC_ZONE_INFO_DOTNET
+//  Alignment:NdrAlign
+//
+Struct DNSPDnsrpczoneinfodotnet = FormatString("RPC structure version = %s,ZoneType = %s,ZoneName = %s", DNSPDnsrpczoneinfodotnetRpcStructureVersionTable(RpcStructureVersion),DNSPDNSZONETYPETable(ZoneType),ZoneName)
+
+{
+	UINT32 RpcStructureVersion = DNSPDnsrpczoneinfodotnetRpcStructureVersionTable( this );
+	UINT32 Reserved0;
+	NDRPTR ZoneNamePtr;
+	UINT32 ZoneType = DNSPDNSZONETYPETable(this);
+	UINT32 Reverse;
+	UINT32 AllowUpdate;
+	UINT32 Paused;
+	UINT32 Shutdown;
+	UINT32 AutoCreated;
+	UINT32 UseDatabase;
+	NDRPTR DataFilePtr;
+	NDRPTR AipMastersPtr;
+	UINT32 SecureSecondaries;
+	UINT32 NotifyLevel;
+	NDRPTR AipSecondariesPtr;
+	NDRPTR AipNotifyPtr;
+	UINT32 UseWins;
+	UINT32 UseNbstat;
+	UINT32 Aging;
+	UINT32 NoRefreshInterval;
+	UINT32 RefreshInterval;
+	UINT32 AvailForScavengeTime;
+	NDRPTR AipScavengeServersPtr;
+	UINT32 ForwarderTimeout;
+	UINT32 ForwarderSlave;
+	NDRPTR AipLocalMastersPtr;
+	UINT32 DpFlags;
+	NDRPTR DpFqdnPtr;
+	NDRPTR ZoneDnPtr;
+	UINT32 LastSuccessfulSoaCheck;
+	UINT32 LastSuccessfulXfr;
+	UINT32 Reserved1;
+	UINT32 Reserved2;
+	UINT32 Reserved3;
+	UINT32 Reserved4;
+	UINT32 Reserved5;
+	NDRPTR Reserved12Ptr;
+	NDRPTR Reserved22Ptr;
+	NDRPTR Reserved32Ptr;
+	NDRPTR Reserved42Ptr;
+	Switch 
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrString ZoneName;
+	}
+	Switch 
+	{
+		Case DataFilePtr.ReferentID > 0:
+			NdrString DataFile;
+	}
+	Switch 
+	{
+		Case AipMastersPtr.ReferentID > 0:
+			DNSPIp4Array AipMasters;
+	}
+	Switch 
+	{
+		Case AipSecondariesPtr.ReferentID > 0:
+			DNSPIp4Array AipSecondaries;
+	}
+	Switch 
+	{
+		Case AipNotifyPtr.ReferentID > 0:
+			DNSPIp4Array AipNotify;
+	}
+	Switch 
+	{
+		Case AipScavengeServersPtr.ReferentID > 0:
+			DNSPIp4Array AipScavengeServers;
+	}
+	Switch 
+	{
+		Case AipLocalMastersPtr.ReferentID > 0:
+			DNSPIp4Array AipLocalMasters;
+	}
+	Switch 
+	{
+		Case DpFqdnPtr.ReferentID > 0:
+			NdrString DpFqdn;
+	}
+	Switch 
+	{
+		Case ZoneDnPtr.ReferentID > 0:
+			NdrWideString ZoneDn;
+	}
+	Switch 
+	{
+		Case Reserved12Ptr.ReferentID > 0:
+			NdrString Reserved12;
+	}
+	Switch 
+	{
+		Case Reserved22Ptr.ReferentID > 0:
+			NdrString Reserved22;
+	}
+	Switch 
+	{
+		Case Reserved32Ptr.ReferentID > 0:
+			NdrString Reserved32;
+	}
+	Switch 
+	{
+		Case Reserved42Ptr.ReferentID > 0:
+			NdrString Reserved42;
+	}
+}
+
+Table DNSPDnsrpczoneinfodotnetRpcStructureVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Structure is of type DNS_RPC_ZONE_INFO_DOTNET.";
+		Case 0x00000002: "Structure is of type DNS_RPC_ZONE_INFO_LONGHORN.";
+		Default: "unknown";
+	}
+}
+
+//
+//  2.2.5.2.4.3	DNS_RPC_ZONE_INFO_LONGHORN
+//	Alignment:	NdrAlign
+//
+Struct DNSPDnsrpczoneinfolonghorn = FormatString("RPC structure version = %s,ZoneType = %s,ZoneName = %s", DNSPDnsrpczoneinfodotnetRpcStructureVersionTable(RpcStructureVersion),DNSPDNSZONETYPETable(ZoneType),ZoneName)
+{
+	UINT32 RpcStructureVersion = DNSPDnsrpczoneinfodotnetRpcStructureVersionTable( this );
+	UINT32 Reserved0;
+	NDRPTR ZoneNamePtr;
+	UINT32 ZoneType = DNSPDNSZONETYPETable(this);
+	UINT32 Reverse;
+	UINT32 AllowUpdate;
+	UINT32 Paused;
+	UINT32 Shutdown;
+	UINT32 AutoCreated;
+	UINT32 UseDatabase;
+	NDRPTR DataFilePtr;
+	NDRPTR AipMastersPtr;
+	UINT32 SecureSecondaries;
+	UINT32 NotifyLevel;
+	NDRPTR AipSecondariesPtr;
+	NDRPTR AipNotifyPtr;
+	UINT32 UseWins;
+	UINT32 UseNbstat;
+	UINT32 Aging;
+	UINT32 NoRefreshInterval;
+	UINT32 RefreshInterval;
+	UINT32 AvailForScavengeTime;
+	NDRPTR AipScavengeServersPtr;
+	UINT32 ForwarderTimeout;
+	UINT32 ForwarderSlave;
+	NDRPTR AipLocalMastersPtr;
+	UINT32 DpFlags;
+	NDRPTR DpFqdnPtr;
+	NDRPTR ZoneDnPtr;
+	UINT32 LastSuccessfulSoaCheck;
+	UINT32 LastSuccessfulXfr;
+	UINT32 QueuedForBackgroundLoad;
+	UINT32 BackgroundLoadInProgress;
+	INT32 ReadOnlyZone;
+	UINT32 LastXfrAttempt;
+	UINT32 LastXfrResult = this == 0xFFFFFFFF?"DNS_XFER_RESULT_IN_PROGRESS - Zone transfer is in progress."
+												:this == 0x00000000?"Last attempted zone transfer was successful."
+												:Formatstring("%s",WinErrorCodeTable(this));
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	Switch 
+	{
+		Case ZoneNamePtr.ReferentID > 0:
+			NdrString ZoneName;
+	}
+	Switch 
+	{
+		Case DataFilePtr.ReferentID > 0:
+			NdrString DataFile;
+	}
+	Switch 
+	{
+		Case AipMastersPtr.ReferentID > 0:
+			DNSPDnsAddrArray AipMasters;
+	}
+	Switch 
+	{
+		Case AipSecondariesPtr.ReferentID > 0:
+			DNSPDnsAddrArray AipSecondaries;
+	}
+	Switch 
+	{
+		Case AipNotifyPtr.ReferentID > 0:
+			DNSPDnsAddrArray AipNotify;
+	}
+	Switch 
+	{
+		Case AipScavengeServersPtr.ReferentID > 0:
+			DNSPDnsAddrArray AipScavengeServers;
+	}
+	Switch 
+	{
+		Case AipLocalMastersPtr.ReferentID > 0:
+			DNSPDnsAddrArray AipLocalMasters;
+	}
+	Switch 
+	{
+		Case DpFqdnPtr.ReferentID > 0:
+			NdrString DpFqdn;
+	}
+	Switch 
+	{
+		Case ZoneDnPtr.ReferentID > 0:
+			NdrWideString ZoneDn;
+	}
+}
+
+Table DNSPDnsrpczoneinfolonghornLastXfrResultTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0xFFFFFFFF: "DNS_XFER_RESULT_IN_PROGRESS - Zone transfer is in progress.";
+		Case 0x00000000: "Last attempted zone transfer was successful.";
+		Default: "Win32ErrorCode";
+	}
+}
+
+Table DNSPDnssrvrpczonesecondariesdotnetRpcStructureVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "Structure is of type DNS_RPC_ZONE_SECONDARIES_DOTNET.";
+		Case 0x00000002: "Structure is of type DNS_RPC_ZONE_SECONDARIES_LONGHORN.";
+		Default: "unknown";
+	}
+}
+
+Table DNSPDnssrvrpcforwardersdotnetRpcStructureVersionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "This structure is of type DNS_RPC_FORWARDERS_DOTNET.";
+		Case 0x00000002: "This structure is of type DNS_RPC_FORWARDERS_LONGHORN.";
+		Default: "unknown";
+	}
+}
+
+Table DNSPMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "R_DnssrvOperation";
+		Case 1: "R_DnssrvQuery";
+		Case 2: "R_DnssrvComplexOperation";
+		Case 3: "R_DnssrvEnumRecords";
+		Case 4: "R_DnssrvUpdateRecord";
+		Case 5: "R_DnssrvOperation2";
+		Case 6: "R_DnssrvQuery2";
+		Case 7: "R_DnssrvComplexOperation2";
+		Case 8: "R_DnssrvEnumRecords2";
+		Case 9: "R_DnssrvUpdateRecord2";
+		Default: "unknown";
+	}
+}
+
+Table DNSPSelectFlagTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "DNS_RPC_VIEW_AUTHORITY_DATA";
+		Case 0x00000002: "DNS_RPC_VIEW_CACHE_DATA";
+		Case 0x00000004: "DNS_RPC_VIEW_GLUE_DATA";
+		Case 0x00000008: "DNS_RPC_VIEW_ROOT_HINT_DATA";
+		Case 0x00000010: "DNS_RPC_VIEW_ADDITIONAL_DATA";
+		Case 0x00010000: "DNS_RPC_VIEW_NO_CHILDREN";
+		Case 0x00020000: "DNS_RPC_VIEW_ONLY_CHILDREN";
+		Default: "unknown";
+	}
+}
+
+
+Table DNSPRDnssrvOperationContextTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0xfffffff3: "Operation will be performed for all zones present on the server.";
+		Case 0xfffffff7: "Operation will be performed for all zones present on the server including cache zones.";
+		Case 0x00000001: "Operation will be performed for all zones for which the server is primary.";
+		Case 0x00000002: "Operation will be performed for all zones for which the server is secondary.";
+		Case 0x00000010: "Operation will be performed for all forward lookup zones on the server.";
+		Case 0x00000020: "Operation will be performed for all reverse lookup zones on the server.";
+		Case 0x00000100: "Operation will be performed for all zones stored in the directory server.";
+		Case 0x00000200: "Operation will be performed for all zones not stored in the directory server.";
+		Default: "unknown";
+	}
+}
+
+Struct DNSPDnsRpcRecordPtr
+{
+	NDRPTR Pointer;
+	Switch 
+	{
+		Case Pointer.ReferentId != 0:
+		_struct
+		{
+			NdrConformant wDataLengthc;			
+			DNSPDnsRpcRecord AddRecord;
+		}
+	}
+}
+
+//
+//  2.2.5.1.4	ZONE_REQUEST_FILTERS
+//
+Table ZONEREQUESTFILTERSContextTable( Value )
+{
+	switch(value)
+	{
+		case 0x00000000:"operation is not meant to apply to multiple zones.";
+		case 0x00000001:"ZONE_REQUEST_PRIMARY";
+		case 0x00000002:"ZONE_REQUEST_SECONDARY";
+		case 0x00000004:"ZONE_REQUEST_CACHE";
+		case 0x00000008:"ZONE_REQUEST_AUTO";
+		case 0x00000010:"ZONE_REQUEST_FORWARD";
+		case 0x00000020:"ZONE_REQUEST_REVERSE";
+		case 0x00000040:"ZONE_REQUEST_FORWARDER";
+		case 0x00000080:"ZONE_REQUEST_STUB";
+		case 0x00000100:"ZONE_REQUEST_DS";
+		case 0x00000200:"ZONE_REQUEST_NON_DS";
+		case 0x00000400:"ZONE_REQUEST_DOMAIN_DP";
+		case 0x00000800:"ZONE_REQUEST_FOREST_DP";
+		case 0x00001000:"ZONE_REQUEST_CUSTOM_DP";
+		case 0x00002000:"ZONE_REQUEST_LEGACY_DP";
+		default:"Unknow";
+	}
+}
+
+//
+//  2.2.5.2.5	DNS_RPC_ZONE_SECONDARIES
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsrpcZoneSecondaries(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:
+			DNSPDnsrpcZoneSecondariesW2K DNSPDnsrpcZoneSecondariesW2K;
+		case 0x00060000:
+			DNSPDnsrpcZoneSecondariesDOTNET DNSPDnsrpcZoneSecondariesDOTNET;
+		case 0x00070000:
+			DNSPDnsrpcZoneSecondariesLongHorn DNSPDnsrpcZoneSecondariesLongHorn;
+	}
+}
+
+//
+//  2.2.5.2.5.1	DNS_RPC_ZONE_SECONDARIES_W2K
+//  Alignment: NdrAlign
+//
+struct DNSPDnsrpcZoneSecondariesW2K = FormatString("SecureSecondaries = %s,NotifyLevel = %s", DNSPDnsZoneSecondarySecurityTable(SecureSecondaries), DNSPDnsZoneNotifyLevelTable(NotifyLevel))
+{
+	UINT32 SecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 NotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	NDRPTR AipSecondariesPtr;
+	NDRPTR AipNotifyPtr;
+	Switch
+	{
+		Case AipSecondariesPtr.ReferentID:
+			DNSPIp4Array AipSecondaries;
+	}
+	Switch
+	{
+		Case AipNotifyPtr.ReferentID:
+			DNSPIp4Array AipNotify;
+	}
+}
+//
+//  2.2.5.2.5.2	DNS_RPC_ZONE_SECONDARIES_DOTNET
+//  Alignment:NdrAlign
+//
+struct DNSPDnsrpcZoneSecondariesDOTNET = FormatString("RPCStructVersion = %u,SecureSecondaries = %s,NotifyLevel = %s", dwRpcStructureVersion,DNSPDnsZoneSecondarySecurityTable(fSecureSecondaries), DNSPDnsZoneNotifyLevelTable(fNotifyLevel))
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	UINT32 fSecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 fNotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	NDRPTR AipSecondariesPtr;
+	NDRPTR AipNotifyPtr;
+	Switch
+	{
+		Case AipSecondariesPtr.ReferentID:
+			DNSPIp4Array AipSecondaries;
+	}
+	Switch
+	{
+		Case AipNotifyPtr.ReferentID:
+			DNSPIp4Array AipNotify;
+	}
+}
+//
+//  2.2.5.2.5.3	DNS_RPC_ZONE_SECONDARIES_LONGHORN
+//  Alignment:	Ndralign
+//
+struct DNSPDnsrpcZoneSecondariesLongHorn = FormatString("RPCStructVersion = %u,SecureSecondaries = %s,NotifyLevel = %s", dwRpcStructureVersion,DNSPDnsZoneSecondarySecurityTable(fSecureSecondaries), DNSPDnsZoneNotifyLevelTable(fNotifyLevel))
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	UINT32 fSecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 fNotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	NdrPtr PointeraipSecondaries;
+	NdrPtr PointeraipNotify;
+	switch
+	{
+		case PointeraipSecondaries.ReferentID > 0: DNSPDnsAddrArray aipSecondaries;
+	}
+	switch
+	{
+		case PointeraipNotify.ReferentID > 0: DNSPDnsaddrArray aipNotify;
+	}
+}
+
+//
+//  2.2.5.2.6	DNS_RPC_ZONE_DATABASE
+//  Alignment:   NdrAlign
+//
+struct DNSPDnsrpcZoneDatabase(ClientVersion)
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:
+			DNSPDnsrpcZoneDatabaseW2K DNSPDnsrpcZoneDatabaseW2K;
+		case 0x00060000:
+		case 0x00070000:
+			DNSPDnsrpcZoneDatabaseDOTNET DNSPDnsrpcZoneDatabaseDOTNET;
+	}
+}
+
+//
+//  2.2.5.2.6.1	DNS_RPC_ZONE_DATABASE_W2K
+//  Alignment:  NdrAlign
+//
+struct DNSPDnsrpcZoneDatabaseW2K
+{
+	UINT32 fDsIntegrated;
+	NdrPtr PointerFileName;
+	switch
+	{
+		case PointerFileName.ReferentID > 0:NdrString FileName;
+	}
+}
+
+//
+//  2.2.5.2.6.2	DNS_RPC_ZONE_DATABASE_DOTNET: 
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsrpcZoneDatabaseDOTNET
+{
+	NdrAlign pad;
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 DsIntegrated;
+	NdrPtr PointerFileName;
+	switch
+	{
+		case PointerFileName.ReferentID > 0:NdrString FileName;
+	}
+}
+
+//
+//  2.2.5.2.7	DNS_RPC_ZONE_CREATE_INFO
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsrpcZoneCreateInfo(ClientVersion) = ClientVersion
+{
+	switch(ClientVersion)
+	{
+		case 0x00000000:
+			DNSPDnsrpcZoneCreateInfoW2K DNSPDnsrpcZoneCreateInfoW2K;
+		case 0x00060000:
+			DNSPDnsrpcZoneCreateInfoDOTNET DNSPDnsrpcZoneCreateInfoDOTNET;
+		case 0x00070000:
+			DNSPDnsrpcZoneCreateInfoLongHorn DNSPDnsrpcZoneCreateInfoLongHorn;
+	}
+}
+
+//
+//  2.2.5.2.7.1	DNS_RPC_ZONE_CREATE_INFO_W2K: 
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsrpcZoneCreateInfoW2K = FormatString("ZoneType = %s,ZoneName = %s,SecureSecondaries = %s,NotifyLevel = %s", DNSPDnsZoneTypeTable(ZonType),ZoneName,DNSPDnsZoneSecondarySecurityTable(fSecureSecondaries), DNSPDnsZoneNotifyLevelTable(fNotifyLevel))
+{
+	NdrPtr PointerZoneName;
+	UINT32 ZonType = DNSPDnsZoneTypeTable(this);
+	UINT32 fAllowUpdate = FormatString("%s",this?"Allow Update":"Do not allow Update");
+	UINT32 Aging;
+	UINT32 Flag
+	{
+		UINT32 UnusedBit1_4 : 4 = FormatString("  (%s) %s",this.toBitString,"Unused");
+		UINT32 OverWriteMem : 1 = FormatString("  (%s) %s",this.toBitString,this?"server MUST attempt to find and load the zone file or directory server as specified":"server will not find and load the zone file or directory server as specified");
+		UINT32 OverWriteDS : 1 = FormatString("   (%s) %s",this.toBitString,this?"server MUST overwrite the existing zone information with new one":"server will not overwrite the existing zone information with new one");
+		UINT32 UnusedBit7_12 : 6 = FormatString(" (%s) %s",this.toBitString,"Unused");
+		UINT32 forDcpRomo : 1 = FormatString("    (%s) %s",this.toBitString,this?"the DNS server MUST create the zone properties that will be stored in the directory server and domain directory partition":"the DNS server will not create the zone properties that will be stored in the directory server and domain directory partition");
+		UINT32 UnusedBit14 : 1 = FormatString("   (%s) %s",this.toBitString,"Unused");
+		UINT32 ForForest : 1 = FormatString("     (%s) %s",this.toBitString,this?"DNS server MUST create the zone such that it will be stored in the directory server and forest directory partition":"DNS server will not create the zone such that it will be stored in the directory server and forest directory partition");
+		UINT32 UnusedBit16_32 :17 = FormatString("(%s) %s",this.toBitString,"Unused");
+	};
+	NdrPtr PointerDataFile;
+	UINT32 fDsIntegrated = this?"The zone is to be created to use the directory server for persistent storage":"The zone is not to be created to use the directory server for persistent storage";
+	UINT32 fLoadExisting;
+	NdrPtr PointerAdmin;
+	NdrPtr AipMastersPtr;
+	NdrPtr aipSecondariesPtr;
+	UINT32 fSecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 fNotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	NdrPtr pvReserved1;
+	NdrPtr pvReserved2;
+	NdrPtr pvReserved3;
+	NdrPtr pvReserved4;
+	NdrPtr pvReserved5;
+	NdrPtr pvReserved6;
+	NdrPtr pvReserved7;
+	NdrPtr pvReserved8;
+	UINT32 dwReserved1;
+	UINT32 dwReserved2;
+	UINT32 dwReserved3;
+	UINT32 dwReserved4;
+	UINT32 dwReserved5;
+	UINT32 dwReserved6;
+	UINT32 dwReserved7;
+	UINT32 dwReserved8;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case PointerZoneName.ReferentID > 0: 
+					NdrString ZoneName;
+	}
+	switch
+	{
+		case PointerDataFile.ReferentID > 0:
+					NdrString DataFile;
+	}
+	switch
+	{
+		case PointerAdmin.ReferentID > 0: NdrString Admin;
+	}
+	switch
+	{
+		case AipMastersPtr.ReferentID > 0: DNSPIP4Array aipMasters;
+	}
+	switch
+	{
+		case aipSecondariesPtr.ReferentID > 0: DNSPIP4Array aipSecondaries;
+	}
+	switch
+	{
+		case pvReserved1.ReferentID > 0: NdrString Reserved1;
+	}
+	switch
+	{
+		case pvReserved2.ReferentID > 0: NdrString Reserved2;
+	}
+	switch
+	{
+		case pvReserved3.ReferentID > 0: NdrString Reserved3;
+	}
+	switch
+	{
+		case pvReserved4.ReferentID > 0: NdrString Reserved4;
+	}
+	switch
+	{
+		case pvReserved5.ReferentID > 0: NdrString Reserved5;
+	}
+	switch
+	{
+		case pvReserved6.ReferentID > 0: NdrString Reserved6;
+	}
+	switch
+	{
+		case pvReserved7.ReferentID > 0: NdrString Reserved7;
+	}
+	switch
+	{
+		case pvReserved8.ReferentID > 0: NdrString Reserved8;
+	}
+}
+
+Table DNSPDnsZoneSecondarySecurityTable(value)
+{
+	switch
+	{
+		case 0x00000000:"ZONE_SECSECURE_NO_SECURITY ";
+		case 0x00000001:"ZONE_SECSECURE_NS_ONLY ";
+		case 0x00000002:"ZONE_SECSECURE_LIST_ONLY ";
+		case 0x00000003:"ZONE_SECSECURE_NO_XFER ";
+		default:"Unknow";
+	}
+}
+
+Table DNSPDnsZoneNotifyLevelTable(value)
+{
+	switch
+	{
+		case 0x00000000:"ZONE_NOTIFY_OFF ";
+		case 0x00000001:"ZONE_NOTIFY_ALL_SECONDARIES  ";
+		case 0x00000002:"ZONE_NOTIFY_LIST_ONLY  ";
+		default:"Unknow";
+	}
+}
+
+//
+//  2.2.5.2.7.2	DNS_RPC_ZONE_CREATE_INFO_DOTNET: 
+//  Alignment:   NdrAlign
+//
+struct DNSPDnsrpcZoneCreateInfoDOTNET = FormatString("ZoneType = %s,ZoneName = %s,SecureSecondaries = %s,NotifyLevel = %s", DNSPDnsZoneTypeTable(ZonType),ZoneName,DNSPDnsZoneSecondarySecurityTable(fSecureSecondaries), DNSPDnsZoneNotifyLevelTable(fNotifyLevel))
+{	
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	NdrPtr PointerZoneName;
+	UINT32 ZonType = DNSPDnsZoneTypeTable(this);
+	UINT32 fAllowUpdate = FormatString("%s",this?"Allow Update":"Do not allow Update");
+	UINT32 Aging;
+	UINT32 Flag
+	{
+		UINT32 UnusedBit1_4 : 4 = FormatString("  (%s) %s",this.toBitString,"Unused");
+		UINT32 OverWriteMem : 1 = FormatString("  (%s) %s",this.toBitString,this?"server MUST attempt to find and load the zone file or directory server as specified":"server will not find and load the zone file or directory server as specified");
+		UINT32 OverWriteDS : 1 = FormatString("   (%s) %s",this.toBitString,this?"server MUST overwrite the existing zone information with new one":"server will not overwrite the existing zone information with new one");
+		UINT32 UnusedBit7_12 : 6 = FormatString(" (%s) %s",this.toBitString,"Unused");
+		UINT32 forDcpRomo : 1 = FormatString("    (%s) %s",this.toBitString,this?"the DNS server MUST create the zone properties that will be stored in the directory server and domain directory partition":"the DNS server will not create the zone properties that will be stored in the directory server and domain directory partition");
+		UINT32 UnusedBit14 : 1 = FormatString("   (%s) %s",this.toBitString,"Unused");
+		UINT32 ForForest : 1 = FormatString("     (%s) %s",this.toBitString,this?"DNS server MUST create the zone such that it will be stored in the directory server and forest directory partition":"DNS server will not create the zone such that it will be stored in the directory server and forest directory partition");
+		UINT32 UnusedBit16_32 :17 = FormatString("(%s) %s",this.toBitString,"Unused");
+	};
+	NdrPtr PointerDataFile;
+	UINT32 fDsIntegrated = this?"The zone is to be created to use the directory server for persistent storage":"The zone is not to be created to use the directory server for persistent storage";
+	UINT32 fLoadExisting;
+	NdrPtr PointerAdmin;
+	NdrPtr PointerAipMasters;
+	NdrPtr PointeraipSecondaries;
+	UINT32 fSecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 fNotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	UINT32 dwTimeout;
+	UINT32 fRecurseAfterForwarding;
+	DNSPDnsRpcDpFlags dwDpFlags;
+	NdrPtr PointerDpFqdn;
+	UINT32 Reserved[32];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case PointerZoneName.ReferentID > 0: NdrString ZoneName;
+	}
+	switch
+	{
+		case PointerDataFile.ReferentID > 0:NdrString DataFile;
+	}
+	switch
+	{
+		case PointerAdmin.ReferentID > 0: NdrString Admin;
+	}
+	switch
+	{
+		case PointerAipMasters.ReferentID >0 : DNSPDnsaddrarray AipMasters;
+	}
+	switch
+	{
+		case PointeraipSecondaries.ReferentID >0: DNSPDnsaddrarray AipSecondaries;
+	}
+	switch
+	{
+		case PointerDpFqdn.ReferentID > 0: NdrString DpFqdn;
+	}
+}
+
+//
+//  2.2.5.2.8	DNS_RPC_ZONE_EXPORT_INFO
+//  Alignment:  NdrAlign
+//
+struct DNSPDnsRpcZoneExportInfo = FormatString("RPCStructureVersion = %u",dwRpcStructureVersion)
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 Reserved0;
+	NdrPtr PointerZoneExportFile;
+	switch
+	{
+		case PointerZoneExportFile.referentID > 0: NdrString ZoneExportFile;
+	}
+}
+
+//
+//  2.2.5.2.9	DNS_RPC_ENUM_ZONES_FILTER
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsRpcEnumZonesFilter = FormatString("RPCStructureVersion = %u",dwRpcStructureVersion)
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 Filter;
+	NdrPtr PointerPartitionFqdn;
+	NdrPtr PointerQueryString;
+	[local.count = 0,property.DNSPDnsRpcEnumZonesCount = 0]
+	While [property.DNSPDnsRpcEnumZonesCount < 6]
+	{
+		[property.DNSPDnsRpcEnumZonesCount = property.DNSPDnsRpcEnumZonesCount + 1, local.count = PointerReserved.ReferentID ? local.count + 1 : local.count]
+		NDRPTR PointerReserved;
+	}
+	switch
+	{
+		case PointerPartitionFqdn.ReferentID > 0: NdrString PartitionFqdn;
+	}
+	switch
+	{
+		case PointerQueryString.ReferentID > 0: NdrString QueryString;
+	}
+	NdrString szReserved[local.count];
+}
+//
+//  2.2.5.2.7.3	DNS_RPC_ZONE_CREATE_INFO_LONGHORN: 
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsrpcZoneCreateInfoLongHorn = FormatString("ZoneType = %s,ZoneName = %s,SecureSecondaries = %s,NotifyLevel = %s", DNSPDnsZoneTypeTable(ZonType),ZoneName,DNSPDnsZoneSecondarySecurityTable(fSecureSecondaries), DNSPDnsZoneNotifyLevelTable(fNotifyLevel))
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	NdrPtr PointerZoneName;
+	UINT8 ZonType = DNSPDnsZoneTypeTable(this);
+	Align4 padding;
+	UINT32 fAllowUpdate = FormatString("%s",this?"Allow Update":"Do not allow Update");
+	UINT32 Aging;
+	UINT32 Flag
+	{
+		UINT32 UnusedBit1_4 : 4 = FormatString("  (%s) %s",this.toBitString,"Unused");
+		UINT32 OverWriteMem : 1 = FormatString("  (%s) %s",this.toBitString,this?"server MUST attempt to find and load the zone file or directory server as specified":"server will not find and load the zone file or directory server as specified");
+		UINT32 OverWriteDS : 1 = FormatString("   (%s) %s",this.toBitString,this?"server MUST overwrite the existing zone information with new one":"server will not overwrite the existing zone information with new one");
+		UINT32 UnusedBit7_12 : 6 = FormatString(" (%s) %s",this.toBitString,"Unused");
+		UINT32 forDcpRomo : 1 = FormatString("    (%s) %s",this.toBitString,this?"the DNS server MUST create the zone properties that will be stored in the directory server and domain directory partition":"the DNS server will not create the zone properties that will be stored in the directory server and domain directory partition");
+		UINT32 UnusedBit14 : 1 = FormatString("   (%s) %s",this.toBitString,"Unused");
+		UINT32 ForForest : 1 = FormatString("     (%s) %s",this.toBitString,this?"DNS server MUST create the zone such that it will be stored in the directory server and forest directory partition":"DNS server will not create the zone such that it will be stored in the directory server and forest directory partition");
+		UINT32 UnusedBit16_32 :17 = FormatString("(%s) %s",this.toBitString,"Unused");
+	};
+	NdrPtr PointerDataFile;
+	UINT32 fDsIntegrated = this?"The zone is to be created to use the directory server for persistent storage":"The zone is not to be created to use the directory server for persistent storage";
+	UINT32 fLoadExisting;
+	NdrPtr PointerAdmin;
+	NdrPtr PointerAipMasters;
+	NdrPtr PointeraipSecondaries;
+	UINT32 fSecureSecondaries = DNSPDnsZoneSecondarySecurityTable(this);
+	UINT32 fNotifyLevel = DNSPDnsZoneNotifyLevelTable(this);
+	UINT32 dwTimeout;
+	UINT32 fRecurseAfterForwarding;
+	DNSPDnsRpcDpFlags dwDpFlags;
+	NdrPtr PointerDpFqdn;
+	UINT32 Reserved[32];
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case PointerZoneName.ReferentID > 0: NdrString ZoneName;
+	}
+	switch
+	{
+		case PointerDataFile.ReferentID > 0:NdrString DataFile;
+	}
+	switch
+	{
+		case PointerAdmin.ReferentID > 0: NdrString Admin;
+	}
+	switch
+	{
+		case PointerAipMasters.ReferentID > 0:DNSPDnsaddrarray AipMasters;
+	}
+	switch
+	{
+		case PointeraipSecondaries.ReferentID > 0:DNSPDnsaddrarray aipSecondaries;
+	}
+	switch
+	{
+		case PointerDpFqdn.ReferentID > 0: NdrString DpFqdn;
+	}
+}
+
+//
+//  2.2.6.1.1	DNS_ZONE_UPDATE
+//
+Table DNSPDnsZoneUpdateTable(value)
+{
+	switch(value)
+	{
+		case 0: "No updates are allowed for the zone";
+		case 1: "All updates are allowed for the zone";
+		case 2: "ZONE_UPDATE_SECURE--The zone only allows secure updates"; 
+		case 3: "ZONE_UPDATE_SECURE_RFC--The zone only allows secure updates as specified by [RFC3645]";
+		default:"Undefined updates";
+	}
+}
+
+//
+//  2.2.7.1.1	DNS_RPC_DP_FLAGS
+//
+struct DNSPDnsRpcDpFlags
+{
+	UINT32 AutoCreate : 1 = FormatString("   (%s) %s",this.toBitString,this?"The directory partition was automatically created":"The directory partition was not automatically created");
+	UINT32 Legacy : 1 = FormatString("       (%s) %s",this.toBitString,this?"The directory partition with the default name":"The directory partition isn't with the default name");
+	UINT32 DomainDefault : 1 = FormatString("(%s) %s",this.toBitString,this?"Default directory partition with scope of the local domain of the directory server":"Default directory partition isn't with scope of the local domain of the directory server");
+	UINT32 ForestDefault : 1 = FormatString("(%s) %s",this.toBitString,this?"Default directory partition with scope of the local forest of the directory server":"Default directory partition isn't with scope of the local forest of the directory server");
+	UINT32 Enlisted : 1 = FormatString("     (%s) %s",this.toBitString,this?"DNS server is enlisted in this directory partition":"DNS server isn't enlisted in this directory partition");
+	UINT32 Deleted : 1 = FormatString("      (%s) %s",this.toBitString,this?"This directory partition is in the process of being deleted":"This directory partition is not in the process of being deleted");
+	UINT32 Reserved :26 = FormatString("     (%s) %s",this.toBitString,this?"":"");
+}
+
+//
+//  2.2.7.2.1	DNS_RPC_DP_INFO
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsRpcDPInfo = FormatString("RPCStructureVersion = %s,State = %s",dwRpcStructureVersion, DNSPDPInfoStateTable(State))
+{
+	NdrConformant ReplicaCountC;
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	NdrPtr PointerDpFqdn;
+	NdrPtr PointerDpDn;
+	NdrPtr PointerCrDn;
+	DNSPDnsRpcDpFlags Flag;
+	UINT32 ZoneCount;
+	UINT32 State = DNSPDPInfoStateTable(this);
+	UINT32 Reserved[3];
+	NdrPtr pwReservedPtr[3];
+	UINT32 ReplicaCount;
+	[local.count = 0, property.DNSPDnsDPInfoCount = 0]
+	While [property.DNSPDnsDPInfoCount < ReplicaCountC.Maxcount]
+		{
+			[property.DNSPDnsDPInfoCount = property.DNSPDnsDPInfoCount + 1,local.count = ReplicaArrayPtr.ReferentID ? local.count +1 : local.count]
+			NdrPtr ReplicaArrayPtr;
+		}
+	switch
+	{
+		case PointerDpFqdn.ReferentID > 0: NdrString DpFqdn;
+	}
+	switch
+	{
+		case PointerDpDn.ReferentID > 0:NdrWideString Dpdn;
+	}
+	switch
+	{
+		case PointerCrDn.ReferentID > 0:NdrWideString CrDn;
+	}
+	switch
+	{
+		case pwReservedPtr.ReferentID > 0:NdrWideString CrDn[3];
+	}
+	
+	DNSPDnsRpcDpReplica ReplicaArray[local.count];
+}
+
+Table DNSPDPInfoStateTable(value)
+{
+	switch(value)
+	{
+		case 0x00000000:"DNS_DP_OKAY";
+		case 0x00000001:"DNS_DP_STATE_REPL_INCOMING";
+		case 0x00000002:"DNS_DP_STATE_REPL_OUTGOING";
+		case 0x00000003:"DNS_DP_STATE_UNKNOWN";
+		default:"Unknow";
+	}
+}
+
+//
+//  2.2.7.2.2	DNS_RPC_DP_REPLICA
+//	Alignment:  NdrAlgin
+//
+struct DNSPDnsRpcDpReplica
+{
+	NdrPtr PointerRelicaDn;
+	switch
+	{
+		case PointerRelicaDn.ReferentID > 0: NdrWideString ReplicaDn;
+	}
+}
+
+//
+//  2.2.7.2.3	DNS_RPC_DP_ENUM
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsRpcDpEnum = FormatString("RPCStructureVersion = %u,ZoneCount = %u",dwRpcStructureVersion,ZoneCount)
+{
+	UINT32 dwRpcStructureVersion;
+	UINT32 dwReserved0;
+	NdrPtr PointerDpFqdn;
+	DNSPDnsRpcDpFlags Flag;
+	UINT32 ZoneCount;
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case PointerDpFqdn.ReferentID > 0: NdrString DpFqdn;
+	}
+}
+
+//
+//  2.2.7.2.4	DNS_RPC_DP_LIST
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsRpcDpList = FormatString("RPCStructureVersion = %u,DpCount = %u",RpcStructureVersion,DpCount)
+{
+	NdrConformant DpCountc;
+	NdrAlign Pad1;
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	UINT32 DpCount;
+	[PROPERTY.DNSPDnsRpcDPListValuecount = 0,property.DNSPDnsRpcDPListCount = 0]	
+	While [property.DNSPDnsRpcDPListCount  < DpCountc.Maxcount]
+	{
+		[property.DNSPDnsRpcDPListCount  = property.DNSPDnsRpcDPListCount  + 1,PROPERTY.DNSPDnsRpcDPListValuecount = DpArrayPtr.ReferentID ? PROPERTY.DNSPDnsRpcDPListValuecount + 1 : PROPERTY.DNSPDnsRpcDPListValuecount]
+		NDRPTR DpArrayPtr;
+	}
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad2;
+	}
+	DNSPDnsRpcDpEnum ArrayDp[PROPERTY.DNSPDnsRpcDPListValuecount];
+}
+
+//
+//  2.2.7.2.5	DNS_RPC_ENLIST_DP
+//  Alignment	NdrAlign
+//
+struct DNSPDnsRpcEnlistDp = FormatString("RPCStructureVersion = %u,Operation = %s",RpcStructureVersion, DNSPEnlistDpOperationTable(Operation))
+{	
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	NdrPtr PointerDpFqDn;
+	UINT32 Operation = DNSPEnlistDpOperationTable(this);
+	switch
+	{
+		case Property.MSRPCNdr64: Align8 Pad;
+	}
+	switch
+	{
+		case PointerDpFqDn.ReferentID > 0: NdrString DpFqdn;
+	}
+}
+
+Table DNSPEnlistDpOperationTable(value)
+{
+	switch(value)
+	{
+		case 1: "DNS_DP_OP_CREATE";
+		case 2: "DNS_DP_OP_DELETE";
+		case 3: "DNS_DP_OP_ENLIST";
+		case 4: "DNS_DP_OP_UNENLIST";
+		case 5: "DNS_DP_OP_CREATE_DOMAIN";
+		case 7: "DNS_DP_OP_CREATE_FOREST";
+		default:"Unknown operation command";
+	}
+}
+
+//
+//  2.2.7.2.6	DNS_RPC_ZONE_CHANGE_DP
+//  Alignment:	NdrAlign
+//
+struct DNSPDnsRpcZoneChangeDp = FormatString("RPCStructureVersion = %u,DestPartion = %s",RpcStructureVersion, DestPartion)
+{
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	NdrPtr PoinerDestPartion;
+	switch
+	{
+		case PoinerDestPartion.ReferentID > 0: NdrString DestPartion;
+	}
+}
+//
+//  2.2.8.1.1	DNS_RPC_AUTOCONFIG
+//
+struct DNSPDnsRpcAutoConfig
+{
+	switch
+	{
+		case UINT32(FrameData,FrameOffset) == 0xFFFFFFFF: UINT32 ConfigAll;
+		default:
+			UINT32 AutoConfig
+			{
+				UINT32 Roothint : 1 = FormatString("      (%s) %s",this.toBitString,this?"The server automatically configures root-hints":"The server doesn't automatically configure root-hints");
+				UINT32 Forwards : 1 = FormatString("      (%s) %s",this.toBitString,this?"The server automatically configures forwarders":"The server doesn't automatically configure forwarders");
+				UINT32 Zones : 1 = FormatString("         (%s) %s",this.toBitString,this?"server checks and automatically creates zones":"server doesn't automatically create zones");
+				UINT32 unusedBit4 : 1 = FormatString("    (%s) %s",this.toBitString,"Unused");
+				UINT32 Replace : 1 = FormatString("       (%s) %s",this.toBitString,this?"The server automatically replaces the server list with the appropriate loop-back address":"The server doesn't automatically replace the server list with the appropriate loop-back address");
+				UINT32 Insert : 1 = FormatString("        (%s) %s",this.toBitString,this?"The server automatically inserts the appropriate loop-back address at the start of the server list":"The server doen't automatically insert the appropriate loop-back address at the start of the server list");
+				UINT32 Append : 1 = FormatString("        (%s) %s",this.toBitString,this?"The server automatically inserts the appropriate loop-back address at the end of the server list":"The server doesn't automatically insert the appropriate loop-back address at the end of the server list");
+				UINT32 Unusedbut8_11 : 4 = FormatString(" (%s) %s",this.toBitString,"Unused");
+				UINT32 ReturnError : 1 = FormatString("   (%s) %s",this.toBitString,this?"the server will return the errors that it encounters while performing auto-configuration":"the server will not return the errors that it encounters while performing auto-configuration");
+				UINT32 Unusedbut13_32 :20 = FormatString("(%s) %s",this.toBitString,"Unused");
+			};
+	}
+}
+
+//
+//  2.2.8.2.1	DNS_RPC_AUTOCONFIGURE
+//	Alignment:	NdrAlign
+//
+struct DNSPDnsRpcAutoConfigure = FormatString("RPCStructureVersion = %u,NewDomainName = %s",RpcStructureVersion, NewDomainName)
+{
+	UINT32 RpcStructureVersion;
+	UINT32 Reserved0;
+	DNSPDnsRpcAutoConfig AutoConfigFlags;
+	UINT32 Reserved1;
+	NdrPtr PointerNewDomainName;
+	switch
+	{
+		case PointerNewDomainName.ReferentID > 0: NdrString NewDomainName;
+	}
+}
+
+//
+//  2.2.9.1.1	DNS_LOG_LEVELS
+//
+
+Table DNSPDnsLogLevelsTable(value)
+{
+	switch(value)
+	{
+		case 0x0000FFFF: "The server logs information for all packet exchanges to the log file.";
+		case 0x000000FE: "The server logs information to the log file for non-query packet exchanges.";
+	}
+}
+
+//
+//  2.2.9.1.2	DNS_EVENTLOG_TYPES
+//
+Table DNSPDnsEventLogTypesTable(value)
+{
+	switch(value)
+	{
+		case 0: "EVENT_LOG_SUCCESS";
+		case 1: "EVENT_LOG_ERROR_TYPE";
+		case 2: "EVENT_LOG_WARNING_TYPE";
+		case 4: "EVENT_LOG_INFORMATION_TYPE";
+		default:"Unknown Type";
+	}
+}
+
+//
+//  2.2.10.1.1	DNSSRV_STATID_TYPES 
+//
+Table DNSPDnsSrvStatIDtypesTable(value)
+{
+	Switch(value)
+	{
+		Case 0x00000001 : "Output buffer includes DNSSRV_TIME_STATS structure";
+		Case 0x00000002 : "Output buffer includes DNSSRV_QUERY_STATS structure";
+		Case 0x00000004 : "Output buffer includes DNSSRV_QUERY2_STATS structure";
+		Case 0x00000008 : "Output buffer includes DNSSRV_RECURSE_STATS structure";
+		Case 0x00000010 : "Output buffer includes DNSSRV_MASTER_STATS  structure";
+		Case 0x00000020 : "Output buffer includes DNSSRV_SECONDARY_STATS structure";
+		Case 0x00000040 : "Output buffer includes DNSSRV_WINS_STATS structure";
+		Case 0x00000080 : "Output buffer includes DNSSRV_UPDATE_STATS structure";
+		Case 0x00000100 : "Output buffer includes DNSSRV_SKWANSEC_STATS  structure";
+		Case 0x00000200 : "Output buffer includes DNSSRV_DS_STATS structure";
+		Case 0x00000400 : "Output buffer includes DNSSRV_UPDATE_STATS structure";
+		Case 0x00000800 : "Output buffer includes DNSSRV_MEMORY_STATS structure";
+		Case 0x00010000 : "Output buffer includes DNSSRV_TIMEOUT_STATS structure";
+		Case 0x00020000 : "Output buffer includes DNSSRV_DBASE_STATS structure";
+		Case 0x00040000 : "Output buffer includes DNSSRV_RECORD_STATS structure";
+		Case 0x00080000 : "Output buffer includes DNSSRV_PACKET_STATS structure";
+		Case 0x00100000 : "Output buffer includes DNSSRV_NBSTAT_STATS structure";
+		Case 0x00200000 : "Output buffer includes DNSSRV_ERROR_STATS structure";
+		Case 0x00400000 : "Output buffer includes DNSSRV_CACHE_STATS structure";
+		Case 0x00800000 : "Output buffer includes DNSSRV_PRIVATE_STATS structure";
+		default : "Unknown structure";
+	}
+}
+
+//
+//  2.2.10.2.1	DNSSRV_STAT_HEADER
+//  Alignment: 4
+//
+struct DNSPDnsSrvStatHeader
+{
+	UINT32 StatID = DNSPDnsSrvStatIDtypesTable(this)
+	{
+		UINT32 Time : 1 = FormatString("          (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_TIME_STATS structure":"Output buffer doesn't include DNSSRV_TIME_STATS structure");
+		UINT32 Query : 1 = FormatString("         (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_QUERY_STATS structure":"Output buffer doesn't includes DNSSRV_QUERY_STATS structure");
+		UINT32 Query2 : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_QUERY2_STATS structure":"Output buffer doesn't include DNSSRV_QUERY2_STATS structure");
+		UINT32 Recurse : 1 = FormatString("       (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_RECURSE_STATS structure":"Output buffer doesn't include DNSSRV_RECURSE_STATS structure");
+		UINT32 Master : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_MASTER_STATS  structure":"Output buffer doesn't include DNSSRV_MASTER_STATS  structure");
+		UINT32 Secondary : 1 = FormatString("     (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_SECONDARY_STATS structure":"Output buffer doesn't include DNSSRV_SECONDARY_STATS structure");
+		UINT32 Wins : 1 = FormatString("          (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_WINS_STATS structure":"Output buffer doesn't include DNSSRV_WINS_STATS structure");
+		UINT32 Unused : 1 = FormatString("        (%s) %s",this.toBitString,"Unused");
+		UINT32 Update1 : 1 = FormatString("       (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_UPDATE_STATS structure":"Output buffer doesn't include DNSSRV_UPDATE_STATS structure");
+		UINT32 Skwansec : 1 = FormatString("      (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_SKWANSEC_STATS  structure":"Output buffer doesn't include DNSSRV_SKWANSEC_STATS  structure");
+		UINT32 DS : 1 = FormatString("            (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_DS_STATS structure":"Output buffer doesn't include DNSSRV_DS_STATS structure");
+		UINT32 Update2 : 1 = FormatString("       (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_UPDATE_STATS structure":"Output buffer doesn't include DNSSRV_UPDATE_STATS structure");
+		UINT32 Unused2 : 4 = FormatString("       (%s) %s",this.toBitString,"Unused");
+		UINT32 Memory : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_MEMORY_STATS structure":"Output buffer doesn't include DNSSRV_MEMORY_STATS structure");
+		UINT32 TimeOut : 1 = FormatString("       (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_TIMEOUT_STATS structure":"Output buffer doesn't include DNSSRV_TIMEOUT_STATS structure");
+		UINT32 DBase : 1 = FormatString("         (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_DBASE_STATS structure":"Output buffer doesn't include DNSSRV_DBASE_STATS structure");
+		UINT32 Record : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_RECORD_STATS structure":"Output buffer doesn't include DNSSRV_RECORD_STATS structure");
+		UINT32 Packet : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_PACKET_STATS structure":"Output buffer doesn't include DNSSRV_PACKET_STATS structure");
+		UINT32 NBSTAT : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_NBSTAT_STATS structure":"Output buffer doesn't include DNSSRV_NBSTAT_STATS structure");
+		UINT32 Errors : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_ERROR_STATS structure":"Output buffer doesn't include DNSSRV_ERROR_STATS structure");
+		UINT32 Cache : 1 = FormatString("         (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_CACHE_STATS structure":"Output buffer doesn't include DNSSRV_CACHE_STATS structure");
+		UINT32 DNSSEC : 1 = FormatString("        (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_CACHE_DNSSEC  structure":"Output buffer doesn't include DNSSRV_CACHE_DNSSEC  structure");
+		UINT32 Unused3 : 3 = FormatString("       (%s) %s",this.toBitString,"Unused");
+		UINT32 privatestats : 1 = FormatString("  (%s) %s",this.toBitString, this?"Output buffer includes DNSSRV_PRIVATE_STATS structure":"Output buffer doesn't include DNSSRV_PRIVATE_STATS structure");
+		UINT32 Unused4 : 3 = FormatString("       (%s) %s",this.toBitString,"Unused");
+	};
+	UINT16 Length;
+	UINT8 Clear;
+	UINT8 Reserved;
+	switch
+	{
+		case Property.MSRPCNdr64: Align4 Pad;
+	}
+}
+
+//
+//  2.2.10.2.2	DNSSRV_STAT
+//  Alignment: 4
+//
+struct DNSPDnsSrvStat(WLength)
+{
+	DNSPDnsSrvStatHeader Header;
+	switch(Header.StatID)
+	{
+		Case 0x00000001:
+			DNSPDnsSrvTimeStats DnssrvTimeStats;
+		Case 0x00000002:
+			DNSPDnsSrvQueryStats DnsSrvQueryStats;
+		Case 0x00000004:
+			DNSPDnsSrvQuery2Stats DnsSrvQuery2Stats;
+		Case 0x00000008:
+			DNSPDnsSrvRecurseStats DnsSrvRecurseStats;
+		Case 0x00000010:
+			DNSPDnsSrvMasterStats DnsSrvMasterStats;
+		Case 0x00000020:
+			DNSPDnsSrvSecondaryStats DnsSrvSecondaryStats;
+		Case 0x00000040:
+			DNSPDnsSrvWinsStats DnsSrvWinsStats;
+		Case 0x00000100:
+			DNSPDnsSrvUpdateStats DnsSrvUpdateStats1;
+		Case 0x00000200:
+			DNSPDnsSrvSkwansecStats DnsSrvSkwansecStats;
+		Case 0x00000400:
+			DNSPDnsSrvDSStats DnsSrvDSStats;
+		Case 0x00000800:
+			DNSPDnsSrvUpdateStats DnsSrvUpdateStats2;
+		Case 0x00010000:
+			DNSPDnsSrvmemorystats Dnsmemorystats;
+		Case 0x00020000:
+			DNSPDnsSrvTimeOutStats DnsSrvTimeOutStats;
+		Case 0x00040000:
+			DNSPDnsSrvDBaseStats DnsSrvDBaseStats;
+		Case 0x00080000:
+			DNSPDnsSrvRecordStats DnsSrvRecordStats;
+		Case 0x00100000:
+			DNSPDnsSrvPacketStats DnsSrvPacketStats;
+		Case 0x00200000:
+			DNSPDnsSrvNBstatStats DnsSrvNBstatStats;
+		Case 0x00400000:
+			DNSPDnsSrvErrorStats DnsSrvErrorStats;
+		Case 0x00800000:
+			DNSPDnsSrvCacheStats DnsSrvCacheStats;
+		Case 0x01000000:
+			DNSPSrvDnssecStats DNSPSrvDnssecStats;
+		Case 0x10000000:
+			DNSPDnsSrvPrivateStats DnsSrvPrivateStats;
+		default:
+			BLOB(WLength) Buffer;
+	}
+}
+
+//    
+//  2.2.10.2.3	DNS_SYSTEMTIME
+//    
+struct DNSPDnsSystemTime = FormatString("%d:%d:%d:%u,%d-%d-%d,%s",hour,Minute,Second,MillSecond,Year,Month,Day,DayOfWeek)
+{     
+	UINT16 Year;
+	UINt16 Month;
+	UINT16 DayOfWeek;
+	UINT16 Day;
+	UINT16 hour;
+	UINT16 Minute;
+	UINT16 Second;
+	UINT16 MillSecond;
+}
+
+//    
+//  2.2.10.2.4	DNSSRV_TIME_STATS
+//
+struct DNSPDnsSrvTimeStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 ServerStartTimeSeconds;
+	UINT32 LastClearTimeSeconds;
+	Blob(16) SecondsSinceServerStart;
+	Blob(16) SecondsSinceLastClear;
+	DNSPDnsSystemTime ServerSartStartTime;
+	DNSPDnsSystemTime LastClearTime;
+}
+
+//
+//  2.2.10.2.5	DNSSRV_QUERY_STATS
+//
+struct DNSPDnsSrvQueryStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 UdpQueries;
+	UINT32 UdpResponses;
+	UINT32 UdpQueriesSent;
+	UINT32 UdpResponsesReceived;
+	UINT32 TcpClientConnections;
+	UINT32 TcpQueries;
+	UINT32 TcpResponses;
+	UINT32 TcpQueriesSent;
+	UINT32 TcpResponsesReceived;
+}
+
+//
+//  2.2.10.2.6	DNSSRV_QUERY2_STATS
+//
+struct DNSPDnsSrvQuery2Stats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 TotalQueries;
+	UINT32 Standard;
+	UINT32 Notify;
+	UINT32 Update;
+	switch
+	{
+		case Header.Length > 56: UINT32 TKeyNego;
+	}
+	UINT32 TypeA;
+	UINT32 TypeNS;
+	UINT32 TypeSoa;
+	UINT32 TypeMx;
+	UINT32 TypePtr;
+	UINT32 TypeSrv;
+	UINT32 TypeAll;
+	UINT32 TypeIxfr;
+	UINT32 TypeAxfr;
+	UINT32 TypeOther;
+}
+
+//
+//  2.2.10.2.7	DNSSRV_RECURSE_STATS
+struct DNSPDnsSrvRecurseStats
+{
+	DNSPDnsSrvStatHeader Header;
+	[DNSPMisMatched = 0]
+	UINT32 ReferralPasses;
+	UINT32 QueriesRecursed;
+	UINT32 OriginalQuestionRecursed;
+	UINT32 AdditionalRecursed;
+	UINT32 TotalQuestionsRecursed;
+	UINT32 Retries;
+	UINT32 LookupPasses;
+	UINT32 Forwards;
+	UINT32 Sends;
+	UINT32 Responses;
+	UINT32 ResponseUnmatched;
+	switch
+	{
+		case Header.Length > 204 :
+			[DNSPMisMatched = 1]
+			UINT32 ResponseMismatched;
+	}
+	UINT32 ResponseFromForwarder;
+	UINT32 ResponseAuthoritative;
+	UINT32 ResponseNotAuth;
+	UINT32 ResponseAnswer;
+	UINT32 ResponseNameError;
+	UINT32 ResponseRcode;
+	UINT32 ResponseEmpty;
+	UINT32 ResponseDelegation;
+	UINT32 ResponseNonZoneData;
+	UINT32 ResponseUnsecure;
+	UINT32 ResponseBadPacket;
+	UINT32 SendResponseDirect;
+	UINT32 ContinueCurrentRecursion;
+	UINT32 ContinueCurrentLookup;
+	UINT32 ContinueNextLookup;
+	UINT32 RootNsQuery;
+	UINT32 RootNsResponse;
+	UINT32 CacheUpdateAlloc;
+	UINT32 CacheUpdateResponse;
+	UINT32 CacheUpdateFree;
+	UINT32 CacheUpdateRetry;
+	UINT32 SuspendedQuery;
+	UINT32 ResumeSuspendedQuery;
+	UINT32 PacketTimeout;
+	UINT32 FinalTimeoutQueued;
+	UINT32 FinalTimeoutExpired;
+	UINT32 Failures;
+	UINT32 RecursionFailure;
+	UINT32 ServerFailure;
+	UINT32 PartialFailure;
+	UINT32 CacheUpdateFailure;
+	UINT32 RecursePassFailure;
+	UINT32 FailureReachAuthority ;
+	UINT32 FailureReachPreviousResponse;
+	UINT32 FailureRetryCount;
+	UINT32 TcpTry;
+	UINT32 TcpConnectFailure;
+	UINT32 TcpConnect;
+	UINT32 TcpQuery;
+	UINT32 TcpResponse;
+	UINT32 TcpDisconnect;
+	switch
+	{
+		case DNSPMisMatched: UINT32 DiscardedDuplicateQueries;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 DuplicateCoalesedQueries;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 GnzLocalQuery;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 GnzRemoteQuery;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 GnzRemoteResponse;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 GnzRemoteResponseCacheSuccess;
+	}
+	switch
+	{
+		case DNSPMisMatched: UINT32 GnzRemoteResponseCacheFailure;
+	}
+	UINT32 CacheLockingDiscards;
+}
+
+//
+//  2.2.10.2.8	DNSSRV_MASTER_STATS
+//
+struct DNSPDnsSrvMasterStats
+{
+	DNSPDnsSrvStatHeader Header;
+	[DNSPRefuseLoading = 0]
+	UINT32 NotifySent;
+	UINT32 Request;
+	UINT32 NameError;
+	UINT32 FormError;
+	UINT32 AxfrLimit;
+	UINT32 Refused;
+	UINT32 RefuseSecurity;
+	UINT32 RefuseShutdown;
+	switch
+	{
+		case Header.Length > 92: 
+			[DNSPRefuseLoading = 1]
+			UINT32 RefuseLoading;
+	}
+	UINT32 RefuseZoneLocked;
+	UINT32 RefuseServerFailure;
+	switch
+	{
+		case DNSPRefuseLoading: UINT32 RefuseNotAuth;
+	}
+	switch
+	{
+		case DNSPRefuseLoading: UINT32 RefuseReadOnly;
+	}
+	UINT32 Failure;
+	UINT32 AxfrRequest;
+	UINT32 AxfrSuccess;
+	switch
+	{
+		case DNSPRefuseLoading && Header.Length > 104: UINT32 StubAxfrRequest1;
+		case !DNSPRefuseLoading && Header.Length > 92: UINT32 StubAxfrRequest2;
+	}
+	UINT32 IxfrRequest;
+	UINT32 IxfrNoVersion;
+	UINT32 IxfrUpdateSuccess;
+	UINT32 IxfrTcpRequest;
+	UINT32 IxfrTcpSuccess;
+	UINT32 IxfrAxfr;
+	UINT32 IxfrUdpRequest;
+	UINT32 IxfrUdpSuccess;
+	UINT32 IxfrUdpForceTcp;
+	UINT32 IxfrUdpForceAxfr;
+}
+
+//
+// 2.2.10.2.8   DNSSRV_DNSSEC_STATS
+//
+struct DNSPSrvDnssecStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 SuccessfulValidations;
+	UINT32 FailedValidations;
+	UINT32 RecursionFailures;
+}
+
+//
+//  2.2.10.2.10	DNSSRV_SECONDARY_STATS
+//
+struct DNSPDnsSrvSecondaryStats
+{
+	DNSPDnsSrvStatHeader Header;
+	[DNSPNotifyNonPrimary = 0]
+	UINT32 NotifyReceived;
+	UINT32 NotifyInvalid;
+	UINT32 NotifyPrimary;
+	switch
+	{
+		case Header.Length > 140:
+			[DNSPNotifyNonPrimary = 1]
+			UINT32 NotifyNonPrimary ;
+	}
+	UINT32 NotifyNoVersion;
+	UINT32 NotifyNewVersion;
+	UINT32 NotifyCurrentVersion;
+	UINT32 NotifyOldVersion;
+	UINT32 NotifyMasterUnknown;
+	UINT32 SoaRequest;
+	UINT32 SoaResponse;
+	UINT32 SoaResponseInvalid;
+	UINT32 SoaResponseNameError;
+	UINT32 AxfrRequest;
+	UINT32 AxfrResponse;
+	UINT32 AxfrSuccess;
+	UINT32 AxfrRefused;
+	UINT32 AxfrInvalid;
+	switch
+	{
+		case DNSPNotifyNonPrimary:UINT32 StubAxfrRequest;
+	}
+	switch
+	{
+		case DNSPNotifyNonPrimary:UINT32 StubAxfrResponse;
+	}
+	switch
+	{
+		case DNSPNotifyNonPrimary:UINT32 StubAxfrSuccess;
+	}
+	switch
+	{
+		case DNSPNotifyNonPrimary:UINT32 StubAxfrRefused;
+	}
+	switch
+	{
+		case DNSPNotifyNonPrimary:UINT32 StubAxfrInvalid;
+	}
+	UINT32 IxfrUdpRequest;
+	UINT32 IxfrUdpResponse;
+	UINT32 IxfrUdpSuccess;
+	UINT32 IxfrUdpUseTcp;
+	UINT32 IxfrUdpUseAxfr;
+	UINT32 IxfrUdpWrongServer;
+	UINT32 IxfrUdpNoUpdate;
+	UINT32 IxfrUdpNewPrimary;
+	UINT32 IxfrUdpFormerr;
+	UINT32 IxfrUdpRefused;
+	UINT32 IxfrUdpInvalid;
+	UINT32 IxfrTcpRequest;
+	UINT32 IxfrTcpResponse;
+	UINT32 IxfrTcpSuccess;
+	UINT32 IxfrTcpAxfr;
+	UINT32 IxfrTcpFormerr;
+	UINT32 IxfrTcpRefused;
+	UINT32 IxfrTcpInvalid;
+}
+
+//
+//  2.2.10.2.11	DNSSRV_WINS_STATS   
+//
+struct DNSPDnsSrvWinsStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 WinsLookups;
+	UINT32 WinsResponses;
+	UINT32 WinsReverseLookups;
+	UINT32 WinsReverseResponses;
+}
+
+//
+//  2.2.10.2.12	DNSSRV_UPDATE_STATS       
+//
+struct DNSPDnsSrvUpdateStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 Received;
+	UINT32 Empty;
+	UINT32 NoOps;
+	UINT32 Completed;
+	UINT32 Rejected;
+	UINT32 FormErr;
+	UINT32 NxDomain;
+	UINT32 NotImpl;
+	UINT32 Refused;
+	UINT32 YxDomain;
+	UINT32 YxRrset;
+	UINT32 NxRrset;
+	UINT32 NotAuth;
+	UINT32 NotZone;
+	UINT32 RefusedNonSecure;
+	UINT32 RefusedAccessDenied;
+	UINT32 SecureSuccess;
+	UINT32 SecureContinue;
+	UINT32 SecureFailure;
+	UINT32 SecureDsWriteFailure;
+	UINT32 DsSuccess;
+	UINT32 DsWriteFailure;
+	UINT32 unusedWasCollisions = MustBeSetToTable(this,"0");
+	UINT32 unusedWasCollisionsRead = MustBeSetToTable(this,"0");
+	UINT32 unusedWasCollisionsWrite = MustBeSetToTable(this,"0");
+	UINT32 unusedWasCollisionsDsWrite = MustBeSetToTable(this,"0");
+	UINT32 Queued;
+	UINT32 Retry;
+	UINT32 Timeout;
+	UINT32 InQueue;
+	UINT32 Forwards;
+	UINT32 TcpForwards;
+	UINT32 ForwardResponses;
+	UINT32 ForwardTimeouts;
+	UINT32 ForwardInQueue;
+	UINT32 UpdateType[39];
+}
+
+//
+//  2.2.10.2.13	DNSSRV_SKWANSEC_STATS       
+//
+struct DNSPDnsSrvSkwansecStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 SecContextCreate;
+	UINT32 SecContextFree;
+	UINT32 SecContextQueue;
+	UINT32 SecContextQueueInNego;
+	UINT32 SecContextQueueNegoComplete;
+	UINT32 SecContextQueueLength;
+	UINT32 SecContextDequeue;
+	UINT32 SecContextTimeout;
+	UINT32 SecPackAlloc;
+	UINT32 SecPackFree;
+	UINT32 SecTkeyInvalid;
+	UINT32 SecTkeyBadTime;
+	UINT32 SecTsigFormerr;
+	UINT32 SecTsigEcho;
+	UINT32 SecTsigBadKey;
+	UINT32 SecTsigVerifySuccess;
+	UINT32 SecTsigVerifyFailed;	
+}
+
+//
+//  2.2.10.2.14	DNSSRV_DS_STATS       
+//
+struct DNSPDnsSrvDSStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 DsTotalNodesRead;
+	UINT32 DsTotalRecordsRead;
+	UINT32 DsNodesLoaded;
+	UINT32 DsRecordsLoaded;
+	UINT32 DsTombstonesRead;
+	UINT32 DsUpdateSearches;
+	UINT32 DsUpdateNodesRead;
+	UINT32 DsUpdateRecordsRead;
+	UINT32 UpdateLists;
+	UINT32 UpdateNodes;
+	UINT32 UpdateSuppressed;
+	UINT32 UpdateWrites;
+	UINT32 UpdateTombstones;
+	UINT32 UpdateRecordChange;
+	UINT32 UpdateAgingRefresh;
+	UINT32 UpdateAgingOn;
+	UINT32 UpdateAgingOff;
+	UINT32 UpdatePacket;
+	UINT32 UpdatePacketPrecon;
+	UINT32 UpdateAdmin;
+	UINT32 UpdateAutoConfig;
+	UINT32 UpdateScavenge;
+	UINT32 DsNodesAdded;
+	UINT32 DsNodesModified;
+	UINT32 DsNodesTombstoned;
+	UINT32 DsNodesDeleted;
+	UINT32 DsRecordsAdded;
+	UINT32 DsRecordsReplaced;
+	UINT32 DsWriteSuppressed;
+	UINT32 DsSerialWrites;
+	UINT32 LdapTimedWrites;
+	UINT32 LdapWriteTimeTotal;
+	UINT32 LdapWriteAverage;
+	UINT32 LdapWriteMax;
+	UINT32 LdapWriteBucket0;
+	UINT32 LdapWriteBucket1;
+	UINT32 LdapWriteBucket2;
+	UINT32 LdapWriteBucket3;
+	UINT32 LdapWriteBucket4;
+	UINT32 LdapWriteBucket5;
+	UINT32 LdapSearchTime;
+	UINT32 FailedDeleteDsEntries;
+	UINT32 FailedReadRecords;
+	UINT32 FailedLdapModify;
+	UINT32 FailedLdapAdd;
+	switch
+	{
+		case Header.Length > 180:	UINT32 PollingPassesWithDsErrors;
+	}
+	switch
+	{
+		case Header.Length > 180:	UINT32 LdapReconnects;
+	}
+	UINT32 DsWriteType[39];
+}
+
+//
+//  2.2.10.2.15	DNSSRV_MEMTAG_STATS  
+//
+struct DNSPDnsSrvMemtagStats
+{
+	UINT32 Alloc;
+	UINT32 Free;
+	UINT32 MemorySize;
+}
+
+//
+//  2.2.10.2.16	DNSSRV_MEMORY_STATS
+//
+struct DNSPDnsSrvMemoryStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 Memory;
+	UINT32 Alloc;
+	UINT32 Free;
+	UINT32 StdUsed;
+	UINT32 StdReturn;
+	UINT32 StdInUse;
+	UINT32 StdMemory;
+	UINT32 StdToHeapAlloc;
+	UINT32 StdToHeapFree;
+	UINT32 StdToHeapInUse;
+	UINT32 StdToHeapMemory;
+	UINT32 StdBlockAlloc;
+	UINT32 StdBlockUsed;
+	UINT32 StdBlockReturn;
+	UINT32 StdBlockInUse;
+	UINT32 StdBlockFreeList;
+	UINT32 StdBlockFreeListMemory;
+	UINT32 StdBlockMemory;
+	DNSPDnsSrvMemtagStats MemTag[52];
+}
+
+//
+//  2.2.10.2.16	DNSSRV_TIMEOUT_STATS
+//
+struct DNSPDnsSrvTimeOutStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 SetTotal;
+	UINT32 SetDirect;
+	UINT32 SetFromDereference;
+	UINT32 SetFromChildDelete;
+	UINT32 AlreadyInSystem;
+	UINT32 Checks;
+	UINT32 RecentAccess;
+	UINT32 ActiveRecord;
+	UINT32 CanNotDelete;
+	UINT32 Deleted;
+	UINT32 ArrayBlocksCreated;
+	UINT32 ArrayBlocksDeleted;
+	UINT32 DelayedFreesQueued;
+	UINT32 DelayedFreesQueuedWithFunction;
+	UINT32 DelayedFreesExecuted;
+	UINT32 DelayedFreesExecutedWithFunction;	
+}
+
+//
+//  2.2.10.2.17	DNSSRV_DBASE_STATS
+//
+struct DNSPDnsSrvDBaseStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 NodeMemory;
+	UINT32 NodeInUse;
+	UINT32 NodeUsed;
+	UINT32 NodeReturn;
+}
+
+//
+//  2.2.10.2.18	DNSSRV_RECORD_STATS
+//
+struct DNSPDnsSrvRecordStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 InUse;
+	UINT32 Used;
+	UINT32 Return;
+	UINT32 Memory;
+	UINT32 CacheTotal;
+	UINT32 CacheCurrent;
+	UINT32 CacheTimeouts;
+	UINT32 SlowFreeQueued;
+	UINT32 SlowFreeFinished;
+}
+
+//
+//  2.2.10.2.19	DNSSRV_PACKET_STATS
+//
+struct DNSPDnsSrvPacketStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 UdpAlloc;
+	UINT32 UdpFree;
+	UINT32 UdpNetAllocs;
+	UINT32 UdpMemory;
+	UINT32 UdpUsed;
+	UINT32 UdpReturn;
+	UINT32 UdpResponseReturn;
+	UINT32 UdpQueryReturn;
+	UINT32 UdpInUse;
+	UINT32 UdpInFreeList;
+	UINT32 TcpAlloc;
+	UINT32 TcpRealloc;
+	UINT32 TcpFree;
+	UINT32 TcpNetAllocs;
+	UINT32 TcpMemory;
+	UINT32 RecursePacketUsed;
+	UINT32 RecursePacketReturn;
+	switch
+	{
+		case Header.Length > 68: UINT32 PacketsForNsListUsed;
+	}
+	switch
+	{
+		case Header.Length > 68: UINT32 PacketsForNsListReturned;
+	}
+	switch
+	{
+		case Header.Length > 68: UINT32 PacketsForNsListInUse;
+	}
+}
+
+//
+//  2.2.10.2.20	DNSSRV_NBSTAT_STATS
+//
+struct DNSPDnsSrvNBstatStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 NbstatAlloc;
+	UINT32 NbstatFree;
+	UINT32 NbstatNetAllocs;
+	UINT32 NbstatMemory;
+	UINT32 NbstatUsed;
+	UINT32 NbstatReturn;
+	UINT32 NbstatInUse;
+	UINT32 NbstatInFreeList;
+}
+
+//
+//  2.2.10.2.21	DNSSRV_PRIVATE_STATS
+//
+struct DNSPDnsSrvPrivateStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 RecordFile;
+	UINT32 RecordFileFree;
+	UINT32 RecordDs;
+	UINT32 RecordDsFree;
+	UINT32 RecordAdmin;
+	UINT32 RecordAdminFree;
+	UINT32 RecordDynUp;
+	UINT32 RecordDynUpFree;
+	UINT32 RecordAxfr;
+	UINT32 RecordAxfrFree;
+	UINT32 RecordIxfr;
+	UINT32 RecordIxfrFree;
+	UINT32 RecordCopy;
+	UINT32 RecordCopyFree;
+	UINT32 RecordCache;
+	UINT32 RecordCacheFree;
+	UINT32 UdpSocketPnpDelete;
+	UINT32 UdpRecvFailure;
+	UINT32 UdpErrorMessageSize;
+	UINT32 UdpConnResets;
+	UINT32 UdpConnResetRetryOverflow;
+	UINT32 UdpGQCSFailure;
+	UINT32 UdpGQCSFailureWithContext;
+	UINT32 UdpGQCSConnReset;
+	UINT32 UdpIndicateRecvFailures;
+	UINT32 UdpRestartRecvOnSockets;
+	UINT32 TcpConnectAttempt;
+	UINT32 TcpConnectFailure;
+	UINT32 TcpConnect;
+	UINT32 TcpQuery;
+	UINT32 TcpDisconnect;
+	UINT32 SecTsigVerifyOldSig;
+	UINT32 SecTsigVerifyOldFailed;
+	UINT32 SecBigTimeSkewBypass;
+	UINT32 ZoneLoadInit;
+	UINT32 ZoneLoadComplete;
+	UINT32 ZoneDbaseDelete;
+	UINT32 ZoneDbaseDelayedDelete;
+}
+
+//
+//  2.2.10.2.22	DNSSRV_ERROR_STATS
+//
+struct DNSPDnsSrvErrorStats = FormatString("NoErrorNum = %u",NoError)
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 NoError;
+	UINT32 FormError;
+	UINT32 ServFail;
+	UINT32 NxDomain;
+	UINT32 NotImpl;
+	UINT32 Refused;
+	UINT32 YxDomain;
+	UINT32 YxRRSet;
+	UINT32 NxRRSet;
+	UINT32 NotAuth;
+	UINT32 NotZone;
+	UINT32 Max;
+	UINT32 BadSig;
+	UINT32 BadKey;
+	UINT32 BadTime;
+	UINT32 UnknownError;	
+}
+
+//
+//  2.2.10.2.23	DNSSRV_CACHE_STATS
+//
+struct DNSPDnsSrvCacheStats
+{
+	DNSPDnsSrvStatHeader Header;
+	UINT32 CacheExceededLimitChecks;
+	UINT32 SuccessfulFreePasses;
+	UINT32 FailedFreePasses;
+	UINT32 PassesWithNoFrees;
+	UINT32 PassesRequiringAggressiveFree;
+}

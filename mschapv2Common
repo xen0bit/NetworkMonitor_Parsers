@@ -1,0 +1,172 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  MSCHAPv2 extention for EAP
+//#
+//#  Details:                MSCHAPv2 = Microsoft Challenge Handshake Authentication Protocol v2
+//#
+//#                          EAP = Extensible Authentication Protocol
+//#
+//#  Microsoft References:   [MS-CHAP]: Extensible Authentication Protocol Method for Microsoft Challenge Handshake Authentication Protocol (CHAP) Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+/** EAP MSCHAPv2 as described in the MCPP Documentation **/
+// Type 26
+struct MschapV2Data {
+	switch(UINT8( Framedata, Offset )) {
+		case 1: MschapV2AuthChallenge Challenge;
+		case 2: MschapV2PeerResponseChallenge ResponseChallenge;
+		case 3: switch (EapCode) {
+			case 1: MschapV2PeerSuccess PeerSuccess;
+			case 2: MschapV2AuthSuccess AuthSuccess;
+		}
+		case 4: switch (EapCode) {
+			case 1: MschapV2PeerFailure PeerFailure;
+			case 2: MschapV2AuthFailure AuthFailure;
+		}
+		case 7: MschapV2PeerChangePassword ChangePassword;
+		default: AsnBerNULL InvalidOpcode = "Invalid OpCode";
+	}
+}
+
+Table MschapV2OpCodeTable(Opcode) {
+	switch (Opcode) {
+		case 1: FormatString("Challenge (0x%x)", Opcode);
+		case 2: FormatString("Response (0x%x)", Opcode);
+		case 3: FormatString("Success (0x%x)", Opcode);
+		case 4: FormatString("Failure (0x%x)", Opcode);
+		case 7: FormatString("Change Password (0x%x)", Opcode);
+		default: FormatString("Unknown MSCHAPv2 OpCode (0x%x)", Opcode);
+	}
+}
+
+struct MschapV2AuthChallenge {
+	// 1:1 - Challenge packet
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+	UINT8 MschapV2PacketId;
+	UINT16 MschapV2Length;
+	[MschapV2DBLength]
+	UINT8 MschapV2DataBlockLength;
+	struct MschapV2DataBlock {
+		AsciiString(16) Challenge;
+		switch {
+			case (MschapV2Length-16-5>0): 
+				AsciiString(MschapV2Length-16-5) SenderId;
+		}
+	}
+}
+
+struct MschapV2PeerResponseChallenge {
+	// 2:2 - Response packet
+	UINT8 MschapV2OpCode = MSCHAPv2OpCodeTable(this);
+	UINT8 MschapV2PacketId;
+	UINT16 MschapV2Length;
+	[MschapV2DBLength]
+	UINT8 MschapV2DataBlockLength;
+	struct MschapV2DataBlock {
+		AsciiString(16) PeerChallenge;
+		UINT8 Reserved[8];
+		UINT8 NtResponse[24];
+		UINT8 Flags;
+		switch {
+			case (MschapV2Length-49-5>0):
+				AsciiString(MschapV2Length-49-5) PeerUserAccountName;
+		}
+	}
+}
+
+struct MschapV2PeerSuccess {
+	// 1:3 - Success Request packet
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+	UINT8 MschapV2PacketId;
+	[MschapV2Length]
+	UINT16 MschapV2Length;
+	struct MschapV2DataBlock {
+		AsciiString(42) AuthenticatorResponse;
+		switch {
+			case (MschapV2Length-42-4>0): 
+			AsciiString(MschapV2Length-42-4-1) MessageText;
+		}
+	}
+}
+
+struct MschapV2AuthSuccess {
+	// 2:3 - Success Response packet
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+}
+
+Table MschapV2ErrorCodeTable(ErrCode) {
+	switch (ErrCode) {
+		case "E=646": FormatString("Error: restricted logon hours (%s)", ErrCode);
+		case "E=647": FormatString("Error: account disabled (%s)", ErrCode);
+		case "E=648": FormatString("Error: password expired (%s)", ErrCode);
+		case "E=649": FormatString("Error: no dial-in permission (%s)", ErrCode);
+		case "E=691": FormatString("Error: authentication failure (%s)", ErrCode);
+		case "E=709": FormatString("Error: changing password (%s)", ErrCode);
+		default: FormatString("Unknown Error (%s)", ErrCode);
+	}
+}
+
+Table MschapV2RetryFlagTable(Flag) {
+	switch (Flag) {
+		case "R=0": FormatString("Retry is not allowed (%s)", Flag);
+		case "R=1": FormatString("Retry is allowed (%s)", Flag);
+		default: FormatString("Unknown Retry Flag (%s)", Flag);
+	}
+}
+
+Table MschapV2VersionCodeTable (Code) {
+	switch (Code) {
+		case "V=3": FormatString("EAP MSCHAPv2 (%s)", Code);
+		default: FormatString("Unknown Version Code (%s)", Code);
+	}
+}
+
+struct MschapV2PeerFailure {
+	// 1:4
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+	UINT8 MschapV2PacketId;
+	[MschapV2Length]
+	UINT16 MschapV2Length;
+	struct MschapV2DataBlock {
+		AsciiString(5) ErrorCode = MschapV2ErrorCodeTable(this);
+		INT8 Space1;
+		AsciiString(3) RetryFlag = MschapV2RetryFlagTable(this);
+		INT8 Space2;
+		AsciiString(34) ChallengeValue;
+		INT8 Space3;
+		AsciiString(3) VersionCode = MschapV2VersionCodeTable(this);
+		switch {
+			case MschapV2Length-45-7>0: struct {
+				INT8 Space4;
+				AsciiString(MschapV2Length-45-8) MessageText;
+			}
+		}
+	}
+}
+
+struct MschapV2AuthFailure {
+	// 2:4 
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+}
+
+struct MschapV2PeerChangePassword {
+	// 2:7
+	UINT8 MschapV2OpCode = MschapV2OpCodeTable(this);
+	UINT8 MschapV2PacketId;
+	[MschapV2Length]
+	UINT16 MschapV2Length;
+	struct MschapV2DataBlock {
+		UINT8 EncryptedPassword[516];
+		UINT8 EnryptedHash[16];
+		UINT8 PeerChallenge[16];
+		UINT8 Reservered[8];
+		UINT8 NtResponse[24];
+		UINT8 Flags[2];
+	}
+}
+

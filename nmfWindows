@@ -1,0 +1,342 @@
+//#  (c) 2010 Microsoft Corporation
+//#
+//#  Title:                  .NET Message Framing Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      [MC-NMF]: .NET Message Framing Protocol Specification
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1991.0
+//#
+//#  Revision Class and Date:Major, 05/18/2010
+//#
+//####
+
+[BuildConversationWithParent]
+[RegisterBefore(TCPPayload.Smtp,NMF,808)]
+Protocol NMF = FormatString(" %s ",Property.NMFSummary)
+{
+	[Conversation.NMFNextSeqTable$[FrameNumber] = Conversation.NMFNextSeq$[Property.NetworkDirection]]
+	[Local.NMFLength = Conversation.NMFNextSeqTable$[FrameNumber] > TCPSeqNumber ? Conversation.NMFNextSeqTable$[FrameNumber] - TCPSeqNumber : 0]
+	[
+		Post.PayloadStart(
+				NetworkDirection, /* direction */
+				0, //identifier
+				0, //sequence token
+				0, //next sequence
+				0, //total payload length
+				Property.NMFStart, //is first
+				Property.NMFEnd, //is last
+				RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+			)
+	]
+	[Property.NMFRecordCount = 0]
+	[Property.NMFStart = false]
+	While [FrameLength - FrameOffset > 0]
+	{
+		switch
+		{
+			case ((!PayloadHeader || PayloadHeader.ContainedProtocol != "NMF") && FrameOffset == ProtocolOffset && Local.NMFLength > 0):
+				[Property.NMFSummary = "Continuation"]
+				[
+					Property.NMFTerminatorEnd = UINT8(FrameData,FrameOffset),
+					Conversation.NMFTerminatorEnd$[Property.NetworkDirection,TCPSeqNumber] = Property.NMFTerminatorEnd,
+					Property.NMFEnd = (Local.NMFLength == (FrameLength - FrameOffset)) && 
+					FrameLength - FrameOffset == 2 ? UINT16(FrameData,FrameOffset) == 0x0007 : 
+					(FrameLength - FrameOffset == 1 ? Conversation.NMFTerminatorEnd$[Property.NetworkDirection,TCPSeqNumber] == 0x07 && Conversation.NMFTerminatorEnd$[Property.NetworkDirection,TCPSeqNumber - 1] == 0x00 : 0),
+				]
+				BLOB(Local.NMFLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : Local.NMFLength) Continuation;
+			default:
+				[Post.Property.NMFSummary = property.NMFRecordCount==1 ? NMFRecordTypeTable(Property.NMFRecordType) : FormatString("%d Records",Property.NMFRecordCount)]
+				[Property.NMFRecordCount = Property.NMFRecordCount + 1]
+				[Property.NMFRecordType = UINT8(FrameData,FrameOffset)]
+				switch(Property.NMFRecordType)
+				{
+					case 0x00: NMFVersionRecord VersionRecord;
+					case 0x01: NMFModeRecord ModeRecord;
+					case 0x02: NMFViaRecord ViaRecord;
+					case 0x03: NMFKnownEncodingRecord KnownEncodingRecord;
+					case 0x04: NMFExtensibleEncodingRecord ExtensibleEncodingRecord;
+					case 0x05: NMFUnsizedEnvelopeRecord UnsizedEnvelopeRecord;
+					case 0x06: NMFSizedEnvelopeRecord SizedEnvelopeRecord;
+					case 0x07: NMFEndRecord EndRecord;
+					case 0x08: NMFFaultRecords FaultRecords;
+					case 0x09: NMFUpgradeRequestRecord UpgradeRequestRecord;
+					case 0x0A: NMFUpgradeResponseRecord UpgradeResponseRecord;
+					case 0x0B: NMFPreambleAckRecord PreambleAckRecord;
+					case 0x0C: NMFPreambleEndRecord PreambleEndRecord;
+					default:
+						struct
+						{
+							ReportParserError(ParserErrorProtocolClassWindows, "NMF", "The record type is Undefined.") ParserError;
+							Blob(FrameLength - FrameOffset) UnknownData;
+						}
+				}
+		}
+	}
+}
+
+table NMFRecordTypeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "VersionRecord";
+		case 0x01: "ModeRecord";
+		case 0x02: "ViaRecord";
+		case 0x03: "KnownEncodingRecord";
+		case 0x04: "ExtensibleEncodingRecord";
+		case 0x05: "UnsizedEnvelopeRecord";
+		case 0x06: "SizedEnvelopeRecord";
+		case 0x07: "EndRecord";
+		case 0x08: "FaultRecords";
+		case 0x09: "UpgradeRequestRecord";
+		case 0x0A: "UpgradeResponseRecord";
+		case 0x0B: "PreambleAckRecord";
+		case 0x0C: "PreambleEndRecord";
+	}
+}
+
+struct NMFLength = FormatString("%d",Property.NMFLen)
+{
+	[Property.NMFLen = 0]
+	[property.NMFLengthByteCount = -1]
+	while[!((UINT8(FrameData, FrameOffset) & 0x80) == 00)]
+	{
+		[property.NMFLengthByteCount = property.NMFLengthByteCount + 1]
+		[Property.NMFLen = Property.NMFLen + ((this&0x7f) << 7 * property.NMFLengthByteCount)]
+		UINT8 length;
+	}
+	[Property.NMFLen = Property.NMFLen + (this<<(7 * (property.NMFLengthByteCount + 1)))]
+	UINT8 ByteValue;
+}
+
+//
+//	Version_Record
+//
+struct NMFVersionRecord = FormatString("%d.%d version",MajorVersion,MinorVersion)
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	UINT8 MajorVersion = MustBeSetToTable(this,"0x01");
+	UINT8 MinorVersion = MustBeSetToTable(this,"0x00");
+}
+
+//
+//	Mode_Record
+//
+struct NMFModeRecord = FormatString("%s",NMFModeRecordModeTable(Property.NMFMode))
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	[Property.NMFMode = this]
+	UINT8 Mode = NMFModeRecordModeTable(this);
+}
+
+table NMFModeRecordModeTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "NOT valid for this octet.";
+		case 0x01: "Singleton-Unsized - The Initiating Stream for a single one-way message or for a pair of messages in a request-reply manner between two nodes.";
+		case 0x02: "Duplex - The Initiating Stream for multiple bidirectional messages between two nodes.";
+		case 0x03: "Simplex - The Initiating Stream for multiple one-way messages from a single source.";
+		case 0x04: "Singleton-Sized - The Initiating Stream for a single one-way message from a single source.";
+		default: FormatString("Unknown Value(%u)", Value);
+	}
+}
+
+//
+//	Via_Record
+//
+struct NMFViaRecord = FormatString("%s",Via)
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFLength ViaLength;
+	AsciiString(Property.NMFLen) Via;
+}
+
+//
+//	Known_Encoding_Record
+//
+struct NMFKnownEncodingRecord = FormatString("%s",NMFKnownEncodingRecordEncodingTable(Encoding))
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	[Conversation.NMFEncoding]
+	UINT8 Encoding = NMFKnownEncodingRecordEncodingTable(this);
+}
+
+table NMFKnownEncodingRecordEncodingTable(value)
+{
+	switch(value)
+	{
+		case 0x00: "V1 - UTF-8, as specified in [RFC2279].";
+		case 0x01: "V2 - UTF-16, as specified in [RFC2781].";
+		case 0x02: "V3 - Unicodelittle-endian.";
+		case 0x03: "V4 - UTF-8.";
+		case 0x04: "V5 - UTF-16.";
+		case 0x05: "V6 - Unicodelittle-endian.";
+		case 0x06: "V7 - MTOM, as specified in [SOAP-MTOM].";
+		case 0x07: "V8 - Binary, as specified in [MC-NBFS].";
+		case 0x08: "V9 - Binary with in-band dictionary, as specified in [MC-NBFSE].";
+		default: FormatString("Unknown Value(%u)", Value);
+	}
+}
+
+//
+//	Extensible_Encoding_Record
+//
+struct NMFExtensibleEncodingRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFLength EncodingLength;
+	AsciiString Type;
+	UINT8 Delimiter = MustBeSetToTable(this,"0x2F");
+	AsciiString Subtype;
+	while[UINT8(Framedata,frameoffset) == 0x3B]
+	{
+		NMFNestedExtensibleEncodingRecordParameters Parameters;
+	}
+}
+
+//
+//	Upgrade_Request_Record
+//
+struct NMFUpgradeRequestRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFLength UpgradeProtocolLength;
+	AsciiString(Property.NMFLen) UpgradeProtocol;
+}
+
+//
+//	Upgrade_Response_Record
+//
+struct NMFUpgradeResponseRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+}
+
+//
+//	Preamble_End_Record
+//
+struct NMFPreambleEndRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+}
+
+//
+//	Preamble_Ack_Record
+//
+struct NMFPreambleAckRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+}
+
+//
+//	End_Record
+//
+struct NMFEndRecord
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+}
+
+//
+//	Sized_Envelope_Record
+//
+struct NMFSizedEnvelopeRecord
+{
+	[Conversation.NMFSizedEncoding$[FrameNumber] = Conversation.NMFEncoding]
+	[Property.NMFSizedEnvelopeRecordEncoding = Conversation.NMFSizedEncoding$[FrameNumber]]
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFLength Size;
+	[DataFieldFrameLength = FrameOffset + Property.NMFLen]
+	switch(Property.NMFSizedEnvelopeRecordEncoding)
+	{
+		case 0x00:
+		case 0x03:
+			String(2,Property.NMFLen) EncodingByteString;
+		case 0x01:
+		case 0x04:
+			UnicodeString(Property.NMFLen/2) EncodingWordString;
+		case 0x02:
+		case 0x05:
+			[DataFieldEndian = LittleEndian]
+			UnicodeString EncodingString;
+		case 0x06: Blob(Property.NMFLen) MTOMData;
+		case 0x07: NBFS NBFS; //NBFS
+		default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "NMF", "The Encoding type is Undefined.") ParserError;
+				Blob(Property.NMFLen) Payload;
+			}
+	}
+}
+
+//
+//	Unsized_Envelope_Record
+//
+
+struct NMFUnsizedEnvelopeRecord
+{
+	[Property.NMFStart = true]
+	[Conversation.NMFUnsizedEncoding$[FrameNumber] = Conversation.NMFEncoding]
+	[Property.NMFUnsizedEnvelopeRecordEncoding = Conversation.NMFUnsizedEncoding$[FrameNumber]]
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFDataChunk DataChunk;
+	while [ (UINT8(FrameData, FrameOffset) != 0x00) && (FrameOffset <= FrameLength)]
+	{
+		NMFDataChunk AddtionalDataChunk;
+	}
+	UINT8 Terminator = FormatString("%s","MUST be set to 0x00.");
+}
+
+
+//
+//	Data_Chunk
+//
+struct NMFDataChunk
+{
+	NMFLength Size;
+	[Conversation.NMFNextSeq$[Property.NetworkDirection] = TCPSeqNumber + Property.NMFLen + 5]
+	[DataFieldFrameLength = FrameOffset + Property.NMFLen]
+	switch(Property.NMFUnsizedEnvelopeRecordEncoding)
+	{
+		case 0x00:
+		case 0x03:
+			String(2,Property.NMFLen) EncodingByteString;
+		case 0x01:
+		case 0x04:
+			UnicodeString(Property.NMFLen/2) EncodingWordString;
+		case 0x02:
+		case 0x05:
+			[DataFieldEndian = LittleEndian]
+			UnicodeString EncodingString;
+		case 0x06: Blob(Property.NMFLen) MTOMData;
+		case 0x07: NBFS NBFS; //NBFS
+		default:
+			struct
+			{
+				ReportParserError(ParserErrorProtocolClassWindows, "NMF", "The Encoding type is Undefined.") ParserError;
+				Blob(Property.NMFLen) Payload;
+			}
+	}
+}
+
+//
+//	Fault_Records
+//
+struct NMFFaultRecords
+{
+	UINT8 RecordType = NMFRecordTypeTable(this);
+	NMFLength FaultSize;
+	AsciiString(Property.NMFLen) Fault;
+}
+
+//
+//	Nested_Extensible_Encoding_Record_Parameters
+//
+struct NMFNestedExtensibleEncodingRecordParameters
+{
+	UINT8 ParameterDelimiter = MustBeSetToTable(this,"0x3B");
+	AsciiString Parameter;
+}
+

@@ -1,0 +1,81 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Web Distributed Authoring and Versioning (WebDAV) Protocol: Client Extensions
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-WDV]: Web Distributed Authoring and Versioning (WebDAV) Protocol: Client Extensions (2.0.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+Table WDVTranslateTable(value)
+{
+	switch
+	{
+		case contains(value,"t"): "t - the Web server is to process the content before returning it to the WebDAV client";
+		case contains(value,"f"): "f/F - the Web server is to return the unprocessed (or source) content to the WebDAV client";
+		default: "Unknown Translate Value";
+	}
+}
+
+Table WDVExtoptionsTable
+{
+	switch ( value )
+	{
+		case "1": "the server supports the new extensions.";
+		case "PROPFIND": "the server should return both the properties and the actual file together in the response using the multipart/MSDAVEXTPrefixEncoded content type";
+		case "PROPPATCH": "the body of the request contains both the properties and the actual file together in the request";
+		default: "Unknown Extoptions Value";
+	}
+}
+
+[RegisterBefore( Http.Request.HeaderFields.DefaultName, WDVHeaderTranslate, "Translate" )]
+struct WDVHeaderTranslate = WDVTranslateTable(Translate)
+{
+	AsciiStringTerm("\r\n") Translate;
+}
+
+[RegisterBefore( Http.Request.HeaderFields.DefaultName, WDVHeaderExtoptions, "X-MSDAVEXT" )]
+struct WDVHeaderExtoptions = WDVExtoptionsTable(Extoptions)
+{
+	AsciiStringTerm("\r\n") Extoptions;
+}
+
+[RegisterBefore( Http.Request.HeaderFields.DefaultName, WDVHeaderMsdavextLockTimeoutRequ, "X-MSDAVEXTLockTimeout" )]
+struct WDVHeaderMsdavextLockTimeoutRequ
+{
+	AsciiStringTerm("\r\n") MSLockTimeoutHeaderRequ;
+}
+
+[RegisterBefore( Http.Response.HeaderFields.DefaultName, WDVHeaderMsdavextLockTimeoutResp, "X-MSDAVEXTLockTimeout" )]
+struct WDVHeaderMsdavextLockTimeoutResp
+{
+	AsciiStringTerm("\r\n") MSLockTimeoutHeaderResp;
+}
+
+[RegisterBefore( Http.Response.HeaderFields.DefaultName, WDVHeaderMsdavextError, "X-MSDAVEXT_ERROR" )]
+struct WDVHeaderMsdavextError
+{
+	AsciiStringTerm("\r\n") MSErrorHeader;
+}
+
+[RegisterBefore( Webdav.WebdavPayLoad, WDVMsdavextPrefixEncoded, HttpContentType.Contains( "multipart/MSDAVEXTPrefixEncoded" ) )]
+struct WDVMsdavextPrefixEncoded
+{
+		[local.PropSize = StringToNumber("0x" + PropertiesSize)]
+		AsciiString(16) PropertiesSize;
+		
+		[DataFieldFrameLength = FrameOffset + local.PropSize,local.conusem = FrameOffset + local.PropSize]
+		XMLparser XmlPayload;
+		
+		Blob(local.conusem - FrameOffset) pad;
+		
+		[local.FileSize = StringToNumber("0x" + FileSize)]
+		AsciiString(16) FileSize;
+		
+		AsciiString(local.FileSize) FileContents;
+}

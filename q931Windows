@@ -1,0 +1,734 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Q.931
+//#
+//#  Details:                ISDN user-network interface layer 3 specification for basic call control
+//#
+//#  OEM References:         H.323 Pack-based multimedia communications systems.pdf (ITU.org)
+//#                          H.323 Amendment1.pdf (ITU.org)
+//#                          H.323 Amendment2.pdf (ITU.org)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeBitAlign]
+Protocol Q931 = FormatString("%s,%s", ProtocolDiscriminator.ToString, MessageType.ToString) 
+{
+    UINT8 ProtocolDiscriminator = Q931ProtocolDiscriminatorTable(this);
+    UINT24 CallReference
+    {
+        UINT8 Length;
+        UINT16 CallReferenceValue;
+    };
+    UINT8 MessageType = Q931MessageTypeTable(this);
+    while cond[ FrameOffset < FrameLength ]
+    {
+        switch
+        {
+            case ( UINT8( Framedata, Offset ) & 0x80 ) &&
+                 ( ( UINT8( Framedata, Offset ) & 0xf0 ) == 0x90 ):
+                 UINT8 CodeSet = FormatString("%s,%s", Q931CodeSetTable(this & 0x07),
+                                                      this & 0x08 ? "Non-locking" : "Locking");
+            case UINT8( Framedata, Offset ) == 0x7E: struct UserUser = FormatString("IE: %s, Length: %d, ProtocolDiscriminators: %s",
+                                                                             InformationElement.ToString,
+                                                                             Length,
+                                                                             ProtocolDiscriminators.ToString) 
+                                            {
+                                                [H323UUIEExist = 1]
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT16 Length;
+                                                UINT8 ProtocolDiscriminators = Q931DiscriminatorTable( this );
+                                                H225 H225;
+                                            };
+            case UINT8( Framedata, Offset ) == 0x04 ||
+                 UINT8( Framedata, Offset ) == 0x7C: struct BearCapability
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 CodingAndcapability
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 CodingStandard:2 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityCodingStandardTable( this ));
+                                                    UINT8 TransferCapability:5 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityITCapabilityTable( this ));
+                                                };
+                                                UINT8 ModeAndRate
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 Mode:2 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityITModeTable(this));
+                                                    UINT8 TransferRate:5 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityITRateTable( this ));
+                                                };
+                                                switch(ModeAndRate.TransferRate)
+                                                {
+                                                    case 0x18: UINT8 RateMultiplier;
+                                                }
+                                                UINT8 LayerIProtocol
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 Layer1Identification:2;
+                                                    UINT8 layer1Protocol:5;                    	
+                                                };
+                                            };
+            case UINT8( Framedata, Offset ) == 0x14: struct CallState
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 CallState
+                                                {
+                                                    UINT8 CodingStandard:2 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityCodingStandardTable(this));
+                                                    UINT8 CallStateValue:6 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityCallStateValueTable(this));
+                                                };
+                                            };
+            case UINT8( Framedata, Offset ) == 0x70: struct CalledPartyNumber
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 TypeOfNumber
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 NumberType:3 = FormatString("(%s) %s", this.ToBitString, Q931NumberTypeTable( this ));
+                                                    UINT8 NumberingPlan:4 = FormatString("(%s) %s", this.ToBitString, Q931NumberingPlanTable( this ));
+                                                };
+                                                switch
+                                                {
+                                                    case Length - 3 > 0 && TypeOfNumber.NumberingPlan == 1: AsciiString(Length - 3) CalledPartyNumber;
+                                                }
+                                            };
+            case UINT8( Framedata, Offset ) == 0x6c: struct CallingPartyNumber
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 TypeOfNumber
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 NumberType:3 = FormatString("(%s) %s", this.ToBitString, Q931NumberTypeTable( this ));
+                                                    UINT8 NumberingPlan:4 = FormatString("(%s) %s", this.ToBitString, Q931NumberingPlanTable( this ));
+                                                };
+                                                switch
+                                                {
+                                                    case Length - 3 >0 && TypeOfNumber.NumberingPlan == 1: AsciiString(Length - 3) CalledPartyNumber;
+                                                }
+                                            };
+            case UINT8( Framedata, Offset ) == 0x71: struct CalledPartySubAddress
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 SubAddrType
+                                                {
+                                                    UINT8 SubAddrType:3 = FormatString("(%s) %s", this.ToBitString, Q931SubAddrTypeTable( this ));
+                                                    UINT8 BIT4:1 = FormatString("(%s) %s", this.ToBitString, this ? "Odd number of address signals" : "Even number of address signals");
+                                                    UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+                                                };
+                                                switch
+                                                {
+                                                    case Length > 3: UINT8 SubAddress[Length-3];
+                                                }
+                                            };
+            case UINT8( Framedata, Offset ) == 0x6D: struct CallingPartySubAddress
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 SubAddrType
+                                                {
+                                                    UINT8 SubAddrType:3 = FormatString("(%s) %s", this.ToBitString, Q931SubAddrTypeTable( this ));
+                                                    UINT8 BIT4:1 = FormatString("(%s) %s", this.ToBitString, this ? "Odd number of address signals" : "Even number of address signals");
+                                                    UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+                                                };
+                                                switch
+                                                {
+                                                    case Length > 3: UINT8 SubAddress[Length-3];
+                                                }
+                                            };
+
+            case UINT8( Framedata, Offset ) == 0x08: struct Cause
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                [CauseLength]
+                                                UINT8 Length;
+                                                UINT8 CauseLocation
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 CodingStandard:2 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityCodingStandardTable(this));
+                                                    UINT8 CauseLocation:5 = FormatString("(%s) %s", this.ToBitString, Q931CauseLocationTable( this ));
+                                                };
+                                                UINT8 CauseValue
+                                                {
+                                                    UINT8 Extension:1 = FormatString("(%s) %s", this.ToBitString, this ? "Extension Set" : "Extension not set");
+                                                    UINT8 CauseValue:7 = FormatString("(%s) %s", this.ToBitString, Q931CauseValueTable( this ));
+                                                };
+                                                switch(CauseValue & 0x7F)
+                                                {
+                                                    case 0x01:
+                                                    case 0x03:
+                                                    case 0x31: _struct Cause1349
+                                                               {
+                                                                   UINT8 BIT7:1 = FormatString("(%s) %s", this.ToBitString, this ? "User" : "Provider");
+                                                                   UINT8 BIT6:1 = FormatString("(%s) %s", this.ToBitString, this ? "Abnormal" : "Normal");
+                                                                   UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+                                                                   UINT8 CauseCondition:2 = FormatString("(%s) %s", this.ToBitString, Q931CauseConditionTable( this ));
+                                                               };
+                                                    case 0x15: _struct CallReject
+                                                               {
+                                                                   UINT8 RejectReason = Q931RejectReasonTable( this & 0x7c)
+                                                                   {
+                                                                   	   UINT8 Reserved:6 = FormatString("(%s)",this.ToBitString);
+                                                                       UINT8 CauseCondition:2 = FormatString("(%s) %s", this.ToBitString, Q931CauseConditionTable( this ));
+                                                                   };
+                                                                   switch( RejectReason & 0x7c )
+                                                                   {
+                                                                       case 0x00: UINT8 UserSpeDiagnostic[Property.CauseLength - 3];
+                                                                       case 0x04: UINT8 MissingInformationElement = Q931InformationElementTable( this );
+                                                                       case 0x08: UINT8 InsufficientInformationElement = Q931InformationElementTable( this );
+                                                                       default: UINT8 Diagnostic[Property.CauseLength - 3];
+                                                                   }
+                                                               };
+                                                    case 0x2B:
+                                                    case 0x58:
+                                                    case 0x60:
+                                                    case 0x63:
+                                                    case 0x64: while condition[Property.CauseLength - 2 >0]
+                                                               {
+                                                                   [CauseLength = Property.CauseLength - 1]
+                                                                   UINT8 InformationElement = Q931InformationElementTable( this );
+                                                               };
+                                                    case 0x61:
+                                                    case 0x65: UINT8 MessageType = Q931MessageTypeTable( this );
+                                                    case 0x66: UINT24 Timer;
+                                                    default: UINT8 Diagnostic[Property.CauseLength - 2];
+                                                }
+                                            };
+            case UINT8( Framedata, Offset ) == 0x18: struct ChannelIdentification
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 InterfaceAndChannel
+                                                {
+                                                	  UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+                                                    UINT8 BIT6:1 = FormatString("(%s) %s", this.ToBitString, this ? "Interface explicitly identified" : "Interface implicitly identified");
+                                                    UINT8 BIT5:1 = FormatString("(%s) %s", this.ToBitString, this ? "Not basic interface" : "Basic interface");
+                                                    UINT8 BIT4:1 = FormatString("(%s)" , this.ToBitString);
+                                                    UINT8 BIT3:1 = FormatString("(%s) %s", this.ToBitString, this ? "Indicated channel is required" : "Indicated channel is preferred");
+                                                    UINT8 BIT2:1 = FormatString("(%s) %s", this.ToBitString, this ? "Indicated channel is the D-channel" : "Indicated channel is not the D-channel");
+                                                    UINT8 ChannelSelection:2 = FormatString("(%s) %s", this.ToBitString, Q931ChannelSelectionTable(UINT8( Framedata, Offset ) & 0x20, this));
+                                                };
+                                                switch
+                                                {
+                                                    case InterfaceAndChannel & 0x40:
+                                                         _struct ChannelID
+                                                         {
+                                                             while condition[ !(UINT8( Framedata, Offset ) & 0x80) ]
+                                                             {
+                                                                 UINT8 InterfaceIdentifier;
+                                                             };
+                                                             switch
+                                                             {
+                                                                 case UINT8( Framedata, Offset ) & 0x80: UINT8 InterfaceIdentifierEnd;
+                                                             }
+                                                         };
+                                                }
+                                                switch
+                                                {
+                                                    case InterfaceAndChannel & 0x20: 
+                                                    UINT8 Channel
+                                                    {
+																						            UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+                                                        UINT8 CodingStandard:2 = FormatString("(%s) %s", this.ToBitString, Q931BearCapabilityCodingStandardTable( this ));
+                                                        UINT8 BIT4:1 = FormatString("(%s) %s", this.ToBitString, this ? "Channel is indicated by slot map" : "Channel is indicated by number");
+                                                        UINT8 ElementType:4 = FormatString("(%s) %s", this.ToBitString, Q931ElementTypeTable( this ));
+                                                    };
+                                                }
+                                            };
+            case UINT8( Framedata, Offset ) == 0x27: struct NotificationIndicator
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                UINT8 NotificationDescription = Q931NotificationTable( this & 0x7f );
+                                            };
+            case UINT8( Framedata, Offset ) == 0x28: struct Display = Display.ToString
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                AsciiString(Length) Display;
+                                            };
+            case UINT8( Framedata, Offset ) == 0x29: struct DateTime
+                                            {
+                                                UINT8 InformationElement = Q931InformationElementTable( this );
+                                                UINT8 Length;
+                                                // this field's output format will be updated in future
+                                                Integer(Length) DateTime;
+                                            };
+            default: struct InformationElement
+            {
+                UINT8 InformationElement = Q931InformationElementTable( this );
+                UINT8 Length;
+                AsciiString(Length) Content;
+            }
+        }
+    };
+}
+
+Table Q931MessageTypeTable( type )
+{
+    switch( type )
+    {
+        case 1: "Alerting";
+        case 2: "Call Proceeding";
+        case 7: "Connect";
+        case 15: "Connect Acknowledge";
+        case 5: "Setup";
+        case 13: "Setup Acknowledge";
+        case 37: "Suspend";
+        case 45: "Suspend Acknowledge";
+        case 33: "Suspend Reject";
+        case 40: "Resume";
+        case 48: "Resume Acknowledge";
+        case 34: "Resume Reject";
+        case 69: "Disconnect";
+        case 77: "Release";
+        case 90: "Release Complete";
+        case 117: "Status Enquiry";
+        case 125: "Status";
+        default: FormatString("%d", type);
+    }
+}
+
+Table Q931ProtocolDiscriminatorTable( type )
+{
+    switch
+    {
+        case type == 8: "Protocol discriminator: Q.931";
+        case type == 9: "Protocol discriminator: Q.2931";
+        case ( type >= 16 && type < 63 ) ||
+             ( type >= 80 && type < 254 ): FormatString("Protocol discriminator: Network layer or layer 3 protocol (0x%02X)", type);
+        case type >= 64 && type <= 79: FormatString("Protocol discriminator: National use (0x%02X)", type);
+        default: FormatString("Protocol discriminator: Reserved (0x%02X)", type);
+    }
+}
+
+Table Q931CodeSetTable( value )
+{
+    switch
+    {
+        case value == 0x00: "Q.931 information elements";
+        case value == 0x04: "Information elements for ISO/IEC use";
+        case value == 0x05: "Information elements for national use";
+        case value == 0x06: "Information elements specific to the local network";
+        case value == 0x07: "User-specific information elements";
+        default: FormatString("%d", value);
+    }
+}
+
+Table Q931InformationElementTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Segmented message";
+        case 0x04: "Bearer capability";
+        case 0x08: "Cause";
+        case 0x10: "Call identity";
+        case 0x14: "Call state";
+        case 0x18: "Channel identification";
+        case 0x1c: "Facility";
+        case 0x1e: "Progress indicator";
+        case 0x20: "Network specific facilities";
+        case 0x27: "Notification indicator";
+        case 0x28: "Display";
+        case 0x29: "Date/Time";
+        case 0x2c: "Keypad facility";
+        case 0x32: "Information request";
+        case 0x34: "Signal";
+        case 0x36: "Switchhook";
+        case 0x38: "Feature activation";
+        case 0x39: "Feature Indication";
+        case 0x3b: "Endpoint identifier";
+        case 0x3a: "Service profile ID";
+        case 0x40: "Information rate";
+        case 0x42: "End-to-end transit delay";
+        case 0x43: "Transit delay selection and indication";
+        case 0x44: "Packet layer binary parameters";
+        case 0x45: "Packet layer window size";
+        case 0x46: "Packet size";
+        case 0x47: "Closed user group";
+        case 0x4A: "Reverse charging indication";
+        case 0x4c: "Connected number";
+        case 0x6c: "Calling party number";
+        case 0x6d: "Calling party subaddress";
+        case 0x70: "Called party number";
+        case 0x71: "Called party subaddress";
+        case 0x74: "Redirecting number";
+        case 0x76: "Redirection number";
+        case 0x78: "Transit network selection";
+        case 0x79: "Restart indicator";
+        case 0x7c: "Low-layer compatibility";
+        case 0x7d: "High-layer compatibility";
+        case 0x7e: "User-user";
+        case 0x7f: "Escape";
+        case 0x8c: "Connected number";
+        case 0x8d: "Connected subaddress";
+        default: FormatString("%d", value);
+    }
+}
+
+Table Q931DiscriminatorTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "User-specific protocol";
+        case 0x01: "OSI high layer protocols";
+        case 0x02: "X.244";
+        case 0x04: "IA5 characters";
+        case 0x05: "X.208 and X.209 coded user information";
+        case 0x07: "V.120 rate adaption";
+        case 0x08: "Q.931/I.451 user-network call control messages";
+        default: FormatString("%d", value);
+    }
+}
+
+Table Q931BearCapabilityITCapabilityTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Speech";
+        case 0x08: "Unrestricted digital information";
+        case 0x09: "Restricted digital information";
+        case 0x10: "3.1 kHz audio";
+        case 0x11: "Unrestricted digital information with tones/announcements";
+        case 0x18: "Video";
+        default: "";
+    }
+
+}
+
+Table Q931BearCapabilityCodingStandardTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "ITU-T standardized coding";
+        case 0x01: "ISO/IEC standard";
+        case 0x02: "National standard";
+        case 0x03: "Standard defined for this particular network";
+        default: "";
+    }
+}
+
+Table Q931BearCapabilityITRateTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Packet mode";
+        case 0x10: "64 kbit/s";
+        case 0x11: "2 x 64 kbit/s";
+        case 0x13: "384 kbit/s";
+        case 0x15: "1536 kbit/s";
+        case 0x17: "1920 kbit/s";
+        case 0x18: "Multirate (64 kbit/s base rate)";
+        default: "";
+    }
+}
+
+Table Q931BearCapabilityITModeTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Circuit mode";
+        case 0x02: "Packet mode";
+        default: "";
+    }
+}
+
+Table Q931BearCapabilityUILayerTable( value )
+{
+    switch( value )
+    {
+        case 0x01: "V.110/I.460/X.30 rate adaption";
+        case 0x02: "Recommendation G.711 u-law";
+        case 0x03: "Recommendation G.711 A-law";
+        case 0x04: "Recommendation G.721 32 kbit/s ADPCM and Recommendation I.460";
+        case 0x05: "Recommendation H.221 and H.242";
+        case 0x06: "Recommendation H.223 and H.245";
+        case 0x07: "Non-ITU-T-standardized rate adaption";
+        case 0x08: "V.120 rate adaption";
+        case 0x09: "X.31 HDLC flag stuffing";
+        default: "";
+    }
+}
+Table Q931BearCapabilityLayer1UserRateTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Rate indicated by E-bits";
+        case 0x01: "0.6 kbit/s";
+        case 0x02: "1.2 kbit/s";
+        case 0x03: "2.4 kbit/s";
+        case 0x04: "3.6 kbit/s";
+        case 0x05: "4.8 kbit/s";
+        case 0x06: "7.2 kbit/s";
+        case 0x07: "8 kbit/s";
+        case 0x08: "9.6 kbit/s";
+        case 0x09: "14.4 kbit/s";
+        case 0x0A: "16 kbit/s";
+        case 0x0B: "19.2 kbit/s";
+        case 0x0C: "32 kbit/s";
+        case 0x0E: "48 kbit/s";
+        case 0x0F: "56 kbit/s";
+        case 0x10: "64 kbit/s ";
+        case 0x15: "0.1345 kbit/s";
+        case 0x16: "0.100 kbit/s";
+        case 0x17: "0.075/1.2 kbit/s";
+        case 0x18: "1.2/0.075 kbit/s";
+        case 0x19: "0.050 kbit/s";
+        case 0x1A: "0.075 kbit/s";
+        case 0x1B: "0.110 kbit/s";
+        case 0x1C: "0.150 kbit/s";
+        case 0x1D: "0.200 kbit/s";
+        case 0x1E: "0.300 kbit/s";
+        case 0x1F: "12 kbit/s";
+        default: "";
+    }
+}
+
+Table Q931BearCapabilitiesIntermediateRateTable( value )
+{
+    switch( value )
+    {
+        case 0x20: "8 kbit/s";
+        case 0x40: "16 kbit/s";
+        case 0x60: "32 kbit/s";
+        default: "";
+    }
+}
+Table Q931BearCapabilityCallStateValueTable( value )
+{
+    switch( value )
+    {
+       case 0x01: "Call initiated";
+       case 0x02: "Overlap sending";
+       case 0x03: "Outgoing call proceeding";
+       case 0x04: "Call delivered";
+       case 0x06: "Call present";
+       case 0x07: "Call received";
+       case 0x08: "Connect request";
+       case 0x09: "Incoming call proceeding";
+       case 0x0a: "Active";
+       case 0x0b: "Disconnect request";
+       case 0x0c: "Disconnect indication";
+       case 0x0F: "Suspend request";
+       case 0x12: "Resume request";
+       case 0x13: "Release request";
+       case 0x16: "Call abort";
+       case 0x19: "Overlap receiving";
+       case 0x3D: "Restart request";
+       case 0x3E: "Restart";
+       default: "";
+    }
+}
+
+Table Q931NumberingPlanTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Unknown";
+        case 0x01: "E.164 ISDN/telephony numbering";
+        case 0x03: "X.121 data numbering";
+        case 0x04: "F.69 Telex numbering";
+        case 0x08: "National standard numbering";
+        case 0x09: "Private numbering";
+        default: "";
+    }
+}
+
+Table Q931NumberTypeTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Unknown";
+        case 0x01: "International number";
+        case 0x02: "National number";
+        case 0x03: "Network specific number";
+        case 0x04: "Subscriber number";
+        case 0x06: "Abbreviated number";
+        default: "";
+    }
+}
+
+Table Q931SubAddrTypeTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "X.213/ISO 8348 Add.2 NSAP";
+        case 0x20: "User-specified";
+        default: "";
+    }
+}
+
+Table Q931CauseLocationTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "User (U)";
+        case 0x01: "Private network serving the local user (LPN)";
+        case 0x02: "Public network serving the local user (LN)";
+        case 0x03: "Transit network (TN)";
+        case 0x04: "Public network serving the remote user (RLN)";
+        case 0x05: "Private network serving the remote user (RPN)";
+        case 0x07: "International network (INTL)";
+        case 0x0a: "Network beyond interworking point (BI)";
+        default: "";
+    }
+}
+
+Table Q931CauseValueTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Valid cause code not yet received";
+        case 0x01: "Unallocated (unassigned) number";
+        case 0x02: "No route to specified transit network";
+        case 0x03: "No route to destination";
+        case 0x04: "Send special information tone";
+        case 0x05: "Misdialled trunk prefix";
+        case 0x06: "Channel unacceptable";
+        case 0x07: "Call awarded and being delivered in an established channel";
+        case 0x08: "Prefix 0 dialed but not allowed";
+        case 0x09: "Prefix 1 dialed but not allowed";
+        case 0x0a: "Prefix 1 dialed but not required";
+        case 0x0b: "More digits received than allowed, call is proceeding";
+        case 0x0e: "QoR: ported number";
+        case 0x10: "Normal call clearing";
+        case 0x11: "User busy";
+        case 0x12: "No user responding";
+        case 0x13: "No answer from user (user alerted)";
+        case 0x14: "Subscriber absent";
+        case 0x15: "Call rejected";
+        case 0x16: "Number changed";
+        case 0x17: "Reverse charging rejected";
+        case 0x18: "Call suspended";
+        case 0x19: "Call resumed";
+        case 0x1a: "Non-selected user clearing";
+        case 0x1b: "Destination out of order";
+        case 0x1c: "Invalid number format (incomplete number)";
+        case 0x1d: "Facility rejected";
+        case 0x1e: "Response to STATUS ENQUIRY";
+        case 0x1f: "Normal unspecified";
+        case 0x21: "Circuit out of order";
+        case 0x22: "No circuit/channel available";
+        case 0x23: "Destination unattainable";
+        case 0x25: "Degraded service";
+        case 0x26: "Network out of order";
+        case 0x27: "Transit delay range cannot be achieved";
+        case 0x28: "Throughput range cannot be achieved";
+        case 0x29: "Temporary failure";
+        case 0x2a: "Switching equipment congestion";
+        case 0x2b: "Access information discarded";
+        case 0x2c: "Requested circuit/channel not available";
+        case 0x2d: "Pre-empted";
+        case 0x2e: "Precedence call blocked";
+        case 0x2f: "Resources unavailable, unspecified";
+        case 0x31: "Quality of service unavailable";
+        case 0x32: "Requested facility not subscribed";
+        case 0x33: "Reverse charging not allowed";
+        case 0x34: "Outgoing calls barred";
+        case 0x35: "Outgoing calls barred within CUG";
+        case 0x36: "Incoming calls barred";
+        case 0x37: "Incoming calls barred within CUG";
+        case 0x38: "Call waiting not subscribed";
+        case 0x39: "Bearer capability not authorized";
+        case 0x3a: "Bearer capability not presently available";
+        case 0x3e: "Inconsistency in designated outgoing access information and subscriber class";
+        case 0x3f: "Service or option not available, unspecified";
+        case 0x41: "Bearer capability not implemented";
+        case 0x42: "Channel type not implemented";
+        case 0x43: "Transit network selection not implemented";
+        case 0x44: "Message not implemented";
+        case 0x45: "Requested facility not implemented";
+        case 0x46: "Only restricted digital information bearer capability is available";
+        case 0x4f: "Service or option not implemented, unspecified";
+        case 0x51: "Invalid call reference value";
+        case 0x52: "Identified channel does not exist";
+        case 0x53: "Call identity does not exist for suspended call";
+        case 0x54: "Call identity in use";
+        case 0x55: "No call suspended";
+        case 0x56: "Call having the requested call identity has been cleared";
+        case 0x57: "Called user not member of CUG";
+        case 0x58: "Incompatible destination";
+        case 0x59: "Non-existent abbreviated address entry";
+        case 0x5a: "Destination address missing, and direct call not subscribed";
+        case 0x5b: "Invalid transit network selection (national use)";
+        case 0x5c: "Invalid facility parameter";
+        case 0x5d: "Mandatory information element is missing";
+        case 0x5f: "Invalid message, unspecified";
+        case 0x60: "Mandatory information element is missing";
+        case 0x61: "Message type non-existent or not implemented";
+        case 0x62: "Message not compatible with call state or message type non-existent or not implemented";
+        case 0x63: "Information element nonexistant or not implemented";
+        case 0x64: "Invalid information element contents";
+        case 0x65: "Message not compatible with call state";
+        case 0x66: "Recovery on timer expiry";
+        case 0x67: "Parameter non-existent or not implemented - passed on";
+        case 0x6e: "Message with unrecognized parameter discarded";
+        case 0x6f: "Protocol error, unspecified";
+        case 0x7f: "Internetworking, unspecified";
+        default: "";
+    }
+}
+
+Table Q931CauseConditionTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "Unknown";
+        case 0x01: "Permanent";
+        case 0x02: "Transient";
+        default: "";
+    }
+}
+
+Table Q931RejectReasonTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "User specific";
+        case 0x04: "Information element missing";
+        case 0x08: "Information element contents are not sufficient";
+        default: "";
+    }
+}
+
+Table Q931ChannelSelectionTable( NotBasic, value )
+{
+    switch
+    {
+        case NotBasic && value == 0x00: "No channel";
+        case NotBasic && value == 0x01: "Channel indicated in following octets";
+        case NotBasic && value == 0x03: "Any channel";
+        case ( !NotBasic ) && value == 0x00: "No channel";
+        case ( !NotBasic ) && value == 0x01: "B1 channel";
+        case ( !NotBasic ) && value == 0x02: "B2 channel";
+        case ( !NotBasic ) && value == 0x03: "Any channel";
+        default: "";
+    }
+}
+
+Table Q931ElementTypeTable( value )
+{
+    switch( value )
+    {
+        case 0x03: "B-channel units";
+        case 0x06: "H0-channel units";
+        case 0x08: "H11-channel units";
+        case 0x09: "H12-channel units";
+        default: "";
+    }
+}
+Table Q931NotificationTable( value )
+{
+    switch( value )
+    {
+        case 0x00: "User suspended";
+        case 0x01: "User resumed";
+        case 0x02: "Bearer service change";
+        default: FormatString("%d", value);
+    }
+}

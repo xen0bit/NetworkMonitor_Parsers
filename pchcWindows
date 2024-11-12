@@ -1,0 +1,109 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Peer Content Caching and Retrieval: Hosted Cache Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-PCHC]: Peer Content Caching and Retrieval: Hosted Cache Protocol Specification (1.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/6/2009
+//#                          Minor, 5/4/2009
+//#
+//####
+
+[RegisterBefore(HTTPPayloadData.DotNETRemotingHttpChannel, Pchc, Property.HttpUriLocation.Contains("C574AC30-5794-4AEE-B1BB-6651C5315029"))]
+Protocol PCHC = formatstring("%s", Property.PCHCSummary)
+{
+	Switch
+	{
+		Case ( FrameLength - FrameOffset ) == 5:
+			PCHCResponse PCHCResponse;
+		default:
+			PCHCRequest PCHCRequest;
+	}
+}
+
+[Post.Property.PCHCSummary = "Request:" + Property.PCHCMessageTypeContent]
+Struct PCHCRequest = formatstring("%s", Property.PCHCMessageTypeContent)
+{
+	Switch UINT16(FrameData, offset + 2)
+	{
+		case 1:PCHCINITIALOFFERMESSAGE InitialOfferMessage;
+		case 2:PCHCSEGMENTINFOMESSAGE SegmentInfoMessage;
+	}
+}
+
+//MESSAGE_HEADER
+Struct PCHCMESSAGEHEADER = Formatstring("Version: %d.%d, Type: 0x%X:%s", Property.MajorVersion, Property.MinorVersion, Type, PCHCTypeTable(Type))
+{
+	//The version MUST be "1.0".
+	PCHCVersion Version;
+	[Property.PCHCMessageType, Property.PCHCMessageTypeContent = PCHCTypeTable(This)]
+	UINT16 Type = formatstring("0x%X:%s", this, PCHCTypeTable(This));
+	UINT32 Padding;
+}
+
+Struct PCHCVersion = Formatstring("%d.%d", Property.MajorVersion, Property.MinorVersion)
+{
+	[Property.MinorVersion]
+	//The minor part of the version, which MUST be 0x00.
+	UINT8 MinorVersion;
+	[Property.MajorVersion]
+	//The major part of the version, which MUST be 0x01.
+	UINT8 MajorVersion;
+}
+
+Table PCHCTypeTable(value)
+{
+	Switch(value)
+	{
+		Case 0x0001: "The message is an Initial Offer Message.";
+		Case 0x0002: "The message is a Segment Info Message.";
+		default:"unknown";
+	}
+}
+
+//INITIAL_OFFER_MESSAGE
+Struct PCHCINITIALOFFERMESSAGE
+{
+	PCHCMESSAGEHEADER MessageHeader;
+	PCHCCONNECTIONINFORMATION ConnectionInformation;
+	[Property.HashSize = Framelength - FrameOffset]
+	BLOB(Property.HashSize) Hash;
+}
+
+//CONNECTION_INFORMATION
+Struct PCHCCONNECTIONINFORMATION = formatstring("Port: %d", Port)
+{
+	UINT16 Port;
+	UINT48 Padding;	
+}
+
+//SEGMENT_INFO_MESSAGE
+Struct PCHCSEGMENTINFOMESSAGE
+{
+	PCHCMESSAGEHEADER MessageHeader;
+	PCHCCONNECTIONINFORMATION ConnectionInformation;
+	UINT128 PEERDIST_CONTENT_TAG;
+	[DataFieldByteOrder=LittleEndian]
+	PCCRCContentInformation ContentInformation;
+}
+
+[Post.Property.PCHCSummary = formatstring("Response: %s", ResponseCode ? "INTERESTED" : "OK")]
+Struct PCHCResponse = formatstring("%s", ResponseCode ? "INTERESTED" : "OK")
+{
+	UINT32 MessageSize;
+	UINT8 ResponseCode = PCHCResponseCodeTable(This);
+}
+
+Table PCHCResponseCodeTable(value)
+{
+	Switch(value)
+	{
+		Case 0x00: "OK - The server has sufficient information to download content from the client.";
+		Case 0x01: "INTERESTED - The server needs the list of block hashes from the client before it can download content from the client.";
+		default:"unknown";
+	}
+}

@@ -1,0 +1,525 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Control Message Protocol (for IPv4)
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 777, 792, 950, 1191
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+//#? dev note 05/08/05
+//#? the embedded protocol still display its next protocol
+//
+//Protocol ICMP = ICMPSummaryTable(type, SAddress, DAddress, UnreachableCode, DPort)
+Protocol ICMP = FormatString("%s", ICMPSummary)
+{
+	[ICMPSummary = FormatString("%s", ICMPTypeTable(Type))]
+	UINT8 Type = FormatString("%s, %d(%#x)",ICMPTypeTable(this),this,this);
+
+	switch(Type)
+	{
+		case  0:
+		case  8:  // echo reply || echo request //SourceNetworkAddress, DestinationNetworkAddress
+			[
+				ICMPSummary = ICMPSummary + FormatString(", From %d.%d.%d.%d To %d.%d.%d.%d",
+						SourceNetworkAddress[3],
+						SourceNetworkAddress[2],
+						SourceNetworkAddress[1],
+						SourceNetworkAddress[0],
+						DestinationNetworkAddress[3],
+						DestinationNetworkAddress[2],
+						DestinationNetworkAddress[1],
+						DestinationNetworkAddress[0]);
+			]
+			_struct EchoReplyRequest
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 ID;
+				UINT16 SequenceNumber;
+				switch
+				{
+					case frameOffset < frameLength:
+						[Property.ICMPEchoData = AsciiString(FrameData, FrameOffset, frameLength - frameOffset)]
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		//case  1:
+		//case  2:
+		
+		//TODO
+		case  3:  //Destination unreachable
+			_struct DestinationUnreachable
+			{
+				[ICMPSummary = ICMPSummary + ", " + ICMPUnreachableCode(this)]
+				UINT8 Code = FormatString( "%s %d(%#x)", ICMPUnreachableCode(this), this, this);
+				UINT16 Checksum;
+				//RFC 1191
+				switch(Code)
+				{
+					case  4:
+						struct NextHopMTU
+						{
+							UINT16 Unused;
+							UINT16 NextHopMTU;
+						};
+					default:
+						UINT32 Unused;
+				}
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						[
+							
+							ICMPSummary = ICMPSummary + FormatString(", %s%s%s",
+								Data.DestinationAddress.ToDataTypeString,
+								Code == 2 ? ":" + ProtocolTypeTable(Data.NextProtocol) : "",
+								Code == 3 ? FormatString(":%d", ICMPDPort) : "")
+						]
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		case  4:  //Source quench.
+			_struct SourceQuench
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 Unused;
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						[
+							ICMPSummary = ICMPSummary + 			
+							FormatString(" From Gateway %s", Data.SourceAddress.ToDataTypeString);
+						]
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		case  5:  //Redirect
+			_struct Redirect
+			{
+				UINT8 Code = ICMPRedirectCode(this);
+				UINT16 Checksum;
+				IPv4Address GatewayIPAddress;
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		case  9:  //Router Advertisement
+			_struct RouterAdvertisement
+			{
+				UINT8 Code = ICMPRouterAdvertisementCodeTable(this);
+				UINT16 Checksum;
+				UINT8 AdvertisementCount;
+				UINT8 AddressEntrySize;
+				UINT16 Lifetime;
+				//ICMPRAdvertRouterAddresses
+				struct [AdvertisementCount]
+				{
+					IPv4Address RouterAddress;
+					UINT32 PreferenceLevel;
+				};
+			};
+		case 10: //Router Solicitation
+			_struct RouterSolicitation
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT32 Reserved;
+			};
+		case 11: //Time Exceeded
+			_struct TimeExceeded
+			{
+				UINT8 Code = ICMPTimeExceededCodeTable(this);
+				UINT16 Checksum;
+				UINT32 Unused;
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		case 12: //Parameter Problem
+			_struct ParameterProblem
+			{
+				UINT8 Code = ICMPParameterProblemCodeTable(this);
+				UINT16 Checksum;
+				UINT8 Pointer;
+				UINT24 Unused;
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		case 13:
+		case 14: //Timestamp request ||Timestamp reply
+			_struct TimestampRequestReply
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+				UINT32 OriginateTimestamp;
+				UINT32 ReceiveTimestamp;
+				UINT32 TransmitTimestamp;
+			};
+		case 15:
+		case 16: //ICMP Information request || reply
+			_struct InformationRequestReply
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+			};
+		case 17:
+		case 18: //AddressMask request || reply
+			_struct AddressMaskRequestReply
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+				IPv4Address AddressMask;
+			};
+		case 30: //Traceroute
+			_struct Traceroute
+			{
+				UINT8 Code = ICMPTracerouteReplyCodeTable(this);
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 Unused;
+				UINT16 OutboundHopCount;
+				UINT16 ReturnHopCount;
+				UINT32 OutputLinkSpeed;
+				UINT32 OutputLinkMTU;
+			};
+		case 31: //Conversion Error
+			_struct ConversionError
+			{
+				UINT8 Code = ICMPConversionErrorCodeTable(this);
+				UINT16 Checksum;
+				UINT32 Offset;
+			};
+		case 37: //ICMP Domain Name Request
+			_struct DomainNameRequest
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+			};
+		case 38: //ICMP DomainName Reply
+			_struct DomainNameReply
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+				UINT32 TTL;
+				//Names;
+			};
+		case 40: //ICMPSecurityFailures
+			_struct SecurityFailures
+			{
+				UINT8 Code = ICMPSecurityFailuresCodeTable(this);
+				UINT16 Checksum;
+				UINT16 Reserved;
+				UINT16 Pointer;
+				//UINT32 OriginalDatagram; //parse more!
+				switch
+				{
+					case frameOffset + 20 < frameLength:
+						ICMPIPHeader Data;
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+		default: //Unknown type
+			_struct UnknownICMPType
+			{
+				UINT8 Code;
+				UINT16 Checksum;
+				UINT16 Identifier;
+				UINT16 SequenceNumber;
+				switch
+				{
+					case frameOffset < frameLength:
+						BLOB(frameLength - frameOffset) ImplementationSpecificData;
+				}
+			};
+	}
+}
+Table ICMPTypeTable(type)
+{
+	switch
+	{
+		case type ==  0:"Echo Reply Message";
+		case type ==  1:"Reserved";
+		case type ==  2:"Reserved";
+		case type ==  3:"Destination Unreachable Message";
+		case type ==  4:"Source Quench Message";
+		case type ==  5:"Redirect Message";
+		case type ==  6:"Alternate Host Address Message";
+		case type ==  8:"Echo Request Message";
+		case type ==  9:"Router advertisement Message";
+		case type == 10:"Router solicitation Message";
+		case type == 11:"Time Exceeded Message";
+		case type == 12:"Parameter Problem Message";
+		case type == 13:"Timestamp Request Message";
+		case type == 14:"Timestamp Reply Message";
+		case type == 15:"Information Request Message";
+		case type == 16:"Information Reply Message";
+		case type == 17:"Address mask request Message";
+		case type == 18:"Address mask reply Message";
+		case type == 19:"Reserved (for security)";
+		case type >= 20 && type <=29:"Reserved (for robustness experiment)";
+		case type == 30:"Traceroute Message";
+		case type == 31:"Conversion error Message";
+		case type == 32:"Mobile Host Redirect Message";
+		case type == 33:"IPv6 Where-Are-You Message";
+		case type == 34:"IPv6 I-Am-Here Message";
+		case type == 35:"Mobile Registration Request Message";
+		case type == 36:"Mobile Registration Reply Message";
+		case type == 37:"Domain Name request Message";
+		case type == 38:"Domain Name reply Message";
+		case type == 39:"SKIP Algorithm Discovery Protocol Message";
+		case type == 40:"Photuris, Security failures Message";
+		case type >= 41 && type <=255:"Reserved";
+		default        :"Unknown ICMPType";
+	}
+}
+
+Table ICMPUnreachableCode(Code)
+{
+	switch(Code)
+	{
+		case  0: "Net Unreachable";
+		case  1: "Host Unreachable";
+		case  2: "Protocol Unreachable";
+		case  3: "Port Unreachable";
+		case  4: "Fragmentation Needed, and DF set";
+		case  5: "Source Route Failed";
+		case  6: "Destination network unknown";
+		case  7: "Destination host unknown";
+		case  8: "Source host isolated";
+		case  9: "Destination network is administratively prohibited";
+		case 10: "Destination host is administratively prohibited";
+		case 11: "Network is unreachable for TOS";
+		case 12: "Host is unreachable for TOS";
+		case 13: "Communication Administratively Prohibited";
+		case 14: "Host precedence violation";
+		case 15: "Precedence cutoff in effect";
+		default: "Undefined Unreachable Code";
+	}
+}
+
+Table ICMPRedirectCode (Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Redirect datagrams for the network %d(%#x)",Code,Code);
+		case  1:FormatString("Redirec datagrams for the host %d(%#x)",Code,Code);
+		case  2:FormatString("Redirect datagrams for the type of service and network %d(%#x)",Code,Code);
+		case  3:FormatString("Redirect datagrams for the type of service and host %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPRouterAdvertisementCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Normal router advertisement %d(%#x)",Code,Code);
+		case 16:FormatString("Does not route common traffic %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPTimeExceededCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Time to live (TTL) equals 0 during transit %d(%#x)",Code,Code);
+		case  1:FormatString("Fragment reassembly timeout %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPParameterProblemCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("The IP header is invalid %d(%#x)",Code,Code);
+		case  1:FormatString("A required option is missing %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPTracerouteReplyCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Outbound Packet successfully forwarded %d(%#x)",Code,Code);
+		case  1:FormatString("No route for Outbound Packet %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPConversionErrorCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Unknown or unspecified error %d(%#x)",Code,Code);
+		case  1:FormatString("Don't convert option present %d(%#x)",Code,Code);
+		case  2:FormatString("Unknown mandatory option present %d(%#x)",Code,Code);
+		case  3:FormatString("Known unsupported option present %d(%#x)",Code,Code);
+		case  4:FormatString("Unsupported transport protocol %d(%#x)",Code,Code);
+		case  5:FormatString("Overall length exceeded %d(%#x)",Code,Code);
+		case  6:FormatString("IP header length exceeded %d(%#x)",Code,Code);
+		case  7:FormatString("Transport protocol > 255 %d(%#x)",Code,Code);
+		case  8:FormatString("Port conversion out of range %d(%#x)",Code,Code);
+		case  9:FormatString("Transport header length exceeded %d(%#x)",Code,Code);
+		case 10:FormatString("32-bit rollover missing and ACK set %d(%#x)",Code,Code);
+		case 11:FormatString("Unknown mandatory transport option present %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+Table ICMPSecurityFailuresCodeTable(Code)
+{
+	switch(Code)
+	{
+		case  0:FormatString("Bad SPI %d(%#x)",Code,Code);
+		case  1:FormatString("Authentication Failed %d(%#x)",Code,Code);
+		case  2:FormatString("Decompression Failed %d(%#x)",Code,Code);
+		case  3:FormatString("Decryption Failed %d(%#x)",Code,Code);
+		case  4:FormatString("Need Authentication(It has not authorization) %d(%#x)",Code,Code);
+		case  5:FormatString("Need Authorization(It has insufficient authorization) %d(%#x)",Code,Code);
+		default:FormatString("Undefined %d(%#x)",Code,Code);
+	}
+}
+
+//Original IP frame
+struct ICMPIPHeader = FormatString("%sNext Protocol = %s, Packet ID = %d, Total IP Length = %d",
+							FragmentFlags.Offset > 0 ? FormatString("[Fragment, Offset = %u] ", FragmentFlags.Offset * 8) : "",
+							ProtocolTypeAbbreviationTable(NextProtocol),
+							Identification,
+							TotalLength
+							)
+{
+	UINT8 Versions = FormatString("%s; Header Length = %d", IPVersionTable(Version), IPHeaderLength)
+	{
+		UINT8 Version:4 = FormatString("     (%s) %s",this.ToBitString, IPVersionTable(this));
+		UINT8 HeaderLength:4 = FormatString("(%s) %u bytes (%#x)", this.ToBitString, this*4, this);
+	};
+	UINT8 DifferentiatedServicesField = FormatString("DSCP: %d, ECN: %d", DSCP, this & 0x03)
+	{
+		UINT8 DSCP:6 = FormatString("(%s) %s %d", this.ToBitString, "Differentiated services codepoint",this);
+		UINT8 ECT:1 = FormatString(" (%s) %s", this.ToBitString, this?"ECN-Capable Transport set":"ECN-Capable Transport not set");
+		UINT8 CE:1 = FormatString("  (%s) %s", this.ToBitString, this?"ECN-CE set":"ECN-CE not set");
+	};
+	UINT16 TotalLength;
+	UINT16 Identification;
+	UINT16 FragmentFlags
+	{
+		UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 DF:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Do not fragment":"Fragment if necessary");
+		UINT16 MF:1 = FormatString("      (%s) %s", this.ToBitString, this ? "More fragments follow this fragment":"This is the last fragment");
+		UINT16 Offset:13 = FormatString("  (%s) %d", this.ToBitString, this);
+	};
+	UINT8 TimeToLive;
+	UINT8 NextProtocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	UINT16 Checksum;
+	IPv4Address SourceAddress;
+	IPv4Address DestinationAddress;
+	switch
+	{
+		case FrameOffset < FrameLength:
+			switch(NextProtocol)
+			{
+				case 0x06: 
+					struct TcpHeader
+					{
+						UINT16 SrcPort = PortNameTable(this);
+						[ICMPDPort]
+						UINT16 DstPort = PortNameTable(this);
+						UINT32 SequenceNumber;
+						UINT32 AcknowledgementNumber;
+						UINT8 DataOffset
+						{
+							UINT8 DataOffset:4 = FormatString("(%s) %s", this.ToBitString,"("+this*4+" bytes)");
+							UINT8 Reserved:3 = FormatString("  (%s)", this.ToBitString);
+							UINT8 NS:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Nonce Sum significant" 
+                                                                   							  : "Nonce Sum not significant");
+						};
+						TCPFlags Flags
+						{
+							UINT8 CWR:1    = FormatString("   (%s) %s", this.ToBitString, this ? "CWR significant" 
+					                                                                        : "CWR not significant");
+							UINT8 ECE:1    = FormatString("   (%s) %s", this.ToBitString, this ? "ECN-Echo significant" 
+					                                                                        : "ECN-Echo not significant");
+							UINT8 Urgent:1 = FormatString("(%s) %s", this.ToBitString, this ? "Urgent Data" 
+					                                                                        : "Not Urgent Data");
+							UINT8 Ack:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Acknowledgement field significant" 
+					                                                                        : "Acknowledgement field not significant");
+							UINT8 Push:1   = FormatString("  (%s) %s", this.ToBitString, this ? "Push Function" 
+					                                                                        : "No Push Function");
+							UINT8 Reset:1  = FormatString(" (%s) %s", this.ToBitString, this ? "Reset" : "No Reset");
+							UINT8 Syn:1    = FormatString("   (%s) %s", this.ToBitString, this ? "Synchronize sequence numbers" 
+					                                                                        : "Not Synchronize sequence numbers");
+							UINT8 Fin:1    = FormatString("   (%s) %s", this.ToBitString, this ? "End of data" 
+					                                                                        : "Not End of data");
+						};
+						UINT16 Window = FormatString("%d %s", this, Conversation.ScaleFactor$[SourceNetworkAddress] >= 0 ? FormatString("(scale factor %d) = %d", Conversation.ScaleFactor$[SourceNetworkAddress], WindowSize) : "(scale factor not found)");
+						UINT16 Checksum;
+						UINT16 UrgentPointer;
+						switch
+						{
+							case FrameOffset < FrameLength:
+								BLOB(FrameLength - FrameOffset) OriginalIPPayload;
+						}
+					}
+				case 0x11: 
+					struct UdpHeader
+					{
+					 	UINT16 SourcePort = FormatString("%s, %d(%#x)", PortNameTable(this), this, this);
+						[ICMPDPort]
+						UINT16 DestinationPort = FormatString("%s, %d(%#x)", PortNameTable(this), this, this);
+						UINT16 TotalLength;
+						UINT16 Checksum;
+						switch
+						{
+							case FrameOffset < FrameLength:
+								BLOB(FrameLength - FrameOffset) OriginalIPPayload;
+						}
+					}
+				default: 			BLOB(FrameLength - FrameOffset) OriginalIPPayload;
+			}
+	}
+}
+
+

@@ -1,0 +1,2306 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Administration Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      CIFS Technical Reference Revision: 1.0: http://www.snia.org/tech_activities/CIFS/CIFS-TR-1p00_FINAL.pdf
+//#  Microsoft References:   [MS-RAP]: Remote Administration Protocol Specification (11.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/14/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+Const gcsRAPSendStr           = "send";
+Const gcsRAPRecvStr           = "receive";
+Const gcsRAPBothStr           = "send/receive";
+Const gcsRAPParmStr           = "parameter";
+Const gcsRAPDataStr           = "data";
+Const gcsRAPAuxStr            = "aux";
+Const gcsRAPBitStr            = "bit";
+Const gcsRAPOffsetStr         = "offset";
+Const gcsRAPDataOffsetStr     = "data offset";
+Const gcsRAPDataDataOffsetStr = "data/data offset";
+Const gcsRAPIntegerStr        = "integer";
+Const gcsRAPOctetsStr         = "bytes";
+Const gcsRAPNotPresentStr     = "not present";
+Const gcsRAPNulTermStr        = "ASCII NUL (string terminator)";
+Const gcsRAPInvalidDescStr    = "invalid descriptor: ";
+Const gcsRAPInvalidArrayDesc  = "invalid array descriptor: ";
+Const gcsRAPInvalidDescChar   = "invalid descriptor character";
+
+Protocol RAP(ParameterCount, DataCount) = FormatString("%s%s%s%s", 
+													RAPOpcodeNameTable(RAPOpcode),
+													SMBResponse ? " Response" : " Request", 
+													SMBResponse ? "" : (RAPInfoLevel == -1 ? "" : FormatString(", InfoLevel = %u", RAPInfoLevel)), 
+													RAPErrorCode ? (", " + WinErrorCodeTable(RAPErrorCode)) :
+														(RAPFrameSummary ? (", " + RAPFrameSummary) : "")
+													)
+{
+	switch ( SMBResponse )
+	{
+		case 0:
+			[
+				RAPInfoLevel = -1, 
+				Post.Conversation.RAPInfoLevelTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)] = RAPInfoLevel
+			]
+			_struct RAPSend
+			{
+				[
+					Property.RAPOpcode,
+					Conversation.RAPOpcodeTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)]
+				]
+				UINT16 RAPOpcode = RAPOpcodeNameTable(this);
+				RAPParamDescriptor ParameterDescriptor;
+				RAPDataDescriptor DataDescriptor;				
+				switch (RAPOpcode)
+				{
+					case 0x0000: RAPNetShareEnumRequest           NetShareEnum;           // X/Open?RNetShareEnum 
+					case 0x0001: RAPNetShareGetInfoRequest        NetShareGetInfo;        // X/Open?RNetShareGetInfo 
+					case 0x000D: RAPNetServerGetInfoRequest       NetServerGetInfo;       // X/Open?RNetServerGetInfo 
+					case 0x0038: RAPNetUserGetInfoRequest         NetUserGetInfo;	
+					case 0x003F: RAPNetWkstaGetInfoRequest        NetWkstaGetInfo;	
+					case 0x0045: RAPNetPrintQEnumRequest          NetPrintQEnum;   
+					case 0x0046: RAPNetPrintQGetInfoRequest       NetPrintQGetInfo ;
+					case 0x004D: RAPNetPrintJobGetInfoRequest     NetPrintJobGetInfo; 
+					case 0x0051: RAPNetPrintJobDeleteRequest      NetPrintJobDelete; 
+					case 0x0052: RAPNetPrintJobPauseRequest       NetPrintJobPause; 
+					case 0x0053: RAPNetPrintJobContinueRequest    NetPrintJobContinue; 
+					case 0x005B: RAPNetRemoteTODRequest           NetRemoteTOD;
+					case 0x0068: RAPNetServerEnum2Request         NetServerEnum2;         // Microsoft specific 
+					case 0x0073: RAPNetUserPasswordSet2Request    NetUserPasswordSet2;    // Microsoft specific  
+					case 0x0084: RAPNetWkstaUserLogonRequest      NetWkstaUserLogon;      // Microsoft specific  
+					case 0x0085: RAPNetWkstaUserLogoffRequest     NetWkstaUserLogoff;     // Microsoft specific 
+					case 0x0093: RAPNetPrintJobSetInfoRequest     NetPrintJobSetInfo;     // Microsoft specific 
+					case 0x00D7: RAPNetServerEnum3Request         NetServerEnum3;         // Microsoft specific 
+					default :
+						BLOB(FrameLength - FrameOffset) ObsoleteData = Formatstring("%s(%s) Obsolete Function",RAPOpcodeNameTable(Property.RAPOpcode),Property.RAPOpcode) ;
+				}
+			};
+		default:
+			[	
+				Conversation.RAPInfoLevelResp$[FrameNumber] = Conversation.RAPInfoLevelTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)],
+				RAPInfoLevel = Conversation.RAPInfoLevelResp$[FrameNumber],
+				Conversation.RAPOpcodeResp$[FrameNumber] = Conversation.RAPOpcodeTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)],
+				RAPOpcode = Conversation.RAPOpcodeResp$[FrameNumber]
+			]
+			_struct RAPRecieve
+			{
+				[RAPErrorCode]
+				UINT16 Win32ErrorCode = WinErrorCodeTable(this);
+				[RAPBias]
+				INT16 Converter;
+				
+				switch (RAPOpcode)
+				{
+					case 0x0000: RAPNetShareEnumResponse           NetShareEnum;            // X/Open?RNetShareEnum   
+					case 0x0001: RAPNetShareGetInfoResponse        NetShareGetInfo;         // X/Open?RNetShareGetInfo 
+					case 0x000D: RAPNetServerGetInfoResponse       NetServerGetInfo;        // X/Open?RNetServerGetInfo  
+					case 0x0038: RAPNetUserGetInfoResponse         NetUserGetInfo;			
+					case 0x003F: RAPNetWkstaGetInfoResponse        NetWkstaGetInfo;			
+					case 0x0045: RAPNetPrintQEnumResponse          NetPrintQEnum;			
+					case 0x0046: RAPNetPrintQGetInfoResponse       NetPrintQGetInfo;		
+					case 0x004D: RAPNetPrintJobGetInfoResponse     NetPrintJobGetInfo; 
+					case 0x0051: struct NetPrintJobDelete {};		
+					case 0x0052: struct NetPrintJobPause {};     
+					case 0x0053: struct NetPrintJobContinue {};
+					case 0x005B: RAPNetRemoteTODResponse           NetRemoteTOD;	
+					case 0x0068: RAPNetServerEnum2Response         NetServerEnum2;          // Microsoft specific  
+					case 0x0073: struct  NetUserPasswordSet2 {};							// Microsoft specific 
+					case 0x0084: RAPNetWkstaUserLogonResponse      NetWkstaUserLogon;       // Microsoft specific  
+					case 0x0085: RAPNetWkstaUserLogoffResponse     NetWkstaUserLogoff;      // Microsoft specific 
+					case 0x0093: struct  NetPrintJobSetInfo {};						    // Microsoft specific  
+					case 0x00D7: RAPNetServerEnum3Response         NetServerEnum3;          // Microsoft specific  
+					default :
+						BLOB(FrameLength - FrameOffset) ObsoleteData = Formatstring("%s(%s) Obsolete Function",RAPOpcodeNameTable(Property.RAPOpcode),Property.RAPOpcode); 
+				}
+			};
+	}
+	switch
+	{
+		case FrameLength > FrameOffset:
+			BLOB(FrameLength - FrameOffset) StringData;
+	}
+}
+
+struct RAPPSTR32 = RAPPSTR32Value ? (RAPStrContent == "" ? "<Empty>" : RAPStrContent) : "Field Not Present"
+{
+	[RAPPSTR32Value = UINT32(FrameData, FrameOffset), RAPStrContent = AsciiString(FrameData, UINT16(FrameData, FrameOffset) - RAPBias + RAPDataOffset)]
+	switch
+	{
+		case RAPPSTR32Value == 0:
+			struct _NotPresent
+			{
+				UINT32 PTR = "Field Not Present";
+			}
+		default:
+			struct _Present
+			{
+				UINT16 PTR = FormatString("0x%X -> %s", this - RAPBias + RAPDataOffset, RAPStrContent == "" ? "<Empty>" : RAPStrContent);
+				UINT16 PTRHigh = "Set to any arbitrary value on send and MUST be ignored on receipt";
+			}
+	}
+}
+
+struct RAPPArray = RAPPArrayValue ? (RAPArrayContent == "" ? "<Empty>" : RAPArrayContent) : "Field Not Present"
+{
+	[  RAPPArrayValue = UINT32(FrameData, FrameOffset), RAPArrayContent = BLOB(FrameData, UINT16(FrameData, FrameOffset) - RAPBias + RAPDataOffset,21) ]
+	switch
+	{
+		case RAPPArrayValue == 0:
+			struct _NotPresent
+			{
+				UINT32 PTR = "Field Not Present";
+			}
+		default:
+			struct _Present
+			{
+				UINT16 PTR = FormatString("0x%X -> %X", this - RAPBias + RAPDataOffset, RAPArrayContent == "" ? "<Empty>" : RAPArrayContent);
+				UINT16 PTRHigh = "Set to any arbitrary value on send and MUST be ignored on receipt";
+			}
+	}
+}
+
+Table RAPOpcodeNameTable(RAPOpcode)
+{
+	switch (RAPOpcode)
+	{
+		case 0x0000: "NetShareEnum";			// X/Open?(RNetShareEnum) & Microsoft							
+		case 0x0001: "NetShareGetInfo";			// X/Open?(RNetShareGetInfo) & Microsoft					
+		case 0x000D: "NetServerGetInfo";		// X/Open?(RNetServerGetInfo) & Microsoft		
+		case 0x0038: "NetUserGetInfo";			// X/Open?& Microsoft		
+		case 0x003F: "NetWkstaGetInfo";			// X/Open?& Microsoft		
+		case 0x0045: "NetPrintQEnum";			// X/Open?& Microsoft					
+		case 0x0046: "NetPrintQGetInfo";		// X/Open?& Microsoft	
+		case 0x004D: "NetPrintJobGetInfo";		// X/Open?& Microsoft		
+		case 0x0051: "NetPrintJobDelete";		// X/Open?& Microsoft			
+		case 0x0052: "NetPrintJobPause";		// X/Open?(RDosPrintJobPause) & Microsoft		
+		case 0x0053: "NetPrintJobContinue";		// X/Open?(RDosPrintJobContinue) & Microsoft 		
+		case 0x005B: "NetRemoteTOD";			// X/Open?& Microsoft    
+		case 0x0068: "NetServerEnum2";			// Microsoft specific 		
+		case 0x0073: "NetUserPasswordSet2";		// Microsoft specific	
+		case 0x0084: "NetWkstaUserLogon";		// Microsoft specific	
+		case 0x0085: "NetWkstaUserLogoff";		// Microsoft specific   
+		case 0x0093: "NetPrintJobSetInfo";		// Microsoft specific		
+		case 0x00D7: "NetServerEnum3";			// Microsoft specific
+		default:     FormatString("%u (0x%X) Unknown Opcode", RAPOpcode , RAPOpcode);
+	}
+}
+
+
+
+Table RAPDescriptorNameTable(descriptor)
+{
+	switch (descriptor)
+	{
+		case 0x42: "(B) BYTE";
+		case 0x44: "(D) DWORD";
+		case 0x46: "(F) FILL";		
+		case 0x4C: "(L) Receive buffer length";
+		case 0x4E: "(N) Auxiliary data structure count";
+		case 0x4F: "(O) API NULL pointer parameter (not on network)";
+		case 0x50: "(P) Parameter number";
+		case 0x54: "(T) Send buffer length";
+		case 0x57: "(W) WORD";
+		case 0x62: "(b) BYTE";
+		case 0x65: "(e) Entries read";
+		case 0x67: "(g) BYTE";
+		case 0x68: "(h) WORD";
+		case 0x69: "(i) DWORD";
+		case 0x72: "(r) Receive buffer (format in data descriptor)";
+		case 0x73: "(s) Send buffer present";
+		case 0x7A: "(z) ASCIIZ";
+		case 0x00: gcsRAPNulTermStr;
+		default:   FormatString("(%c) %s", descriptor, gcsRAPInvalidDescChar);
+	}
+}
+
+Table RAPDescriptorTypeTable(descriptor, direction, class)
+{
+	switch ( descriptor )
+	{
+		case 0x42:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (B) BYTE[]
+		case 0x44:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (D) DWORD[]
+		case 0x46:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (F) FILL[]
+		case 0x4C:  ( class     == 1 ) ? 0x01 : 0x00;   // (L) Receive buffer length
+		case 0x4E:  0x01;                               // (N) Auxiliary data structure count
+		case 0x4F:  0x00;                               // (O) API NULL pointer parameter (not on network)
+		case 0x50:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (P) Parameter number
+		case 0x54:  ( class     == 1 ) ? 0x01 : 0x00;   // (T) Send buffer length
+		case 0x57:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (W) WORD[]
+		case 0x62:  (     class == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (b) BYTE[]
+		case 0x65:  0x08;                               // (e) Entries read
+		case 0x67:  0x08;                               // (g) BYTE[]
+		case 0x68:  0x04;                               // (h) WORD[]
+		case 0x69:  0x04;                               // (i) DWORD[]
+		case 0x72:  ( class     == 1 ) ? 0x08 : 0x00;   // (r) Receive buffer format in data descriptor
+		case 0x73:  ( class     == 1 ) ? 0x02 : 0x00;   // (s) Send buffer present
+		case 0x7A:  ( class     == 1 ) ? 0x01
+				: ( ( direction == 1 ) ? 0x02 : 0x08 ); // (z) ASCIIZ
+		default:    0x00;
+	}
+}
+
+Table RAPDescriptorValidTable(descriptor, class)
+{
+	switch
+	{
+		case ( ( descriptor == 0x42 ) // (B) BYTE
+			|| ( descriptor == 0x44 ) // (D) DWORD
+			|| ( descriptor == 0x46 ) // (F) FILL
+			|| ( descriptor == 0x4F ) // (O) API NULL pointer parameter (not on network)
+			|| ( descriptor == 0x50 ) // (P) Parameter number
+			|| ( descriptor == 0x57 ) // (W) WORD
+			|| ( descriptor == 0x62 ) // (b) BYTE
+			|| ( descriptor == 0x67 ) // (g) BYTE
+			|| ( descriptor == 0x68 ) // (h) WORD
+			|| ( descriptor == 0x69 ) // (i) DWORD			
+			|| ( descriptor == 0x7A ) // (z) ASCIIZ
+			):
+			TRUE;                     // valid for all descriptor string types
+
+		case ( ( descriptor == 0x4C ) // (L) Receive buffer length
+			|| ( descriptor == 0x54 ) // (T) Send buffer length
+			|| ( descriptor == 0x65 ) // (e) Entries read
+			|| ( descriptor == 0x72 ) // (r) Receive buffer (format in data descriptor)
+			|| ( descriptor == 0x73 ) // (s) Send buffer present
+			):
+			( class == 1 )
+				? TRUE : FALSE;       // valid for parameter descriptor strings only
+
+		case ( descriptor == 0x4E ):  // (N) Auxiliary data structure count
+			( class == 2 )
+				? TRUE : FALSE;       // valid for data descriptor strings only
+
+		default:
+			FALSE;
+	}
+}
+
+
+Table RAPDescriptorValidArrayTable(descriptor)
+{
+	switch
+	{
+		case ( ( descriptor == 0x42 ) // (B) BYTE[]
+			|| ( descriptor == 0x44 ) // (D) DWORD[]
+			|| ( descriptor == 0x46 ) // (F) FILL[]
+			|| ( descriptor == 0x57 ) // (W) WORD[]
+			|| ( descriptor == 0x62 ) // (b) BYTE[]			
+			|| ( descriptor == 0x67 ) // (g) BYTE[]
+			|| ( descriptor == 0x68 ) // (h) WORD[]
+			|| ( descriptor == 0x69 ) // (i) DWORD[]			
+			):
+			TRUE;
+		default:
+			FALSE;
+	}
+}
+
+
+Table RAPDescriptorTargetSizeTable(descriptor, direction, class)
+{
+	// direction is valid for the following only:
+	// 1 Send
+	// 2 Receive
+	switch ( descriptor )
+	{
+		case 0x42: 1;                           // (B) BYTE
+		case 0x44: 4;                           // (D) DWORD
+		case 0x46: 1;                           // (F) FILL
+		case 0x4C: ( class == 1 )               // (L) Receive buffer length
+						? 2                            // param descriptor
+						: 0;                           // data/aux descriptors
+		case 0x4E: ( class == 2 )               // (N) Auxiliary data structure count
+						? 2                            // data descriptor
+						: 0;                           // param/aux descriptors
+		case 0x4F: 0;                           // (O) API NULL pointer parameter (not on network)
+		case 0x50: 2;                           // (P) Parameter number
+		case 0x54: 0;                           // (T) Send buffer length
+		case 0x57: 2;                           // (W) WORD
+		case 0x62: ( class == 1 )               // (b) BYTE[]
+					? 1                                // param descriptor
+					: ( direction == 1 ) ? 1           // send data/aux descriptors
+										 : 4;          // recv data/aux descriptors (pointer size)
+		case 0x65: ( ( class  > 1 ) &&           // (e) Entries read
+				     ( direction == 2 ) ) ? 2           // recv data/aux descriptor
+										  : 0;          // send data/aux descriptors, param descriptor
+		case 0x67: ( ( class  > 1 ) &&           // (g) BYTE[]
+					 ( direction == 2 ) ) ? 1           // send data/aux descriptors
+										  : 0;          // recv data/aux descriptors, param descriptor
+		case 0x68: ( ( class == 1 ) &&           // (h) WORD[]
+					 ( direction == 2 ) ) ? 2           // recv param descriptor
+										  : 0;          // send param descriptor, data/aux descriptors
+		case 0x69: ( ( class == 1 ) &&           // (i) DWORD[]
+					 ( direction == 2 ) ) ? 4           // recv param descriptor
+										  : 0;          // send param descriptor, data/aux descriptors
+		case 0x72: 0;                            // (r) Receive buffer (format in data descriptor)
+		case 0x73: 0;                            // (s) Send buffer present
+		case 0x7A: ( class == 1 )                // (z) ASCIIZ
+						? 1                             // param descriptor
+						: ( direction == 1 ) ? 1        // send data/aux descriptors
+											 : 4;       // recv data/aux descriptors (pointer size)
+		default: 0;
+	}
+}
+
+
+Table RAPDescriptorTargetBitCountTable(descriptor, direction, class)
+{
+	// direction is valid for the following only:
+	// 1 Send
+	// 2 Receive
+	switch
+	{
+		case ( descriptor == 0x67 ):      // (g) BYTE[]
+			( ( class  > 1 ) && ( direction == 2 ) )
+				? 8                       // send data/aux descriptors
+				: 0;                      // recv data/aux descriptors, param descriptor
+
+		case ( descriptor == 0x68 ):      // (h) WORD[]
+			( ( class == 1 ) && ( direction == 2 ) )
+				? 16                      // recv param descriptor
+				: 0;                      // send param descriptor, data/aux descriptors
+
+		case ( descriptor == 0x69 ):      // (i) DWORD[]
+			( ( class == 1 ) && ( direction == 2 ) )
+				? 32                      // recv param descriptor
+				: 0;                      // send param descriptor, data/aux descriptors
+
+		case ( ( descriptor == 0x57 )     // (W) WORD[]
+			|| ( descriptor == 0x50 ) ):  // (P) Parameter number
+			16;                           // always 16
+
+		case ( descriptor == 0x44 ) :    // (D) DWORD[]
+			32;                           // always 32
+
+		case ( ( descriptor == 0x62 )     // (b) BYTE[]
+			|| ( descriptor == 0x7A ) ):  // (z) ASCIIZ
+			( class == 1 ) ? 8            // param descriptor
+				: ( direction == 1 ) ? 8  // send data/aux descriptors
+					: 32;                 // recv data/aux descriptors (pointer size)
+
+		case ( descriptor == 0x65 ):      // (e) Entries read
+			( ( class > 1 ) && ( direction == 2 ) )
+				? 16                      // recv data/aux descriptor
+				: 0;                      // send data/aux descriptors, param descriptor
+		 case  (( descriptor == 0x4F )     // (O) API NULL pointer parameter
+			|| ( descriptor == 0x54 )     // (T) Send buffer length
+			|| ( descriptor == 0x72 )     // (r) Receive buffer
+			|| ( descriptor == 0x73 ) ):  // (s) Send buffer
+			0;                            // always 0
+
+		case ( ( descriptor == 0x42 )     // (B) BYTE[]
+			|| ( descriptor == 0x46 ) ):  // (F) FILL[]
+			8;                            // always 8
+
+		case ( descriptor == 0x4C ) :    // (L) Receive buffer length
+			( class == 1 ) ? 16           // param descriptor
+				: 0;                      // data/aux descriptors
+
+		case ( descriptor == 0x4E ):      // (N) Auxiliary data structure count
+			( class == 2 ) ? 16           // data descriptor
+				: 0;                      // param/aux descriptors
+
+		default:
+			0;
+	}
+}
+
+
+Table RAPDescriptorIsPointer(descriptor, direction, class)
+{
+	switch
+	{
+		case ( ( descriptor == 0x62 ) // (b) BYTE[]  (receive data offset, 32 bit integer)
+			|| ( descriptor == 0x7A ) // (z) ASCIIZ  (receive data offset, 32 bit integer)
+			):
+				(  ( direction == 2 ) // receive
+				&& ( class     != 1 ) // data or auxiliary descriptor
+				) ? TRUE : FALSE;
+	}
+}
+
+
+Table RAPParameterDirectionTable(descriptor)
+{
+	switch
+	{
+		// Send
+		case ( ( descriptor == 0x42 ) // (B) BYTE[]
+			|| ( descriptor == 0x44 ) // (D) DWORD[]
+			|| ( descriptor == 0x46 ) // (F) FILL[]
+			|| ( descriptor == 0x50 ) // (P) Parameter number
+			|| ( descriptor == 0x54 ) // (T) Send buffer length
+			|| ( descriptor == 0x57 ) // (W) WORD[]
+			|| ( descriptor == 0x62 ) // (b) BYTE[]			
+			|| ( descriptor == 0x73 ) // (s) Send buffer present		
+			|| ( descriptor == 0x7A ) // (z) ASCIIZ
+			): 1;
+
+		// Receive
+		case ( ( descriptor == 0x65 ) // (e) Entries read
+			|| ( descriptor == 0x67 ) // (g) BYTE[]
+			|| ( descriptor == 0x68 ) // (h) WORD[]
+			|| ( descriptor == 0x69 ) // (i) DWORD[]
+			|| ( descriptor == 0x72 ) // (r) Receive buffer format in data descriptor
+			): 2;
+
+		// Send/Receive
+		case  (descriptor == 0x4C  // (L) Receive buffer length
+			): 3;
+
+		// not present
+		 case ( ( descriptor == 0x4E ) // (N) Auxiliary data structure count
+			|| ( descriptor == 0x4F ) // (O) API NULL pointer parameter (not on network)
+			): 0;
+
+		// not present
+		default:
+			0;
+	}
+}
+
+
+Table RAPDataDirectionTable( descriptor )
+{
+	switch
+	{
+		// Receive
+		case ( ( descriptor == 0x4C ) // (L) Receive buffer length
+			|| ( descriptor == 0x65 ) // (e) Entries read
+			|| ( descriptor == 0x67 ) // (g) BYTE			
+			|| ( descriptor == 0x72 ) // (r) Receive buffer (format in data descriptor)
+			): 2;
+
+		// Send
+		case ( ( descriptor == 0x54 ) // (T) Send buffer length
+			|| ( descriptor == 0x73 ) // (s) Send buffer present
+			): 1;
+
+		default:
+			0;
+	}
+}
+
+Table RAPDescriptorClassNameTable(class)
+{
+	switch ( class )
+	{
+		case 1:  gcsRAPParmStr;
+		case 2:  gcsRAPDataStr;
+		case 3:  gcsRAPAuxStr;
+		default: "";
+	}
+}
+
+
+Table RAPDescriptorCommentFormatTable(descriptor, direction, class, type)
+{
+	switch
+	{
+		case ( direction == 1 ): // Send
+			FormatString(" (%s %s, %u %s %s)", 
+				gcsRAPSendStr,
+				RAPDescriptorClassNameTable( class ),
+				RAPDescriptorTargetBitCountTable( descriptor, direction, class ),
+				gcsRAPBitStr,
+				gcsRAPIntegerStr );
+
+		case ( direction == 2 ) && ( type & 0x05 ): // Receive parameter
+			FormatString(" (%s %s, %u %s %s)", 
+				gcsRAPRecvStr,
+				RAPDescriptorClassNameTable( class ),
+				RAPDescriptorTargetBitCountTable( descriptor, direction, class ),
+				gcsRAPBitStr,
+				gcsRAPIntegerStr );
+
+		case ( direction == 2 ) && ( type & 0x1A ): // Receive data or auxiliary
+			FormatString(" (%s %s, %u %s %s)", 
+				gcsRAPRecvStr,
+				( RAPDescriptorIsPointer( descriptor, direction, class  )
+					? gcsRAPDataOffsetStr
+					: gcsRAPDataStr ),
+				RAPDescriptorTargetBitCountTable( descriptor, direction, class ),
+				gcsRAPBitStr,
+				gcsRAPIntegerStr );
+
+		case ( direction == 3 ) && ( type & 0x05 ): // Send/Receive parameter
+			FormatString(" (%s %s, %u/%u %s %s)", 
+				gcsRAPBothStr,
+				gcsRAPParmStr,
+				RAPDescriptorTargetBitCountTable( descriptor, 1, 1 ),
+				RAPDescriptorTargetBitCountTable( descriptor, 2, 1 ),
+				gcsRAPBitStr,
+				gcsRAPIntegerStr );
+
+		case ( direction == 3 ) && ( type & 0x1A ): // Send/Receive data or auxiliary
+			FormatString(" (%s %s, %u/%u %s %s)", 
+				gcsRAPBothStr,
+				( RAPDescriptorIsPointer( descriptor, direction, class  )
+					? gcsRAPDataDataOffsetStr
+					: gcsRAPDataStr ),
+				RAPDescriptorTargetBitCountTable( descriptor, 1, class ),
+				RAPDescriptorTargetBitCountTable( descriptor, 2, class ),
+				gcsRAPBitStr,
+				gcsRAPIntegerStr );
+
+		default:
+			"";
+	}
+}
+
+
+Table RAPDescriptorFormatTable(descriptor, direction, class, type, length)
+{
+	switch
+	{
+		// send/receive array ([]) types
+		case ( ( descriptor == 0x42 ) // (B) BYTE[]
+			|| ( descriptor == 0x44 ) // (D) DWORD[]
+			|| ( descriptor == 0x46 ) // (F) FILL[]
+			|| ( descriptor == 0x57 ) // (W) WORD[]
+			|| ( descriptor == 0x67 ) // (g) BYTE[]
+			|| ( descriptor == 0x68 ) // (h) WORD[]
+			|| ( descriptor == 0x69 ) // (i) DWORD[]
+			):
+			( direction < 3 )
+				? ( length > 1 )
+					? FormatString("%s[%u]%s",
+						RAPDescriptorNameTable( descriptor ),
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, direction, class, type ))
+					: FormatString("%s%s",
+						RAPDescriptorNameTable( descriptor ),
+						RAPDescriptorCommentFormatTable( descriptor, direction, class, type ))
+				: ( length > 1 )
+					? FormatString("%s[%u]%s, %s[%u]%s",
+						RAPDescriptorNameTable( descriptor ),
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, 1, class, type ),
+						RAPDescriptorNameTable( descriptor ),
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, 2, class, type ))
+					: FormatString("%s%s, %s%s",
+						RAPDescriptorNameTable( descriptor ),
+						RAPDescriptorCommentFormatTable( descriptor, 1, class, type ),
+						RAPDescriptorNameTable( descriptor ),
+						RAPDescriptorCommentFormatTable( descriptor, 2, class, type ));
+
+		// send array ([]) types / Receive pointer (*) to array ([]) types
+		case ( ( descriptor == 0x62 ) // (b) BYTE[]
+			):
+			( direction < 3 )
+				? ( length > 1 )
+					? FormatString("%s%s[%u]%s",
+						RAPDescriptorNameTable( descriptor ),
+						( direction == 2 ) ? "*" : "",
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, direction, class, type ))
+					: FormatString("%s%s%s",
+						RAPDescriptorNameTable( descriptor ),
+						( direction == 2 ) ? "*" : "",
+						RAPDescriptorCommentFormatTable( descriptor, direction, class, type ))
+				: ( length > 1 )
+					? FormatString("%s[%u]%s, %s*[%u]%s",
+						RAPDescriptorNameTable( descriptor ),
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, 1, class, type ),
+						RAPDescriptorNameTable( descriptor ),
+						length,
+						RAPDescriptorCommentFormatTable( descriptor, 2, class, type ))
+					: FormatString("%s%s, %s*%s",
+						RAPDescriptorNameTable( descriptor ),
+						RAPDescriptorCommentFormatTable( descriptor, 1, class, type ),
+						RAPDescriptorNameTable( descriptor ),
+						RAPDescriptorCommentFormatTable( descriptor, 2, class, type ));
+
+		case ( descriptor == 0x7A ):  // (z) ASCIIZ
+			( direction < 3 )
+				? FormatString("%s%s%s",
+					RAPDescriptorNameTable( descriptor ),
+					(direction == 2) ? "*" : "",
+					RAPDescriptorCommentFormatTable( descriptor, direction, class, type ))
+				: FormatString("%s%s, %s*%s",
+					RAPDescriptorNameTable( descriptor ),
+					RAPDescriptorCommentFormatTable( descriptor, 1, class, type ),
+					RAPDescriptorNameTable( descriptor ),
+					RAPDescriptorCommentFormatTable( descriptor, 2, class, type ));
+
+		case ( ( descriptor == 0x4C ) // (L) Receive buffer length
+			|| ( descriptor == 0x50 ) // (P) Parameter number
+			|| ( descriptor == 0x54 ) // (T) Send buffer length
+			|| ( descriptor == 0x65 ) // (e) Entries read			
+			|| ( descriptor == 0x72 ) // (r) Receive buffer format in data descriptor
+			|| ( descriptor == 0x73 ) // (s) Send buffer present
+			):
+			FormatString("%s%s",
+				RAPDescriptorNameTable( descriptor ),
+				RAPDescriptorCommentFormatTable( descriptor, direction, class, type ));
+
+		case ( ( descriptor == 0x4E ) // 0x4E (N) Auxiliary data structure count
+			|| ( descriptor == 0x4F ) // 0x4F (O) API NULL pointer parameter (not on network)
+			):
+			RAPDescriptorNameTable( descriptor );
+
+		default:
+			RAPDescriptorNameTable( descriptor );
+	}
+}
+
+
+Table RAPDescriptorSummaryTable(sendParams, recvParams, sendData, recvData)
+{
+	switch
+	{
+		case ( ( sendParams + recvParams ) > 0 ) && ( ( sendData + recvData ) > 0 ):
+			FormatString("; %s %s %s: %u, %s: %u; %s %s %s: %u, %s: %u",
+				gcsRAPParmStr, gcsRAPOctetsStr, gcsRAPSendStr,
+				sendParams, gcsRAPRecvStr, recvParams,
+				gcsRAPDataStr, gcsRAPOctetsStr, gcsRAPSendStr,
+				sendData, gcsRAPRecvStr, recvData);
+
+		case ( ( sendParams + recvParams ) > 0 ) && ( ( sendData + recvData ) < 1 ):
+			FormatString("; %s %s %s: %u, %s: %u",
+				gcsRAPParmStr, gcsRAPOctetsStr, gcsRAPSendStr,
+				sendParams, gcsRAPRecvStr, recvParams);
+
+		case ( ( sendParams + recvParams ) < 1 ) && ( ( sendData + recvData ) > 0 ):
+			FormatString("; %s %s %s: %u, %s: %u",
+				gcsRAPDataStr, gcsRAPOctetsStr, gcsRAPSendStr,
+				sendData, gcsRAPRecvStr, recvData);
+
+		default:
+			FormatString("; 0 %s and %s %s and %s: %s",
+				gcsRAPSendStr, gcsRAPRecvStr, gcsRAPParmStr,
+				gcsRAPDataStr, gcsRAPOctetsStr );
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPParam
+// ---------------------------------------------------------------------------
+//    Describes a parameter descriptor sized array substrings by consuming
+//    descriptor characters of the form: [descriptor][ASCII decimal digit(s)]
+// Callouts:
+//   struct ParamDescriptor
+//////////////////////////////////////////////////////////////////////////////
+struct RAPParam = RAPArraySummary
+{
+	[RAPValue = 0]
+	UINT8 Param = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+		+ ( RAPDescriptorValidArrayTable( this ) ? "" : gcsRAPInvalidArrayDesc )
+		+ RAPDescriptorFormatTable( this, RAPParamDir, 1, RAPType, 1 );
+	While Digits[ ( UINT8( Framedata, Offset ) >= 0x30 ) && ( UINT8( Framedata, Offset ) <= 0x39 ) ]
+	{
+		[ RAPValue = ( RAPValue * 10 ) + ( UINT8( Framedata, Offset ) & 0x0F ) ]
+		switch
+		{
+			case ( UINT8( Framedata, Offset + 1 ) >= 0x30 ) && ( UINT8( Framedata, Offset + 1 ) <= 0x39 ):
+				_struct ParamLeadDigit
+				{
+					UINT8 Digit = FormatString("%c", this);
+				};
+			default:
+				_struct ParamLastDigit
+				{
+					[
+						// send/receive parameter/data total size: target size * array length
+						RAPSize = RAPSize * RAPValue,
+						RAPPSendParmCount = RAPPSendParmCount + ( ( RAPType == 0x01 ) ? 1 : 0 ),
+						RAPPRecvParmCount = RAPPRecvParmCount + ( ( RAPType == 0x04 ) ? 1 : 0 ),
+						RAPPSendParmSize  = RAPPSendParmSize + ( ( RAPType == 0x01 ) ? RAPSize : 0 ),
+						RAPPSendDataSize  = RAPPSendDataSize + ( ( RAPType == 0x02 ) ? RAPSize : 0 ),
+						RAPPRecvParmSize  = RAPPRecvParmSize + ( ( RAPType == 0x04 ) ? RAPSize : 0 ),
+						RAPPRecvDataSize  = RAPPRecvDataSize + ( ( RAPType == 0x08 ) ? RAPSize : 0 ),
+						Post.RAPArraySummary = RAPDescriptorFormatTable( Param,
+							RAPParamDir, 1, RAPType, RAPValue )
+					]
+					UINT8 Digit = FormatString("%c", this);
+				}
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPParamDescriptor
+// ---------------------------------------------------------------------------
+//    Describes the parameter structure and format by consuming a NUL
+//    terminated ASCII string
+// Callouts:
+//   Protocol RAP (requests)
+//////////////////////////////////////////////////////////////////////////////
+struct RAPParamDescriptor = Property.RAPParamSummary
+{
+	[
+		RAPDirection      = 0,
+		RAPPSendParmCount = 0,
+		RAPPRecvParmCount = 0,
+		RAPPSendParmSize  = 0,
+		RAPPSendDataSize  = 0,
+		RAPPRecvParmSize  = 2, // Status Code always present
+		RAPPRecvDataSize  = 0,		
+		RAPParamSummary   = AsciiString(FrameData,Offset),
+		Conversation.RAPParamDescTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)] = AsciiString(FrameData,Offset),
+		RAPArraySummary  = ""
+	]
+	While ParamDescriptors[ UINT8( Framedata, Offset ) ]
+	{
+		[
+			RAPIsValid   = RAPDescriptorValidTable( UINT8( Framedata, Offset ), 1 ),                   // check validity
+			RAPParamDir  = RAPParameterDirectionTable( UINT8( Framedata, Offset ) ),                   // get direction
+			RAPDirection = RAPDirection | RAPDataDirectionTable( UINT8( Framedata, Offset ) ),         // accumulate direction
+			RAPType      = RAPDescriptorTypeTable( UINT8( Framedata, Offset ), RAPParamDir, 1 ),       // type
+			RAPSize      = RAPDescriptorTargetSizeTable( UINT8( Framedata, Offset ), RAPParamDir, 1 ), // size			
+		]
+		switch 
+		{
+			case ( ( UINT8( Framedata, Offset + 1 ) > 0x39 ) || ( UINT8( Framedata, Offset + 1 ) < 0x30 ) ):
+				_struct ParameterDescriptorScalar
+				{
+					[
+						RAPPSendParmCount = RAPPSendParmCount + ( ( RAPType == 0x01 ) ? 1 : 0 ),
+						RAPPRecvParmCount = RAPPRecvParmCount + ( ( RAPType == 0x04 ) ? 1 : 0 ),
+						// send/receive parameter/data total size: target size
+						RAPPSendParmSize  = RAPPSendParmSize + ( ( RAPType == 0x01 ) ? RAPSize : 0 ),
+						RAPPSendDataSize  = RAPPSendDataSize + ( ( RAPType == 0x02 ) ? RAPSize : 0 ),
+						RAPPRecvParmSize  = RAPPRecvParmSize + ( ( RAPType == 0x04 ) ? RAPSize : 0 ),
+						RAPPRecvDataSize  = RAPPRecvDataSize + ( ( RAPType == 0x08 ) ? RAPSize : 0 )
+					]
+					UINT8 Param = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+						+ RAPDescriptorFormatTable( this, RAPParamDir, 1, RAPType, 1 );
+				};
+			default:
+				_struct ParameterDescriptorArray
+				{
+					RAPParam Param;
+				}
+		}
+	}
+	_struct ParameterDescriptorTermination
+	{
+		[
+			Post.RAPParamSummary = ( RAPParamSummary )
+				? RAPParamSummary
+				+ FormatString("; %u %s, %u %s %s%s",
+					RAPPSendParmCount, gcsRAPSendStr,
+					RAPPRecvParmCount, gcsRAPRecvStr,
+					gcsRAPParmStr,
+					( ( RAPPRecvParmCount == 1 ) ? "" : "s" ))
+//					+ RAPDescriptorSummaryTable( RAPPSendParmSize,
+//						RAPPRecvParmSize, RAPPSendDataSize, RAPPRecvDataSize )
+				: gcsRAPNotPresentStr
+		]
+		UINT8 Param = gcsRAPNulTermStr; // trailing NUL
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPDatum
+// ---------------------------------------------------------------------------
+//    Describes a data sized array descriptor substrings by consuming
+//    descriptor characters of the form: [descriptor][ASCII decimal digit(s)]
+// Callouts:
+//   struct RAPDataDescriptor
+//////////////////////////////////////////////////////////////////////////////
+struct RAPDatum = RAPArraySummary
+{
+	[RAPValue = 0]
+	UINT8 Datum = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+		+ ( RAPDescriptorValidArrayTable( this ) ? "" : gcsRAPInvalidArrayDesc )
+		+ RAPDescriptorFormatTable( this, RAPDirection, 2, RAPType, 1 );
+	While Digits[ ( UINT8( Framedata, Offset ) >= 0x30 ) && ( UINT8( Framedata, Offset ) <= 0x39 ) ]
+	{
+		[ RAPValue = ( RAPValue * 10 ) + ( UINT8( Framedata, Offset ) & 0x0F ) ]
+		switch
+		{
+			case ( UINT8( Framedata, Offset + 1 ) >= 0x30 ) && ( UINT8( Framedata, Offset + 1 ) <= 0x39 ):
+				_struct DatumLeadDigit
+				{
+					UINT8 Digit = FormatString("%c", this);
+				};
+			default:
+				_struct DatumLastDigit
+				{
+					[
+						// send parameter/data total size: target size * array length
+						RAPSize = ( RAPSize * RAPValue ),
+						RAPDSendParmSize = RAPDSendParmSize + ( ( RAPType  == 0x01 ) ? RAPSize : 0 ),
+						RAPDSendDataSize = RAPDSendDataSize + ( ( RAPType  == 0x02 ) ? RAPSize : 0 ),
+						RAPDRecvParmSize = RAPDRecvParmSize + ( ( RAPType  == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPDRecvDataSize = RAPDRecvDataSize + ( ( RAPType  == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+						// receive parameter/data total size: pointer size + ( target size * array length )
+						RAPDRecvParmSize = RAPDRecvParmSize + ( ( RAPRType == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPDRecvDataSize = RAPDRecvDataSize + ( ( RAPRType == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+						Post.RAPArraySummary = RAPDescriptorFormatTable( Datum,
+							RAPDirection, 2, RAPType, RAPValue )
+					]
+					UINT8 Digit = FormatString("%c", this);
+				}
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPDataDescriptor
+// ---------------------------------------------------------------------------
+//    Describes a data buffer structure and format by consuming a NUL
+//    terminated ASCII string
+// Callouts:
+//   Protocol RAP (requests)
+//////////////////////////////////////////////////////////////////////////////
+struct RAPDataDescriptor = RAPDataSummary
+{
+	[
+		RAPDSendParmSize = 0,
+		RAPDSendDataSize = 0,
+		RAPDRecvParmSize = 0,
+		RAPDRecvDataSize = 0,
+		RAPDataSummary   = AsciiString(FrameData,Offset),
+		Conversation.RAPDataDescTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)] = AsciiString(FrameData,Offset),
+		RAPArraySummary  = ""
+	]
+	While DatumDescriptors[ UINT8( Framedata, Offset ) ]
+	{
+		[
+			//
+			//  RAPDirection        RAPType  RAPRType
+			//  ------------------- -------- ------------------------------------
+			//  send data         1 send     send    (zero'd after pointer check)
+			//  receive data      2 recieve  recieve (zero'd after pointer check)
+			//  send/receive data 3 send     recieve
+			//
+			RAPIsValid = RAPDescriptorValidTable( UINT8( Framedata, Offset ), 2 ),         // check validity
+			RAPType    = RAPDescriptorTypeTable( UINT8( Framedata, Offset ),
+							( RAPDirection == 2 ) ? 2 : 1, 2 ),                // type
+			RAPRType   = RAPDescriptorTypeTable( UINT8( Framedata, Offset ),
+							( RAPDirection == 3 ) ? 2 : 1, 2 ),                // reverse type
+			RAPSize    = RAPDescriptorTargetSizeTable( UINT8( Framedata, Offset ), 1, 2 ), // size
+			RAPPSize   = RAPDescriptorTargetSizeTable( UINT8( Framedata, Offset ), 2, 2 ), // reverse size
+			RAPRType   = ( RAPType == RAPRType ) ? 0x00 : RAPRType,            // normalize			
+		]
+		switch 
+		{
+			case ( ( UINT8( Framedata, Offset + 1 ) > 0x39 ) || ( UINT8( Framedata, Offset + 1 ) < 0x30 ) ):
+				_struct DatumDescriptorScalar
+				{
+					[
+						// send parameter/data total size: target size
+						RAPDSendParmSize = RAPDSendParmSize + ( ( RAPType  == 0x01 ) ? RAPSize : 0 ),
+						RAPDSendDataSize = RAPDSendDataSize + ( ( RAPType  == 0x02 ) ? RAPSize : 0 ),
+						RAPDRecvParmSize = RAPDRecvParmSize + ( ( RAPType  == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPDRecvDataSize = RAPDRecvDataSize + ( ( RAPType  == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+						// receive parameter/data total size: pointer size + target size
+						RAPDRecvParmSize = RAPDRecvParmSize + ( ( RAPRType == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPDRecvDataSize = RAPDRecvDataSize + ( ( RAPRType == 0x08 ) ? RAPSize + RAPPSize : 0 )
+					]
+					UINT8 Datum = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+						+ RAPDescriptorFormatTable( this, RAPDirection, 2, RAPType, 1 );
+				};
+			default:
+				_struct DatumDescriptorArray
+				{
+					RAPDatum Datum;
+				}
+		}
+	}
+	_struct DataDescriptorTermination
+	{
+		[
+			Post.RAPDataSummary = ( RAPDataSummary )
+				? RAPDataSummary + RAPDescriptorSummaryTable( RAPDSendParmSize,
+					RAPDRecvParmSize, RAPDSendDataSize, RAPDRecvDataSize )
+				: gcsRAPNotPresentStr
+		]
+		UINT8 Datum = gcsRAPNulTermStr; // trailing NUL
+	}
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPAuxiliary
+// ---------------------------------------------------------------------------
+//    Describes an auxiliary sized array descriptor substrings by consuming
+//    descriptor characters of the form: [descriptor][ASCII decimal digit(s)]
+// Callouts:
+//   struct RAPAuxDescriptor
+//////////////////////////////////////////////////////////////////////////////
+struct RAPAuxiliary = RAPArraySummary
+{
+	[ RAPValue = 0 ]
+	UINT8 Auxiliary = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+		+ ( RAPDescriptorValidArrayTable( this ) ? "" : gcsRAPInvalidArrayDesc )
+		+ RAPDescriptorFormatTable( this, RAPDirection, 3, RAPType, 1 );
+	While Auxiliaries[ ( UINT8( Framedata, Offset ) >= 0x30 ) && ( UINT8( Framedata, Offset ) <= 0x39 ) ]
+	{
+		[ RAPValue = ( RAPValue * 10 ) + ( UINT8( Framedata, Offset ) & 0x0F ) ]
+		switch
+		{
+			case ( UINT8( Framedata, Offset + 1 ) >= 0x30 ) && ( UINT8( Framedata, Offset + 1 ) <= 0x39 ):
+				_struct AuxiliaryLeadDigit
+				{
+					UINT8 AuxDigit = FormatString("%c", this);
+				};
+			default:
+				_struct AuxiliaryLastDigit
+				{
+					[
+						// send parameter/data total size: target size * array length
+						RAPSize = ( RAPSize * RAPValue ),
+						RAPASendParmSize = RAPASendParmSize + ( ( RAPType  == 0x01 ) ? RAPSize : 0 ),
+						RAPASendDataSize = RAPASendDataSize + ( ( RAPType  == 0x02 ) ? RAPSize : 0 ),
+						RAPARecvParmSize = RAPARecvParmSize + ( ( RAPType  == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPARecvDataSize = RAPARecvDataSize + ( ( RAPType  == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+						// receive parameter/data total size: pointer size + ( target size * array length )
+						RAPARecvParmSize = RAPARecvParmSize + ( ( RAPRType == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+						RAPARecvDataSize = RAPARecvDataSize + ( ( RAPRType == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+						Post.RAPArraySummary = RAPDescriptorFormatTable( Auxiliary,
+							RAPDirection, 3, RAPType, RAPValue )
+					]
+					UINT8 AuxDigit = FormatString("%c", this);
+				}
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// struct RAPAuxDescriptor
+// ---------------------------------------------------------------------------
+//    Describes an aux data buffer structure and format by consuming a NUL
+//    terminated ASCII string
+// Callouts:
+//   Protocol RAP (requests)
+//////////////////////////////////////////////////////////////////////////////
+struct RAPAuxDescriptor = RAPAuxSummary
+{
+	[RAPAuxSummary = gcsRAPNotPresentStr]
+			_struct AuxDescriptorInstance
+			{
+				// Table RAPDescriptorValidTable( descriptor, 3 )
+				[
+					RAPASendParmSize = 0,
+					RAPASendDataSize = 0,
+					RAPARecvParmSize = 0,
+					RAPARecvDataSize = 0,
+					RAPAuxSummary    = AsciiString(FrameData,Offset),
+					Conversation.RAPAuxDescTable$[MakeByteArray(SMBTID, SMBPID, SMBMID)] = AsciiString(FrameData,Offset),
+					RAPArraySummary  = ""
+				]
+				While AuxiliaryDescriptors[ UINT8( Framedata, Offset ) ]
+				{
+					[
+						//
+						//  RAPDirection        RAPType  RAPRType
+						//  ------------------- -------- ------------------------------------
+						//  send data         1 send     send    (zero'd after pointer check)
+						//  receive data      2 recieve  recieve (zero'd after pointer check)
+						//  send/receive data 3 send     recieve
+						//
+						RAPIsValid = RAPDescriptorValidTable( UINT8( Framedata, Offset ), 3 ),         // check validity
+						RAPType    = RAPDescriptorTypeTable( UINT8( Framedata, Offset ),
+										( RAPDirection == 2 ) ? 2 : 1, 3 ),                // type
+						RAPRType   = RAPDescriptorTypeTable( UINT8( Framedata, Offset ),
+										( RAPDirection == 3 ) ? 2 : 1, 3 ),                // reverse type
+						RAPSize    = RAPDescriptorTargetSizeTable( UINT8( Framedata, Offset ), 1, 3 ), // size
+						RAPPSize   = RAPDescriptorTargetSizeTable( UINT8( Framedata, Offset ), 2, 3 ), // reverse size
+						RAPRType   = ( RAPType == RAPRType ) ? 0x00 : RAPRType             // normalize
+					]
+					switch 
+					{
+						case ( ( UINT8( Framedata, Offset + 1 ) > 0x39 ) || ( UINT8( Framedata, Offset + 1 ) < 0x30 ) ):
+							_struct AuxiliaryDescriptorScalar
+							{
+								[
+									// send parameter/data total size: target size
+									RAPASendParmSize = RAPASendParmSize + ( ( RAPType  == 0x01 ) ? RAPSize : 0 ),
+									RAPASendDataSize = RAPASendDataSize + ( ( RAPType  == 0x02 ) ? RAPSize : 0 ),
+									RAPARecvParmSize = RAPARecvParmSize + ( ( RAPType  == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+									RAPARecvDataSize = RAPARecvDataSize + ( ( RAPType  == 0x08 ) ? RAPSize + RAPPSize : 0 ),
+									// receive parameter/data total size: pointer size + target size
+									RAPARecvParmSize = RAPARecvParmSize + ( ( RAPRType == 0x04 ) ? RAPSize + RAPPSize : 0 ),
+									RAPARecvDataSize = RAPARecvDataSize + ( ( RAPRType == 0x08 ) ? RAPSize + RAPPSize : 0 )
+								]
+								UINT8 Auxiliary = ( RAPIsValid ? "" : gcsRAPInvalidDescStr )
+									+ RAPDescriptorFormatTable( this, RAPDirection, 3, RAPType, 1 );
+							};
+						default:
+							_struct AuxiliaryDescriptorArray
+							{
+								RAPAuxiliary Auxiliary;
+							}
+					}
+				}
+				_struct AuxiliaryDescriptorTermination
+				{
+					[
+						Post.RAPAuxSummary = ( RAPAuxSummary )
+							? RAPAuxSummary + RAPDescriptorSummaryTable( RAPASendParmSize,
+								RAPARecvParmSize, RAPASendDataSize, RAPARecvDataSize )
+								: gcsRAPNotPresentStr
+					]
+					UINT8 Auxiliary = gcsRAPNulTermStr; // trailing NUL
+				}
+			};
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+// RAP Function and ancillary Structs
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+struct RAPServerTypes = (RAPServerTypesFlag == 0xFFFFFFFF) ? "SV_TYPE_ALL: All" :
+				  ( Workstation ?      " Wksta"  : "" ) // SV_TYPE_WORKSTATION
+					+ ( Server ?           " Srv"    : "" ) // SV_TYPE_SERVER
+					+ ( Sqlserver ?        " Sql"    : "" ) // SV_TYPE_SQLSERVER
+					+ ( DomainCtrl ?       " PDC"    : "" ) // SV_TYPE_DOMAIN_CTRL
+					+ ( DomainBakctrl ?    " BDC"    : "" ) // SV_TYPE_DOMAIN_BAKCTRL
+					+ ( TimeSource ?       " Time"   : "" ) // SV_TYPE_TIME_SOURCE
+					+ ( AFP ?              " Afp"    : "" ) // SV_TYPE_AFP
+					+ ( Novell ?           " Novell" : "" ) // SV_TYPE_NOVELL
+					+ ( DomainMember ?     " Member" : "" ) // SV_TYPE_DOMAIN_MEMBER
+					+ ( PrintqServer ?     " Print"  : "" ) // SV_TYPE_PRINTQ_SERVER
+					+ ( DialinServer ?     " RAS"    : "" ) // SV_TYPE_DIALIN_SERVER
+					+ ( ServerUnix ?       " Unix"   : "" ) // SV_TYPE_SERVER_UNIX
+					+ ( NT ?               " NT"     : "" ) // SV_TYPE_NT
+					+ ( WFW ?              " WFW"    : "" ) // SV_TYPE_WFW
+					+ ( ServerMFPN ?       " MFPN"   : "" ) // SV_TYPE_SERVER_MFPN
+					+ ( ServerNT ?         " NT Srv" : "" ) // SV_TYPE_SERVER_NT
+					+ ( PotentialBrowser ? " Potential Browser"  : "" ) // SV_TYPE_POTENTIAL_BROWSER
+					+ ( BackupBrowser ?    " Backup Browser"     : "" ) // SV_TYPE_BACKUP_BROWSER
+					+ ( MasterBrowser ?    " Master Browser"     : "" ) // SV_TYPE_MASTER_BROWSER
+					+ ( DomainMaster ?     " Dom Master" : "" ) // SV_TYPE_DOMAIN_MASTER
+					+ ( Windows ?          " Win"        : "" ) // SV_TYPE_WINDOWS
+					+ ( DFS ?              " DFS"        : "" ) // SV_TYPE_DFS
+					+ ( ClusterVSNT && ClusterVSNT
+						? ( ClusterVSNT ?  " VS Cluster" : " Cluster" ) // SV_TYPE_CLUSTER_VS_NT, SV_TYPE_CLUSTER_NT
+						: "" )
+					+ ( Terminalserver ?   " TS"         : "" ) // SV_TYPE_TERMINALSERVER
+					+ ( DCE ?              " DCE"        : "" ) // SV_TYPE_DCE
+					+ ( AlternateXport ?   " AltXport"   : "" ) // SV_TYPE_ALTERNATE_XPORT
+					+ ( LocalListOnly ?    " LocalList"  : "" ) // SV_TYPE_LOCAL_LIST_ONLY
+					+ ( DomainEnum ?       " Domain"     : "" ) // SV_TYPE_DOMAIN_ENUM
+{
+	[RAPServerTypesFlag = UINT32(FrameData,Offset)]
+	UINT32 Workstation:1 = FormatString("     (%s) %s workstations",                                 this.ToBitString, (this ? "All" : "No"));
+	UINT32 Server:1 = FormatString("          (%s) %s computers with the server service running",    this.ToBitString, (this ? "All" : "No"));
+	UINT32 Sqlserver:1 = FormatString("       (%s) %s running Microsoft SQL Server",                 this.ToBitString, (this ? "All" : "No"));
+	UINT32 DomainCtrl:1 = FormatString("      (%s) %s primary domain controllers",                   this.ToBitString, (this ? "All" : "No"));
+	UINT32 DomainBakctrl:1 = FormatString("   (%s) %s backup domain controllers",                    this.ToBitString, (this ? "All" : "No"));
+	UINT32 TimeSource:1 = FormatString("      (%s) %s Time servers",                                 this.ToBitString, (this ? "All" : "No"));
+	UINT32 AFP:1 = FormatString("             (%s) %s Apple File Protocol servers",                  this.ToBitString, (this ? "All" : "No"));
+	UINT32 Novell:1 = FormatString("          (%s) %s Novell servers",                               this.ToBitString, (this ? "All" : "No"));
+	UINT32 DomainMember:1 = FormatString("    (%s) %s LAN Manager 2.x domain members",               this.ToBitString, (this ? "All" : "No"));
+	UINT32 PrintqServer:1 = FormatString("    (%s) %s print servers",                                this.ToBitString, (this ? "All" : "No"));
+	UINT32 DialinServer:1 = FormatString("    (%s) %s dial-in servers",                              this.ToBitString, (this ? "All" : "No"));
+	UINT32 ServerUnix:1 = FormatString("      (%s) %s Unix/Xenix servers",                           this.ToBitString, (this ? "All" : "No"));
+	UINT32 NT:1 = FormatString("              (%s) %s Windows NT workstations or servers",           this.ToBitString, (this ? "All" : "No"));
+	UINT32 WFW:1 = FormatString("             (%s) %s Windows for Workgroups servers",               this.ToBitString, (this ? "All" : "No"));
+	UINT32 ServerMFPN:1 = FormatString("      (%s) %s Microsoft File and Print for NetWare servers", this.ToBitString, (this ? "All" : "No"));
+	UINT32 ServerNT:1 = FormatString("        (%s) %s non-domain controller servers",                this.ToBitString, (this ? "All" : "No"));
+	UINT32 PotentialBrowser:1 = FormatString("(%s) %s servers that can run the browser service",     this.ToBitString, (this ? "All" : "No"));
+	UINT32 BackupBrowser:1 = FormatString("   (%s) %s backup browsers",                              this.ToBitString, (this ? "All" : "No"));
+	UINT32 MasterBrowser:1 = FormatString("   (%s) %s master browsers",                              this.ToBitString, (this ? "All" : "No"));
+	UINT32 DomainMaster:1 = FormatString("    (%s) %s domain master browsers",                       this.ToBitString, (this ?" All" : "No"));
+	UINT32 Reserved1:2 = FormatString("       (%s)", this.ToBitString);
+	UINT32 Windows:1 = FormatString("         (%s) %s Windows 95 or later",                          this.ToBitString, (this ? "All" : "No"));
+	UINT32 DFS:1 = FormatString("             (%s) %s DFS root servers",                             this.ToBitString, (this ? "All" : "No"));
+	UINT32 ClusterNT:1 = FormatString("       (%s) %s NT Clusters",                                  this.ToBitString, (this ? "All" : "No"));
+	UINT32 Terminalserver:1 = FormatString("  (%s) %s Terminal Servers",                             this.ToBitString, (this ? "All" : "No"));
+	UINT32 ClusterVSNT:1 = FormatString("     (%s) %s NT Cluster Virtual Server Names",              this.ToBitString, (this ? "All" : "No"));
+	UINT32 DCE:1 = FormatString("             (%s) %sIBM DSS (Directory & Security Services)",       this.ToBitString, (this ? "All" : "No"));
+	UINT32 Reserved2:1 = FormatString("       (%s)", this.ToBitString);
+	UINT32 AlternateXport:1 = FormatString("  (%s) %seturn list for alternate transport",            this.ToBitString, (this ? "R" : "Do not r"));
+	UINT32 LocalListOnly:1 = FormatString("   (%s) %seturn local list only",                         this.ToBitString, (this ? "R" : "Do not r"));
+	UINT32 DomainEnum:1 = FormatString("      (%s) %snumerate primary domain",                       this.ToBitString, (this ? "E" : "Do not e"));
+}
+
+[RAPFuncSummary = RAPWkstaInfo10.ToString]
+struct RAPWkstaInfo10 = FormatString("ComputerName = %s, UserName = %s", pComputerName.ToString, pUserName.ToString)
+{
+	RAPPSTR32 pComputerName;
+	RAPPSTR32 pUserName;
+	RAPPSTR32 pLanGroup;
+	UINT8  VerMajor;
+	UINT8  VerMinor;
+	RAPPSTR32 pLogonDomain;
+	RAPPSTR32 pOthDomains;
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// RAPFunctions
+
+//****************************************************************************
+//
+// RAPFunc 0x0000: NetShareEnum
+//
+//****************************************************************************
+Table RAPNetShareInfoLevelTable( Level )
+{
+	switch ( Level )
+	{
+		case  0: "(0) SHARE_INFO_0";
+		case  1: "(1) SHARE_INFO_1";
+		case  2: "(2) SHARE_INFO_2";
+		case 50: "(50) SHARE_INFO_50";
+		case 502:"(502) SHARE_INFO_502";
+		default: FormatString("(%u) Unknown Share information level", Level);
+	}
+}
+
+Table RAPNetShareTypeTable( shareType )
+{
+	switch ( shareType )
+	{
+		case   0: "(0) STYPE_DISKTREE";
+		case   1: "(1) STYPE_PRINTQ";
+		case   2: "(2) STYPE_DEVICE";
+		case   3: "(3) STYPE_IPC";
+		default:  FormatString("Invalid share type: (%d)", shareType);
+	}
+}
+
+//#define SHI_USES_UNLIMITED      (DWORD)-1
+[RAPFuncSummary = RAPNetShareInfo0.ToString]
+struct RAPNetShareInfo0 = FormatString("NetName = %s", NetName)
+{
+	AsciiString(13) NetName;
+}
+
+[RAPFuncSummary = RAPNetShareInfo1.ToString]
+struct RAPNetShareInfo1 = FormatString("%s - %s", NetName, Type.ToString)
+{
+	AsciiString(13) NetName;
+	UINT8           Pad;
+	UINT16			Type = RAPNetShareTypeTable(this);
+	RAPPSTR32       pRemark;
+}
+
+[RAPFuncSummary = RAPNetShareInfo2.ToString]
+struct RAPNetShareInfo2 = FormatString("%s - %s", NetName, Type.ToString)
+{
+    AsciiString(13) NetName;
+	UINT8           Pad1;
+	UINT16			Type = RAPNetShareTypeTable(this);
+    RAPPSTR32       Remark;
+	INT16           MaxUses = FormatString("%d (0x%X)%s", this, this, ((this == 0xffff) ? " (Unlimited)" : ""));
+    UINT16          CurrentUses;
+	RAPPSTR32       pRemark;
+    AsciiString(9)  Passwd;
+	UINT8           Pad2;
+}
+
+// ParameterDescriptor: WrLeh
+struct RAPNetShareEnumRequest
+{
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPNetShareInfoLevelTable(this);
+	UINT16 ReceiveBufferSize;
+}
+
+[RAPFrameSummary = RAPNetShareEnumResponse.ToString]
+struct RAPNetShareEnumResponse = FormatString("Count = %u", EntriesReturned)
+{
+	UINT16 EntriesReturned;
+    UINT16 EntriesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case EntriesReturned > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0: RAPNetShareInfo0 NetShareInfo0[EntriesReturned];
+				case 1: RAPNetShareInfo1 NetShareInfo1[EntriesReturned];
+				case 2: RAPNetShareInfo2 NetShareInfo2[EntriesReturned];
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0001: NetShareGetInfo
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetShareGetInfoRequest.ToString]
+struct RAPNetShareGetInfoRequest = FormatString("NetName = %s", NetName)
+{
+	AsciiString NetName;
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPNetShareInfoLevelTable( this );
+	UINT16 BufferLength;
+}
+
+[RAPFrameSummary = RAPNetShareGetInfoResponse.ToString]
+struct RAPNetShareGetInfoResponse = RAPFuncSummary
+{
+    UINT16 BufferLength;
+    switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch 
+	{
+		case BufferLength > 0:
+			switch (RAPInfoLevel)
+			{
+				case 0:
+					RAPNetShareInfo0 NetShareInfo0;
+				case 1:
+					RAPNetShareInfo1 NetShareInfo1;
+				case 2:
+					RAPNetShareInfo2 NetShareInfo2;
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x000D: NetServerGetInfo
+//
+//****************************************************************************
+Table RAPNetServerInfoMinorVersionTable(value)
+{
+	switch (value)
+	{
+		case 0x00: "Operating system is Windows 95, Windows NT 4.0, Windows 2000 Server, Windows Server 2008, or Windows Vista";
+		case 0x01: "Operating system is Windows XP, Windows Server 2008 R2, or Windows 7.";
+		case 0x02: "Operating system is Windows XP Professional x64 Edition, Windows Server 2003, or Windows Server 2003 R2.";
+		case 0x0A: "Windows 98";
+		case 0x5A: "Windows Me";
+		default: FormatString("Undefined version (%u)", value);
+	}
+}
+
+Table RAPNetServerInfoMajorVersionTable(value)
+{
+	switch (value)
+	{
+		case 4: "Operating system is Windows 95, Windows 98, Windows Me, or Windows NT 4.0";
+		case 5: "Operating system is Windows 2000 Server, Windows XP, Windows Server 2003, or Windows Server 2003 R2";
+		case 6: "Operating system is Windows Server 2008 or Windows Vista, Windows Server 2008 R2, or Windows 7.";
+		default: FormatString("Undefined version (%u)",value);
+	}
+}
+
+[RAPFuncSummary = RAPNetServerInfo0.ToString]
+struct RAPNetServerInfo0 = ServerName
+{
+	AsciiString(16) ServerName;
+}
+
+[RAPFuncSummary = RAPNetServerInfo1.ToString]
+struct RAPNetServerInfo1 = FormatString("%s", ServerName)
+{
+	AsciiString(16) ServerName;
+	struct Version
+	{
+		UINT8 MajorVersion = RAPNetServerInfoMajorVersionTable(this);
+		UINT8 MinorVersion = RAPNetServerInfoMinorVersionTable(this);
+	}
+	RAPServerTypes ServerType;
+	RAPPSTR32 pServerComment;
+}
+
+// HERE search: SERVER_INFO_1578
+Table RAPNetServerInfoLevelTable( Level )
+{
+	switch ( Level )
+	{
+		case  0: "(0) SERVER_INFO_0";
+		case  1: "(1) SERVER_INFO_1";
+		case  2: "(2) SERVER_INFO_2";
+		case  3: "(3) SERVER_INFO_3";
+		default: FormatString("%d Invalid Level", Level);
+	}
+}
+
+struct RAPNetServerGetInfoRequest
+{
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPNetServerInfoLevelTable( this );
+	UINT16 ReceiveBufferSize;
+}
+
+[RAPFrameSummary = RAPNetServerGetInfoResponse.ToString]
+struct RAPNetServerGetInfoResponse = RAPFuncSummary
+{
+	UINT16 BufferLength;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case BufferLength > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0:
+					RAPNetServerInfo0 ServerInfo0;
+				case 1:
+					RAPNetServerInfo1 NetServerInfo1;
+			}
+	}
+}
+
+
+//****************************************************************************
+//
+// RAPFunc 0x0038: NetUserGetInfo
+//
+//****************************************************************************
+Table PAPPrivilegeTable (Value)
+{
+	Switch( Value )
+	{
+		case 0x0000: "USER_PRIV_GUEST - Guest privilege";
+		case 0x0001: "USER_PRIV_USER - User privilege";
+		case 0x0002: "USER_PRV_ADMIN - Administrator privilege"; 
+		default: "Unknow Value";
+	}
+}
+
+Table PAPUserInfoAutherFlags ( Value )
+{
+	Switch( Value )
+	{
+		case 0: "Print operator - Print operator";
+		case 1: "AF_OP_COMM - Communications operator";
+		case 2: "AF_OP_SERVER - Server operator";
+		case 3: "AF_OP_ACCOUNTS - Accounts operator";
+		default: "Unknow Flag";
+	}
+}
+
+
+[RAPFrameSummary = RAPNetUserGetInfoRequest.ToString]
+struct RAPNetUserGetInfoRequest = UserName
+{
+	AsciiString UserName;
+	[RAPInfoLevel]
+	UINT16 Level;
+	UINT16 BufferLength;
+}
+
+[RAPFuncSummary = RAPUserInfo0.ToString]
+struct RAPUserInfo0 = Name
+{
+	AsciiString(21) Name;
+}
+
+Struct RAPUserInfoFlags
+{
+	UINT16 Reserved1:8 = FormatString("                           (%s) %s",this.ToBitString,"Reserved");
+	UINT16 UFTEMPDUPLICATEACCOUNT:1 =  FormatString("             (%s) %s",this.ToBitString,this ? "This is an account for users whose primary account is in another domain" : " ");
+	UINT16 UFNORMALACCOUNT:1 = FormatString("                     (%s) %s",this.ToBitString,this ? "This is a default account type that represents a typical user" : " ");
+	UINT16 Reserved2:1 = FormatString("                           (%s) %s",this.ToBitString,"Reserved");
+	UINT16 UFINTERDOMAINTRUSTACCOUNT:1 = FormatString("           (%s) %s",this.ToBitString,this ? "This is a permit to trust account for a system domain that trusts other domains" : " ");
+	UINT16 UFWORKSTATIONTRUSTACCOUNT:1 = FormatString("           (%s) %s",this.ToBitString,this ? "This is a computer account for a computer that is a member of this domain" : " ");
+	UINT16 UFSERVERTRUSTACCOUNT:1 = FormatString("                (%s) %s",this.ToBitString,this ? "This is a computer account for a system backup domain controller that is a member of this domain" : " ");
+	UINT16 Reserved3:2 = FormatString("                           (%s) %s",this.ToBitString,"Reserved");
+	UINT16 UFDONTEXPIREPASSWD:1 = FormatString("                  (%s) %s",this.ToBitString,this ? "The password for this account will never expire" : " ");
+	UINT16 UFMNSLOGONACCOUNT:1 = FormatString("                   (%s) %s",this.ToBitString,this ? "This is an MNS logon account" : " ");
+	UINT16 UFSMARTCARDREQUIRED:1 = FormatString("                 (%s) %s",this.ToBitString,this ? "The user must log on using a smart card" : " ");
+	UINT16 UFTRUSTEDFORDELEGATION:1 = FormatString("              (%s) %s",this.ToBitString,this ? "The service account is trusted for Kerberos delegation" : " ");
+	UINT16 UFNOTDELEGATED:1 = FormatString("                      (%s) %s",this.ToBitString,this ? "The security context of the user will not be delegated to a service" : " ");
+	UINT16 UFUSEDESKEYONLY:1 = FormatString("                     (%s) %s",this.ToBitString,this ? "Use only Data Encryption Standard (DES) encryption types for keys" : " ");
+	UINT16 UFDONTREQUIREPREAUTH:1 = FormatString("                (%s) %s",this.ToBitString,this ? "Account does not require Kerberos pre-authentication for logon" : " ");
+	UINT16 UFPASSWORDEXPIRED:1 = FormatString("                   (%s) %s",this.ToBitString,this ? "The user password has expired" : " ");
+	UINT16 UFTRUSTEDTOAUTHENTICATEFORDELEGATION:1 = FormatString("(%s) %s",this.ToBitString,this ? "The account is enabled for delegation" : " ");
+	UINT16 UFNOAUTHDATAREQUIRED:1 = FormatString("                (%s) %s",this.ToBitString,this ? "No Authentication data is required" : " ");
+	UINT16 UFPARTIALSECRETSACCOUNT:1 = FormatString("             (%s) %s",this.ToBitString,this ? "Partial secrets account" : " ");
+	UINT16 UFUSEAESKEYS:1 = FormatString("                        (%s) %s",this.ToBitString,this ? "Use aes keys" : " ");
+	UINT16 Reserved4:4 = FormatString("                           (%s) %s",this.ToBitString,"Reserved");
+  
+}
+
+[RAPFuncSummary = RAPUserInfo1.ToString]
+struct RAPUserInfo1 = Name
+{
+	AsciiString(21)  Name;
+	UINT8            Pad1;
+	AsciiString(16)  Password;
+    UINT32           PasswordAge;
+    UINT16           Priv =   PAPPrivilegeTable(this);
+    RAPPSTR32        pHomeDir;
+	RAPPSTR32        pComment;
+    RAPUserInfoFlags Flags;
+    RAPPSTR32        pScriptPath;
+}
+
+
+[RAPFuncSummary = RAPUserInfo2.ToString]
+struct RAPUserInfo2 = Name
+{
+	AsciiString(21) Name;
+	UINT8           Pad1;
+	AsciiString(16) Password;
+    UINT32          PasswordAge;
+    UINT16          Priv = PAPPrivilegeTable(this);
+    RAPPSTR32       pHomeDir;
+	RAPPSTR32       pComment;
+    RAPUserInfoFlags Flags;
+    RAPPSTR32       pScriptPath;
+    UINT32          AuthFlags = PAPUserInfoAutherFlags(this);
+    RAPPSTR32       pFullName;
+    RAPPSTR32       pUsrComment;
+    RAPPSTR32       pParms;
+    RAPPSTR32       pWorkstations;
+    UINT32          LastLogon;   // 32-bit unsigned num of seconds.
+    UINT32          LastLogoff;  // 32-bit unsigned num of seconds.
+    UINT32          AcctExpires; // 32-bit unsigned num of seconds.
+    UINT32          MaxStorage;
+    UINT16          UnitsPerWeek;
+	RAPPArray       pLogonHours;
+    UINT16          BadPwCount;
+    UINT16          NumLogons;
+    RAPPSTR32       pLogonServer;
+    UINT16          CountryCode;
+    UINT16          CodePage;
+}
+    
+[RAPFuncSummary = RAPUserInfo10.ToString]
+struct RAPUserInfo10 = Name
+{
+	AsciiString(21) Name;
+	UINT8           Pad1;
+    RAPPSTR32       pComment;
+    RAPPSTR32       pUserComment;
+    RAPPSTR32       pFullName;
+}
+
+[RAPFuncSummary = RAPUserInfo11.ToString]
+struct RAPUserInfo11 = Name
+{
+	AsciiString(21) Name;
+	UINT8           Pad1;
+    RAPPSTR32       pComment;
+    RAPPSTR32       pUserComment;
+    RAPPSTR32       pFullName;
+    UINT16          Priv = PAPPrivilegeTable(this);
+    UINT32          AuthFlags = PAPUserInfoAutherFlags(this);
+    UINT32          PasswordAge;
+    RAPPSTR32       pHomeDir;
+    RAPPSTR32       pParms;
+    UINT32          LastLogon;    // 32-bit unsigned num of seconds.
+    UINT32          LastLogoff;   // 32-bit unsigned num of seconds.
+    UINT16          BadPwCount;
+    UINT16          NumLogons;
+    RAPPSTR32       pLogonServer;
+    UINT16          CountryCode;
+    RAPPSTR32       pWorkstations;
+    UINT32          MaxStorage;
+    UINT16          UnitsPerWeek;
+    RAPPArray       pLogonHours;
+    UINT16          CodePage;
+}
+
+[RAPFrameSummary = RAPNetUserGetInfoResponse.ToString]
+struct RAPNetUserGetInfoResponse = RAPFuncSummary
+{
+    UINT16 TotalAvail;
+    switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case TotalAvail > 0:
+			switch ( RAPInfoLevel )
+			{
+				case  0: RAPUserInfo0  UserInfo0;
+				case  1: RAPUserInfo1  UserInfo1;
+				case  2: RAPUserInfo2  UserInfo2;
+				case 10: RAPUserInfo10 UserInfo10;
+				case 11: RAPUserInfo11 UserInfo11;
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x003F: NetWkstaGetInfo
+//
+//****************************************************************************
+Table RAPNetWkstaInfoLevelTable( Level )
+{
+	switch ( Level )
+	{
+		case  0: "(0) WKSTA_INFO_0";
+		case  1: "(1) WKSTA_INFO_1";
+		case 10: "(10) WKSTA_INFO_10";
+		default: FormatString("%d (u) Invalid Wksta info level", Level, Level);
+	}
+}
+
+
+// 0x003F	NetWkstaGetInfo
+// WrLh
+// WORD	LPBYTE	WORD	WORD
+// WORD;
+// WORD Status, WORD, RBUFLEN;
+// Level	Buffer	BufLen	TotalAvail
+// WORD	Level	LPBYTE	Buffer	WORD	BufLen	WORD	TotalAvail
+
+// struct XS_NET_WKSTA_GET_INFO
+// {
+//     WORD Level;
+//     LPBYTE Buffer;
+//     WORD BufLen;
+//     WORD TotalAvail;
+// }
+//****************************************************************************
+//
+// Function 0x003F: NetWkstaGetInfo
+//
+// WrLh
+// WORD, WORD BufferLength;
+// WORD Status, WORD Converter, WORD BufferLength, WORD;
+// Level	Buffer	BufLen	TotalAvail
+// WORD	Level	LPBYTE	Buffer	WORD	BufLen	WORD	TotalAvail
+//
+//****************************************************************************
+struct RAPNetWkstaGetInfoRequest
+{
+	[RAPInfoLevel]
+	UINT16 Level = RAPNetWkstaInfoLevelTable(this);
+	UINT16 BufferLength;
+}
+
+[RAPFrameSummary = RAPNetWkstaGetInfoResponse.ToString]
+struct RAPNetWkstaGetInfoResponse = RAPFuncSummary
+{
+    UINT16 BufferLength;
+    switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case BufferLength > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 10: RAPWkstaInfo10 WkstaInfo10;
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0045: NetPrintQEnum
+//
+//****************************************************************************
+Table RAPPrintQueueInfoLevelTable(level)
+{
+	switch (level)
+	{
+		case  0: "(0) PrintQueue0";
+		case  1:
+		case  2: "(1) PrintQueue1";
+		case  3:
+		case  4: "(3) PrintQueue3";
+		case  5: "(5) PrintQueue5";
+		default: FormatString("%d (u) Invalid Group info level", Level, Level);
+	}
+}
+
+Table RAPPrintQueueStatusTable(code)
+{
+	switch (code)
+	{
+		case 0x0000: "PRQ_ACTIVE - The queue is accepting print jobs.";
+		case 0x0001: "PRQ_PAUSE - The queue is paused.";
+		case 0x0002: "PRQ_ERROR - The queue is in an error state.";
+		case 0x0003: "PRQ_PENDING - The queue is marked for deletion.";
+		default: FormatString("%d (u) Invalid Group info level", code, code);
+	}
+}
+
+[RAPFuncSummary = RAPPrintQueue0.ToString]
+struct RAPPrintQueue0 = PrintQName
+{
+	AsciiString(13) PrintQName;
+}
+
+[RAPFuncSummary = RAPPrintQueue1.ToString]
+struct RAPPrintQueue1 = PrintQName
+{
+	AsciiString(13) PrintQName;
+	UINT8 Pad1;
+	UINT16 Priority;
+	UINT16 StartTime;
+	UINT16 UntilTime;
+	RAPPSTR32 pSeparatorPageFileName;
+	RAPPSTR32 pPrintProcessorDllName;
+	RAPPSTR32 pPrintDestinationsName;
+	RAPPSTR32 pPrintParameterString;
+	RAPPSTR32 pCommentString;
+	UINT16 PrintQStatus = RAPPrintQueueStatusTable(this);
+	UINT16 PrintJobCount;
+	switch(RAPInfoLevel)
+	{
+		case 2: RAPPrintJobInfo1 PrintJobInfo1[PrintJobCount];
+	}
+}
+
+[RAPFuncSummary = RAPPrintQueue3.ToString]
+struct RAPPrintQueue3 = pPrintQueueName.ToString
+{
+	RAPPSTR32 pPrintQueueName;
+	UINT16 Priority;
+	UINT16 StartTime;
+	UINT16 UntilTime;
+	UINT16 Pad;
+	RAPPSTR32 pSeparatorPageFilename;
+	RAPPSTR32 pPrintProcessorDllName;
+	RAPPSTR32 pPrintParameterString;
+	RAPPSTR32 pCommentString;
+	UINT16 PrintQStatus;
+	UINT16 PrintJobCount;
+	RAPPSTR32 pPrinters;
+	RAPPSTR32 pDriverName;
+	RAPPSTR32 pPrintDriverData;
+	switch(RAPInfoLevel)
+	{
+		case 4: RAPPrintJobInfo2 PrintJobInfo2[PrintJobCount];
+	}
+}
+
+[RAPFuncSummary = RAPPrintQueue5.ToString]
+struct RAPPrintQueue5 = pPrintQueueName.ToString
+{
+	RAPPSTR32 pPrintQueueName;
+}
+
+struct RAPNetPrintQEnumRequest
+{
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPPrintQueueInfoLevelTable(this);
+	UINT16 ReceiveBufferSize;
+	RAPAuxDescriptor AuxDesc;
+}
+
+[RAPFrameSummary = RAPNetPrintQEnumResponse.ToString]
+struct RAPNetPrintQEnumResponse = RAPFuncSummary
+{
+	UINT16 EntriesReturned;
+    UINT16 EntriesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case EntriesReturned > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0: RAPPrintQueue0 PrintQueue0[EntriesReturned];
+				case 1:  
+				case 2: RAPPrintQueue1 PrintQueue1[EntriesReturned];
+				case 3: 
+				case 4: RAPPrintQueue3 PrintQueue3[EntriesReturned];
+				case 5: RAPPrintQueue5 PrintQueue5[EntriesReturned];
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0046: NetPrintQGetInfo
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetPrintQGetInfoRequest.ToString]
+struct RAPNetPrintQGetInfoRequest = PrintQueueName
+{
+	AsciiString PrintQueueName;
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPPrintQueueInfoLevelTable(this);
+	UINT16 ReceiveBufferSize;
+	switch ( RAPInfoLevel )
+	{
+		case 0x0002:			
+			RAPAuxDescriptor AuxDesc;
+	}
+}
+
+[RAPFrameSummary = RAPNetPrintQGetInfoResponse.ToString]
+struct RAPNetPrintQGetInfoResponse = RAPFuncSummary
+{
+	UINT16 TotalBytesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case TotalBytesAvailable > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0: RAPPrintQueue0 PrintQueue0;
+				case 1:
+				case 2: RAPPrintQueue1 PrintQueue1;
+				case 3:
+				case 4: RAPPrintQueue3 PrintQueue3;
+				case 5: RAPPrintQueue5 PrintQueue5;
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x004D: NetPrintJobGetInfo
+//
+//****************************************************************************
+Table RAPNetPrintJobInfoLevelTable( Level )
+{
+	switch ( Level )
+	{
+		case  0: "(0) PRINT_JOB_INFO_0";
+		case  3: "(3) PRINT_JOB_INFO_3";
+		default: FormatString("%d (u) Invalid PrintJob info level", Level, Level);
+	}
+}
+
+Table RAPPrintJobStatusTable(code)
+{
+	switch (code)
+	{
+		case 0x0000: "PRJ_QS_QUEUED - Job is in the queue.";
+		case 0x0001: "PRJ_QS_PAUSED - Job is in the queue but paused.";
+		case 0x0002: "PRJ_QS_SPOOLING - Job is being written to the spooler queue.";
+		case 0x0003: "PRJ_QS_PRINTING - Job is being printed.";
+		case 0x0010: "PRJ_QS_ERROR - Job is in the error state. It MUST be used with one of the following status bits: PRJ_QS_QUEUED, PRJ_QS_PAUSED, PRJ_QS_SPOOLING, or PRJ_QS_PRINTING.";
+		default: FormatString("Undefined value (%u)", code);
+	}
+}
+
+[RAPFuncSummary = RAPPrintJobInfo0.ToString]
+struct RAPPrintJobInfo0 = JobID
+{
+	UINT16 JobID;
+}
+
+[RAPFuncSummary = RAPPrintJobInfo1.ToString]
+struct RAPPrintJobInfo1 = JobStatus.ToString
+{
+	UINT16 JobID;
+	AsciiString(21) UserName;
+	UINT8 Pad;
+	AsciiString(16) NotifyName;
+	AsciiString(10) DataType;
+	RAPPSTR32 pParametersString;
+	UINT16 JobPosition;
+	UINT16 JobStatus = RAPPrintJobStatusTable(this);
+	RAPPSTR32 pJobStatusString;
+	UINT32 TimeSubmitted;
+	UINT32 JobSize;
+	RAPPSTR32 pJobComment;
+}
+
+[RAPFuncSummary = RAPPrintJobInfo2.ToString]
+struct RAPPrintJobInfo2 = JobStatus.ToString
+{
+	UINT16 JobID;
+	UINT16 Priority;
+	RAPPSTR32 pUserName;
+	UINT16 JobPosition;
+	UINT16 JobStatus = RAPPrintJobStatusTable(this);
+	UINT32 TimeSubmitted;
+	UINT32 JobSize;
+	RAPPSTR32 pCommentString;
+	RAPPSTR32 pDocumentName;
+}
+
+[RAPFuncSummary = RAPPrintJobInfo3.ToString]
+struct RAPPrintJobInfo3 = JobStatus.ToString
+{
+	UINT16 JobID;
+	UINT16 Priority;
+	RAPPSTR32 pUserName;
+	UINT16 JobPosition;
+	UINT16 JobStatus = RAPPrintJobStatusTable(this);
+	UINT32 TimeSubmitted;
+	UINT32 JobSize;
+	RAPPSTR32 pCommentString;
+	RAPPSTR32 pDocumentName;
+	RAPPSTR32 pNotifyName;
+	RAPPSTR32 pDataType;
+	RAPPSTR32 pPrintParameterString;
+	RAPPSTR32 pStatusString;
+	RAPPSTR32 pQueueName;
+	RAPPSTR32 pPrintProcessorName;
+	RAPPSTR32 pPrintProcessorParams;
+	RAPPSTR32 pDriverName;
+	RAPPSTR32 pDriverDataOffset;
+	RAPPSTR32 pPrinterNameOffset;
+}
+
+[RAPFrameSummary = RAPNetPrintJobGetInfoRequest.ToString]
+struct RAPNetPrintJobGetInfoRequest = FormatString("JobID = %u", JobID)
+{
+	UINT16 JobID;
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPNetPrintJobInfoLevelTable(this);
+	UINT16 ReceiveBufferLength;
+}
+
+[RAPFrameSummary = RAPNetPrintJobGetInfoResponse.ToString]
+struct RAPNetPrintJobGetInfoResponse = RAPFuncSummary
+{
+	UINT16 TotalBytesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch (RAPInfoLevel)
+	{
+		case 0:
+			RAPPrintJobInfo0 PrintJobInfo0;
+		case 1:
+			RAPPrintJobInfo1 PrintJobInfo1;
+		case 2:
+			RAPPrintJobInfo2 PrintJobInfo2;
+		case 3:
+			RAPPrintJobInfo3 PrintJobInfo3;
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0093: NetPrintJobSetInfo
+//
+//****************************************************************************
+Table RAPNetPrintJobSetInfoRequestParamNumTable(value)
+{
+	switch (value)
+	{
+		case 0x0001: "JobNum";
+		case 0x0002: "UserName";
+		case 0x0003: "NotifyName";
+		case 0x0004: "DataType";
+		case 0x0005: "ParametersString";
+		case 0x0006: "JobPosition";
+		case 0x0007: "JobStatus";
+		case 0x0008: "JobStatus";
+		case 0x0009: "TimeSubmitted";
+		case 0x000A: "JobSize";
+		case 0x000B: "JobComment";
+		default: FormatString("Undefined Value(%d)", value);
+	}
+}
+
+[RAPFrameSummary = RAPNetPrintJobSetInfoRequest.ToString]
+struct RAPNetPrintJobSetInfoRequest = FormatString("JobID = %u", JobID)
+{
+	UINT16 JobID;
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPPrintQueueInfoLevelTable(this);
+	UINT16 BufferSize;
+	UINT16 ParamNum = RAPNetPrintJobSetInfoRequestParamNumTable(this);
+	switch (ParamNum)
+	{
+		case 0x0001: UINT16 JobNum;
+		case 0x0002: AsciiString UserName;
+		case 0x0003: AsciiString NotifyName;
+		case 0x0004: AsciiString DataType;
+		case 0x0005: AsciiString ParametersString;
+		case 0x0006: UINT16 JobPosition;
+		case 0x0007: UINT16 JobStatus;
+		case 0x0008: AsciiString JobStatusString;
+		case 0x0009: UINT32 TimeSubmitted;
+		case 0x000A: UINT32 JobSize;
+		case 0x000B: AsciiString JobComment;
+		default: BLOB(BufferSize) UndefinedValue;
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0051: NetPrintJobDelete
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetPrintJobDeleteRequest.ToString]
+struct RAPNetPrintJobDeleteRequest = FormatString("JobID = %u", JobID)
+{
+	UINT16 JobID;
+}
+
+
+//****************************************************************************
+//
+// RAPFunc 0x0052: NetPrintJobPause
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetPrintJobPauseRequest.ToString]
+struct RAPNetPrintJobPauseRequest = FormatString("JobID = %u", JobID)
+{
+	UINT16 JobID;
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0053: NetPrintJobContinue
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetPrintJobContinueRequest.ToString]
+struct RAPNetPrintJobContinueRequest = FormatString("JobID = %u", JobID)
+{
+	UINT16 JobID;
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x005B: NetRemoteTOD
+//
+//****************************************************************************
+struct RAPNetRemoteTODRequest
+{
+	UINT16 ReceiveBufferSize;
+}
+
+Table RAPTodWeekdayNamesTable( weekdayIndex )
+{
+	switch ( weekdayIndex )
+	{
+		case  0: "Sunday";
+		case  1: "Monday";
+		case  2: "Tuesday";
+		case  3: "Wednesday";
+		case  4: "Thursday";
+		case  5: "Friday";
+		case  6: "Saturday";
+		default: FormatString("(%d) Invalid weekday", weekdayIndex);
+	}
+}
+
+Table RAPTodMonthNamesTable( monthIndex )
+{
+	switch ( monthIndex )
+	{
+		case  1: "January";
+		case  2: "February";
+		case  3: "March";
+		case  4: "April";
+		case  5: "May";
+		case  6: "June";
+		case  7: "July";
+		case  8: "August";
+		case  9: "September";
+		case 10: "October";
+		case 11: "November";
+		case 12: "December";
+		default: FormatString("(%d) Invalid month", monthIndex);
+	}
+}
+
+struct RAPTimeOfDayInfo = FormatString("%d:%02d:%02d.%03d, %s %s %d, %d",
+										Hours, Minutes, Seconds, Hundreds,
+										RAPTodWeekdayNamesTable(Weekday),
+										RAPTodMonthNamesTable(Month), Day, Year)
+{
+	UINT32 TimeSinceJan11970;
+	UINT32 TimeSinceBoot;
+	UINT8 Hours;
+	UINT8 Minutes;
+	UINT8 Seconds;
+	UINT8 Hundreds;
+	INT16 TimeZone = FormatString("%d", this / 60);
+	UINT16 ClockFrequency;
+	UINT8 Day;
+	UINT8 Month = RAPTodMonthNamesTable(this);
+	UINT16 Year;
+	UINT8 Weekday = RAPTodWeekdayNamesTable(this);
+}
+
+[RAPFrameSummary = RAPNetRemoteTODResponse.ToString]
+struct RAPNetRemoteTODResponse = TimeOfDayInfo.ToString
+{
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	RAPTimeOfDayInfo TimeOfDayInfo;
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0068: NetServerEnum2
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetServerEnum2Request.ToString]
+struct RAPNetServerEnum2Request = FormatString("%s in %s", ServerType.ToString, Domain)
+{
+	[RAPInfoLevel]
+	UINT16 InfoLevel = RAPNetServerInfoLevelTable(this);
+	UINT16 ReceiveBufferSize;
+	RAPServerTypes ServerType;
+	AsciiString Domain;
+}
+
+[RAPFrameSummary = RAPNetServerEnum2Response.ToString]
+struct RAPNetServerEnum2Response = FormatString("Count = %u", EntriesReturned)
+{
+    UINT16 EntriesReturned;
+    UINT16 EntriesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case EntriesReturned > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0: RAPNetServerInfo0 NetServerInfo0[EntriesReturned];
+				case 1: RAPNetServerInfo1 NetServerInfo1[EntriesReturned];
+			}
+	}
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0073: NetUserPasswordSet2
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetUserPasswordSet2Request.ToString]
+struct RAPNetUserPasswordSet2Request = EncryptedPassword ? "Password Encrypted" : 
+															FormatString("%s -> %s", Unencrypted.OldPassword, Unencrypted.NewPassword)
+{
+	AsciiString UserName;
+	switch 
+	{
+		case UINT16(FrameData, FrameOffset + 32):
+			_struct Encrypted
+			{
+				BLOB(16) OldPassword;
+				BLOB(16) NewPassword;
+			}
+		default:
+			_struct Unencrypted
+			{
+				AsciiString(16) OldPassword;
+				AsciiString(16) NewPassword;
+			}
+	}
+	UINT16 EncryptedPassword = this ? "Encrypted" : "Not Encrypted";
+	UINT16 RealPasswordLength;
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x0084: NetWkstaUserLogon
+//
+//****************************************************************************
+//
+// WKSTA_16_USER_LOGON_REQUEST_1
+// NET_WKSTA_USER_LOGON
+[RAPFrameSummary = RAPNetWkstaUserLogonRequest.ToString]
+struct RAPNetWkstaUserLogonRequest = FormatString("%s on %s", NetWkstaUserLogonRequestData.UserName, NetWkstaUserLogonRequestData.WorkstationName)
+{
+	UINT16 Reserved;
+    [RAPInfoLevel]
+    UINT16 InfoLevel;
+    NetWkstaUserLogonRequestData WkstaUserLogonBuffer;
+}
+
+struct NetWkstaUserLogonRequestData
+{
+	AsciiString(21) UserName;
+	UINT8  Pad1;
+	AsciiString(15) Password;
+	UINT8  Pad2;
+	AsciiString(16) WorkstationName;
+}
+
+Table RAPLogonCodeTable( logonCode )
+{
+	switch ( logonCode )
+	{
+		case  0: "NERR_Success - No errors encountered";
+		case  5: "ERROR_ACCESS_DENIED - User has insufficient privilege";
+		case  2212: "NERR_LogonScriptError - An error occurred while loading or running the logon script";
+		case  2214: "NERR_StandaloneLogon - The logon was not validated by any server";
+		case  2217: "NERR_NonValidatedLogon - The logon server is running an older software version and cannot validate the logon";
+		case  2240: "NERR_InvalidWorkstation - The user is not allowed to log on from this computer";
+		case  2241: "NERR_InvalidLogonHours - The user is not allowed to log on at this time";
+		case  2242: "NERR_PasswordExpired - Administrator privilege";
+		default: FormatString("(%d) Invalid logon code", logonCode);
+	}
+}
+
+Table RAPUserPrivTable( userPriv )
+{
+	switch ( userPriv )
+	{
+		case  0: "(0) USER_PRIV_GUEST";
+		case  1: "(1) USER_PRIV_USER";
+		case  2: "(2) USER_PRIV_ADMIN";
+		default: FormatString("(%d) Invalid user privilege", userPriv);
+	}
+}
+// NETLOGON_VALIDATION_UAS_INFO
+[RAPFrameSummary = RAPNetWkstaUserLogonResponse.ToString]
+struct RAPNetWkstaUserLogonResponse = NetWkstaUserLogonResponseData.ToString
+{
+    UINT16 TotalBytesAvailable;
+    //#? TODO: can not match real data
+    //UINT16 TotalAvail;
+    switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	RAPNetWkstaUserLogonResponseData NetWkstaUserLogonResponseData;
+}
+
+struct RAPNetWkstaUserLogonResponseData = Code.ToString
+{
+	[RAPDataOffset = FrameOffset]
+	UINT16 Code = RAPLogonCodeTable(this);
+	AsciiString(21) EffName;
+	UINT8  Pad1;
+	UINT16 Priv = RAPUserPrivTable(this);
+	UINT32 AuthFlags = PAPUserInfoAutherFlags(this);
+	UINT16 NumLogons;
+	UINT16 BadPwCount;
+	UINT32 LastLogon;		// Seconds Since 1970
+	UINT32 LastLogoff;		// Seconds Since 1970
+	UINT32 LogoffTime;		// Seconds Since 1970
+	UINT32 KickoffTime;		// Seconds Since 1970
+	UINT32 PasswordAge;		// Seconds Since 1970
+	UINT32 PwCanChange;		// Seconds Since 1970
+	UINT32 PwMustChange;	// Seconds Since 1970
+	RAPPSTR32 pComputer;
+	RAPPSTR32 pDomain;
+	RAPPSTR32 pScriptPath;
+	UINT32 reserved1;
+} 
+
+//****************************************************************************
+//
+// RAPFunc 0x0085: NetWkstaUserLogoff
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetWkstaUserLogoffRequest.ToString]
+struct RAPNetWkstaUserLogoffRequest = NetWkstaUserLogoffRequestData.ToString
+{
+	[RAPInfoLevel]
+	UINT16		    Reserved;
+    UINT16          Level;
+    RAPNetWkstaUserLogoffRequestData NetWkstaUserLogoffRequestData;
+}
+
+struct RAPNetWkstaUserLogoffRequestData = FormatString("%s on %s", Name, Workstation)
+{
+	AsciiString(21) Name;
+	UINT8           Pad1;
+    AsciiString(16) Workstation;
+}
+
+Table RAPLogoffCodeTable( logoffCode )
+{
+	switch ( logoffCode )
+	{
+		case  0: "NERR_Success - No errors encountered";
+		case  5: "ERROR_ACCESS_DENIED - User has insufficient privilege";
+		case  2240: "NERR_InvalidWorkstation - The user is not allowed to log on from this computer";
+		default: FormatString("(%d) Invalid logoff code", logoffCode, logoffCode);
+	}
+}
+
+[RAPFrameSummary = RAPNetWkstaUserLogoffResponse.ToString]
+struct RAPNetWkstaUserLogoffResponse = NetWkstaUserLogoffResponseData.ToString
+{
+    UINT16 TotalAvail;
+    switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	switch 
+	{
+		case RAPErrorCode == 0x00000000 :
+			RAPNetWkstaUserLogoffResponseData NetWkstaUserLogoffResponseData;
+	} 
+}
+
+struct RAPNetWkstaUserLogoffResponseData = Code.ToString
+{
+	UINT16 Code = RAPLogoffCodeTable(this);
+	UINT32 Duration;
+	UINT16 Numlogons;
+}
+
+//****************************************************************************
+//
+// RAPFunc 0x00D7: NetServerEnum3
+//
+//****************************************************************************
+[RAPFrameSummary = RAPNetServerEnum3Request.ToString]
+struct RAPNetServerEnum3Request = FormatString("%s in %s", ServerType.ToString, Domain)
+{
+	[RAPInfoLevel]
+	UINT16 InfoLevel = FormatString("Level %d %s", this, RAPNetServerInfoLevelTable(this));
+	UINT16 ReceiveBufferSize;
+	RAPServerTypes ServerType;
+	AsciiString Domain;
+	AsciiString FirstNameToReturn;
+}
+
+[RAPFrameSummary = RAPNetServerEnum3Response.ToString]
+struct RAPNetServerEnum3Response = FormatString("Count = %s", EntriesReturned)
+{
+	UINT16 EntriesReturned;
+    UINT16 EntriesAvailable;
+	switch 
+	{
+		case SMBDataAlignCount:
+			BLOB(SMBDataAlignCount) Pad;
+	}
+	[RAPDataOffset = FrameOffset]
+	switch
+	{
+		case EntriesReturned > 0:
+			switch ( RAPInfoLevel )
+			{
+				case 0: RAPNetServerInfo0 NetServerInfo0[EntriesReturned];
+				case 1: RAPNetServerInfo1 NetServerInfo1[EntriesReturned];
+			}
+	}
+}
+

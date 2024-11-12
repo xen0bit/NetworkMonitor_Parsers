@@ -1,0 +1,382 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Active Directory Technical Specification
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-ADTS]: Active Directory Technical Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/16/2009
+//#                          Minor, 01/04/2010
+//#
+//####
+
+//3.1.1.3.4.1.18   LDAP_SERVER_ASQ_OID 
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPServerASQControlValue, "1.2.840.113556.1.4.1504")]
+Struct ADTSLDAPServerASQControlValue
+{
+	AsnBerInfo SequenceInfo;
+	switch(Property.LDAPOperation)
+	{
+		Case 3://search request
+		AsnBerOctetString sourceAttribute;
+		Case 4://search response
+		Case 5://search result Done
+		AsnBerEnumerated ResultCode = LDAPResultTable(Property.AsnIntValue);
+	}
+}
+
+//3.1.1.3.4.1.1   LDAP_PAGED_RESULT_OID_STRING
+//3.1.1.3.4.1.15   LDAP_SERVER_TREE_DELETE_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPSearchControlValue, "1.2.840.113556.1.4.319")]
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPSearchControlValue, "1.2.840.113556.1.4.805")]
+struct ADTSSearchControlValue
+{
+	AsnBerInfo WrapperHeader;
+	AsnBerInteger Size;
+	AsnBerOctetString Cookie;
+}
+
+//3.1.1.3.4.1.13   LDAP_SERVER_SORT_OID and LDAP_SERVER_RESP_SORT_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, SortKeyList, "1.2.840.113556.1.4.473")]
+struct ADTSSortKeyList
+{
+	AsnBerInfo SequenceOfHeader;
+	[LDAPSortKeyEndOffset = FrameOffset + Property.LengthValue]
+	While SortKeyList[FrameOffset < LDAPSortKeyEndOffset]
+	{
+		LDAPSortKey SortKey;
+	}
+}
+
+//		RFC 2891
+//      SortResult ::= SEQUENCE {
+//         sortResult  ENUMERATED {
+//             success                   (0), -- results are sorted
+//             operationsError           (1), -- server internal failure
+//             timeLimitExceeded         (3), -- timelimit reached before
+//                                            -- sorting was completed
+//             strongAuthRequired        (8), -- refused to return sorted
+//                                            -- results via insecure
+//                                            -- protocol
+//             adminLimitExceeded       (11), -- too many matching entries
+//                                            -- for the server to sort
+//             noSuchAttribute          (16), -- unrecognized attribute
+//                                            -- type in sort key
+//             inappropriateMatching    (18), -- unrecognized or
+//                                            -- inappropriate matching
+//                                            -- rule in sort key
+//             insufficientAccessRights (50), -- refused to return sorted
+//                                            -- results to this client
+//             busy                     (51), -- too busy to process
+//             unwillingToPerform       (53), -- unable to sort
+//             other                    (80)
+//             },
+//       attributeType [0] AttributeDescription OPTIONAL }
+//3.1.1.3.4.1.13   LDAP_SERVER_SORT_OID and LDAP_SERVER_RESP_SORT_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPSortResult, "1.2.840.113556.1.4.474")]
+struct ADTSLDAPSortResult = ResultCode.ToString
+{
+	AsnBerInfo SequenceHeader;
+	[LDAPSortResultEndOffset = FrameOffset + Property.LengthValue]
+	AsnBerEnumerated ResultCode = LDAPSortResultTable(Property.AsnIntValue);
+	switch
+	{
+		case ( FrameOffset < LDAPSortResultEndOffset ) &&
+			 ( ( UINT8( Framedata, Offset ) & 0x1F ) == 0 ) :
+				AsnBerOctetString attributeType;
+	}
+}
+
+//3.1.1.3.4.1.17   LDAP_CONTROL_VLVREQUEST and LDAP_CONTROL_VLVRESPONSE
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPControlVLVRequest, "2.16.840.1.113730.3.4.9")]
+Struct ADTSLDAPControlVLVRequest
+{
+	AsnBerInfo SequenceInfo;
+	AsnBerInteger beforeCount;
+	AsnBerInteger afterCount;
+	Switch(UINT8( Framedata, Offset ) & 0x1F )
+	{
+		Case 0:
+			Struct
+			{
+				AsnBerInfo SequenceInfo0;
+				AsnBerInteger offset0;
+				AsnBerInteger contentCount;
+			}
+		Case 1:
+			AsnBerOctetString greaterThanOrEqual;
+	}
+	switch 
+	{
+		case ( UINT8( Framedata, Offset ) & 0x1F ) == 4:
+		AsnBerOctetString contextID;
+	}
+}
+
+////3.1.1.3.4.1.17   LDAP_CONTROL_VLVREQUEST and LDAP_CONTROL_VLVRESPONSE
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPControlVLVResponse, "2.16.840.1.113730.3.4.10")]
+Struct ADTSLDAPControlVLVResponse
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger targetPosition;
+	AsnBerInteger contentCount;
+	AsnBerEnumerated virtualListViewResult= LDAPSortResultTable(AsnIntValue);
+	Switch
+	{
+		 case ( UINT8( Framedata, Offset ) & 0x1F ) == 0x00 :
+		 AsnBerOctetString contextIDServer;
+	}
+}
+
+//3.1.1.3.4.1.24   LDAP_SERVER_INPUT_DN_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_INPUT_DN_OID, "1.2.840.113556.1.4.2026")]
+Struct  ADTSLDAPServerInputDNOID
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerOctetString InputDN;
+}
+
+//3.1.1.3.4.1.6   LDAP_SERVER_GET_STATS_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPServerStats, "1.2.840.113556.1.4.970")]
+Struct ADTSLDAPServerStats
+{
+	Switch
+	{
+		Case FrameOffset < FrameLength && FrameOffset < Property.DataFieldFrameLength&&FrameOffset+4==Property.DataFieldFrameLength:
+		UINT32 controlValue=ADTSServerGetStatsControlValueTable(this);
+		Case FrameOffset < FrameLength && FrameOffset <Property.DataFieldFrameLength:
+			ADTSLDAPServerStatsBer ServerStatsBer;
+	}
+}
+
+//3.1.1.3.4.1.6   LDAP_SERVER_GET_STATS_OID
+Struct ADTSLDAPServerStatsBer
+{
+	AsnBerInfo StructHeaderInfo;
+	AsnBerInfo SequenceInfo;
+	[Local.TagValues = "#"]
+	while [FrameLength > FrameOffset]
+	{
+		AsnBerInteger tag=ADTSLDAPServerStatsBerTagValueTable(AsnIntValue);
+		[Local.TagValues = Local.TagValues + AsnIntValue+ "#"]
+		switch (AsnIntValue)
+		{
+			case 1:
+				AsnBerInteger threadCount;
+			case 2:
+				AsnBerInteger coreTime;
+			case 3:
+				AsnBerInteger callTime;
+			case 4:
+				AsnBerInteger searchSubOperations;
+			Case 5:
+				AsnBerInteger entriesReturned;
+			Case 6:
+				AsnBerInteger entriesVisited;
+			Case 7:
+				AsnBerOctetString filter;
+			Case 8:
+				AsnBerOctetString index;
+			Case 9:
+				AsnBerInteger pagesReferenced;
+			Case 10:
+				AsnBerInteger pagesRead;
+			Case 11:
+				AsnBerInteger pagesPreread;
+			Case 12:
+				AsnBerInteger pagesDirtied;
+			Case 13:
+				AsnBerInteger pagesRedirtied;
+			Case 14:
+				AsnBerInteger logRecordCount;
+			Case 15:
+				AsnBerInteger logRecordBytes;
+			Default:
+				Struct
+				{
+					ReportParserError(ParserErrorProtocolClassWindows,"ADTS","Unknown Tag Value in LDAP_SERVER_GET_STATS_OID controlValue") ParserError;
+					BLOB(FrameLength - FrameOffset) ADTSControlsDataLeftBlob;
+				}
+			}
+	}
+	switch (Local.TagValues)
+	{
+		case "#1#2#3#4#": // Win2000
+		case "#1#3#5#6#7#8#":// Win2003
+		case "#1#3#5#6#7#8#9#10#11#12#13#14#15#"://Win2008 and Win2008R2
+			struct {}
+		default:
+			ReportParserError(ParserErrorProtocolClassWindows,"ADTS","Unknown Sequence in LDAP_SERVER_GET_STATS_OID control Value") ParserError;
+			
+	}
+}
+
+//3.1.1.3.4.1.3   LDAP_SERVER_DIRSYNC_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAPRealReplControlValue,"1.2.840.113556.1.4.841")]
+struct ADTSLDAPRealReplControlValue
+{
+	[Property.LDAPRealReplEndOffset = FrameOffset + Property.LengthValue]
+	AsnBerInfo SequenceHeader;
+	switch(Property.LDAPOperation)
+	{
+		case 3: //search request
+			Struct
+			{
+				AsnBerInteger Flags;
+				AsnBerInteger MaxBytes;
+				AsnBerOctetString cookie;
+			}
+		case 4: //search response
+		case 5: //search result Done
+			Struct
+			{
+				AsnBerInteger MoreResults;
+				AsnBerInteger unused;
+				AsnBerOctetString CookieServer;
+			}
+	}
+	
+	switch
+	{
+		case FrameOffset < LDAPRealReplEndOffset &&
+			( UINT8( Framedata, Offset ) & 0x1F ) == 0x01:
+			AsnBerBoolean criticality;
+	}
+}
+
+//3.1.1.3.4.1.11   LDAP_SERVER_SD_FLAGS_OID
+[DataTypeByteOrder=BigEndian]
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_SD_FLAGS,"1.2.840.113556.1.4.801")]
+Struct ADTSLADPServerSDFlags
+{
+	while Flags[FrameOffset < FrameLength && FrameOffset <Property.DataFieldFrameLength]
+	{
+		AsnBerInfo SquenceInfoHeader;
+		AsnBerInfo AsnBerIntegerHeader;
+		switch(Property.LengthValue)
+		{
+			case 4:
+				UINT32 LDAP_SERVER_SEARCH_OPTIONS_Flags
+				{
+					UINT32 OSI:1  = FormatString("     %s (OWNER_SECURITY_INFORMATION) %sretrieve/update Owner identifier of the object", this.ToBitString, this ? "" : "Do NOT");
+					UINT32 GSI:1  = FormatString("     %s (GROUP_SECURITY_INFORMATION) %sretrieve/update Primary group identifier.", this.ToBitString, this ? "" : "Do NOT");
+					UINT32 DSI:1  = FormatString("     %s (DACL_SECURITY_INFORMATION) %sretrieve/update Discretionary ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+					UINT32 SSI:1  = FormatString("     %s (SACL_SECURITY_INFORMATION) %sretrieve/update System ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+					UINT32 Reserved:28 = FormatString("%s (Reserved)", this.ToBitString);
+				};
+			default:
+				AsnBerVariableInteger(Property.LengthValue) flags;
+		}
+	}
+	
+}
+
+//3.1.1.3.4.1.12   LDAP_SERVER_SEARCH_OPTIONS_OID
+[DataTypeByteOrder=BigEndian]
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_SEARCH_OPTIONS, "1.2.840.113556.1.4.1340")]
+Struct ADTSLDAPServerSearchOptions
+{
+		while SearchOptions[FrameOffset < FrameLength && Property.DataFieldFrameLength ]
+		{
+			AsnBerInfo SquenceInfoHeader;
+			AsnBerInfo AsnBerIntegerHeader;
+			switch(Property.LengthValue)
+			{
+				case 4:
+					UINT32 LDAP_SERVER_SEARCH_OPTIONS_Flags
+					{
+						UINT32 SCOPE:1  = FormatString("   %s (SERVER_SEARCH_FLAG_DOMAIN_SCOPE is %sset)", this.ToBitString, this ? "" : "NOT");
+						UINT32 ROOT:1  = FormatString("    %s (SERVER_SEARCH_FLAG_PHANTOM_ROOT is %sset)", this.ToBitString, this ? "" : "NOT");
+						UINT32 Reserved:30 = FormatString("%s (Reserved)", this.ToBitString);
+					};
+				default:
+					AsnBerVariableInteger(Property.LengthValue) flags;
+			}
+		}
+}
+
+//3.1.1.3.4.1.19   LDAP_SERVER_QUOTA_CONTROL_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_QUOTA_CONTROL_OID, "1.2.840.113556.1.4.1852")]
+Struct ADTSLDAPServerQuotaControlOID
+{
+	AsnBerInfo SquenceInfoHeader;
+	AsnBerOctetString querySID;
+}
+
+//3.1.1.3.4.1.2   LDAP_SERVER_CROSSDOM_MOVE_TARGET_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, DAP_SERVER_CROSSDOM_MOVE_TARGET_OID, "1.2.840.113556.1.4.521")]
+Struct ADTSLDAPServerCrossDomMoveTargetOID
+{
+	UnicodeString DNSName;
+}
+
+//3.1.1.3.4.1.5   LDAP_SERVER_EXTENDED_DN_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_EXTENDED_DN_OID, "1.2.840.113556.1.4.529")]
+Struct ADTSLDAPServerExtendedDNOID
+{	
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger Flag;
+}
+
+//3.1.1.3.4.1.16   LDAP_SERVER_VERIFY_NAME_OID
+[RegisterBefore(Controls.controls.UnknownControlValue, LDAP_SERVER_VERIFY_NAME_OID, "1.2.840.113556.1.4.1338")]
+Struct ADTSLDAPServerVerifyNameOID
+{
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger Flags;
+	AsnBerInfo UnicodeStringInfo;
+	UnicodeString(Property.LengthValue/2) ServerName;
+}
+
+Table ADTSServerGetStatsControlValueTable(value)
+{
+	Switch(value)
+	{
+		Case 0:"SO_NORMAL";
+		Case 1:"SO_STATS";
+		Case 2:"SO_ONLY_OPTIMIZE";
+		Case 3:"SO_EXTENDED_FMT";
+	}
+}
+
+//3.1.1.3.4.3   LDAP Capabilitiesf
+Table ADTSDCCapabilitiesTable( value )
+{
+	switch ( value )
+	{
+		case "1.2.840.113556.1.4.800":  FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_OID)", value );
+		case "1.2.840.113556.1.4.1791": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_LDAP_INTEG_OID)", value );
+		case "1.2.840.113556.1.4.1670": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V51_OID)", value );
+		case "1.2.840.113556.1.4.1880": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_ADAM_DIGEST)", value );
+		case "1.2.840.113556.1.4.1851": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_ADAM_OID)", value );
+		case "1.2.840.113556.1.4.1920": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_PARTIAL_SECRETS_OID)", value );
+		case "1.2.840.113556.1.4.1935": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V61_OID)", value );
+		case "1.2.840.113556.1.4.2080": FormatString("%s (LDAP_CAP_ACTIVE_DIRECTORY_V61_R2_OID)", value );
+		default:                        FormatString("%s", value );
+	}
+}
+
+Table ADTSLDAPServerStatsBerTagValueTable(Value)
+{
+	Switch(Value)
+	{
+		Case 1:"threadCountTag";
+		Case 2:"coreTimeTag";
+		Case 3:"callTimeTag";
+		Case 4:"searchSubOperationsTag";
+		Case 5:"entriesReturnedTag";
+		Case 6:"entriesVisitedTag";
+		Case 7:"filterTag";
+		Case 8:"indexTag";
+		Case 9:" pagesReferencedTag";
+		Case 10:"pagesReadTag";
+		Case 11:"pagesPrereadTag";
+		Case 12:"pagesPrereadTag";
+		Case 13:"pagesRedirtiedTag";
+		Case 14:"logRecordCountTag";
+		Case 15:"logRecordBytesTag";
+	}
+}

@@ -1,0 +1,526 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  DirectPlay v4 Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MC-DPL4R]: DirectPlay 4 Reliable Protocol Specification
+//#                          [MC-DPL4CS]: DirectPlay 4 Protocol: Core and Service Providers Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/18/2009
+//#
+//####
+
+/******************************************************************************************/
+//DIRECTPLAY 4 PROTOCOL
+/******************************************************************************************/
+[DataTypeByteOrder = LittleEndian]
+Protocol DirectPlay4 = FormatString( "%s", Property.ParserError == 1 ? Property.ParserErrorMessage : Property.DP4Summary )
+{
+    Switch
+    {
+        Case AsciiString( FrameData, Offset + 20, 4 ) == "play":
+        
+        _Struct
+        {
+            
+            UINT32 MessageSize = FormatString( "Message Size: %d, Token: %s", Size, Token )
+            {
+                UINT32 Size:20;
+                UINT32 Token:12 = Dp4TokenTable( this );
+                
+            };
+            UINT8 SockAddr[16];
+            DirectPlay4Msg(MessageSize) Msg;
+        }
+            
+        Default:
+        Struct {
+            ReportParserError(ParserErrorProtocolClassWindows, "DirectPlay4", "Unknown Packet" ) ProtocolError;
+        }
+    }
+    
+}
+
+/******************************************************************************************/
+//DIRECTPLAY 4 TABLES
+/******************************************************************************************/
+Table Dp4TokenTable( Value )
+{
+    Switch( Value )
+    {
+        Case 0xFAB: FormatString("0x%03X - Message received from a remote DirectPlay machine", Value );
+        Case 0xCAB: FormatString("0x%03X - Message will be forwarded to all registered servers", Value );
+        Case 0xBAB: FormatString("0x%03X - Message received from a DirectPlay server", Value );
+        Case 0xAAB: FormatString("0x%03X - Receiver should reuse the connection for replies", Value );
+    }
+}
+
+Table Dp4CommandTable( Command )
+{
+    Switch( Command )
+    {
+        Case 0x0001: "DpspMsgEnumSessionsReply (1/0x0001)";
+        Case 0x0002: "DpspMsgEnumSessions (2/0x0002)";
+        Case 0x0005: "DpspMsgRequestPlayerID (5/0x0005)";
+        Case 0x0007: "DpspMsgRequestPlayerReply (7/0x0007)";
+        Case 0x0008: "DpspMsgCreatePlayer (8/0x0008)";
+        Case 0x000B: "DpspMsgDeletePlayers (11/0x000B)";
+        Case 0x000D: "DpspMsgAddPlayerToGroup (13/0x000D)";
+        Case 0x0013: "DpspMsgAddForwardRequest (19/0x0013)";
+        Case 0x0015: "DpspMsgPacket (21/0x0015)";
+        Case 0x0016: "DpspMsgPing (22/0x0016)";
+        Case 0x0017: "DpspMsgPingReply (23/0x0017)";
+        Case 0x0029: "DpspMsgSuperEnumPlayersReply (41/0x0029)";
+        Case 0x002D: "DpspMsgChat (45/0x002D)";
+        Case 0x002E: "DpspMsgAddForward (46/0x002E)";
+        Case 0x002F: "DpspMsgAddForwardAck (47/0x002F)";
+        Case 0x0038: "DpspMsgCreatePlayerVerify (56/0x0038)";
+        Default: FormatString("Unrecognized Cmd (%u/0x%04X)", Command, Command);
+    }
+}
+/******************************************************************************************/
+//DIRECTPLAY 4 DATA STRUCTURES
+/******************************************************************************************/
+Struct Dp4Flags = FormatString("0x%08X", UINT32(FrameData,Offset))
+{
+    UINT32 NewPlayerDisabled:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Applications cannot create new players in this session" : "Applications can create new players in this session");
+    UINT32 Reserved:1 = FormatString("              (%s)", this.ToBitString);
+    UINT32 MigrateHost:1 = FormatString("           (%s) %s", this.ToBitString, this ? "If the host quits, then it attempts to migrate to another DirectPlay object" : "If the host quits, then it does not attempt to migrate to another DirectPlay object");
+    UINT32 NoMessageID:1 = FormatString("           (%s) %s", this.ToBitString, this ? "DirectPlay should set the idPlayerTo and idPlayerFrom fields in player messages" : "DirectPlay should not set the idPlayerTo and idPlayerFrom fields in player messages");
+    UINT32 NoPlayerMgmt:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Player management messages not generated" : "Player management messages generated");
+    UINT32 JoinDisabled:1 = FormatString("          (%s) %s", this.ToBitString, this ? "New applications to are not allowed to join the session" : "New applications to are allowed to join the session");
+    UINT32 KeepAlive:1 = FormatString("             (%s) %s", this.ToBitString, this ? "DirectPlay should detect when remote players exit abnormally" : "DirectPlay does not have to detect when remote players exit abnormally");
+    UINT32 NoDataMessages:1 = FormatString("        (%s) %s", this.ToBitString, this ? "DirectPlay should not send a message to all players when a player's remote data changes" : "DirectPlay should send a message to all players when a player's remote data changes");
+    UINT32 SecureServer:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Session belongs to a secure server and needs user authentication" : "Session does not belong to a secure server");
+    UINT32 Private:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Session is private" : "Session is not private");
+    UINT32 PasswordRequired:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Session requires a password for joining" : "Session doesn't require a password for joining");
+    UINT32 MulticastServer:1 = FormatString("       (%s) %s", this.ToBitString, this ? "All messages routed through the server" : "All the messages are not routed through the server");
+    UINT32 ClientServer:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Download information about the DPPLAYER_SERVERPLAYER" : "Do not download information about the DPPLAYER_SERVERPLAYER");
+    UINT32 DirectplayProtocol:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Use the protocol built into DirectPlay for reliability and statistics all the time" : "Does not tell DirectPlay to use the protocol built into DirectPlay for reliability and statistics all the time");
+    UINT32 NoPreserveOrder:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Tells DirectPlay that preserving order of received packets is not important, when using reliable delivery" : "Does not tell DirectPlay that preserving order of received packets is not important, when using reliable delivery");
+    UINT32 OptimizeLatency:1 = FormatString("       (%s) %s", this.ToBitString, this ? "DirectPlay should optimize communication for latency" : "DirectPlay should not optimize communication for latency");
+    UINT32 AllowVoiceRetro:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Lobby launched games that aren't voice enabled to get voice capabilities are allowed" : "Lobby launched games that aren't voice enabled to get voice capabilities are not allowed");
+    UINT32 NoSessionDescMessages:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Transmission of session description changes supressed" : "Transmission of session description changes not supressed");
+    UINT32 Unused:14 = FormatString("                (%s)", this.ToBitString);
+}
+
+Struct Dp4SessionFlags = FormatString("0x%08X", UINT32(FrameData,Offset))
+{
+    UINT32 Available:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Enumerate sessions which can be joined" : "Don't enumerate sessions which can be joined");
+    UINT32 All:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Enumerate all sessions even if they can't be joined" : "Don't enumerate sessions if they cannot be joined");
+    UINT32 Previous:1 = FormatString("         (%s) %s", this.ToBitString, "Obsolete");
+    UINT32 NoRefresh:1 = FormatString("        (%s) %s", this.ToBitString, this ? "The response from previous enums will not be freed" : "The response from previous enums will be freed");
+    UINT32 Async:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Start an asynchronous enum sessions" : "Don't start an asynchronous enum sessions");
+    UINT32 StopAsync:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Stop an asynchronous enum sessions" : "Don't stop an asynchronous enum sessions");
+    UINT32 PasswordRequired:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Enumerate sessions even if they require a password" : "Don't enumerate sessions if they require a password");
+    UINT32 ReturnStatus:1 = FormatString("     (%s) %s", this.ToBitString, this ? "Return enumeration status instead of showing any status dialogs" : "Don't return enumeration status");
+    UINT32 Unused:24 = FormatString("           (%s)", this.ToBitString);
+}
+
+Struct SuperPackedPlayerMask = FormatString("0x%08X", UINT32(FrameData,Offset))
+{
+    UINT32 ShortName:1 = FormatString("      (%s) %s", this.ToBitString, this ? "ShortName is present" : "ShortName is not present");
+    UINT32 LongName:1 = FormatString("       (%s) %s", this.ToBitString, this ? "LongName is present" : "LongName is not present");
+    UINT32 SpDataByte:1 = FormatString("     (%s) %s", this.ToBitString, "SpData occupies 1 BYTE");
+    UINT32 SpDataWord:1 = FormatString("     (%s) %s", this.ToBitString, "SpData occupies 1 WORD");
+    UINT32 PlayerDataByte:1 = FormatString(" (%s) %s", this.ToBitString, "PlayerData occupies 1 BYTE");
+    UINT32 PlayerDataWord:1 = FormatString(" (%s) %s", this.ToBitString, "PlayerData occupies 1 WORD");
+    UINT32 PlayerIdByte:1 = FormatString("   (%s) %s", this.ToBitString, "PlayerId occupies 1 BYTE");
+    UINT32 PlayerIdWord:1 = FormatString("   (%s) %s", this.ToBitString, "PlayerId occupies 1 WORD");
+    UINT32 IdParent:1 = FormatString("       (%s) %s", this.ToBitString, this ? "IDParent is present" : "IDParent is not present");
+    UINT32 ShortcutIdByte:1 = FormatString(" (%s) %s", this.ToBitString, "ShortcutId occupies 1 BYTE");
+    UINT32 ShortcutIdWord:1 = FormatString(" (%s) %s", this.ToBitString, "ShortcutId occupies 1 WORD");
+    UINT32 Unused:21 = FormatString("         (%s)", this.ToBitString);
+}
+
+Struct PackedPlayerFlags = FormatString("0x%08X", UINT32(FrameData,Offset))
+{
+   UINT32 SysPlayer:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Player is the system player" : "Player is not the system player");
+   UINT32 NameSrvr:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Player is the name server" : "Player is not the nameserver");
+   UINT32 PlayerInGroup:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Player belongs to a group" : "Player does not belong to a group");
+   UINT32 PlayerLocal:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Player is on the current machine" : "Player is not on the current machine");
+   UINT32 CreatedPlayerEvent:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Player event allocated by DirectPlay" : "Player event not allocated by DirectPlay");
+   UINT32 Unused:27 = FormatString("             (%s)", this.ToBitString);
+}
+
+Struct DirectPlay4String = DirectPlay4StringSummary
+{
+    Switch( UINT16( FrameData, Offset ) )
+    {
+        Case 0:
+        Struct {
+            [DirectPlay4StringSummary = "<Empty>"] UINT16 NullTerminator = "NULL";
+            UINT16 Padding;
+        }
+
+        Default:
+        Struct {
+            [DirectPlay4StringSummary = String] UnicodeString String;
+        }
+    }
+}
+
+Struct DpSessionDesc2
+{
+    UINT32 Size;
+    Dp4Flags Flags;
+    GUID( FALSE ) GuidInstance;  
+    GUID( FALSE ) GuidApplication;
+    UINT32 MaxPlayers;
+    UINT32 CurrentPlayers;
+    DirectPlay4String SessionName;
+    DirectPlay4String Password;
+    UINT32 Reserved1;
+    UINT32 Reserved2;
+    UINT32 User1;
+    UINT32 User2;
+    UINT32 User3;
+    UINT32 User4;
+}
+
+Struct SecurityDesc
+{
+    UINT32 Size;
+    UINT32 Flags;
+    DirectPlay4String SSPIProvider;
+    DirectPlay4String CAPIProvider;
+    UINT32 CAPIProviderType;
+    UINT32 EncryptionAlgorithm;
+}
+
+Struct DplayiPackedPlayer = FormatString( "Size: %d, Flags: %s, Player ID: %u, Service Provided Data Size: %d", Size, Flags.ToString, ID, SPDataSize ) 
+{
+    UINT32 Size;
+    PackedPlayerFlags Flags;
+    UINT32 ID;
+    UINT16 ShortNameLength;
+    UINT16 LongNameLength;
+    UINT32 Reserved;
+    UINT32 SPDataSize;
+    UINT32 PlayerDataSize;
+    UINT32 NumPlayers;
+    UINT32 IDSysPlayer;    
+    UINT32 FixedSize;
+    UINT32 Version;
+    UINT32 IDParent;
+    Switch {
+        Case ShortNameLength > 0: UnicodeString( (ShortNameLength / 2) ) ShortName;
+    }
+    Switch {
+        Case LongNameLength > 0: UnicodeString( (LongNameLength / 2) ) LongName;
+    }
+    BLOB( SPDataSize ) SpData;
+}
+
+Struct DplayiSuperPackedPlayer
+{
+    UINT32 FixedSize;
+    PackedPlayerFlags Flags;
+    UINT32 ID;
+    SuperPackedPlayerMask Mask;
+
+    Switch( Flags.SysPlayer ) {
+        Case 1: UINT32 Version;
+        Default: UINT32 IDSysPlayer;
+    }
+
+    Switch( Mask.ShortName ) {
+        Case 1: DirectPlay4String ShortName;
+    }
+
+    Switch( Mask.LongName ) {
+        Case 1: DirectPlay4String LongName;
+    }
+
+    Switch
+    {
+        Case Mask.PlayerDataByte == 1:
+        Struct {
+            UINT8  PlayerDataSize;
+        }
+
+        Case Mask.PlayerDataWord == 1:
+        Struct {
+            UINT16 PlayerDataSize;
+        }
+
+        Case Mask.PlayerDataByte == 1 && Mask.PlayerDataWord == 1:
+        Struct {
+            UINT32 PlayerDataSize;
+        }
+    }
+
+    UINT8 PlayerData[ PlayerDataSize ];
+    Switch
+    {
+        Case Mask.SpDataByte == 1:
+        Struct {
+            UINT8  SpDataSize;
+        }
+
+        Case Mask.SpDataWord == 1:
+        Struct {
+            UINT16  SpDataSize;
+        }
+
+        Case Mask.SpDataByte == 1 && Mask.SpDataWord == 1:
+        Struct {
+            UINT32  SpDataSize;
+        }
+    }
+
+    UINT8 SpData[ SpDataSize ];
+
+    Switch( Mask.IdParent ) {
+        Case 1: UINT32 IDParent;
+    }
+
+    Switch
+    {
+        Case Mask.PlayerIdByte == 1:
+        Struct {
+            UINT8  PlayerIdSize;
+        }
+
+        Case Mask.PlayerIdWord == 1:
+        Struct {
+            UINT16  PlayerIdSize;
+        }
+
+        Case Mask.PlayerIdByte == 1 && Mask.PlayerIdWord == 1:
+        Struct {
+            UINT32  PlayerIdSize;
+        }
+    }
+
+    UINT32 PlayerId[ PlayerIdSize ];
+
+    Switch
+    {
+        Case Mask.ShortcutIdByte == 1:
+        Struct {
+            UINT8  ShortcutIdSize;
+        }
+
+        Case Mask.ShortcutIdWord == 1:
+        Struct {
+            UINT16  ShortcutIdSize;
+        }
+
+        Case Mask.ShortcutIdByte == 1 && Mask.ShortcutIdWord == 1:
+        Struct {
+            UINT32  ShortcutIdSize;
+        }
+    }
+
+    UINT32 Shortcut[ ShortcutIdSize ];
+}
+
+
+Struct DirectPlay4Msg(MessageSize) = Property.DP4Summary
+{
+    AsciiString( 4 ) Signature;
+    [DP4Summary = CmdToken.ToString + ", " + MessageSize]
+    UINT32 CmdToken = FormatString( "%s", Command.ToString )
+    {
+        UINT16 Command = Dp4CommandTable( this );
+        UINT16 Version;
+        
+    };
+
+    Switch( CmdToken.Command )
+    {
+        Case 0x0001:
+        [Post.DP4Summary = DP4Summary + ", Session Name: " + SessionName.ToString]
+        _Struct DpspMsgEnumSessionsReply
+        {
+            DpSessionDesc2 Desc;
+            
+            UINT32 NameOffset;
+            UnicodeString SessionName;
+        }
+
+        Case 0x0002:
+        [DP4Summary = DP4Summary + ", Application GUID: " + GuidApplication.ToString + ", Flags: " + Flags.ToString]
+        _Struct DpspMsgEnumSessions
+        {
+            
+            GUID( FALSE ) GuidApplication;
+            UINT32 PasswordOffset;
+            Dp4SessionFlags Flags;
+
+            Switch {
+                Case PasswordOffset > 0: UnicodeString Password;
+            }
+        }
+
+        Case 0x0005:
+        [DP4Summary = DP4Summary + ", Flags: " + Flags.ToString]
+        _Struct DpspMsgRequestPlayerID
+        {
+            Dp4Flags Flags;
+        }
+
+        Case 0x0007:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", ID )]
+        _Struct DpspMsgRequestPlayerReply
+        {
+            UINT32 ID;
+            SecurityDesc SecDesc;
+            UINT32 SSPIProviderOffset;
+            UINT32 CAPIProviderOffset;
+            Switch {
+                Case SSPIProviderOffset > 0: UnicodeString SSPIProvider;
+            }
+            Switch {
+                Case CAPIProviderOffset > 0: UnicodeString CAPIProvider;
+            }
+            HRESULT StatusCode;
+        }
+
+        Case 0x0008:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", PlayerID ) + ", Group ID: " + FormatString( "%u", GroupID ) + ", Player Info - " + PlayerInfo.ToString]
+        _Struct DpspMsgCreatePlayer
+        {
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+            DplayiPackedPlayer PlayerInfo;
+        }
+
+        Case 0x000B:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", PlayerID ) + ", Group ID: " + FormatString( "%u", GroupID )]
+        _Struct DpspMsgDeletePlayers
+        {
+            
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+        }
+
+        Case 0x000D:
+        _Struct DpspMsgAddPlayerToGroup
+        {
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+        }
+
+        Case 0x0013:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", PlayerID ) + ", Group ID: " + FormatString( "%u", GroupID ) + ", Password: " + Password.ToString]
+        _Struct DpspMsgAddForwardRequest
+        {
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+            DplayiPackedPlayer Player;
+            UnicodeString Password;
+            UINT32 TickCount;
+        }
+
+        Case 0x0015:
+        _Struct DpspMsgPacket
+        {
+            GUID(FALSE) guidMessage; // id of the message this packet belongs to
+            UINT32 dwPacketID; // this packet is # x of N
+            UINT32 dwDataSize; // total size of the data in this packet, data follows MSG_PACKET struct
+            UINT32 dwOffset; // offset into reconstructed buffer for this packet
+            UINT32 dwTotalPackets; // total # of packets (N)
+            UINT32 dwMessageSize; // size of buffer to alloc at other end
+            UINT32 dwPackedOffset; // offset into this message of the actual packet data
+
+            DirectPlay4Msg(dwMessageSize) PacketizedMsg;
+        }
+
+        Case 0x0016:
+        _Struct DpspMsgPing
+        {
+            UINT32 IDFrom;
+            UINT32 TickCount;
+        }
+
+        Case 0x0017:
+        _Struct DpspMsgPingReply
+        {
+            UINT32 IDFrom;
+            UINT32 TickCount;
+        }
+
+        Case 0x0029:
+        [DP4Summary = DP4Summary + ""]
+        _Struct DpspMsgSuperEnumPlayersReply
+        {
+            UINT32 NumPlayers;
+            UINT32 NumGroups;
+            UINT32 PackedOffset;
+            UINT32 NumShortcuts;
+            UINT32 DescOffset;
+            UINT32 NameOffset;
+            UINT32 PasswordOffset;
+            DpSessionDesc2 DPSessionDesc;
+
+            Switch {
+                Case NameOffset > 0: DirectPlay4String SessionName;
+            }
+
+            Switch {
+                Case PasswordOffset > 0: DirectPlay4String SessionPassword;
+            }
+
+            DplayiSuperPackedPlayer SuperPackedPlayer[ NumPlayers +  NumGroups + NumShortcuts ];
+        }
+
+        Case 0x002D:
+        _Struct DpspMsgChat
+        {
+            UINT32 IDFrom;
+            UINT32 IDTo;
+            UINT32 Flags;
+            UINT32 MessageOffset;
+            DirectPlay4String Message;
+        }
+        
+        Case 0x002E:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", PlayerID ) + ", Group ID: " + FormatString( "%u", GroupID ) + ", Player Info - " + PlayerInfo.ToString]
+        _Struct DpspMsgAddForward
+        {
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+            DplayiPackedPlayer PlayerInfo;
+        }
+
+        Case 0x002F:
+        [DP4Summary = DP4Summary + ", Player ID: " + FormatString( "%u", ID )]
+        _Struct DpspMsgAddForwardAck
+        {
+            UINT32 ID;
+        }
+
+        Case 0x0038:
+        _Struct DpspMsgCreatePlayerVerify
+        {
+            UINT32 IDTo;
+            UINT32 PlayerID;
+            UINT32 GroupID;
+            UINT32 CreateOffset;
+            UINT32 PasswordOffset;
+            DplayiPackedPlayer Player;
+        }
+    }    
+}
+
+

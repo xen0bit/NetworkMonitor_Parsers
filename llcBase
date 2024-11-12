@@ -1,0 +1,343 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Logic Link Control (IEEE 802.2)
+//#
+//#  Details:                
+//#
+//#  Public References:      http://standards.ieee.org/getieee802/download/802.2-1998.pdf
+//#                          http://www.synapse.de/ban/HTML/P_LAYER2/Eng/P_lay292.html
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+Protocol LLC = FormatString("%s, %s, SSAP = %s, DSAP = %s",
+							Property.LLCSummary,
+							SSAP.CR ? "Response Frame" : "Command Frame",
+							LLCAddressTable(SSAP & 0xFE),
+							LLCAddressTable(DSAP & 0xFE)
+							)
+{
+	[post.property.DSAPValue = DSAP & 0xFE]
+	UINT8 DSAP = FormatString("%s, %s", LLCAddressTable(this & 0xFE), IG ? "Group DSAP": "Individual DSAP")
+	{
+		UINT8 Address:7 = FormatString("(%s) %s", this.ToBitString, LLCAddressTable(this<<1));
+		UINT8 IG:1 = FormatString("     (%s) %s", this.ToBitString,
+										this ? "Group Address":"Individual Address");
+	};
+	
+	UINT8 SSAP = FormatString("%s, %s", LLCAddressTable(this & 0xFE), CR ? "Response": "Command")
+	{
+		UINT8 Address:7 = FormatString("(%s) %s", this.ToBitString, LLCAddressTable(this<<1));
+		UINT8 CR:1 = FormatString("     (%s) %s", this.ToBitString,
+										this ? "Response Frame":"Command Frame");
+	};
+	
+	switch
+	{
+		case (UINT8( Framedata, Offset ) & 0x01) == 0x00 :
+			[LLCSummary = "Information(I) Frame"]
+			UINT16 Information
+			{
+				//Transmitter send sequence number
+				UINT16 TSSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next send sequence number %d  ", this ));
+				UINT16 Type:1 = FormatString("            (%s) %s", this.ToBitString, "Information(I) Frame ");
+				//Transmitter receive sequence number
+				UINT16 TRSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next receive sequence number %d ", this));
+				//Poll/final bit
+				UINT16 PF:1 = FormatString("              (%s) %s", this.ToBitString, LLCControlPFTable(SSAP.CR, this));
+			};
+			
+		case (UINT8( Framedata, Offset ) & 0x03) == 0x01 :
+			[LLCSummary = "Supervisory(S) Frame"]
+			UINT16 Supervisory
+			{
+				UINT16 Reserved:4 = FormatString("        (%s)", this.ToBitString);
+				UINT16 Command:2 = FormatString("         (%s) %s", this.ToBitString, FormatString("S Frame Command %d :%s", this,LLCSFrameCommandTable(this)));
+				UINT16 Type:2 = FormatString("            (%s) %s", this.ToBitString, "Supervisory(S) Frame");
+				//Transmitter receive sequence number
+				UINT16 TRSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next receive sequence number %d ", this));
+				//Poll/final bit
+				UINT16 PF:1 = FormatString("              (%s) %s", this.ToBitString,	LLCControlPFTable(SSAP.CR, this));
+			};
+			
+		default :
+			[LLCSummary = "Unnumbered(U) Frame", LLCUnnumbered]
+			UINT8 Unnumbered = LLCUFrameCommandTable(this)
+			{
+				UINT8 MMM:3 = FormatString(" (%s) %d", this.ToBitString, this);
+				//Poll/final bit
+				UINT8 PF:1 = FormatString("  (%s) %s", this.ToBitString, LLCControlPFTable(SSAP.CR, this));
+				UINT8 MM:2 =FormatString("  (%s)", this.ToBitString);
+				UINT8 Type:2 = FormatString("(%s) %s", this.ToBitString, "Unnumbered(U) Frame");
+			};
+	};
+	
+	//FRMR - Frame Reject
+	//802.2-1998.pdf page 58 Fig 17
+	switch
+	{
+		case ( SSAP.CR == 1 ) &&
+			//offset <= frameLength - 5 &&
+			(Property.LLCUnnumbered & 0xEC) == 0x84:
+			struct FRMRInformation
+			{
+				//Rejected PDU control field
+				switch
+				{
+					case (UINT8( Framedata, Offset ) & 0x01) == 0x00 :
+						UINT16 Information
+						{
+							//Transmitter send sequence number
+							UINT16 TSSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next send sequence number %d", this ));
+							UINT16 Type:1 = FormatString("            (%s) %s", this.ToBitString, "Information(I) Frame");
+							//Transmitter receive sequence number
+							UINT16 TRSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next receive sequence number %d", this));
+							//Poll/final bit
+							UINT16 PF:1 = FormatString("              (%s) %s", this.ToBitString, LLCControlPFTable(UINT8( Framedata, Offset + 3 ) & 0x01, this));
+						};
+						
+					case (UINT8( Framedata, Offset ) & 0x03) == 0x01 :
+						UINT16 Supervisory
+						{
+							UINT16 Reserved:4 = FormatString("        (%s)", this.ToBitString);
+							UINT16 Command:2 = FormatString("         (%s) %s", this.ToBitString, FormatString("S Frame Command %d :%s", this,LLCSFrameCommandTable(this)));
+							UINT16 Type:2 = FormatString("            (%s) %s", this.ToBitString,"Supervisory(S) Frame");
+							//Transmitter receive sequence number
+							UINT16 TRSequenceNumber:7 = FormatString("(%s) %s", this.ToBitString, FormatString("Next receive sequence number %d ", this));
+							//Poll/final bit
+							UINT16 PF:1 = FormatString("              (%s) %s", this.ToBitString, LLCControlPFTable(UINT8( Framedata, Offset + 3 ) & 0x01, this));
+						};
+						
+					default :
+						UINT16 Unnumbered = LLCUFrameCommandTable(UINT8(frameData, offset))+ FormatString("%#x",UINT8(frameData, offset))
+						{
+							UINT16 MMM:3 = FormatString(" (%s) %d", this.ToBitString, this);
+							//Poll/final bit
+							UINT16 PF:1 = FormatString("  (%s) %s", this.ToBitString, LLCControlPFTable(UINT8( Framedata, Offset + 3 ) & 0x01, this));
+							UINT16 MM:2 = FormatString("  (%s) %d", this.ToBitString, this);
+							UINT16 Type:2 = FormatString("(%s) %s", this.ToBitString, "Unnumbered(U) Frame");
+							UINT16 Rsv:8 = FormatString(" (%s)", this.ToBitString);
+						};
+				};
+				//V(S)
+				UINT8 FRMRVariableSend = FormatString("V(S): %d", SendStateVariable)
+				{
+					UINT8 SendStateVariable:7 = FormatString("(%s) %d", this, this.ToBitString);
+					UINT8 Reserved:1 = FormatString("         (%s)", this.ToBitString);
+				};
+				//V(R)
+				UINT8 FRMRVariableReceive = FormatString("V(R): %d, %s", ReceiveStateVariable, CR ? "Response Frame" : "Command Frame")
+				{
+					UINT8 ReceiveStateVariable:7 = FormatString("(%s) %d", this, this.ToBitString);
+					UINT8 CR:1 = FormatString("                  (%s) %s", this.ToBitString, 
+													this ? "Response Frame":"Command Frame");
+				};
+				UINT8 FrameFlags = formatString("%s%s%s%s%s",
+												V ? "V":".",
+												Z ? "Z":".",
+												Y ? "Y":".",
+												X ? "X":".",
+												W ? "W":"."
+												)
+				{
+					UINT8 Reserved:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 V:1 = FormatString("       (%s) %s", this.ToBitString,
+													this ? "PDU N(S) is invalid":"PDU N(S) is valid");
+														
+					UINT8 Z:1 = FormatString("       (%s) %s", this.ToBitString,
+													this ? "PDU N(R) is invalid":"PDU N(R) is valid");
+														
+					UINT8 Y:1 = FormatString("       (%s) %s", this.ToBitString,
+													this ? "PDU Data length is invalid":"PDU Data length is valid");
+														
+					UINT8 X:1 = FormatString("       (%s) %s", this.ToBitString,
+													this ? "PDU Information field is invalid":"PDU Information field is valid");
+														
+					UINT8 W:1 = FormatString("       (%s) %s", this.ToBitString,
+													this ? "PDU is invalid":"PDU is valid");
+				};
+			};
+		//ACn Reponse
+		//802.2-1998.pdf page 59 Fig 19
+		case SSAP.CR == 1 &&
+			//offset <= frameLength - 5 &&
+			(Property.LLCUnnumbered & 0x6C) == 0x64:
+			
+			struct ACnResponseInformation
+			{
+				UINT8 OriginCommandStatus:4 = FormatString(" (%s) %s",this.ToBitString, LLCOriginCommandStatusTable(this));
+				UINT8 OriginResponseStatus:4 = FormatString("(%s) %s",this.ToBitString, LLCOriginResponseStatusTable(this));
+				//Link-service-data-unit
+				switch
+				{
+					case offset < frameLength: AsciiString(frameLength - offset) LinkServiceDataUnit;
+				}
+			};
+	};
+	
+	switch
+	{
+		case FrameOffset < FrameLength:
+			switch(property.DSAPValue)
+			{
+				case 0x06:
+					IPv4 Ipv4;
+				case 0x04:
+				case 0x05:
+				case 0x08:
+				case 0x0C:
+					SNA Sna;
+				case 0x42:
+					SpanTreeBPDU BPDU;
+				case 0x80:
+					XNS Xns;
+				case 0x98:
+					switch(UINT16(FrameData,offset))
+					{
+						case 0x0013:ATMARP ArpAtmarp;
+						default:ARP Arp;
+					}
+				case 0xAA:
+					SNAP  Snap;
+				case 0xE0:
+					IPX Ipx;
+				case 0xF0:
+					NETBIOS Netbios;
+			}
+	}
+}
+Table LLCAddressTable(value)
+{
+	switch(value)
+	{
+		case 0x00:"NULL LSAP";
+		case 0x02:"LLC Sub-Layer Management";
+		case 0x04:"IBM SNA Path Control";
+		case 0x06:"TCP/IP(DoD Internet Protocol)";
+		case 0x08:"IBM SNA";
+		case 0x0C:"IBM SNA";
+		case 0x0E:"PROWAY (IEC955) Network Management and Initialization";
+		case 0x10:"NetWare";
+		case 0x14:"ISO Network Layer (OSLAN 1)";
+		case 0x18:"Texas Instruments";
+		case 0x20:"ISO Network Layer";
+		case 0x32:"DG X.25";
+		case 0x34:"ISO Network Layer";
+		case 0x40:"IBM SNA";
+		case 0x42:"Spanning Tree BPDU";
+		case 0x4E:"EIA RS-511 Manufacturing Message Service";
+		case 0x54:"ISO Network Layer (OSLAN 2)";
+		case 0x5E:"ISI IP";
+		case 0x7E:"ISO 8208 (X.25 over 802.2)";
+		case 0x80:"XNS";
+		case 0x82:"BACnet";
+		case 0x86:"Nestar";
+		case 0x8E:"PROWAY (IEC955) Active Station List Maintenance";
+		case 0x98:"ARP";
+		case 0xAA:"SNAP(Sub-Network Access Protocol)";
+		case 0xBA:"Banyan Vines";
+		case 0xBC:"Banyan Vines";
+		case 0xD4:"IBM Resource Management";
+		case 0xDC:"IBM Dynamic Address Resolution(Name Management)";
+		case 0xE0:"IPX (Novell NetWare)";
+		case 0xF0:"IBM NetBIOS";
+		case 0xF4:"IBM Net Management";
+		case 0xF8:"IRPL(IBM Remote Program Load)";
+		case 0xFA:"Ungermann-Bass";
+		case 0xFC:"IRPL(IBM Remote Program Load)";
+		case 0xFE:"ISO Network Layer Protocols";
+		default  :FormatString("0x%02X", value);
+	}
+}
+
+Table LLCSFrameCommandTable(value)
+{
+	switch(value)
+	{
+		case  0:"RR (receive ready)";
+		case  1:"REJ (reject)";
+		case  2:"RNR (receive not ready)";
+		default:"UnKnown command";
+	}
+}
+
+Table LLCControlPFTable(CR, PF)
+{
+	switch
+	{
+		case CR == 1 && PF == 1:"Final Bit - Acknowledge Required";
+		case CR == 1 && PF == 0:"Final Bit - Acknowledge Not Required";
+		case CR == 0 && PF == 1:"Poll Bit - Response Solicited";
+		case CR == 0 && PF == 0:"Poll Bit - No Response Solicited";
+	}
+}
+
+//# 1-2-3-4--5--6-7-8
+//# 1 1 M M P/F M M M
+//# 1 1 0 0  P  0 0 0   UI command
+//# 1 1 1 1  P  1 0 1   XID command
+//# 1 1 0 0  P  1 1 1   TEST command
+//# 1 1 1 1  P  1 1 0   SABME command
+//# 1 1 0 0  P  0 1 0   DISC command
+//# 1 1 1 0  P  1 1 0   AC0 command
+//# 1 1 1 0  P  1 1 1   AC1 command
+//# 1 1 1 1  F  1 0 1   XID response
+//# 1 1 0 0  F  1 1 1   TEST response
+//# 1 1 0 0  F  1 1 0   UA response
+//# 1 1 1 1  F  0 0 0   DM response
+//# 1 1 1 0  F  0 0 1   FRMR response
+//# 1 1 1 0  F  1 1 0   AC0 response
+//# 1 1 1 0  F  1 1 1   AC1 response
+Table LLCUFrameCommandTable(Command)
+{
+	switch(Command & 0xEC)
+	{
+		case 0x00:"UI - Unnumbered Information";
+		case 0xAC:"XID - Exchange Identification";
+		case 0xE0:"TEST";
+		case 0x6C:"SABME - Set Asynchronous Balanced Mode Extended";
+		case 0x40:"DISC - Disconnect";
+		case 0x64:"AC0 - Acknowledged connectionless information, Seq. 0";
+		case 0xE4:"AC1 - Acknowledged connectionless information, Seq. 1";
+		case 0x60:"UA - Unnumbered Acknowledgment";
+		case 0x0C:"DM - Disconnected Mode";
+		case 0x84:"FRMR - Frame Reject";
+		default  :"Unknown";
+	}
+}
+
+Table LLCOriginCommandStatusTable(status)
+{
+	switch(status)
+	{
+		case 0x0:"Command accepted";
+		case 0x6:"Protocol error";
+		case 0x8:"Unimplemented or inactivated service";
+		case 0x9:"Resources temporarily unavailable";
+		case 0xA:"LLC user interface error";
+		case 0xE:"Permanent implementation-dependent error";
+		case 0xF:"Temporary implementation-dependent error";
+		Default :"Reserved";
+	}
+}
+
+Table LLCOriginResponseStatusTable(status)
+{
+	switch(status)
+	{
+		case 0x0:"Response LSDU present";
+		case 0x2:"Response LSDU not requested";
+		case 0x8:"Unimplemented or inactivated service";
+		case 0x9:"Resources temporarily unavailable";
+		case 0xA:"LLC user interface error";
+		case 0xC:"Response LSDU never submitted";
+		case 0xE:"Permanent implementation-dependent error";
+		case 0xF:"Temporary implementation-dependent error";
+		Default :"Reserved";
+	}
+}
+
+

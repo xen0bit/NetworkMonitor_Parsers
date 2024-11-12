@@ -1,0 +1,200 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  NetBIOS Session Service Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1002
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+// [RFC 1002    Page 29    4.3.  SESSION SERVICE PACKETS]
+[DataTypeByteOrder = BigEndian, DefaultTimeOut = NBTSSConversationTimeout]
+Protocol NbtSS = FormatString("%s%s",
+							Property.NBTSSContinuation ? "NbtSS Continue payload" : NbtSsTypeTable(Property.NBTSsType),
+							Property.NBTSSContinuation ? "" : FormatString(", Length =%d",Property.NBTSSLength)
+							)
+{
+	[BuildConversationWithParent]
+	//Set Property.CompleteFrame to true for all the complete NbtSs frames
+	[Property.CompleteFrame = true]
+	[
+		//
+		// Get Nbtss Type
+		//
+		Property.NBTSsType = UINT8( Framedata, Offset ),
+		//
+		// Validate the Flags field
+		//
+		Property.NbtSSIsValidFlags = (UINT8(FrameData,FrameOffset+1) & 0xFE)
+			? 0     // Flags are invalid; at least one Reserved bit is set
+			: 1,  // Flags are valid
+		//
+		// Get the NBTSsType and payload length
+		//
+		Property.NBTSSLength = UINT24(FrameData, FrameOffset+1),
+		//
+		// Verify the PacketType with respect to the payload length
+		//
+		Property.NBTSSContinuation = 
+			// Single NBTSS Packet
+			(1 == Property.NbtSSIsValidFlags) && // Valid Flags
+			(  (Property.NBTSsType == 0x00 && Property.NBTSSLength >  0) || // SESSION MESSAGE
+			   (Property.NBTSsType == 0x81 && Property.NBTSSLength >= 0) || // SESSION REQUEST
+			   (Property.NBTSsType == 0x82 && Property.NBTSSLength >= 0) || // POSITIVE SESSION RESPONSE
+			   (Property.NBTSsType == 0x83 && Property.NBTSSLength >= 1) || // NEGATIVE SESSION RESPONSE
+			   (Property.NBTSsType == 0x84 && Property.NBTSSLength >= 6) || // RETARGET SESSION RESPONSE
+			   (Property.NBTSsType == 0x85 && Property.NBTSSLength >= 0))   // SESSION KEEP ALIVE
+			? 0 // first fragment
+			: 1 // Continuation, not first fragment
+	]
+	switch
+	{
+		case 1 == Property.NBTSSContinuation:
+			[
+				PayloadStart(
+					NetworkDirection, /*direction */
+					0, /* id */
+					0, /* sequence token */
+					0, /* next sequence token */
+					0, /* total payload length */
+					0, /* is first */
+					0, /* is last */
+					RssmblyIndStartBit+RssmblyIndLengthBit
+				)
+			]
+			Blob(frameLength - frameOffset) NBTSSData;
+	}
+	[
+		Post.Conversation.ConversationDescription = 
+			Conversation.NBTSS.ConversationDescription ? Conversation.NBTSS.ConversationDescription :
+			(
+				Property.NBTSSNextProtocol ? FormatString("(Next Protocol: %s) ConvID = %d", Property.NBTSSNextProtocol, ConvID) :
+					FormatString("(%u - %u) CovID = %d", Property.SourcePort, Property.DestinationPort,ConvID)
+			)
+	]
+	struct{// When 1==Property.NBTSSContinuation, there will be no Nbtss summary without this anonymous struct.
+	
+	UINT8 PacketType = FormatString("%s, %d(0x%02X)", NbtSsTypeTable( this ), this, this);
+	
+	//reference: RFC 1002  [30]
+	//One of the bits of the FLAGS field acts as an additional, high-
+	//order bit for the LENGTH field.  Thus the cumulative size of the
+	//trailer field(s) may range from 0 to 128K bytes.
+	UINT8 Flags = Extension ? "Add 64k to Length" : "Add 0 to Length"
+	{
+		UINT8 Reserved :7 = FormatString("(%s)",this.ToBitString);
+		UINT8 Extension:1 = FormatString("(%s)Add %s to Length",this.ToBitString,this ? "64k" : "0");
+	};
+	UINT16 Length = FormatString("%d(0x%X)", Flags.Extension ? 65536 + this : this, Flags.Extension ? 65536 + this : this);
+	
+	switch(PacketType)
+	{
+		// [RFC 1002    Page 31    4.3.6.  SESSION MESSAGE PACKET]
+		// case 0x00:  AsciiString( Length )  UserData;
+		// UserData include SMB protocol;
+	
+		case 0:// Session Message
+			[
+				Property.NBTSSEndOffset = FrameOffset + Property.NBTSSLength,
+				DataFieldFrameLength = Property.NBTSSEndOffset,
+				PayloadStart(
+					NetworkDirection, /*direction */
+					0, /* id */
+					0, /* sequence token */
+					0, /* next sequence token */
+					Property.NBTSSLength, /* total payload length */
+					1, /* is first */
+					0, /* is last */
+					RssmblyIndStartBit+RssmblyIndLengthBit
+				)
+			]
+			
+			//Set Property.CompleteFrame to true for all the complete NbtSs frames
+			[Property.CompleteFrame = (Property.NBTSSLength == FrameLength - FrameOffset)]
+
+				[DataFieldFrameLength = FrameOffset + Length]
+				switch(UINT32(FrameData, FrameOffset))
+				{
+					case 0xFF534D42: // 0xFF SMB
+						[Property.NBTSSNextProtocol = "SMB",Conversation.IsSMB = true]
+						SMB SMB;
+					case 0xFE534D42: // 0xFE SMB
+						while [FrameOffset < FrameLength]
+						{
+							[Property.NBTSSNextProtocol = "SMB2"]
+							SMB2 SMB2;
+						}
+					default:
+						switch
+						{
+							case Conversation.IsSMB: //RAW Data
+								SMB SMBRawData; 
+							default:
+								Blob(Property.NBTSSLength > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.NBTSSLength) UserData;
+						}
+				}
+		// [RFC 1002    Page 29    4.3.2.  SESSION REQUEST PACKET]
+		case 0x81:
+			_struct Request
+			{
+				NbtName CalledName;
+				NbtName CallingName;
+			};
+		
+		// [RFC 1002    Page 30    4.3.3.  POSITIVE SESSION RESPONSE PACKET]
+		// [RFC 1002    Page 30    4.3.4.  Negative Session Response]
+		case 0x83:
+			UINT8 ErrorCode = NbtSsErrorCodeTable( this );
+		
+		// [RFC 1002    Page 30    4.3.5.  Session Retarget Response]
+		case 0x84:
+			_struct Retarget
+			{
+				IPv4Address Retarget_IP_Address;
+				UINT16 Port = PortNameTable( this );
+			};
+		// [RFC 1002    Page 31    4.3.7.  SESSION KEEP ALIVE PACKET]
+	}
+	
+	switch
+	{
+		case FrameOffset < FrameLength && FrameOffset < Property.NBTSSEndOffset:
+			BLOB(Property.NBTSSEndOffset > FrameLength ? FrameLength - FrameOffset : Property.NBTSSEndOffset - FrameOffset) Padding;
+	}
+	}
+}
+// [RFC 1002    Page 28    4.3.1.  GENERAL FORMAT OF SESSION PACKETS]
+Table NbtSsTypeTable( value )
+{
+	switch( value )
+	{
+		case 0x00: "SESSION MESSAGE";
+		case 0x81: "SESSION REQUEST";
+		case 0x82: "POSITIVE SESSION RESPONSE";
+		case 0x83: "NEGATIVE SESSION RESPONSE";
+		case 0x84: "RETARGET SESSION RESPONSE";
+		case 0x85: "SESSION KEEP ALIVE";
+		default  : "UNHANDLED NbtSsType";
+	}
+}
+
+// [RFC 1002    Page 31    4.3.4.  NEGATIVE SESSION RESPONSE PACKET]
+Table NbtSsErrorCodeTable( value )
+{
+	switch( value )
+	{
+		case 0x80: FormatString("Error: Not listening on called name. %d(%#x)",value,value);
+		case 0x81: FormatString("Error: Not listening for calling name. %d(%#x)",value,value);
+		case 0x82: FormatString("Error: Called name not present. %d(%#x)",value,value);
+		case 0x83: FormatString("Error: Called name present, but insufficient resources. %d(%#x)",value,value);
+		case 0x8F: FormatString("Error: Unspecified error. %d(%#x)",value,value);
+		default  : FormatString("Error: Undefined %d(%#x)",value,value);
+	}
+}	
+
+

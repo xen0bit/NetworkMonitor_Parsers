@@ -1,0 +1,274 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  MSMQ - Microsoft Message Queueing Services Block Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MQCN]: Message Queuing (MSMQ): Directory Service Discovery Protocol Specification (5.4)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 11/19/2009
+//#                          Minor, 11/24/2009
+//#
+//####
+
+
+//========= TABLES ========================================================================================================
+table MQCNNotificationHeaderVersionTable(value)
+{
+	switch( value )
+	{
+		case 0x01: "Message sent by an MSMQ Directory Service";
+		case 0x02: "Message sent by an MSMQ queue manager";
+	}
+}
+
+table MQCNNotificationUpdateCommandTable(value)
+{
+	switch( value )
+	{
+		case 0x00: "Indicates creation.";
+		case 0x01: "Indicates change.";
+		case 0x02: "Indicates deletion.";
+	}
+}
+
+table MQCNNotificationUpdateUseGuidTable(value)
+{
+	switch( value )
+	{
+		case 0x00: "PathName is being used.";
+		case 0x01: "GuidIdentifier is being used.";
+	}
+}
+
+//===== STRUCTS ==============================================================================================
+
+struct MQCNNotificationHeader
+{
+	UINT8 Version = MQCNNotificationHeaderVersionTable( this );
+	switch
+	{
+		case Version == 0x02: UINT8 NumberOfUpdateNotification = MustBeSetToTable( this, "0x01");
+		default: UINT8 NumberOfUpdateNotifications;
+	}
+	switch( Version )
+	{
+		case 1: MQCNNotificationUpdate NotificationUpdates[ NumberOfUpdateNotifications ];
+		case 2: MQCNNotificationBody NotificationBody;
+	}
+}
+
+struct MQCNNotificationBody
+{
+	XMLTag("Notification") NotificationSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+				{
+					switch
+					{
+						case StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Event"):
+							XmlElement(true) Event;
+						case StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("ObjectGuid"):
+							XmlElement(true) ObjectGuid;
+						case StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("DomainController"):
+							XmlElement(true) DomainController;
+						default: XmlElement(true) Element;
+					}
+				}
+				XMLTag("Notification") NotificationETag;
+			}
+	}
+}
+
+
+struct MQCNNotificationUpdate
+{
+	UINT8 Command = MQCNNotificationUpdateCommandTable( this );
+	UINT8  UseGuid = MQCNNotificationUpdateUseGuidTable( this );
+	switch
+	{
+		case UseGuid == 1:
+			GUID(true) GuidIdentifier;
+		case UseGuid == 0:
+			UnicodeString PathName;
+	}
+	GUID(true) GuidMasterId;
+	Blob(24) Reserved;
+	UINT8 NumberOfProperties;
+	[MQCNNotificationUpdateCounter = 0]
+	while PropertyIdElements[ MQCNNotificationUpdateCounter < NumberOfProperties ]
+	{
+		[MQCNNotificationPropertyIdArray$[ MQCNNotificationUpdateCounter ], post.MQCNNotificationUpdateCounter = MQCNNotificationUpdateCounter + 1 ]
+		UINT32 PropertyId;
+	}
+	[MQCNNotificationUpdateCounter = 0]
+	while PropertyValueElements[ MQCNNotificationUpdateCounter < NumberOfProperties ]
+	{
+		[post.MQCNNotificationUpdateCounter = MQCNNotificationUpdateCounter + 1]
+		MQCNPropValueUnion( MQCNNotificationPropertyIdArray$[ MQCNNotificationUpdateCounter ] ) PropertyValue;
+	}
+}
+
+
+struct MQCNPropValueUnion( inputId )
+{
+	switch( inputId )
+	{
+		case 101: GUID(true)		PropidQInstance;
+		case 102: GUID(true)		PropidQType;
+		case 103: UnicodeStringTerm("\0x0000")		PropidQPathname;
+		case 104: UINT8 PropidQJournal = MQCNPropidQJournalTable( this );
+		case 105: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropidQQuota;
+		case 106: 
+			[DataFieldByteOrder = LittleEndian]
+			INT16				PropidQBasepriority;
+		case 107: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropidQJournalQuota;
+		case 108: UnicodeStringTerm("\0x0000")		PropidQLabel;
+		case 109: 
+			[DataFieldByteOrder = LittleEndian]
+			UNIXTIMESTAMP				PropidQCreateTime;
+		case 110: 
+			[DataFieldByteOrder = LittleEndian]
+			UNIXTIMESTAMP				PropidQModifyTime;
+		case 111: UINT8				PropidQAuthenticate = MQCNPropidQAuthenticateTable( this );//*
+		case 112: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropidQPrivLevel = MQCNPropidQPrivLevelTable( this );//*
+		case 113: UINT8			PropidQTransaction = MQCNPropidQTransactionTable( this );//*
+		case 114: UINT8				PropidQSCOPE = MQCNPropidQSCOPETable( this );//*
+		case 115: GUID(true)		PropidQQmid;
+		case 125: UnicodeStringTerm("\0x0000")		PropidQMulticastAddress;
+		case 126: UnicodeStringTerm("\0x0000")		PropidQAdsPath;
+		case 201: GUID(true)		PropidQmSiteId;
+		case 202: GUID(true)		PropidQmMachineId;
+		case 206:
+			struct PropidQmAddress
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT32 Size;
+				MQMQTAAddress Value;
+			}
+		case 207:
+			struct PropidQmCns
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT32 Size;
+				MQMQTAAddress Value;
+			}
+		case 214: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropidQmQuota;
+		case 215: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropidQmJournalQuota;
+		case 216: UnicodeStringTerm("\0x0000")		PropidQmMachineType;
+		case 218: UNIXTIMESTAMP		PropidQmModifyTime;
+		case 219: UINT8				PropidQmForeign;
+		case 220: 
+			[DataFieldByteOrder = LittleEndian]
+			UINT32			PropridQmOs;
+		case 1101:
+			struct PropidQSecurity
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT32				Size;
+				SecurityDescriptorRelative		SecurityDescriptor;
+			}
+		case 1201:
+			struct PropidQmSecurity
+			{
+				[DataFieldByteOrder = LittleEndian]
+				UINT32				Size;
+				SecurityDescriptorRelative		SecurityDescriptor;
+			}
+		case 1403: UINT8			PropidDScope = MQCNPropidDScopeTable( this );//*
+		case 1404: UINT8			PropidDObjType = MQCNPropidDObjTypeTable( this );//*
+		}
+}
+
+//2.3.1.11   PROPID_Q_AUTHENTICATE [MS-MQMQ]
+table MQCNPropidQAuthenticateTable( Value )
+{
+	switch( Value )
+	{
+		case 0x0: "MQ_AUTHENTICATE_NONE";
+		case 0x01: "MQ_AUTHENTICATE";
+	}
+}
+
+//2.3.1.4   PROPID_Q_JOURNAL [MS-MQMQ]
+table MQCNPropidQJournalTable( Value )
+{
+	switch( Value )
+	{
+		case 0: "MQ_JOURNAL_NONE  Target journaling is not requested. Messages removed from the destination queue are no longer available.";
+		case 1: "MQ_JOURNAL  Target journaling is requested. Copies of messages are stored in the journal of the queue whenever a receiving application removes a message.";
+	}
+}
+
+//2.3.1.12   PROPID_Q_PRIV_LEVEL [MS-MQMQ]
+table MQCNPropidQPrivLevelTable( Value )
+{
+	switch( Value )
+	{
+		case 0x00000000: "MQ_PRIV_LEVEL_NONE  The queue accepts only nonprivate (clear) messages.";
+		case 0x00000001: "MQ_PRIV_LEVEL_OPTIONAL  The queue does not enforce privacy. It accepts private (encrypted) messages and nonprivate (clear) messages.";
+		case 0x00000002: "MQ_PRIV_LEVEL_BODY  The queue accepts only private (encrypted) messages.";
+	}
+}
+
+//2.3.1.13   PROPID_Q_TRANSACTION [MS-MQMQ]
+table MQCNPropidQTransactionTable( Value )
+{
+	switch( Value )
+	{
+		case 0x00: "MQ_TRANSACTIONAL_NONE";
+		case 0x01: "MQ_TRANSACTIONAL";
+	}
+}
+
+//2.3.1.14   PROPID_Q_SCOPE [MS-MQMQ]
+table MQCNPropidQSCOPETable( Value )
+{
+	switch( Value )
+	{
+		case 0x00: "MQDS_SITESCOPE  Indicates a site scope.";
+		case 0x01: "MQDS_ENTERPRISESCOPE  Indicates an enterprise scope.";
+	}
+}
+
+//2.3.13.3   PROPID_D_SCOPE [MS-MQMQ]
+table MQCNPropidDScopeTable( Value )
+{
+	switch( Value )
+	{
+		case 0: "MQDS_SITESCOPE  Indicates a site scope.";
+		case 1: "MQDS_ENTERPRISESCOPE  Indicates an enterprise scope.";
+	}
+}
+
+//2.3.13.4   PROPID_D_OBJTYPE [MS-MQMQ]
+table MQCNPropidDObjTypeTable( Value )
+{
+	switch( Value )
+	{
+		case 1: "MQDS_QUEUE  Object represents a message queue.";
+		case 2: "MQDS_MACHINE  Object represents a queue manager.";
+		case 3: "MQDS_SITE  Object represents a site.";
+		case 4: "MQDS_DELETEDOBJECT  Object has been deleted.";
+		case 5: "MQDS_CN  Object represents a connected network.";
+		case 6: "MQDS_ENTERPRISE  Object represents an enterprise.";
+		case 7: "MQDS_USER  Object represents a user.";
+		case 8: "MQDS_SITELINK  Object represents a site link.";
+	}
+}

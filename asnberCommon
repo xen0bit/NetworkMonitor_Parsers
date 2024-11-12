@@ -1,0 +1,1530 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Abstract Syntax Notation One, Basic Encoding Rules (BER)
+//#
+//#  Details:                
+//#
+//#  Public References:      X.690 - ASN.1 Encoding Rules
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Table AsnBerUniversalTagTable(Tag)
+{
+	switch(Tag)
+	{
+		case  0: FormatString("Reserved for use by the encoding rules (Universal %d)", Tag);
+		case  1: FormatString("Boolean type (Universal %d)", Tag);
+		case  2: FormatString("Integer type (Universal %d)", Tag);
+		case  3: FormatString("BitString type (Universal %d)", Tag);
+		case  4: FormatString("OctetString type (Universal %d)", Tag);
+		case  5: FormatString("Null type (Universal %d)", Tag);
+		case  6: FormatString("ObjectIdentifier type (Universal %d)", Tag);
+		case  7: FormatString("ObjectDescriptor type (Universal %d)", Tag);
+		case  8: FormatString("External and InstanceOf types (Universal %d)", Tag);
+		case  9: FormatString("Real type (Universal %d)", Tag);
+		case 10: FormatString("Enumerated type (Universal %d)", Tag);
+		case 11: FormatString("EmbeddedPDV type (Universal %d)", Tag);
+		case 12: FormatString("UTF8String type (Universal %d)", Tag);
+		case 13: FormatString("Relative-OID (object identifier) type (Universal %d)", Tag);
+		case 14:
+		case 15: FormatString("Reserved for future editions of this Recommendation | International Standard (Universal %d)", Tag);
+		case 16: FormatString("Sequence and SequenceOf types (Universal %d)", Tag);
+		case 17: FormatString("Set and SetOf types (Universal %d)", Tag);
+		case 18: FormatString("NumericString type (Universal %d)", Tag);
+		case 19: FormatString("PrintableString type (Universal %d)", Tag);
+		case 20: FormatString("TeletexString and T61String types (Universal %d)", Tag);
+		case 21: FormatString("VideoTextString type (Universal %d)", Tag);
+		case 22: FormatString("IA5String type (Universal %d)", Tag);
+		case 23: FormatString("UTCTime type (Universal %d)", Tag);
+		case 24: FormatString("GeneralizedTime type (Universal %d)", Tag);
+		case 25: FormatString("GraphicString type (Universal %d)", Tag);
+		case 26: FormatString("VisibleString and ISO646String types (Universal %d)", Tag);
+		case 27: FormatString("GeneralString type (Universal %d)", Tag);
+		case 28: FormatString("UniversalString type (Universal %d)", Tag);
+		case 29: FormatString("CharacterString type (Universal %d)", Tag);
+		case 30: FormatString("BMPString type (Universal %d)", Tag);
+		default: FormatString("Reserved for addenda to this Recommendation | International Standard (Universal %d)", Tag);
+	}
+}
+
+Table AsnBerIdentifierTable(Class, Type, Tag) {
+	switch (Class) {
+		case 0: AsnBerUniversalTagTable(Tag);
+		case 1: FormatString("Application %s Tag (%d)", Type?"Constructed":"Primitive", Tag);
+		case 2: FormatString("Context Specific %s Tag (%d)", Type?"Constructed":"Primitive", Tag);
+		case 3: FormatString("Private %s Tag (%d)", Type?"Constructed":"Primitive", Tag);
+		default: FormatString("Class (%d), Type (%d), Tag(%d)", Class, Type, Tag);
+	}
+}
+
+Table AsnBerClassTable(Value)
+{
+    switch(Value)
+    {
+        case  0: FormatString("Universal (%d)", Value);
+        case  1: FormatString("Application (%d)", Value);
+        case  2: FormatString("ConText specific (%d)", Value);
+        case  3: FormatString("Private (%d)", Value);
+        default: "Undefined Value";
+    }
+}
+
+Number AsnBerVariableInteger(Length) {
+	size = Length;
+	DisplayFormat = Length <= 4 ? FormatString( "%d (0x%X)", this, this ) : FormatString( "%I64d (0x%I64X)", this, this );
+}
+
+//page 6
+[DataTypeByteOrder=BigEndian]
+struct AsnBerLength = FormatString("Length = %d, LengthOfLength = %d", Property.LengthValue, Property.LengthOfLength)
+{
+    switch
+    {
+        // Indefinite form
+        case  UINT8( Framedata, Offset ) == 0x80:
+              _struct EndOfContentsLength
+              {
+                  [LengthOfLength = 0, LengthValue = this & 0x7f]
+                  UINT8 Length = "0 bytes, LengthOfLength = 0, End-Of-Contents = 0";
+              };
+
+        case  (UINT8( Framedata, Offset ) & 0x80) == 0x80:
+              _struct MultiBytesLength
+              {
+                  [LengthOfLength = this & 0x7f]
+                  UINT8 LengthType = FormatString("LengthOfLength = %d", this & 0x7f);
+                  [LengthValue]
+                  AsnBerVariableInteger(LengthOfLength) Length = FormatString("%d bytes", this);
+              };
+
+        case  (UINT8( Framedata, Offset ) & 0x80) == 0x00:
+              _struct OneByteLength
+              {
+                  [LengthOfLength = 0, LengthValue]
+                  UINT8 Length = FormatString("%d bytes, LengthOfLength = %d", this, LengthOfLength);
+              };
+    }
+}
+
+
+//page 5
+[DataTypeByteOrder=BigEndian, Tag = 0]
+struct AsnBerIdentifier = AsnBerIdentifierTable(Property.Class, Property.Type, Property.Tag) 
+{
+    switch(UINT8( Framedata, Offset ) & 0x1f)
+    {
+        case 0x1f:
+			Struct HighTag
+			{
+			    [StrClass =this.ToString,Class]
+			    UINT8 Class:2 = FormatString("    (%s) %s",this.ToBitString,AsnBerClassTable(this));
+			    [Type]
+			    UINT8 Type:1 = FormatString("     (%s) %s",this.ToBitString,this?"Constructed":"Primitive");
+			    UINT8 TagNumber:5 = FormatString("(%s)",this.ToBitString);
+			    while option[!((UINT8( Framedata, Offset ) & 0x80) == 0)]
+			    {
+			        [Tag = Tag + (this & 0x7F)]
+			        UINT8 TagValue;
+			    }
+			    [Tag = Tag + this]
+			    UINT8 TagValueEnd;
+			};
+		default:
+			Struct LowTag
+			{
+			    [StrClass = this.ToString,Class]
+			    UINT8 Class:2 = FormatString("   (%s) %s",this.ToBitString,AsnBerClassTable(this));
+			    [Type]
+			    UINT8 Type:1 = FormatString("    (%s) %s",this.ToBitString,this?"Constructed":"Primitive");
+			    [Tag]
+			    UINT8 TagValue:5 = FormatString("(%s) %d",this.ToBitString,this);
+			};
+    }
+}
+
+//  Conveniently wraps the two types above
+[DataTypeByteOrder=BigEndian]
+struct AsnBerInfo {
+	AsnBerIdentifier AsnId;
+	AsnBerLength AsnLen;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerBoolean = InvalidLength ? "Length is invalid and it should be 1 byte." : (Tf==0)?"False":"True" {
+	AsnBerInfo AsnBooleanHeader;
+	switch(Property.LengthValue)
+	{
+	    case 1: UINT8 Tf;
+	    default: AsciiString(Property.LengthValue) InvalidLength = "";
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerInteger = FormatString("%d", AsnIntValue)
+{
+	AsnBerInfo AsnIntegerHeader;
+	[AsnIntValue]
+	AsnBerVariableInteger(Property.LengthValue) AsnInt;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerBitString = BitString {
+	AsnBerInfo AsnBitStringHeader;
+	AsciiString(Property.LengthValue) BitString;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerOctetString = OctetStream ? OctetStream : "NULL"{
+	AsnBerInfo AsnOctetStringHeader;
+	AsciiString(Property.LengthValue) OctetStream;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerOctetGuid = GuidValue {
+	AsnBerInfo AsnOctetGuidHeader;
+	switch(Property.LengthValue)
+	{
+	    case 16: [GuidValue = this.ToString]GUID(0) Guid;
+	    default: [GuidValue = this.ToString]AsciiString(Property.LengthValue) OctetStream;
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerNull = "Null Value" {
+	AsnBerInfo AsnNullHeader;
+}
+
+/** this is a bit hairy...
+ *
+ *  An OBJECT IDENTIFIER is read, and formatted into a String of
+ *  decimal numbers separated by dots, eg. "1.2.34.567.8"
+ *  This formatted String is read into the property AsnOid
+ *
+ *  The formatting is necessary for switching in the ANY type
+ *  as well as for beautiful display
+ */
+[DataTypeByteOrder=BigEndian]
+struct AsnBerObjectIdentifier = FormatString("%s (%s)", AsnBerOidTable(property.AsnOid), property.AsnOid) {
+	//  mark the end of the OID, as indicated in the header
+	AsnBerInfo AsnObjectIdentifierHeader;
+	// the First byte is 40X+Y, encoding the First two Parts, X.Y.
+	// this decodes this First byte and starts the formatting String
+	[AsnOidEnd = Offset + LengthValue,
+	 AsnOid = First<80 ? FormatString("%d.%d",(First/40), First%40) :
+		FormatString("%d.%d",2, First-80)]
+	UINT8 First;
+	// The outer loop reads a single decimal number at each pass
+	while bytes[Offset<AsnOidEnd] {
+		[AsnOidNum = 0]
+		// The inner loop reads each sequence of 7 bits
+		// in the extended bytes of the number
+		while num[UINT8(FrameData,Offset)&0x80] {
+			[AsnOidNum = (AsnOidNum<<7) + (Part&0x7f)]
+			UINT8 Part;
+		}
+		// Finally save the whole number
+		// and add it to the formatted OID String
+		[AsnOidNum = (AsnOidNum<<7) + Final,
+			Post.AsnOid = AsnOid + FormatString(".%d",AsnOidNum)]
+		UINT8 Final;
+	}
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerEnumerated {
+	AsnBerInteger Value;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerUtf8String = Utf8String.toString {
+	AsnBerInfo Utf8StringHeader;
+	//update by kevin
+	//UnicodeString(Property.LengthValue/2) Utf8String;
+	MBCString(Property.LengthValue) Utf8String;
+}
+
+/** Asn String Types **/
+
+Table AsnBerStringTable(Class) {
+	switch(Class) {
+		case 12: "UTF8String (12)";
+		case 18: "NumericString (18)";
+		case 19: "PrintableString (19)";
+		case 20: "TeletexString (T61String) (20)";
+		case 21: "VideoTextString (21)";
+		case 22: "IA5String (22)";
+		case 25: "GraphicsString (25)";
+		case 26: "VisibleString (ISO646String) (26)";
+		case 27: "GeneralString (27)";
+		case 28: "UniversalString (28)";
+		case 30: "BMPString (30)";
+		default: FormatString("Unknown String (%d)", Class);
+	}
+}
+[DataTypeByteOrder=BigEndian]
+struct AsnBerNumericString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerPrintableString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerTeletexString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerVideoTextString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerIa5String = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerGraphicString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerVisibleString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerGeneralString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerUniversalString = String.toString {
+	AsnBerOctetString String;
+}
+
+[DataTypeByteOrder=BigEndian]
+struct AsnBerBmpString = String.toString {
+	AsnBerInfo AsnBmpStringHeader;
+	BMPString(LengthValue / 2) String;
+}
+
+/** Time Values */
+/* UNIVERSAL 23 */
+[DataTypeByteOrder=BigEndian]
+struct AsnBerUtcTime
+	= FormatString( "%s/%s/%s %s:%s%s %s",
+		Month, Day, Year, Hours, Minutes, Seconds ? ":" + Seconds : "", TZD == "Z" ? "UTC" : TZD )
+{
+	AsnBerInfo AsnUtcTimeHeader;
+	Switch {
+		Case Property.Tag == 23:
+			Struct
+			{
+				[AsnOffset = FrameOffset]
+				AsciiString( 2 ) Year;
+				AsciiString( 2 ) Month;
+				AsciiString( 2 ) Day;
+				AsciiString( 2 ) Hours;
+				AsciiString( 2 ) Minutes;
+				Switch {
+					Case 
+						!(UINT8( Framedata, Offset ) == 0x5A) &&
+						!(UINT8( Framedata, Offset ) == 0x2B) &&
+						!(UINT8( Framedata, Offset ) == 0x2D):
+							AsciiString( 2 ) Seconds;
+				}
+				Switch {
+					Case FrameOffset - AsnOffset < Property.LengthValue:
+						AsciiString( AsnOffset + Property.LengthValue - FrameOffset ) TZD;
+				}
+			}
+	}
+}
+
+/* UNIVERSAL 24 */
+[DataTypeByteOrder=BigEndian]
+struct AsnBerGeneralizedTime 
+	= FormatString( "%s/%s/%s %s:%s:%s %s",
+		Month, Day, Year, Hours, Minutes, AsnSecondString, TZD == "Z" ? "UTC" : TZD )
+{
+	AsnBerInfo AsnGeneralizedTimeHeader;
+	Switch {
+		Case Property.Tag == 24:
+			Struct
+			{
+				[AsnOffset = FrameOffset]
+				AsciiString( 4 ) Year;
+				AsciiString( 2 ) Month;
+				AsciiString( 2 ) Day;
+				AsciiString( 2 ) Hours;
+				AsciiString( 2 ) Minutes;
+				[AsnSecondString = ""]
+				Struct SecondString = AsnSecondString
+				{
+					While
+					[ 
+						!(UINT8( Framedata, Offset ) == 0x5A) &&
+						!(UINT8( Framedata, Offset ) == 0x2B) &&
+						!(UINT8( Framedata, Offset ) == 0x2D) &&
+						FrameOffset - AsnOffset < Property.LengthValue
+					]
+					{
+						[AsnSecondString = AsnSecondString + c.ToString] CHAR c;
+					}
+				}
+				Switch {
+					Case FrameOffset - AsnOffset < Property.LengthValue:
+						AsciiString( AsnOffset + Property.LengthValue - FrameOffset ) TZD;
+				}
+			}
+	}
+}
+
+/** This table associates the OIDs with their names, so that the name
+  * can be used in formatting output, rather than just the numerical
+  * value.  Whenever a new OID is added to AsnBerAnyByOid, it should be
+  * added here as well.  
+  */
+Table AsnBerOidTable(ObjectID) {
+	switch(ObjectID) {
+		case "0.0.20.124.0.1": "Generic Conference Contro";
+		case "1.3.6.1.4.1.311.2.1.14": "X509Extensions";
+		case "1.3.6.1.4.1.311.13.2.2": "EnrollmentCspProvider";
+		case "1.3.6.1.4.1.311.47.1.1": "SoHCertificateExtension";
+		case "1.3.6.1.4.1.311.13.2.3": "OsVersion";
+		case "1.3.6.1.4.1.311.13.1": "RenewalCertificate";
+		case "1.3.6.1.4.1.311.20.2": "Certificate Template";
+		case "1.3.6.1.4.1.311.21.20": "RequestClientInfo";
+		case "1.3.6.1.4.1.311.21.13": "ArchivedKeyAttr";
+		case "1.3.6.1.4.1.311.21.21": "EncryptedKeyHash";
+		case "1.3.6.1.4.1.311.13.2.1": "EnrollmentNameValuePair";
+		case "2.5.4.41": "IdAtName";
+		case "2.5.4.3": "IdAtCommonName";
+		case "2.5.4.7": "IdAtLocalityName";
+		case "2.5.4.8": "IdAtStateOrProvinceName";
+		case "2.5.4.10": "IdAtOrganizationName";
+		case "2.5.4.11": "IdAtOrganizationalUnitName";
+		case "2.5.4.12": "IdAtTitle";
+		case "2.5.4.46": "IdAtDnQualifier";
+		case "2.5.4.6": "IdAtCountryName";
+		case "2.5.4.5": "IdAtSerialNumber";
+		case "2.5.4.65": "IdAtPseudonym";
+		case "0.9.2342.19200300.100.1.25": "IdDomainComponent";
+		case "1.2.840.113549.1.9.1": "IdEmailAddress";
+		case "2.5.29.35": "IdCeAuthorityKeyIdentifier";
+		case "2.5.29.14": "IdCeSubjectKeyIdentifier";
+		case "2.5.29.15": "IdCeKeyUsage";
+		case "2.5.29.16": "IdCePrivateKeyUsagePeriod";
+		case "2.5.29.32": "IdCeCertificatePolicies";
+		case "2.5.29.33": "IdCePolicyMappings";
+		case "2.5.29.17": "IdCeSubjectAltName";
+		case "2.5.29.18": "IdCeIssuerAltName";
+		case "2.5.29.19": "IdCeBasicConstraints";
+		case "2.5.29.30": "IdCeNameConstraints";
+		case "2.5.29.36": "idCdPolicyConstraints";
+		case "2.5.29.37": "IdCeExtKeyUsage";
+		case "2.5.29.31": "IdCeCRLDistributionPoints";
+		case "2.5.29.54": "IdCeInhibitAnyPolicy";
+		case "1.3.6.1.5.5.7.1.1": "IdPeAuthorityInfoAccess";
+		case "1.3.6.1.5.5.7.1.11": "IdPeSubjectInfoAccess";
+		case "2.5.29.20": "IdCeCRLNumber";
+		case "2.5.29.27": "IdCeDeltaCRLIndicator";
+		case "2.5.29.28": "IdCeIssuingDistributionPoint";
+		case "2.5.29.46": "IdCeFreshestCRL";
+		case "2.5.29.21": "IdCeCRLReason";
+		case "2.5.29.23": "IdCeHoldInstructionCode";
+		case "2.5.29.24": "IdCeInvalidityDate";
+		case "2.5.29.29": "IdCeCertificateIssuer";
+		case "1.3.6.1.5.5.7.0.12": "IdModAttributeCert";
+		case "1.3.6.1.5.5.7.1.4": "IdPeAcAuditIdentity";
+		case "2.5.29.55": "IdCeTargetInformation";
+		case "2.5.29.56": "IdCeNoRevAvail";
+		case "1.3.6.1.5.5.7.10.1": "IdAcaAuthenticationInfo";
+		case "1.3.6.1.5.5.7.10.2": "IdAcaAccessIdentity";
+		case "1.3.6.1.5.5.7.10.3": "IdAcaChargingIdentity";
+		case "1.3.6.1.5.5.7.10.4": "IdAcaGroup";
+		case "2.5.4.72": "IdAtRole";
+		case "2.5.1.5.55": "IdAtClearance";
+		case "1.3.6.1.5.5.7.10.6": "IdAcaEncAttrs";
+		case "1.3.6.1.5.5.7.1.10": "IdPeAcProxying";
+		case "1.3.6.1.5.5.7.1.6": "IdPeAaControls";
+		case "1.2.840.113549.1.9.16.1.6": "IdCtContentInfo";
+		case "1.2.840.113549.1.7.1": "IdDataAuthpack";
+		case "1.2.840.113549.1.7.2": "IdSignedData";
+		case "1.2.840.113549.1.7.3": "IdEnvelopedData";
+		case "1.2.840.113549.1.7.5": "IdDigestedData";
+		case "1.2.840.113549.1.7.6": "IdEncryptedData";
+		case "1.2.840.113549.1.9.16.1.2": "IdCtAuthData";
+		case "1.2.840.113549.1.9.3": "IdContentType";
+		case "1.2.840.113549.1.9.4": "IdMessageDigest";
+		case "1.2.840.113549.1.9.5": "IdSigningTime";
+		case "1.2.840.113549.1.9.6": "IdCounterSignature";
+		case "1.2.840.113549.1.1.1": "RsaEncryption";
+		case "1.2.840.113549.1.1.7": "IdRsaesOaep";
+		case "1.2.840.113549.1.1.9": "IdPSpecified";
+		case "1.2.840.113549.1.1.10": "IdRsassaPss";
+		case "1.2.840.113549.1.1.2": "Md2WithRSAEncryption";
+		case "1.2.840.113549.1.1.4": "Md5WithRSAEncryption";
+		case "1.2.840.113549.1.1.5": "Sha1WithRSAEncryption";
+		case "1.2.840.113549.1.1.11": "Sha256WithRSAEncryption";
+		case "1.2.840.113549.1.1.12": "Sha384WithRSAEncryption";
+		case "1.2.840.113549.1.1.13": "Sha512WithRSAEncryption";
+		case "1.2.840.113549.2.2": "IdMd2";
+		case "1.2.840.113549.2.5": "IdMd5";
+		case "1.3.14.3.2.26": "IdSha1";
+		case "2.16.840.1.101.3.4.2.1": "IdSha256";
+		case "2.16.840.1.101.3.4.2.2": "IdSha384";
+		case "2.16.840.1.101.3.4.2.3": "IdSha512";
+		case "1.2.840.113549.1.1.8": "IdMgf1";
+		case "1.2.840.10040.4.3": "IdDsaWithSha1";
+		case "1.2.840.10045.4.1": "EcdsaWithSHA1";
+		case "1.2.840.10040.4.1": "IdDsa";
+		case "1.2.840.10046.2.1": "DhPublicNumber";
+		case "2.16.840.1.101.2.1.1.22": "IdKeyExchangeAlgorithm";
+		case "1.2.840.10045.2.1": "IdEcPublicKey";
+		case "1.2.840.10045.1.1": "PrimeField";
+		case "1.2.840.10045.1.2": "CharacteristicTwoField";
+		case "1.2.840.10045.1.2.1.1": "GnBasis";
+		case "1.2.840.10045.1.2.1.2": "TpBasis";
+		case "1.2.840.10045.1.2.1.3": "PpBasis";
+		case "1.2.840.113549.1.9.16.3.5": "IdAlgEsdh";
+		case "1.2.840.113549.1.9.16.3.10": "IdAlgSsdh";
+		case "1.2.840.113549.1.9.16.3.6": "IdAlgCms3DesWrap";
+		case "1.2.840.113549.1.9.16.3.7": "IdAlgCmsRc2Wrap";
+		case "1.2.840.113549.1.5.12": "IdPbkDf2";
+		case "1.2.840.113549.3.7": "DesEde3Cbc";
+		case "1.2.840.113549.3.2": "Rc2Cbc";
+		case "1.3.6.1.5.5.8.1.2": "HmacSha1";
+		case "2.16.840.1.101.3.4.1.2": "IdAes128Cbc";
+		case "2.16.840.1.101.3.4.1.22": "IdAes192Cbc";
+		case "2.16.840.1.101.3.4.1.42": "IdAes256Cbc";
+		case "2.16.840.1.101.3.4.1.5": "IdAes128Wrap";
+		case "2.16.840.1.101.3.4.1.25": "IdAes192Wrap";
+		case "2.16.840.1.101.3.4.1.45": "IdAes256Wrap";
+		case "1.3.6.1.5.5.7.7.2": "IdCmcIdentification";
+		case "1.3.6.1.5.5.7.7.3": "IdCmcIdentityProof";
+		case "1.3.6.1.5.5.7.7.4": "IdCmcDataReturn";
+		case "1.3.6.1.5.5.7.7.5": "IdCmcTransactionId";
+		case "1.3.6.1.5.5.7.7.6": "IdCmcSenderNonce";
+		case "1.3.6.1.5.5.7.7.7": "IdCmcRecipientNonce";
+		case "1.3.6.1.5.5.7.7.18": "IdCmcRegInfo";
+		case "1.3.6.1.5.5.7.7.19": "IdCmcResponseInfo";
+		case "1.3.6.1.5.5.7.7.21": "IdCmcQueryPending";
+		case "1.3.6.1.5.5.7.7.22": "IdCmcPopLinkRandom";
+		case "1.3.6.1.5.5.7.7.23": "IdCmcPopLinkWitness";
+		case "1.3.6.1.5.5.7.12.2": "IdCctPKIData";
+		case "1.3.6.1.5.5.7.12.3": "IdCctPKIResponse";
+		case "1.3.6.1.5.5.7.7.1": "IdCmccMCStatusInfo";
+		case "1.3.6.1.5.5.7.7.8": "IdCmcAddExtensions";
+		case "1.3.6.1.5.5.7.7.9": "IdCmcEncryptedPop";
+		case "1.3.6.1.5.5.7.7.10": "IdCmcDecryptedPop";
+		case "1.3.6.1.5.5.7.7.11": "IdCmcLraPopWitness";
+		case "1.3.6.1.5.5.7.7.15": "IdCmcGetCert";
+		case "1.3.6.1.5.5.7.7.16": "IdCmcGetCRL";
+		case "1.3.6.1.5.5.7.7.17": "IdCmcRevokeRequest";
+		case "1.3.6.1.5.5.7.7.24": "IdCmcConfirmCertAcceptance";
+		case "1.2.840.113549.1.9.14": "IdExtensionReq";
+		case "1.3.6.1.5.5.7.6.2": "IdAlgNoSignature";
+		case "1.2.840.113533.7.66.13": "PasswordBasedMac";
+		case "1.3.6.1.5.5.7.5.1.1": "IdRegCtrlRegToken";
+		case "1.3.6.1.5.5.7.5.1.2": "IdRegCtrlAuthenticator";
+		case "1.3.6.1.5.5.7.5.1.3": "IdRegCtrlPkiPublicationInfo";
+		case "1.3.6.1.5.5.7.5.1.4": "IdRegCtrlPkiArchiveOptions";
+		case "1.3.6.1.5.5.7.5.1.5": "IdRegCtrlOldCertID";
+		case "1.3.6.1.5.5.7.5.1.6": "IdRegCtrlProtocolEncrKey";
+		case "1.3.6.1.5.5.7.5.2.1": "IdRegInfoUtf8Pairs";
+		case "1.3.6.1.5.5.7.5.2.2": "IdRegInfoCertReq";
+		case "1.3.6.1.5.5.2": "SpnegoToken";
+		case "1.3.6.1.5.5.2.4.2": "SpnegoNegTok";
+		case "1.2.840.113554.1.2.1.1": "GSS_KRB5_NT_USER_NAME";
+		case "1.2.840.113554.1.2.1.2": "GSS_KRB5_NT_MACHINE_UID_NAME";
+		case "1.2.840.113554.1.2.1.3": "GSS_KRB5_NT_STRING_UID_NAME";
+		case "1.2.840.113554.1.2.1.4": "GSS_C_NT_HOSTBASED_SERVICE";
+		case "1.2.840.113554.1.2.2": "KerberosToken";
+		case "1.3.6.1.4.1.311.2.2.30" : "Negoex";
+		case "1.2.840.113554.1.2.2.1": "GSS_KRB5_NT_PRINCIPAL_NAME";
+		case "1.2.840.113554.1.2.2.2": "GSS_KRB5_NT_PRINCIPAL";
+		case "1.2.840.113554.1.2.2.3": "UserToUserMechanism";
+		case "1.2.840.48018.1.2.2": "MsKerberosToken";
+		case "1.3.6.1.4.1.311.2.2.10": "NLMP";
+		case "1.3.6.1.5.5.7.48.1.1": "IdPkixOcspBasic";
+		case "1.3.6.1.5.5.7.48.1.2": "IdPkixOcspNonce";
+		case "1.3.6.1.5.5.7.48.1.3": "IdPkixOcspCrl";
+		case "1.3.6.1.5.5.7.48.1.4": "IdPkixOcspResponse";
+		case "1.3.6.1.5.5.7.48.1.5": "IdPkixOcspNocheck";
+		case "1.3.6.1.5.5.7.48.1.6": "IdPkixOcspArchiveCutoff";
+		case "1.3.6.1.5.5.7.48.1.7": "IdPkixOcspServiceLocator";
+		//update by kevin
+		case "1.3.6.1.4.1.311.20.2.2": "IdMsKpScLogon";
+		case "1.3.6.1.5.2.2": "IdPkinitSan";
+		case "1.3.6.1.5.2.3.1": "IdPkinitAuthData";
+		case "1.3.6.1.5.2.3.2": "IdPkinitDHKeyData";
+		case "1.3.6.1.5.2.3.3": "IdPkinitRkeyData";
+		case "1.3.6.1.5.2.3.4": "IdPkinitKPClientAuth";
+		case "1.3.6.1.5.2.3.5": "IdPkinitKPKdc";
+		//added by shen lei
+		case "1.3.14.3.2.29": "SHA1 with RSA signature";
+		case "2.5.29.1": "AUTHORITY_KEY_IDENTIFIER";
+		case "2.5.29.2": "KEY_ATTRIBUTES";
+		case "2.5.29.3": "CERT_POLICIES_95";
+		case "2.5.29.4": "KEY_USAGE_RESTRICTION";
+		case "2.5.29.7": "SUBJECT_ALT_NAME";
+		case "2.5.29.8": "ISSUER_ALT_NAME";
+		case "2.5.29.9": "Subject_Directory_Attributes";
+		case "2.5.29.10": "BASIC_CONSTRAINTS";
+		case "2.5.29.32.0": "ANY_CERT_POLICY";
+		case "2.5.29.5": "LEGACY_POLICY_MAPPINGS";
+		case "1.3.6.1.4.1.311.20.2.1": "ENROLLMENT_AGENT";
+		case "1.3.6.1.5.5.7": "PKIX";
+		case "1.3.6.1.5.5.7.1": "PKIX_PE";
+		case "1.3.6.1.4.1.311.10.2": "NEXT_UPDATE_LOCATION";
+		case "1.3.6.1.4.1.311.10.8.1": "REMOVE_CERTIFICATE";
+		case "1.3.6.1.4.1.311.10.9.1": "CROSS_CERT_DIST_POINTS";
+		case "1.3.6.1.4.1.311.10.1": "CTL";
+		case "1.3.6.1.4.1.311.10.1.1": "SORTED_CTL";
+		case "1.3.6.1.4.1.311.10.3.3.1": "SERIALIZED";
+		case "1.3.6.1.4.1.311.20.2.3": "NT_PRINCIPAL_NAME";
+		case "1.3.6.1.4.1.311.31.1": "PRODUCT_UPDATE";
+		case "1.3.6.1.4.1.311.10.12.1": "ANY_APPLICATION_POLICY";
+		case "1.3.6.1.4.1.311.20.1": "AUTO_ENROLL_CTL_USAGE";
+		case "1.3.6.1.4.1.311.20.3": "CERT_MANIFOLD";
+		case "1.3.6.1.4.1.311.21.1": "CERTSRV_CA_VERSION";
+		case "1.3.6.1.4.1.311.21.2": "CERTSRV_PREVIOUS_CERT_HASH";
+		case "1.3.6.1.4.1.311.21.3": "CRL_VIRTUAL_BASE";
+		case "1.3.6.1.4.1.311.21.4": "CRL_NEXT_PUBLISH";
+		case "1.3.6.1.4.1.311.21.5": "KP_CA_EXCHANGE";
+		case "1.3.6.1.4.1.311.21.6": "KP_KEY_RECOVERY_AGENT";
+		case "1.3.6.1.4.1.311.21.7": "CERTIFICATE_TEMPLATE";
+		case "1.3.6.1.4.1.311.21.8": "ENTERPRISE_OID_ROOT";
+		case "1.3.6.1.4.1.311.21.9": "RDN_DUMMY_SIGNER";
+		case "1.3.6.1.4.1.311.21.10": "APPLICATION_CERT_POLICIES";
+		case "1.3.6.1.4.1.311.21.11": "APPLICATION_POLICY_MAPPINGS";
+		case "1.3.6.1.4.1.311.21.12": "APPLICATION_POLICY_CONSTRAINTS";
+		case "1.3.6.1.4.1.311.21.14": "CRL_SELF_CDP";
+		case "1.3.6.1.4.1.311.21.15": "REQUIRE_CERT_CHAIN_POLICY";
+		case "1.3.6.1.4.1.311.21.16": "ARCHIVED_KEY_CERT_HASH";
+		case "1.3.6.1.4.1.311.21.17": "ISSUED_CERT_HASH";
+		case "1.3.6.1.4.1.311.21.19": "DS_EMAIL_REPLICATION";
+		case "1.3.6.1.4.1.311.21.22": "CERTSRV_CROSSCA_VERSION";
+		case "1.3.6.1.4.1.311.25.1": "NTDS_REPLICATION";
+		case "1.3.6.1.5.5.7.3": "PKIX_KP";
+		case "1.3.6.1.5.5.7.3.1": "PKIX_KP_SERVER_AUTH";
+		case "1.3.6.1.5.5.7.3.2": "PKIX_KP_CLIENT_AUTH";
+		case "1.3.6.1.5.5.7.3.3": "PKIX_KP_CODE_SIGNING";
+		case "1.3.6.1.5.5.7.3.4": "PKIX_KP_EMAIL_PROTECTION";
+		case "1.3.6.1.5.5.7.3.5": "PKIX_KP_IPSEC_END_SYSTEM";
+		case "1.3.6.1.5.5.7.3.6": "PKIX_KP_IPSEC_TUNNEL";
+		case "1.3.6.1.5.5.7.3.7": "PKIX_KP_IPSEC_USER";
+		case "1.3.6.1.5.5.7.3.8": "PKIX_KP_TIMESTAMP_SIGNING";
+		case "1.3.6.1.5.5.8.2.2": "IPSEC_KP_IKE_INTERMEDIATE";
+		case "1.3.6.1.4.1.311.10.3.1": "KP_CTL_USAGE_SIGNING";
+		case "1.3.6.1.4.1.311.10.3.2": "KP_TIME_STAMP_SIGNING";
+		case "1.3.6.1.4.1.311.10.3.3": "SERVER_GATED_CRYPTO";
+		case "2.16.840.1.113730.4.1": "SGC_NETSCAPE";
+		case "1.3.6.1.4.1.311.10.3.4": "KP_EFS";
+		case "1.3.6.1.4.1.311.10.3.4.1": "EFS_RECOVERY";
+		case "1.3.6.1.4.1.311.10.3.5": "WHQL_CRYPTO";
+		case "1.3.6.1.4.1.311.10.3.6": "NT5_CRYPTO";
+		case "1.3.6.1.4.1.311.10.3.7": "OEM_WHQL_CRYPTO";
+		case "1.3.6.1.4.1.311.10.3.8": "EMBEDDED_NT_CRYPTO";
+		case "1.3.6.1.4.1.311.10.3.9": "ROOT_LIST_SIGNER";
+		case "1.3.6.1.4.1.311.10.3.10": "KP_QUALIFIED_SUBORDINATION";
+		case "1.3.6.1.4.1.311.10.3.11": "KP_KEY_RECOVERY";
+		case "1.3.6.1.4.1.311.10.3.12": "KP_DOCUMENT_SIGNING";
+		case "1.3.6.1.4.1.311.10.3.13": "KP_LIFETIME_SIGNING";
+		case "1.3.6.1.4.1.311.10.3.14": "KP_MOBILE_DEVICE_SOFTWARE";
+		case "1.3.6.1.4.1.311.10.5.1": "DRM";
+		case "1.3.6.1.4.1.311.10.5.2": "DRM_INDIVIDUALIZATION";
+		case "1.3.6.1.4.1.311.10.6.1": "LICENSES";
+		case "1.3.6.1.4.1.311.10.6.2": "LICENSE_SERVER";
+		case "1.3.6.1.4.1.311.10.4.1": "YESNO_TRUST_ATTR";
+		case "1.3.6.1.5.5.7.2.1": "PKIX_POLICY_QUALIFIER_CPS";
+		case "1.3.6.1.5.5.7.2.2": "PKIX_POLICY_QUALIFIER_USERNOTICE";
+		case "2.16.840.1.113733.1.7.1.1": "CERT_POLICIES_95_QUALIFIER1";
+		case "1.2.840.113549": "RSA";
+		case "1.2.840.113549.1": "PKCS";
+		case "1.2.840.113549.2": "RSA_HASH";
+		case "1.2.840.113549.3": "RSA_ENCRYPT";
+		case "1.2.840.113549.1.1": "PKCS_1";
+		case "1.2.840.113549.1.2": "PKCS_2";
+		case "1.2.840.113549.1.3": "PKCS_3";
+		case "1.2.840.113549.1.4": "PKCS_4";
+		case "1.2.840.113549.1.5": "PKCS_5";
+		case "1.2.840.113549.1.6": "PKCS_6";
+		case "1.2.840.113549.1.7": "PKCS_7";
+		case "1.2.840.113549.1.8": "PKCS_8";
+		case "1.2.840.113549.1.9": "PKCS_9";
+		case "1.2.840.113549.1.10": "PKCS_10";
+		case "1.2.840.113549.1.12": "PKCS_12";
+		case "1.2.840.113549.1.1.3": "RSA_MD4RSA";
+		case "1.2.840.113549.1.1.6": "RSA_SETOAEP_RSA";
+		case "1.2.840.113549.1.3.1": "RSA_DH";
+		case "1.2.840.113549.1.7.4": "RSA_signEnvData";
+		case "1.2.840.113549.1.9.2": "RSA_unstructName";
+		case "1.2.840.113549.1.9.7": "RSA_challengePwd";
+		case "1.2.840.113549.1.9.8": "RSA_unstructAddr";
+		case "1.2.840.113549.1.9.9": "RSA_extCertAttrs";
+		case "1.2.840.113549.1.9.15": "RSA_SMIMECapabilities";
+		case "1.2.840.113549.1.9.15.1": "RSA_preferSignedData";
+		case "1.2.840.113549.1.9.16.3": "RSA_SMIMEalg";
+		case "1.2.840.113549.2.4": "RSA_MD4";
+		case "1.2.840.113549.3.4": "RSA_RC4";
+		case "1.2.840.113549.3.9": "RSA_RC5_CBCPad";
+		case "1.2.840.10046": "ANSI_X942";
+		case "1.2.840.10040": "X957";
+		case "2.5": "DS";
+		case "2.5.8": "DSALG";
+		case "2.5.8.1": "DSALG_CRPT";
+		case "2.5.8.2": "DSALG_HASH";
+		case "2.5.8.3": "DSALG_SIGN";
+		case "2.5.8.1.1": "DSALG_RSA";
+		case "1.3.14": "OIW";
+		case "1.3.14.3.2": "OIWSEC";
+		case "1.3.14.3.2.2": "OIWSEC_md4RSA";
+		case "1.3.14.3.2.3": "OIWSEC_md5RSA";
+		case "1.3.14.3.2.4": "OIWSEC_md4RSA2";
+		case "1.3.14.3.2.6": "OIWSEC_desECB";
+		case "1.3.14.3.2.7": "OIWSEC_desCBC";
+		case "1.3.14.3.2.8": "OIWSEC_desOFB";
+		case "1.3.14.3.2.9": "OIWSEC_desCFB";
+		case "1.3.14.3.2.10": "OIWSEC_desMAC";
+		case "1.3.14.3.2.11": "OIWSEC_rsaSign";
+		case "1.3.14.3.2.12": "OIWSEC_dsa";
+		case "1.3.14.3.2.13": "OIWSEC_shaDSA";
+		case "1.3.14.3.2.14": "OIWSEC_mdc2RSA";
+		case "1.3.14.3.2.15": "OIWSEC_shaRSA";
+		case "1.3.14.3.2.16": "OIWSEC_dhCommMod";
+		case "1.3.14.3.2.17": "OIWSEC_desEDE";
+		case "1.3.14.3.2.18": "OIWSEC_sha";
+		case "1.3.14.3.2.19": "OIWSEC_mdc2";
+		case "1.3.14.3.2.20": "OIWSEC_dsaComm";
+		case "1.3.14.3.2.21": "OIWSEC_dsaCommSHA";
+		case "1.3.14.3.2.22": "OIWSEC_rsaXchg";
+		case "1.3.14.3.2.23": "OIWSEC_keyHashSeal";
+		case "1.3.14.3.2.24": "OIWSEC_md2RSASign";
+		case "1.3.14.3.2.25": "OIWSEC_md5RSASign";
+		case "1.3.14.3.2.27": "OIWSEC_dsaSHA1";
+		case "1.3.14.3.2.28": "OIWSEC_dsaCommSHA1";
+		case "1.3.14.7.2": "OIWDIR";
+		case "1.3.14.7.2.1": "OIWDIR_CRPT";
+		case "1.3.14.7.2.2": "OIWDIR_HASH";
+		case "1.3.14.7.2.3": "OIWDIR_SIGN";
+		case "1.3.14.7.2.2.1": "OIWDIR_md2";
+		case "1.3.14.7.2.3.1": "OIWDIR_md2RSA";
+		case "2.16.840.1.101.2.1": "INFOSEC";
+		case "2.16.840.1.101.2.1.1.1": "INFOSEC_sdnsSignature";
+		case "2.16.840.1.101.2.1.1.2": "INFOSEC_mosaicSignature";
+		case "2.16.840.1.101.2.1.1.3": "INFOSEC_sdnsConfidentiality";
+		case "2.16.840.1.101.2.1.1.4": "INFOSEC_mosaicConfidentiality";
+		case "2.16.840.1.101.2.1.1.5": "INFOSEC_sdnsIntegrity";
+		case "2.16.840.1.101.2.1.1.6": "INFOSEC_mosaicIntegrity";
+		case "2.16.840.1.101.2.1.1.7": "INFOSEC_sdnsTokenProtection";
+		case "2.16.840.1.101.2.1.1.8": "INFOSEC_mosaicTokenProtection";
+		case "2.16.840.1.101.2.1.1.9": "INFOSEC_sdnsKeyManagement";
+		case "2.16.840.1.101.2.1.1.10": "INFOSEC_mosaicKeyManagement";
+		case "2.16.840.1.101.2.1.1.11": "INFOSEC_sdnsKMandSig";
+		case "2.16.840.1.101.2.1.1.12": "INFOSEC_mosaicKMandSig";
+		case "2.16.840.1.101.2.1.1.13": "INFOSEC_SuiteASignature";
+		case "2.16.840.1.101.2.1.1.14": "INFOSEC_SuiteAConfidentiality";
+		case "2.16.840.1.101.2.1.1.15": "INFOSEC_SuiteAIntegrity";
+		case "2.16.840.1.101.2.1.1.16": "INFOSEC_SuiteATokenProtection";
+		case "2.16.840.1.101.2.1.1.17": "INFOSEC_SuiteAKeyManagement";
+		case "2.16.840.1.101.2.1.1.18": "INFOSEC_SuiteAKMandSig";
+		case "2.16.840.1.101.2.1.1.19": "INFOSEC_mosaicUpdatedSig";
+		case "2.16.840.1.101.2.1.1.20": "INFOSEC_mosaicKMandUpdSig";
+		case "2.16.840.1.101.2.1.1.21": "INFOSEC_mosaicUpdatedInteg";
+		case "2.5.4.4": "SUR_NAME";
+		case "2.5.4.9": "STREET_ADDRESS";
+		case "2.5.4.13": "DESCRIPTION";
+		case "2.5.4.14": "SEARCH_GUIDE";
+		case "2.5.4.15": "BUSINESS_CATEGORY";
+		case "2.5.4.16": "POSTAL_ADDRESS";
+		case "2.5.4.17": "POSTAL_CODE";
+		case "2.5.4.18": "POST_OFFICE_BOX";
+		case "2.5.4.19": "PHYSICAL_DELIVERY_OFFICE_NAME";
+		case "2.5.4.20": "TELEPHONE_NUMBER";
+		case "2.5.4.21": "TELEX_NUMBER";
+		case "2.5.4.22": "TELETEXT_TERMINAL_IDENTIFIER";
+		case "2.5.4.23": "FACSIMILE_TELEPHONE_NUMBER";
+		case "2.5.4.24": "X21_ADDRESS";
+		case "2.5.4.25": "INTERNATIONAL_ISDN_NUMBER";
+		case "2.5.4.26": "REGISTERED_ADDRESS";
+		case "2.5.4.27": "DESTINATION_INDICATOR";
+		case "2.5.4.28": "PREFERRED_DELIVERY_METHOD";
+		case "2.5.4.29": "PRESENTATION_ADDRESS";
+		case "2.5.4.30": "SUPPORTED_APPLICATION_CONTEXT";
+		case "2.5.4.31": "MEMBER";
+		case "2.5.4.32": "OWNER";
+		case "2.5.4.33": "ROLE_OCCUPANT";
+		case "2.5.4.34": "SEE_ALSO";
+		case "2.5.4.35": "USER_PASSWORD";
+		case "2.5.4.36": "USER_CERTIFICATE";
+		case "2.5.4.37": "CA_CERTIFICATE";
+		case "2.5.4.38": "AUTHORITY_REVOCATION_LIST";
+		case "2.5.4.39": "CERTIFICATE_REVOCATION_LIST";
+		case "2.5.4.40": "CROSS_CERTIFICATE_PAIR";
+		case "2.5.4.42": "GIVEN_NAME";
+		case "2.5.4.43": "INITIALS";
+		case "1.2.840.113549.1.9.20": "PKCS_12_FRIENDLY_NAME_ATTR";
+		case "1.2.840.113549.1.9.21": "PKCS_12_LOCAL_KEY_ID";
+		case "1.3.6.1.4.1.311.17.1": "PKCS_12_KEY_PROVIDER_NAME_ATTR";
+		case "1.3.6.1.4.1.311.17.2": "LOCAL_MACHINE_KEYSET";
+		case "1.3.6.1.4.1.311.10.7.1": "KEYID_RDN";
+		case "1.3.6.1.5.5.7.48": "PKIX_ACC_DESCR";
+		case "1.3.6.1.5.5.7.48.1": "PKIX_OCSP";
+		case "1.3.6.1.5.5.7.48.2": "PKIX_CA_ISSUERS";
+		case "2.16.840.1.113733.1.6.9": "VERISIGN_PRIVATE_6_9";
+		case "2.16.840.1.113733.1.6.11": "VERISIGN_ONSITE_JURISDICTION_HASH";
+		case "2.16.840.1.113733.1.6.13": "VERISIGN_BITSTRING_6_13";
+		case "2.16.840.1.113733.1.8.1": "VERISIGN_ISS_STRONG_CRYPTO";
+		case "2.16.840.1.113730": "NETSCAPE";
+		case "2.16.840.1.113730.1": "NETSCAPE_CERT_EXTENSION";
+		case "2.16.840.1.113730.1.1": "NETSCAPE_CERT_TYPE";
+		case "2.16.840.1.113730.1.2": "NETSCAPE_BASE_URL";
+		case "2.16.840.1.113730.1.3": "NETSCAPE_REVOCATION_URL";
+		case "2.16.840.1.113730.1.4": "NETSCAPE_CA_REVOCATION_URL";
+		case "2.16.840.1.113730.1.7": "NETSCAPE_CERT_RENEWAL_URL";
+		case "2.16.840.1.113730.1.8": "NETSCAPE_CA_POLICY_URL";
+		case "2.16.840.1.113730.1.12": "NETSCAPE_SSL_SERVER_NAME";
+		case "2.16.840.1.113730.1.13": "NETSCAPE_COMMENT";
+		case "2.16.840.1.113730.2": "NETSCAPE_DATA_TYPE";
+		case "2.16.840.1.113730.2.5": "NETSCAPE_CERT_SEQUENCE";
+		case "1.3.6.1.5.5.7.7": "CMC";
+		case "1.3.6.1.4.1.311.10.10.1": "CMC_ADD_ATTRIBUTES";
+		//case "1.2.840.113549.1.7.4": "PKCS_7_SIGNEDANDENVELOPED";
+		case "1.3.6.1.4.1.311.10.11.": "CERT_PROP_ID_PREFIX";
+		case "1.3.6.1.4.1.311.10.11.20": "CERT_KEY_IDENTIFIER_PROP_ID";
+		case "1.3.6.1.4.1.311.10.11.28": "CERT_ISSUER_SERIAL_NUMBER_MD5_HASH_PROP_ID";
+		case "1.3.6.1.4.1.311.10.11.29": "CERT_SUBJECT_NAME_MD5_HASH_PROP_ID";						
+
+		default: "UnknownOidExtension";
+	}
+}
+
+/*  For types defined as
+	ANY DEFINED BY module
+in Asn.1 code, this is used, when module is an OID.
+Further types should be added here as they are defined.
+When type-defining files are not available, the appropriate blocks
+	of types can be commented out so that names are all resolved.
+*/
+[DataTypeByteOrder=BigEndian, AnyValue = ""]
+struct AsnBerAnyByOid(ObjectID) = Property.AnyValue {
+	switch(ObjectID) {
+		case "1.3.6.1.4.1.311.21.4":
+			[AnyValue = this.toString]
+			OCSPTime Time;
+		case "1.3.6.1.4.1.311.2.1.14":
+			[AnyValue = this.toString]
+			WCCEX509Extensions X509Extensions;
+		case "1.3.6.1.4.1.311.13.2.2":
+			[AnyValue = this.toString]
+			WCCEEnrollmentCspProvider EnrollmentCspProvider;
+		case "1.3.6.1.4.1.311.47.1.1":
+			[AnyValue = this.toString]
+			SoHCertificateExtension SoHCertificateExtension;
+		case "1.3.6.1.4.1.311.13.2.3":
+			[AnyValue = this.toString]
+			WCCEOsVersion OsVersion;
+		case "1.3.6.1.4.1.311.13.1":
+			[AnyValue = this.toString]
+			WCCERenewalCertificate RenewalCertificate;
+		case "1.3.6.1.4.1.311.21.20":
+			[AnyValue = this.toString]
+			WCCERequestClientInfo RequestClientInfo;
+		case "1.3.6.1.4.1.311.21.13":
+			[AnyValue = this.toString]
+			WCCEArchivedKeyAttr ArchivedKeyAttr;
+		case "1.3.6.1.4.1.311.21.21":
+			[AnyValue = this.toString]
+			WCCEEncryptedKeyHash EncryptedKeyHash;
+		case "1.3.6.1.4.1.311.13.2.1":
+			[AnyValue = this.toString]
+			WCCEEnrollmentNameValuePair EnrollmentNameValuePair;
+
+		/** RFC 3280, X.509 PKI Certs **/
+		// X.520 Names from Appendix 1, Explicit Module
+		// PKIX1Explicit88 = 1.3.6.1.5.5.7.0.18
+		//
+		// id-pkix = 1.3.6.1.5.5.7
+		// id-pe = {id-pkix 1}
+		// id-qt = {id-pkix 2}
+		// id-kp = {id-pkix 3}
+		// id-ad = {id-pkix 48}
+		// policyQualifierIds
+		// id-qt-cps = {id-qt 1}
+		// id-qt-unotice = {id-qt 2}
+		//
+		// access descriptor definitions
+		// id-ad-ocsp = {id-ad 1}
+		// id-ad-caIssuers = {id-ad 2}
+		// id-ad-TimeStamping = {id-ad 3}
+		// id-ad-caRespository = {id-ad 5}
+		//
+		// Arc for standard naming attributes
+		// id-at = 2.5.4
+		// Naming attributes of type X520name
+		case "2.5.4.41":
+			[AnyValue = this.toString]
+			X520name IdAtName;
+		// id-at-surname = {id-at 4}
+		// id-at-givenName = {id-at 42}
+		// id-at-initials = {id-at 43}
+		// id-at-generationQualifier = {id-at 44}
+		case "1.3.6.1.5.5.7.2.1"://id-qt-cps
+			X509CPSUri CPSUri;
+		case "1.3.6.1.5.5.7.2.2"://id-qt-unotice
+			X509UserNotice UserNotice;
+		case "2.5.4.3":
+			[AnyValue = this.toString]
+			X520CommonName IdAtCommonName;
+		case "2.5.4.7":
+			[AnyValue = this.toString]
+			X520LocalityName IdAtLocalityName;
+		case "2.5.4.8":
+			[AnyValue = this.toString]
+			X520StateOrProvinceName IdAtStateOrProvinceName;
+		case "2.5.4.10":
+			[AnyValue = this.toString]
+			X520OrganizationName IdAtOrganizationName;
+		case "2.5.4.11":
+			[AnyValue = this.toString]
+			X520OrganizationalUnitName IdAtOrganizationalUnitName;
+		case "2.5.4.12":
+			[AnyValue = this.toString]
+			X520Title IdAtTitle;
+		case "2.5.4.46":
+			[AnyValue = this.toString]
+			X520dnQualifier IdAtDnQualifier;
+		case "2.5.4.6":
+			[AnyValue = this.toString]
+			X520countryName IdAtCountryName;
+		case "2.5.4.5":
+			[AnyValue = this.toString]
+			X520SerialNumber IdAtSerialNumber;
+		case "2.5.4.65":
+			[AnyValue = this.toString]
+			X520Pseudonym IdAtPseudonym;
+		// X500 DomainComponent from RFC3280,2247
+		case "0.9.2342.19200300.100.1.25":
+			[AnyValue = this.toString]
+			X509DomainComponent IdDomainComponent;
+		case "1.2.840.113549.1.9.1":
+			[AnyValue = this.toString]
+			X509EmailAddress IdEmailAddress;
+
+		// X.520 Names from Appendix 1, Explicit Module
+		// PKIX1Implicit88 = 1.3.6.1.5.5.7.0.19
+		//
+		// X.509 Standard Certificate Extensions, RFC3280
+		// id-ce = 2.5.29
+		case "2.5.29.35":
+			[AnyValue = this.toString]
+			X509AuthorityKeyIdentifier IdCeAuthorityKeyIdentifier;
+		case "2.5.29.14":
+			[AnyValue = this.toString]
+			X509SubjectKeyIdentifier IdCeSubjectKeyIdentifier;
+		case "2.5.29.15":
+			[AnyValue = this.toString]
+			X509KeyUsage IdCeKeyUsage;
+		case "2.5.29.16":
+			[AnyValue = this.toString]
+			X509PrivateKeyUsagePeriod IdCePrivateKeyUsagePeriod;
+		case "2.5.29.32":
+			[AnyValue = this.toString]
+			X509CertificatePolicies IdCeCertificatePolicies;
+		case "2.5.29.33":
+			[AnyValue = this.toString]
+			X509PolicyMappings IdCePolicyMappings;
+		case "2.5.29.17":
+			[AnyValue = this.toString]
+			X509SubjectAltName IdCeSubjectAltName;
+		case "2.5.29.18":
+			[AnyValue = this.toString]
+			X509IssuerAltName IdCeIssuerAltName;
+		case "2.5.29.19":
+			[AnyValue = this.toString]
+			X509BasicConstraints IdCeBasicConstraints;
+		case "2.5.29.30":
+			[AnyValue = this.toString]
+			X509NameConstraints IdCeNameConstraints;
+		case "2.5.29.36":
+			[AnyValue = this.toString]
+			X509PolicyConstraints idCdPolicyConstraints;
+		// For display, there are subtypes defined here
+		case "2.5.29.37":
+			[AnyValue = this.toString]
+			X509ExtKeyUsageSyntax IdCeExtKeyUsage;
+		case "2.5.29.31":
+			[AnyValue = this.toString]
+			X509CRLDistributionPoints IdCeCRLDistributionPoints;
+		case "2.5.29.54":
+			[AnyValue = this.toString]
+			X509InhibitAnyPolicy IdCeInhibitAnyPolicy;
+		// X.509 Private Internet Extensions, RFC3280
+		// id-pkix = 1.3.6.1.5.5.7
+		// id-pe = {id-pkix 1}
+		case "1.3.6.1.5.5.7.1.1":
+			[AnyValue = this.toString]
+			X509AuthorityInfoAccessSyntax IdPeAuthorityInfoAccess;
+		// For display, Access Description Types defined here
+		case "1.3.6.1.5.5.7.1.11":
+			[AnyValue = this.toString]
+			X509SubjectInfoAccessSyntax IdPeSubjectInfoAccess;
+		// X.509 CRL and CRL Extensions Profile, RFC3280
+		case "2.5.29.20":
+			[AnyValue = this.toString]
+			X509CRLNumber IdCeCRLNumber;
+		case "2.5.29.27":
+			[AnyValue = this.toString]
+			X509BaseCRLNumber IdCeDeltaCRLIndicator;
+		case "2.5.29.28":
+			[AnyValue = this.toString]
+			X509IssuingDistributionPoint IdCeIssuingDistributionPoint;
+		case "2.5.29.46":
+			[AnyValue = this.toString]
+			X509FreshestCRL IdCeFreshestCRL;
+		case "2.5.29.21":
+			[AnyValue = this.toString]
+			X509CRLReason IdCeCRLReason;
+		case "2.5.29.23":
+			[AnyValue = this.toString]
+			X509HoldInstructionCode IdCeHoldInstructionCode;
+		// Subtypes here, defining holdInstructions
+		// holdInstruction = { 1.2.840.10040.2 }
+		// id-holdinstruction-none = holdInstruction 1
+		// id-holdinstruction-callissuer = holdInstruction 2
+		// id-holdinstruction-reject = holdInstruction 3
+		case "2.5.29.24":
+			[AnyValue = this.toString]
+			X509InvalidityDate IdCeInvalidityDate;
+		case "2.5.29.29":
+			[AnyValue = this.toString]
+			X509CertificateIssuer IdCeCertificateIssuer;
+
+		/** RFC3281: X.509 Attribute Certs */
+		// id-pkix = 1.3.6.1.5.5.7
+		// id-mod = id-pkix 0
+		// id-pe = id-pkix 1
+		// id-aca = id-pkix 10
+		// id-ad = id-pkix 48
+		// id-at = 2.5.4
+		// id-ce = 2.5.29
+		case "1.3.6.1.5.5.7.0.12":
+			[AnyValue = this.toString]
+			X509AttributeCertificate IdModAttributeCert;
+		case "1.3.6.1.5.5.7.1.4":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdPeAcAuditIdentity;
+		case "2.5.29.9":
+			[AnyValue = this.toString]
+			X509SubjectDirectoryAttributes IdCeSubjectDirectoryAttributes;
+		case "2.5.29.55":
+			[AnyValue = this.toString]
+			X509Targets IdCeTargetInformation;
+		case "2.5.29.56":
+			[AnyValue = this.toString]
+			AsnBerNull IdCeNoRevAvail;
+		case "1.3.6.1.5.5.7.10.1":
+			[AnyValue = this.toString]
+			X509SvceAuthInfo IdAcaAuthenticationInfo;
+		case "1.3.6.1.5.5.7.10.2":
+			[AnyValue = this.toString]
+			X509SvceAuthInfo IdAcaAccessIdentity;
+		case "1.3.6.1.5.5.7.10.3":
+			[AnyValue = this.toString]
+			X509IeTfAttrSyntax IdAcaChargingIdentity;
+		case "1.3.6.1.5.5.7.10.4":
+			[AnyValue = this.toString]
+			X509IeTfAttrSyntax IdAcaGroup;
+		case "2.5.4.72":
+			[AnyValue = this.toString]
+			X509RoleSyntax IdAtRole;
+		case "2.5.1.5.55":
+			[AnyValue = this.toString]
+			X509Clearance IdAtClearance;
+		// Optional Features
+		case "1.3.6.1.5.5.7.10.6":
+			[AnyValue = this.toString]
+			CmsContentInfo IdAcaEncAttrs;
+		case "1.3.6.1.5.5.7.1.10":
+			[AnyValue = this.toString]
+			X509ProxyInfo IdPeAcProxying;
+		case "1.3.6.1.5.5.7.1.6":
+			[AnyValue = this.toString]
+			X509AAControls IdPeAaControls;
+
+		/** CMS types, RFC 3852 */
+		case "1.2.840.113549.1.9.16.1.6":
+			[AnyValue = this.toString]
+			CmsContentInfo IdCtContentInfo;
+		case "1.2.840.113549.1.7.1": 
+			switch
+			{
+				case PKCS7PayloadX509Certificate:
+					_struct X509Certificate
+					{
+						[X509CertificatesBaseOffset = FrameOffset, CertLength = LengthValue, AnyValue = "X509Certificate"]
+						while [FrameOffset - X509CertificatesBaseOffset < CertLength]
+						{
+							X509Certificate X509Certificate;
+						}
+					}
+				default: 
+					[AnyValue = this.toString]
+					AsciiString(LengthValue) IdData;
+			}
+		case "1.2.840.113549.1.7.2":
+			[AnyValue = this.toString]
+			CmsSignedData IdSignedData;
+		case "1.2.840.113549.1.7.3":
+			[AnyValue = this.toString]
+			CmsEnvelopedData IdEnvelopedData;
+		case "1.2.840.113549.1.7.5":
+			[AnyValue = this.toString]
+			CmsDigestedData IdDigestedData;
+		case "1.2.840.113549.1.7.6":
+			[AnyValue = this.toString]
+			CmsEncryptedData IdEncryptedData;
+		case "1.2.840.113549.1.9.16.1.2":
+			[AnyValue = this.toString]
+			CmsAuthenticatedData IdCtAuthData;
+		case "1.2.840.113549.1.9.3":
+			[AnyValue = this.toString]
+			AsnBerObjectIdentifier IdContentType;
+		case "1.2.840.113549.1.9.4":
+			[AnyValue = this.toString]
+			CmsMessageDigest IdMessageDigest;
+		case "1.2.840.113549.1.9.5":
+			[AnyValue = this.toString]
+			CmsSigningTime IdSigningTime;
+		case "1.2.840.113549.1.9.6":
+			[AnyValue = this.toString]
+			CmsCountersignature IdCounterSignature;
+
+
+		/** PKCS #1, RFC 3447 */
+		// pkcs-1 = 1.2.840.113549.1.1
+		case "1.2.840.113549.1.1.1":
+			[AnyValue = this.toString]
+			AsnBerNull RsaEncryption;
+		case "1.2.840.113549.1.1.7":
+			[AnyValue = this.toString]
+			PkcsRsaesOaepParams
+			IdRsaesOaep;
+		case "1.2.840.113549.1.1.9":
+			[AnyValue = this.toString]
+			PkcsEncodingParameters IdPSpecified;
+		case "1.2.840.113549.1.1.10":
+			[AnyValue = this.toString]
+			RsassaPssParams IdRsassaPss;
+		case "1.2.840.113549.1.1.2":
+			[AnyValue = this.toString]
+			AsnBerNull Md2WithRSAEncryption;
+		case "1.2.840.113549.1.1.4":
+			[AnyValue = this.toString]
+			AsnBerNull Md5WithRSAEncryption;
+		case "1.2.840.113549.1.1.5":
+			[AnyValue = this.toString]
+			AsnBerNull Sha1WithRSAEncryption;
+		case "1.2.840.113549.1.1.11":
+			[AnyValue = this.toString]
+			AsnBerNull Sha256WithRSAEncryption;
+		case "1.2.840.113549.1.1.12":
+			[AnyValue = this.toString]
+			AsnBerNull Sha384WithRSAEncryption;
+		case "1.2.840.113549.1.1.13":
+			[AnyValue = this.toString]
+			AsnBerNull Sha512WithRSAEncryption;
+		case "1.2.840.113549.2.2":
+			[AnyValue = this.toString]
+			AsnBerNull IdMd2;
+		case "1.2.840.113549.2.5":
+			[AnyValue = this.toString]
+			AsnBerNull IdMd5;
+		case "1.3.14.3.2.26":
+			[AnyValue = this.toString]
+			PkcsSHA1Parameters IdSha1;
+		case "2.16.840.1.101.3.4.2.1":
+			[AnyValue = this.toString]
+			AsnBerNull IdSha256;
+		case "2.16.840.1.101.3.4.2.2":
+			[AnyValue = this.toString]
+			AsnBerNull IdSha384;
+		case "2.16.840.1.101.3.4.2.3":
+			[AnyValue = this.toString]
+			AsnBerNull IdSha512;
+		case "1.2.840.113549.1.1.8":
+			[AnyValue = this.toString]
+			PkcsHashAlgorithm IdMgf1;
+
+		/** Algorithm Identifiers for X.509, RFC 3279  */
+		// Signature Algorithms
+		// RSA Signature Algorithm
+		//case "1.2.840.113549.2.2": AsnBerNull Md2;
+		//case "1.2.840.113549.2.5": AsnBerNull Md5;
+		//case "1.2.840.113549.2.26": AsnBerNull idSha1;
+		//case "1.2.840.113549.1.1.2": AsnBerNull Md2WithRSAEncryption;
+		//case "1.2.840.113549.1.1.4": AsnBerNull Md5WithRSAEncryption;
+		//case "1.2.840.113549.1.1.5": AsnBerNull sha_1WithRSAEncryption;
+		// DSA Signature Algorithm
+		case "1.2.840.10040.4.3":
+			[AnyValue = this.toString]
+			AsnBerNull IdDsaWithSha1;
+		// ECDSA Signature Algorithm
+		// Asni-X9-62 = 1.2.840.10045
+		// id-ecSigType = ansi-X9-62 4
+		case "1.2.840.10045.4.1":
+			[AnyValue = this.toString]
+			AsnBerNull EcdsaWithSHA1;
+		// Subject Public Key Algorithms
+		// RSA Keys
+		// pkcs-1 = 1.2.840.113549.1.1
+		//case "1.2.840.113549.1.1.1": AsnBerNull RsaEncryption;
+		// DSA Signature Keys
+		case "1.2.840.10040.4.1":
+			[AnyValue = this.toString]
+			DSAParameters IdDsa;
+		// Diffie-Hellman Key Exchange Keys
+		case "1.2.840.10046.2.1":
+			[AnyValue = this.toString]
+			DHDomainParameters DhPublicNumber;
+		// KEA Public Keys
+		case "2.16.840.1.101.2.1.1.22":
+			[AnyValue = this.toString]
+			KeaParmsId IdKeyExchangeAlgorithm;
+		// ECDSA and ECDH Keys
+		// ansi-X9-62 = 1.2.840.10045
+		// id_public_key_type = ansi-X9-62 2
+		case "1.2.840.10045.2.1":
+			[AnyValue = this.toString]
+			EcpkParameters IdEcPublicKey;
+		// id-fieldType = Asn-X9-62 1
+		case "1.2.840.10045.1.1":
+			[AnyValue = this.toString]
+			EcPrimeP PrimeField;
+		case "1.2.840.10045.1.2":
+			[AnyValue = this.toString]
+			EcCharacteristicTwo CharacteristicTwoField;
+		// id-Characteristic-two-basis = Characteristic-two-field 1
+		case "1.2.840.10045.1.2.1.1":
+			[AnyValue = this.toString]
+			AsnBerNull GnBasis;
+		case "1.2.840.10045.1.2.1.2":
+			[AnyValue = this.toString]
+			EcTrinomial TpBasis;
+		case "1.2.840.10045.1.2.1.3":
+			[AnyValue = this.toString]
+			EcPentanomial PpBasis;
+
+		/** CMS Algorithms, RFC 3370 */
+		// Message Digest Algorithms
+		// sha-1 = 1.3.14.3.2.26 PkcsSHA1Parameters
+		// Md5 = 1.2.840.113549.2.5 AsnBerNull
+		// Signature Algorithms
+		// id-dsa = 1.2.840.10040.4.1 NULL
+		// id-dsa-with-Sha1 = 1.2.840.10040.4.3 NULL
+		// RsaEncryption = 1.2.840.113549.1.1.1 AsnBerNull
+		// Sha1WithRSAEncryption = 1.2.840.113549.1.1.5 AsnBerNull
+		// Md5WithRSAEncryption = 1.2.840.113549.1.1.4 AsnBerNull
+		// Key Management Algorithms
+		// dh-public-number = 1.2.840.10046.2.1 DHDomainParameters
+		case "1.2.840.113549.1.9.16.3.5":
+			[AnyValue = this.toString]
+			KeyWrapAlgorithm IdAlgEsdh;
+		case "1.2.840.113549.1.9.16.3.10":
+			[AnyValue = this.toString]
+			KeyWrapAlgorithm IdAlgSsdh;
+		case "1.2.840.113549.1.9.16.3.6":
+			[AnyValue = this.toString]
+			AsnBerNull IdAlgCms3DesWrap;
+		case "1.2.840.113549.1.9.16.3.7":
+			[AnyValue = this.toString]
+			RC2wrapParameter IdAlgCmsRc2Wrap;
+		case "1.2.840.113549.1.5.12":
+			[AnyValue = this.toString]
+			PBKDF2Params IdPbkDf2;
+		// Content Encryption Algorithms
+		case "1.2.840.113549.3.7":
+			[AnyValue = this.toString]
+			CBCParameter DesEde3Cbc;
+		case "1.2.840.113549.3.2":
+			[AnyValue = this.toString]
+			RC2CBCParameter Rc2Cbc;
+		// Message Authentication Code Algorithms
+		case "1.3.6.1.5.5.8.1.2":
+			[AnyValue = this.toString]
+			OPTNULL HmacSha1;
+
+		/** Use of AES in CMS, RFC 3565 */
+		// aes = 2.16.840.1.101.3.4.1
+		// AES using CBC-chaining mode
+		case "2.16.840.1.101.3.4.1.2":
+			[AnyValue = this.toString]
+			AesIv IdAes128Cbc;
+		case "2.16.840.1.101.3.4.1.22":
+			[AnyValue = this.toString]
+			AesIv IdAes192Cbc;
+		case "2.16.840.1.101.3.4.1.42":
+			[AnyValue = this.toString]
+			AesIv IdAes256Cbc;
+		// AES Key Wrap Algorithm Identifiers
+		case "2.16.840.1.101.3.4.1.5":
+			[AnyValue = this.toString]
+			NULL IdAes128Wrap;
+		case "2.16.840.1.101.3.4.1.25":
+			[AnyValue = this.toString]
+			NULL IdAes192Wrap;
+		case "2.16.840.1.101.3.4.1.45":
+			[AnyValue = this.toString]
+			NULL IdAes256Wrap;
+
+		/** Certificate Management Messages over CMS */
+		// EnrollmentMessageSyntax
+		// id-pkix = 1.3.6.1.5.5.7
+		// id-cmc = id-pkix 7  --  CMC controls
+		// id-cct = id-pkix 12  --  CMC Content types
+		case "1.3.6.1.5.5.7.7.2":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcIdentification;
+		case "1.3.6.1.5.5.7.7.3":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcIdentityProof;
+		case "1.3.6.1.5.5.7.7.4":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcDataReturn;
+		case "1.3.6.1.5.5.7.7.5":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcTransactionId;
+		case "1.3.6.1.5.5.7.7.6":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcSenderNonce;
+		case "1.3.6.1.5.5.7.7.7":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcRecipientNonce;
+		case "1.3.6.1.5.5.7.7.18":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcRegInfo;
+		case "1.3.6.1.5.5.7.7.19":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcResponseInfo;
+		case "1.3.6.1.5.5.7.7.21":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcQueryPending;
+		case "1.3.6.1.5.5.7.7.22":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcPopLinkRandom;
+		case "1.3.6.1.5.5.7.7.23":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdCmcPopLinkWitness;
+
+		case "1.3.6.1.5.5.7.12.2":
+			[AnyValue = this.toString]
+			CmcPKIData IdCctPKIData;
+		case "1.3.6.1.5.5.7.12.3":
+			[AnyValue = this.toString]
+			CmcResponseBody IdCctPKIResponse;
+		
+		case "1.3.6.1.5.5.7.7.1":
+			[AnyValue = this.toString]
+			CMCStatusInfo IdCmccMCStatusInfo;
+		case "1.3.6.1.5.5.7.7.8":
+			[AnyValue = this.toString]
+			CMCAddExtensions IdCmcAddExtensions;
+		case "1.3.6.1.5.5.7.7.9":
+			[AnyValue = this.toString]
+			CmcEncryptedPOP IdCmcEncryptedPop;
+		case "1.3.6.1.5.5.7.7.10":
+			[AnyValue = this.toString]
+			CMCDecryptedPOP IdCmcDecryptedPop;
+		case "1.3.6.1.5.5.7.7.11":
+			[AnyValue = this.toString]
+			CmcLraPopWitness IdCmcLraPopWitness;
+		case "1.3.6.1.5.5.7.7.15":
+			[AnyValue = this.toString]
+			CmcGetCert IdCmcGetCert;
+		case "1.3.6.1.5.5.7.7.16":
+			[AnyValue = this.toString]
+			CmcGetCRL IdCmcGetCRL;
+		case "1.3.6.1.5.5.7.7.17":
+			[AnyValue = this.toString]
+			CmcRevRequest IdCmcRevokeRequest;
+
+		case "1.3.6.1.5.5.7.7.24":
+			[AnyValue = this.toString]
+			CmcCertId IdCmcConfirmCertAcceptance;
+
+		case "1.2.840.113549.1.9.14":
+			[AnyValue = this.toString]
+			CmcExtensionReq IdExtensionReq;
+		case "1.3.6.1.5.5.7.6.2":
+			[AnyValue = this.toString]
+			CmcNoSignatureValue IdAlgNoSignature;
+
+		/** X.509 Certificate Request Message Format */
+		/* id-pkix = 1.3.6.1.5.5.7
+		 * id-pkip = id-pkix 5
+		 * id-regCtrl = id-pkip 1
+		 */
+		case "1.2.840.113533.7.66.13":
+			[AnyValue = this.toString]
+			CrmfPBMParameter PasswordBasedMac;
+		case "1.3.6.1.5.5.7.5.1.1":
+			[AnyValue = this.toString]
+			CrmfRegToken IdRegCtrlRegToken;
+		case "1.3.6.1.5.5.7.5.1.2":
+			[AnyValue = this.toString]
+			CrmfAuthenticator IdRegCtrlAuthenticator;
+		case "1.3.6.1.5.5.7.5.1.3":
+			[AnyValue = this.toString]
+			CrmfPKIPublicationInfo IdRegCtrlPkiPublicationInfo;
+		case "1.3.6.1.5.5.7.5.1.4":
+			[AnyValue = this.toString]
+			CrmfPKIArchiveOptions IdRegCtrlPkiArchiveOptions;
+		case "1.3.6.1.5.5.7.5.1.5":
+			[AnyValue = this.toString]
+			CrmfOldCertId IdRegCtrlOldCertID;
+		case "1.3.6.1.5.5.7.5.1.6":
+			[AnyValue = this.toString]
+			CrmfProtocolEncrKey IdRegCtrlProtocolEncrKey;
+		/* id-regInfo = id-pkip 2 */
+		case "1.3.6.1.5.5.7.5.2.1":
+			[AnyValue = this.toString]
+			CrmfUTF8Pairs IdRegInfoUtf8Pairs;
+		case "1.3.6.1.5.5.7.5.2.2":
+			[AnyValue = this.toString]
+			CrmfCertReq IdRegInfoCertReq;
+
+
+		/** Kerberos v5, RFC 4120 */
+		// id-krb5 = 1.3.6.1.5.2
+		
+		/** SPNEGO, RFC 4178 */
+		case "1.3.6.1.5.5.2":
+			[AnyValue = this.toString]
+			SpnegoNegotiationToken SpnegoToken;
+		case "1.3.6.1.5.5.2.4.2":
+			[AnyValue = this.toString]
+			SpnegoNegotiationToken SpnegoNegTok;
+
+		/* rfc 1964
+		  Upon advancement to the level of Proposed Standard RFC, the
+		  Kerberos V5 GSS-API mechanism will be identified by an Object
+		  Identifier having the Value:
+		  {iso(1) member-body(2) United States(840) mit(113554) infosys(1)
+		  gssapi(2) krb5(2)}
+		*/
+		/** GSS-API MechTypes, RFC 2743 */
+		case "1.2.840.113554.1.2.2":
+		case "1.2.840.113554.1.2.2.3":
+			[AnyValue = this.toString]
+			GssapiKrb5 KerberosToken;
+		case "1.3.6.1.4.1.311.2.2.30":
+			[AnyValue = this.toString]
+			Negoex Negoex;
+
+		case "1.2.840.48018.1.2.2":
+			[AnyValue = this.toString]
+			GssapiKrb5 MsKerberosToken;
+		//Extended Security negotiation on NT4
+		case "1.3.6.1.4.1.311.2.2.10":
+			switch 
+			{
+				case ByteOrder == BigEndian && UINT32(FrameData, FrameOffset) == 0x01000000 || ByteOrder == LittleEndian && UINT32(FrameData, FrameOffset) == 0x00000001:
+					[AnyValue = this.ToString]
+					NLMPMessageSignature NLMPMessageSignature;
+				default:
+					[AnyValue = this.ToString]
+					NLMP_struct NLMP;
+			}
+
+
+		/* RFC 2560 OCSP */
+		/*
+		id-kp-OCSPSigning	::= { 1 3 6 1 5 5 7 3 9 }
+		id-pkix-ocsp		::= { id-ad-ocsp }
+		*/
+		case "1.3.6.1.5.5.7.48.1.1":
+			[AnyValue = this.toString]
+			OcspBasicOcspResponse IdPkixOcspBasic;
+		case "1.3.6.1.5.5.7.48.1.2":
+			[AnyValue = this.toString]
+			AsnBerOctetString IdPkixOcspNonce;
+		case "1.3.6.1.5.5.7.48.1.3":
+			[AnyValue = this.toString]
+			OcspCrlId IdPkixOcspCrl;
+		case "1.3.6.1.5.5.7.48.1.4":
+			[AnyValue = this.toString]
+			OcspAcceptableResponses IdPkixOcspResponse;
+		case "1.3.6.1.5.5.7.48.1.5":
+			[AnyValue = this.toString]
+			AsnBerNull IdPkixOcspNocheck;
+		case "1.3.6.1.5.5.7.48.1.6":
+			[AnyValue = this.toString]
+			OcspArchiveCutoff IdPkixOcspArchiveCutoff;
+		case "1.3.6.1.5.5.7.48.1.7":
+			[AnyValue = this.toString]
+			OcspServiceLocator IdPkixOcspServiceLocator;
+
+		//update by kevin
+		case "1.3.6.1.5.2.2":
+			[AnyValue = this.toString]
+			KRB5PrincipalName PrincipalName;
+		case "1.3.6.1.5.2.3.1":
+			[AnyValue = this.toString]
+			AuthPack AuthPack;
+		case "1.3.6.1.5.2.3.2":
+			[AnyValue = this.toString]
+			KDCDHKeyInfo DHKeyInfo;
+		case "1.3.6.1.5.2.3.3":
+			[AnyValue = this.toString]
+			ReplyKeyPack IdPkinitRkeyData;
+		case "1.3.6.1.5.2.3.4":
+			[AnyValue = this.toString]
+			X509KeyPurposeId IdPkinitKPClientAuth;
+		case "1.3.6.1.5.2.3.5":
+			[AnyValue = this.toString]
+			X509KeyPurposeId IdPkinitKPKdc;
+		//added by shen lei
+		case "1.3.6.1.4.1.311.20.2.3":
+			_struct NT_PRINCIPAL_NAME
+			{
+				AsnBerInfo AsnOctetStringHeader;
+				[AnyValue = this.toString]				
+				AsciiString(property.LengthValue) Name;
+			}
+		case "1.3.6.1.4.1.311.21.7":
+			_struct CERTIFICATE_TEMPLATE
+			{
+				AsnBerInfo SequenceHeader;
+				AsnBerObjectIdentifier ObjectIdentifier;
+				AsnBerInteger MajorVersion;
+				AsnBerInteger MinorVersion;				    			
+			}
+		case "1.3.14.3.2.29":
+			[AnyValue = this.toString]
+			AsnBerNull SHA1WithRSASignature;
+					
+			
+		default:
+			[AnyValue = "Blob Value"]
+			_struct UnknownOidExtension
+			{
+				[Local.EndOffset = FrameOffset + Property.LengthValue]
+				while [FrameOffset < Local.EndOffset]
+				{
+					AsnBerInfo AsnOctetStringHeader;
+					Blob(Property.LengthValue) BlobValue;
+				}
+			}
+	}
+}
+

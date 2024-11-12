@@ -1,0 +1,3750 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Service Control Manager Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SCMR]: Service Control Manager Remote Protocol Specification (7.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#                          Microsoft implementation is encrypted.
+//#
+//#  Revision Class and Date:Major, 6/10/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol SCMR = FormatString( "%s %s%s%s%s%s", 
+	Property.SCMRMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.SCMRSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.SCMRSummary : "" )
+{
+	[Property.SCMRSummary = ""]
+	[Property.SCMRMethodName = SCMRMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct RCloseServiceHandle
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle SCObject;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle SCObject;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct RControlService
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "Control=%u", Control )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 Control = SCMRControlTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRServiceStatus ServiceStatus;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct RDeleteService
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Service;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct RLockServiceDatabase
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle SCManager;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Lock;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct RQueryServiceObjectSecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "SecurityInformation=%u BufSize=%u", SecurityInformation, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										SCMRSecurityInformation SecurityInformation;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRSecurityDescriptorBytes SecurityDescriptor;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct RSetServiceObjectSecurity
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "SecurityInformation=%u BufSize=%u", SecurityInformation, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										SCMRSecurityInformation SecurityInformation;
+										SCMRSecurityDescriptorBytes SecurityDescriptor;
+										Align4 Pad;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct RQueryServiceStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Service;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRServiceStatus ServiceStatus;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct RSetServiceStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle hServiceStatus;
+										SCMRServiceStatus lpServiceStatus;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 8:
+			_Struct RUnlockServiceDatabase
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Lock;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Lock;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 9:
+			_Struct RNotifyBootConfigStatus
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "MachineName=%s BootAcceptable=%u", MachineName.ToString, BootAcceptable )]
+									Struct
+									{
+										NdrWideStringPtr MachineName;
+										Align4 Pad;
+										UINT32 BootAcceptable = SCMRRNotifyBootConfigStatusBootAcceptableTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 11:
+			_Struct RChangeServiceConfigW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u DisplayName=%s", ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize, DisplayName.ToString )]
+									Struct
+									{
+										ContextHandle Service;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrWideStringPtr BinaryPathName;
+										NdrWideStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										switch
+										{
+											case DependenciesPtr.ReferentID > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT16(FrameData, FrameOffset) == 0))]
+													{
+														UnicodeString Dependency;
+													}
+													UINT16 Terminator;
+												}
+										}
+										Align4 Pad1;
+										UINT32 DependSize;
+										NdrWideStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										switch
+										{
+											case PasswordPtr.ReferentID > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													UnicodeString(PasswordSize.MaxCount /2) Password;
+												}
+										}
+										Align4 Pad2;
+										UINT32 PwSize;
+										NdrWideStringPtr DisplayName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 12:
+			_Struct RCreateServiceW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DisplayName=%s DesiredAccess=%u ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u", ServiceName.ToString, DisplayName.ToString, DesiredAccess, ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrWideString ServiceName;
+										NdrWideStringPtr DisplayName;
+										Align4 Pad1;
+										SCMRDesiredAccess DesiredAccess;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrWideString BinaryPathName;
+										NdrWideStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										switch
+										{
+											case DependenciesPtr.ReferentID > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT16(FrameData, FrameOffset) == 0))]
+													{
+														UnicodeString Dependency;
+													}
+													UINT16 Terminator;
+												}
+										}
+										Align4 Pad2;
+										UINT32 DependSize;
+										NdrWideStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										switch
+										{
+											case PasswordPtr.ReferentID > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													UnicodeString(PasswordSize.MaxCount /2) Password;
+												}
+										}
+										Align4 Pad3;
+										UINT32 PwSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 13:
+			_Struct REnumDependentServicesW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceState=%u BufSize=%u", ServiceState, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ReturnValue=%s", BytesNeeded, ServicesReturned, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant ServicesSize;
+										[MaxLoopCount = ServicesSize.MaxCount,Property.SCMREnumServiceStatuswcount = 0]
+										while[Property.SCMREnumServiceStatuswcount < ServicesSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswcount = Property.SCMREnumServiceStatuswcount  +1]
+											 SCMREnumServiceStatusw Services;
+										}
+										[MaxLoopCount = ServicesSize.MaxCount,Property.SCMREnumServiceStatuswRefcount = 0]
+										While [Property.SCMREnumServiceStatuswRefcount < ServicesSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswRefcount = Property.SCMREnumServiceStatuswRefcount  +1]
+											SCMREnumServiceStatuswRef ServicesRef;
+										}								
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 14:
+			_Struct REnumServicesStatusW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u ServiceState=%u BufSize=%u ResumeIndex=%s", ServiceType, ServiceState, BufSize, ResumeIndex.ToString )]
+									Struct
+									{
+										ContextHandle SCManager;
+										SCMRServiceType ServiceType;
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+										UINT32Ptr ResumeIndex;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ResumeIndex=%s ReturnValue=%s", BytesNeeded, ServicesReturned, ResumeIndex.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufferSize;
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatuswcount = 0]
+										while[Property.SCMREnumServiceStatuswcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswcount = Property.SCMREnumServiceStatuswcount  +1]
+											 SCMREnumServiceStatusw Services;
+										}
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatuswRefcount = 0]
+										While [Property.SCMREnumServiceStatuswRefcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswRefcount = Property.SCMREnumServiceStatuswRefcount  +1]
+											SCMREnumServiceStatuswRef ServicesRef;
+										}	
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32Ptr ResumeIndex;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 15:
+			_Struct ROpenSCManagerW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "MachineName=%s DatabaseName=%s DesiredAccess=%u", MachineName.ToString, DatabaseName.ToString, DesiredAccess )]
+									Struct
+									{
+										NdrWideStringPtr MachineName;
+										NdrWideStringPtr DatabaseName;
+										Align4 Pad;
+										SCMRDesiredAccess DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ScHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 16:
+			_Struct ROpenServiceW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DesiredAccess=%u", ServiceName.ToString, DesiredAccess )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrWideString ServiceName;
+										Align4 Pad;
+										SCMRDesiredAccess DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 17:
+			_Struct RQueryServiceConfigW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BufSize=%u", BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRQueryServiceConfigw ServiceConfig;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 18:
+			_Struct RQueryServiceLockStatusW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BufSize=%u", BufSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRQueryServiceLockStatusw LockStatus;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 19:
+			_Struct RStartServiceW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "Argc=%u", Argc )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 Argc;
+										NdrPtr Pointer;
+										Switch
+										{
+											case Pointer.ReferentId > 0:
+												Struct
+												{
+													NdrConformant Size;
+													[MaxLoopCount = Size.MaxCount]
+													while [true]
+													{
+														[Property.TSTSArgvPtrCount = Property.TSTSArgvPtrCount + (this.ReferentID ? 1 : 0)]
+														NdrPtr ArgvPtr;
+													}
+													
+													[MaxLoopCount = Property.TSTSArgvPtrCount]
+													while [true]
+													{
+														NdrwideString Arg;  
+													}
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 20:
+			_Struct RGetServiceDisplayNameW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s LpcchBuffer=%u", ServiceName.ToString, LpcchBuffer )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrWideString ServiceName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "DisplayName=%s LpcchBuffer=%u ReturnValue=%s", DisplayName.ToString, LpcchBuffer, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrWideString DisplayName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 21:
+			_Struct RGetServiceKeyNameW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "DisplayName=%s LpcchBuffer=%u", DisplayName.ToString, LpcchBuffer )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrWideString DisplayName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s LpcchBuffer=%u ReturnValue=%s", ServiceName.ToString, LpcchBuffer, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrWideString ServiceName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 23:
+			_Struct RChangeServiceConfigA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u DisplayName=%s", ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize, DisplayName.ToString )]
+									Struct
+									{
+										ContextHandle Service;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrStringPtr BinaryPathName;
+										NdrStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										switch
+										{
+											case DependenciesPtr.ReferentID > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT8(FrameData, FrameOffset) == 0))]
+													{
+														Asciistring Dependency;
+													}
+													UINT8 Terminator;
+												}
+										}
+										Align4 Pad1;
+										UINT32 DependSize;
+										NdrStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										switch
+										{
+											case PasswordPtr.ReferentID > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													Asciistring(PasswordSize.MaxCount) Password;
+												}
+										}
+										Align4 Pad2;
+										UINT32 PwSize;
+										NdrStringPtr DisplayName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 24:
+			_Struct RCreateServiceA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DisplayName=%s DesiredAccess=%u ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u", ServiceName.ToString, DisplayName.ToString, DesiredAccess, ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrString ServiceName;
+										NdrStringPtr DisplayName;
+										Align4 Pad1;
+										SCMRDesiredAccess DesiredAccess;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrString BinaryPathName;
+										NdrStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										switch
+										{
+											case DependenciesPtr.ReferentID > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT8(FrameData, FrameOffset) == 0))]
+													{
+														Asciistring Dependency;
+													}
+													UINT8 Terminator;
+												}
+										}
+										Align4 Pad2;
+										UINT32 DependSize;
+										NdrStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										switch
+										{
+											case PasswordPtr.ReferentID > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													Asciistring(PasswordSize.MaxCount) Password;
+												}
+										}
+										Align4 Pad3;
+										UINT32 PwSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 25:
+			_Struct REnumDependentServicesA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceState=%u BufSize=%u", ServiceState, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ReturnValue=%s", BytesNeeded, ServicesReturned, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant ServicesSize;
+										[MaxLoopCount = ServicesSize.MaxCount,Property.SCMREnumServiceStatusacount = 0]
+										while[Property.SCMREnumServiceStatusacount < ServicesSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusacount = Property.SCMREnumServiceStatusacount  + 1]
+											 SCMREnumServiceStatusa Services;
+										}
+										[MaxLoopCount = ServicesSize.MaxCount,Property.SCMREnumServiceStatusaRefcount = 0]
+										While [Property.SCMREnumServiceStatusaRefcount < ServicesSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusaRefcount = Property.SCMREnumServiceStatusaRefcount  + 1]
+											SCMREnumServiceStatusaRef ServicesRef;
+										}	
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 26:
+			_Struct REnumServicesStatusA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u ServiceState=%u BufSize=%u ResumeIndex=%s", ServiceType, ServiceState, BufSize, ResumeIndex.ToString )]
+									Struct
+									{
+										ContextHandle SCManager;
+										SCMRServiceType ServiceType;
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+										UINT32Ptr ResumeIndex;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ResumeIndex=%s ReturnValue=%s", BytesNeeded, ServicesReturned, ResumeIndex.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufferSize;
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusacount = 0]
+										while[Property.SCMREnumServiceStatusacount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusacount = Property.SCMREnumServiceStatusacount  + 1]
+											 SCMREnumServiceStatusa Services;
+										}
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusaRefcount = 0]
+										While [Property.SCMREnumServiceStatusaRefcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusaRefcount = Property.SCMREnumServiceStatusaRefcount  + 1]
+											SCMREnumServiceStatusaRef ServicesRef;
+										}
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32Ptr ResumeIndex;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 27:
+			_Struct ROpenSCManagerA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "MachineName=%s DatabaseName=%s DesiredAccess=%u", MachineName.ToString, DatabaseName.ToString, DesiredAccess )]
+									Struct
+									{
+										NdrStringPtr MachineName;
+										NdrStringPtr DatabaseName;
+										Align4 Pad;
+										SCMRDesiredAccess DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ScHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 28:
+			_Struct ROpenServiceA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DesiredAccess=%u", ServiceName.ToString, DesiredAccess )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrString ServiceName;
+										Align4 Pad;
+										SCMRDesiredAccess DesiredAccess;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 29:
+			_Struct RQueryServiceConfigA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BufSize=%u", BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRQueryServiceConfiga ServiceConfig;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 30:
+			_Struct RQueryServiceLockStatusA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BufSize=%u", BufSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRQueryServiceLockStatusa LockStatus;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 31:
+			_Struct RStartServiceA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "Argc=%u", Argc )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 Argc;
+										NdrPtr Pointer;
+										Switch
+										{
+											Case Pointer.ReferentId > 0:
+												Struct
+												{
+													NdrConformant Size;
+													[MaxLoopCount = Size.MaxCount]
+													while [true]
+													{
+														[Property.TSTSArgvPtrCount = Property.TSTSArgvPtrCount + (this.ReferentID ? 1 : 0)]
+														NdrPtr ArgvPtr;
+													}
+													
+													[MaxLoopCount = Property.TSTSArgvPtrCount]
+													while [true]
+													{
+														NdrwideString Arg;  
+													}
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 32:
+			_Struct RGetServiceDisplayNameA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s LpcchBuffer=%u", ServiceName.ToString, LpcchBuffer )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrString ServiceName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "DisplayName=%s LpcchBuffer=%u ReturnValue=%s", DisplayName.ToString, LpcchBuffer, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant DisplayNameSize;
+										NdrString DisplayName[DisplayNameSize.MaxCount];
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 33:
+			_Struct RGetServiceKeyNameA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "DisplayName=%s LpcchBuffer=%u", DisplayName.ToString, LpcchBuffer )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrString DisplayName;
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "KeyName=%s LpcchBuffer=%u ReturnValue=%s", KeyName.ToString, LpcchBuffer, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant KeyNameSize;
+										NdrString keyName[KeyNameSize.MaxCount];
+										Align4 Pad;
+										UINT32 LpcchBuffer;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 35:
+			_Struct REnumServiceGroupW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u ServiceState=%u BufSize=%u ResumeIndex=%s GroupName=%s", ServiceType, ServiceState, BufSize, ResumeIndex.ToString, GroupName.ToString )]
+									Struct
+									{
+										ContextHandle SCManager;
+										SCMRServiceType ServiceType;
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+										UINT32Ptr ResumeIndex;
+										NdrWideStringPtr GroupName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ResumeIndex=%s ReturnValue=%s", BytesNeeded, ServicesReturned, ResumeIndex.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufferSize;
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatuswcount = 0]
+										while[Property.SCMREnumServiceStatuswcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswcount = Property.SCMREnumServiceStatuswcount  +1]
+											 SCMREnumServiceStatusw Services;
+										}
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatuswRefcount = 0]
+										While [Property.SCMREnumServiceStatuswRefcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatuswRefcount = Property.SCMREnumServiceStatuswRefcount  +1]
+											SCMREnumServiceStatuswRef ServicesRef;
+										}
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32Ptr ResumeIndex;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 36:
+			_Struct RChangeServiceConfig2A
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Service;
+										SCMRScRpcConfigInfoa Info;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 37:
+			_Struct RChangeServiceConfig2W
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Service;
+										NdrAlign Pad;
+										SCMRScRpcConfigInfow Info;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 38:
+			_Struct RQueryServiceConfig2A
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "InfoLevel=%u BufSize=%u", InfoLevel, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 InfoLevel = SCMRInfoLevelTable(this);
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufSizeConformant;
+										BLOB(BufSizeConformant.MaxCount) Buffer;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 39:
+			_Struct RQueryServiceConfig2W
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "InfoLevel=%u BufSize=%u", InfoLevel, BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 InfoLevel = SCMRInfoLevelTable(this);
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufSizeConformant;
+										BLOB(BufSizeConformant.MaxCount) Buffer;
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 40:
+			_Struct RQueryServiceStatusEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BufSize=%u", BufSize )]
+									Struct
+									{
+										ContextHandle Service;
+										SCMRScStatusType InfoLevel;
+										UINT32 BufSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ReturnValue=%s", BytesNeeded, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										struct Buffer
+										{
+											NdrConformant Size;
+											switch
+											{
+												case Size.MaxCount > 0:
+												_struct
+												{
+													SCMRServiceStatusProcess Buffer;
+													switch
+													{
+														case Size.MaxCount > 36 :
+															BLOB(Size.MaxCount - 36 < FrameLength - FrameOffset ? Size.MaxCount - 36:FrameLength - FrameOffset) padding;
+													}
+												}
+											}
+										};
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 41:
+			_Struct REnumServicesStatusExA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u ServiceState=%u BufSize=%u ResumeIndex=%s GroupName=%s", ServiceType, ServiceState, BufSize, ResumeIndex.ToString, GroupName.ToString )]
+									Struct
+									{
+										ContextHandle SCManager;
+										SCMRScEnumType InfoLevel;
+										UINT32 ServiceType = SCMRServiceTypeTable(this);
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+										UINT32Ptr ResumeIndex;
+										NdrStringPtr GroupName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ResumeIndex=%s ReturnValue=%s", BytesNeeded, ServicesReturned, ResumeIndex.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										
+										NdrConformant BufferSize;
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusProcessacount = 0]
+										while[Property.SCMREnumServiceStatusProcessacount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusProcessacount = Property.SCMREnumServiceStatusProcessacount  + 1]
+											 SCMREnumServiceStatusProcessa Services;
+										}
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusProcessaRefcount = 0]
+										While [Property.SCMREnumServiceStatusProcessaRefcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusProcessaRefcount = Property.SCMREnumServiceStatusProcessaRefcount  + 1]
+											SCMREnumServiceStatusProcessaRef ServicesRef;
+										}
+										Align4 Pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32Ptr ResumeIndex;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 42:
+			_Struct REnumServicesStatusExW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceType=%u ServiceState=%u BufSize=%u ResumeIndex=%s GroupName=%s", ServiceType, ServiceState, BufSize, ResumeIndex.ToString, GroupName.ToString )]
+									Struct
+									{
+										ContextHandle SCManager;
+										SCMRScEnumType InfoLevel;
+										UINT32 ServiceType = SCMRServiceTypeTable(this);
+										UINT32 ServiceState = SCMRServiceStateTable(this);
+										UINT32 BufSize;
+										UINT32Ptr ResumeIndex;
+										NdrWideStringPtr GroupName;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "BytesNeeded=%u ServicesReturned=%u ResumeIndex=%s ReturnValue=%s", BytesNeeded, ServicesReturned, ResumeIndex.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrConformant BufferSize;
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusProcesswcount = 0]
+										while[Property.SCMREnumServiceStatusProcesswcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusProcesswcount = Property.SCMREnumServiceStatusProcesswcount  + 1]
+											 SCMREnumServiceStatusProcessw Services;
+										}
+										[MaxLoopCount = BufferSize.MaxCount,Property.SCMREnumServiceStatusProcesswRefcount = 0]
+										While [Property.SCMREnumServiceStatusProcesswRefcount < BufferSize.MaxCount]
+										{
+											[Property.SCMREnumServiceStatusProcesswRefcount = Property.SCMREnumServiceStatusProcesswRefcount  + 1]
+											SCMREnumServiceStatusProcesswRef ServicesRef;
+										}
+										Align4 pad;
+										UINT32 BytesNeeded;
+										UINT32 ServicesReturned;
+										UINT32Ptr ResumeIndex;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 44:
+			_Struct RCreateServiceWOW64A
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DisplayName=%s DesiredAccess=%u ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u", ServiceName.ToString, DisplayName.ToString, DesiredAccess, ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrString ServiceName;
+										NdrStringPtr DisplayName;
+										Align4 Pad1;
+										SCMRDesiredAccess DesiredAccess;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrString BinaryPathName;
+										NdrStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										Switch
+										{
+											case DependenciesPtr.ReferentId > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT8(FrameData, FrameOffset) == 0))]
+													{
+														Asciistring Dependency;
+													}
+													UINT8 Terminator;
+												}
+										}
+										Align4 Pad2;
+										UINT32 DependSize;
+										NdrStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										Switch
+										{
+											case PasswordPtr.ReferentId > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													AsciiString(PasswordSize.MaxCount) Password;
+												}
+										}
+										Align4 Pad3;
+										UINT32 PwSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 45:
+			_Struct RCreateServiceWOW64W
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ServiceName=%s DisplayName=%s DesiredAccess=%u ServiceType=%u StartType=%u ErrorControl=%u BinaryPathName=%s LoadOrderGroup=%s TagId=%s DependSize=%u ServiceStartName=%s PwSize=%u", ServiceName.ToString, DisplayName.ToString, DesiredAccess, ServiceType, StartType, ErrorControl, BinaryPathName.ToString, LoadOrderGroup.ToString, TagId.ToString, DependSize, ServiceStartName.ToString, PwSize )]
+									Struct
+									{
+										ContextHandle SCManager;
+										NdrWideString ServiceName;
+										NdrWideStringPtr DisplayName;
+										Align4 Pad1;
+										SCMRDesiredAccess DesiredAccess;
+										SCMRServiceType ServiceType;
+										UINT32 StartType = SCMRRStartTypeTable(this);
+										UINT32 ErrorControl = SCMRRErrorControlTable(this);
+										NdrWideString BinaryPathName;
+										NdrWideStringPtr LoadOrderGroup;
+										UINT32Ptr TagId;
+										NdrPtr DependenciesPtr;
+										Switch
+										{
+											case DependenciesPtr.ReferentId > 0:
+												Struct Dependencies
+												{
+													NdrConformant DependenciesSize;
+													[Local.DependencyLength = FrameOffset + DependenciesSize.MaxCount]
+													While[ (Frameoffset < Local.DependencyLength) && (!(UINT16(FrameData, FrameOffset) == 0))]
+													{
+														UnicodeString Dependency;
+													}
+													UINT16 Terminator;
+												}
+										};
+										Align4 Pad2;
+										UINT32 DependSize;
+										NdrWideStringPtr ServiceStartName;
+										NdrPtr PasswordPtr;
+										Switch
+										{
+											case PasswordPtr.ReferentId > 0:
+												Struct
+												{
+													NdrConformant PasswordSize;
+													Unicodestring(PasswordSize.MaxCount/2) Password;
+												}
+										};
+										Align4 Pad3;
+										UINT32 PwSize;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "TagId=%s ReturnValue=%s", TagId.ToString, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										UINT32Ptr TagId;
+										ContextHandle ServiceHandle;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 47:
+			_Struct RNotifyServiceStatusChange
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Service;
+										NdrAlign Pad1;
+										SCMRScRpcNotifyParams NotifyParams;
+										MSRPCGuid ClientProcessGuid;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "PfCreateRemoteQueue=%d ReturnValue=%s", PfCreateRemoteQueue, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										MSRPCGuid SCMProcessGuid;
+										BOOL PfCreateRemoteQueue;
+										ContextHandle Notify;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 48:
+			_Struct RGetNotifyResults
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Notify;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										NdrPtr NotifyParamsPtr;
+										Switch
+										{
+											case NotifyParamsPtr.ReferentId > 0:
+												SCMRScRpcNotifyParamsList NotifyParams;
+										}
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 49:
+			_Struct RCloseNotifyHandle
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle Notify;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ApcFired=%d ReturnValue=%s", ApcFired, WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										ContextHandle Notify;
+										BOOL ApcFired;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 50:
+			_Struct RControlServiceExA
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "Control=%u InfoLevel=%u", Control, InfoLevel )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 Control = SCMRControlTable(this);
+										UINT32 InfoLevel = MustBeSetToTable(this,"1");
+										SCMRServiceControlStatusReasonInParamsa ControlInParams;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRServiceControlStatusReasonOutParams ControlOutParams;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 51:
+			_Struct RControlServiceExW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "Control=%u InfoLevel=%u", Control, InfoLevel )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 Control = SCMRControlTable(this);
+										UINT32 InfoLevel = MustBeSetToTable(this,"1");
+										NdrAlign Pad;
+										SCMRServiceControlStatusReasonInParamsw ControlInParams;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRServiceControlStatusReasonOutParams ControlOutParams;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		//OSs Win7 and above are encrypted for Opnum 56
+		Case 56:
+			_Struct RQueryServiceConfigEx
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "InfoLevel=%u", InfoLevel )]
+									Struct
+									{
+										ContextHandle Service;
+										UINT32 InfoLevel = MustBeSetToTable(this,"1");
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[SCMRSummary = FormatString( "ReturnValue=%s", WinErrorCodeNameTable(ReturnValue) )]
+									Struct
+									{
+										SCMRScRpcConfigInfow Info;
+										Align4 Pad;
+										UINT32 ReturnValue = WinErrorCodeTable( this );
+									}
+							}
+						}
+				}
+			}
+		
+		Case 10:
+		Case 22:
+		Case 34:
+		Case 43:
+		Case 46:
+		Case 52:
+		Case 53:
+		Case 54:
+		Case 55:
+			struct NotUsedOnWire
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						[SCMRSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+						_Struct Request
+						{
+							ReportParserWarning("SCMR", "Invalid svcctl method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+					
+					Case 0x02: //RESPONSE
+						[SCMRSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+						_Struct Response
+						{
+							ReportParserWarning("SCMR", "Invalid svcctl method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+							Blob(FrameLength - Offset) PayloadData;
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("SCMR", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "SCMR", "Unknown svcctl method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+//
+// SCMRSecurityInformation
+// alignment: 4
+//
+Struct SCMRSecurityInformation
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		case LittleEndian:
+		Struct
+		{
+			UINT32 OSI:1  = FormatString("     %s (OWNER_SECURITY_INFORMATION) %sretrieve/update Owner identifier of the object", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 GSI:1  = FormatString("     %s (GROUP_SECURITY_INFORMATION) %sretrieve/update Primary group identifier.", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 DSI:1  = FormatString("     %s (DACL_SECURITY_INFORMATION) %sretrieve/update Discretionary ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 SSI:1  = FormatString("     %s (SACL_SECURITY_INFORMATION) %sretrieve/update System ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 Reserved:28 = FormatString("%s (Reserved)", this.ToBitString);
+		};
+		case BigEndian:
+		Struct
+		{
+			UINT32 Reserved:28 = FormatString("%s (Reserved)", this.ToBitString);
+			UINT32 SSI:1  = FormatString("     %s (SACL_SECURITY_INFORMATION) %sretrieve/update System ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 DSI:1  = FormatString("     %s (DACL_SECURITY_INFORMATION) %sretrieve/update Discretionary ACL of the object", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 GSI:1  = FormatString("     %s (GROUP_SECURITY_INFORMATION) %sretrieve/update Primary group identifier.", this.ToBitString, this ? "" : "Do NOT");
+			UINT32 OSI:1  = FormatString("     %s (OWNER_SECURITY_INFORMATION) %sretrieve/update Owner identifier of the object", this.ToBitString, this ? "" : "Do NOT");
+		}
+	}
+}
+
+//
+// SCMRSecurityDescriptorBytes
+// alignment: 4
+//
+Struct SCMRSecurityDescriptorBytes
+{
+	NdrConformant Size;
+	Switch
+	{
+		case Size.MaxCount > 0:
+			Struct 
+			{
+				[Local.SecurityDescriptorRelativeBegin = FrameOffset]
+				SecurityDescriptorRelative SecurityDescriptor;
+				[Local.SecurityDescriptorRelativeSize = FrameOffset - Local.SecurityDescriptorRelativeBegin]
+				Switch
+				{
+					case Size.MaxCount > Local.SecurityDescriptorRelativeSize:
+						BLOB(Size.MaxCount - Local.SecurityDescriptorRelativeSize) Padding;
+				}
+			}
+	}
+}
+
+//
+//	2.2.11   ENUM_SERVICE_STATUSW
+//	Alignment: none
+//
+Struct SCMREnumServiceStatusw
+{
+	[Property.SCMREnumServiceStatuswServiceNamePtr$[Property.SCMREnumServiceStatuswcount] = this.ReferentID]
+	NdrPtr ServiceNamePtr;
+	[Property.SCMREnumServiceStatuswDisplayNamePtr$[Property.SCMREnumServiceStatuswcount] = this.ReferentID]
+	NdrPtr DisplayNamePtr;
+	SCMRServiceStatus ServiceStatus;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+}
+
+Struct SCMREnumServiceStatuswRef
+{
+	Switch
+	{
+		case Property.SCMREnumServiceStatuswServiceNamePtr$[Property.SCMREnumServiceStatuswRefcount] > 0:
+			NdrWideString ServiceName;
+	}
+	Switch
+	{
+		case Property.SCMREnumServiceStatuswDisplayNamePtr$[Property.SCMREnumServiceStatuswRefcount] > 0:
+			NdrWideString DisplayName;
+	}
+}
+
+//
+//	2.2.10   ENUM_SERVICE_STATUSA
+//	Alignment:None
+//
+Struct SCMREnumServiceStatusa
+{
+	[Property.SCMREnumServiceStatusaServiceNamePtr$[Property.SCMREnumServiceStatusacount] = this.ReferentID]
+	NdrPtr ServiceNamePtr;
+	[Property.SCMREnumServiceStatusaDisplayNamePtr$[Property.SCMREnumServiceStatusacount] = this.ReferentID]
+	NdrPtr DisplayNamePtr;
+	SCMRServiceStatus ServiceStatus;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+}
+
+Struct SCMREnumServiceStatusaRef
+{
+	Switch
+	{
+		case Property.SCMREnumServiceStatusaServiceNamePtr$[Property.SCMREnumServiceStatusaRefcount] > 0:
+			NdrString ServiceName;
+	}
+	Switch
+	{
+		case Property.SCMREnumServiceStatusaDisplayNamePtr$[Property.SCMREnumServiceStatusaRefcount] > 0:
+			NdrString DisplayName;
+	}
+}
+
+//
+//	2.2.12   ENUM_SERVICE_STATUS_PROCESSA
+//	Alignment:None
+//
+struct SCMREnumServiceStatusProcessa
+{
+	[Property.SCMREnumServiceStatusProcessaServiceNamePtr$[Property.SCMREnumServiceStatusProcessacount] = this.ReferentID]
+	NdrPtr ServiceName;
+	[Property.SCMREnumServiceStatusProcessaDisplayNamePtr$[Property.SCMREnumServiceStatusProcessacount] = this.ReferentID]
+	NdrPtr DisplayName;
+	SCMRServiceStatusProcess ServiceStatusProcess;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+}
+
+Struct SCMREnumServiceStatusProcessaRef
+{
+	switch
+	{
+		case Property.SCMREnumServiceStatusProcessaServiceNamePtr$[Property.SCMREnumServiceStatusProcessaRefcount] > 0: NdrString ServiceName;
+	}
+	switch
+	{
+		case Property.SCMREnumServiceStatusProcessaDisplayNamePtr$[Property.SCMREnumServiceStatusProcessaRefcount] > 0: NdrString DisplayName;
+	}
+}
+
+//
+//	2.2.13   ENUM_SERVICE_STATUS_PROCESSW
+//	Alignment:None
+//
+struct SCMREnumServiceStatusProcessw
+{
+	[Property.SCMREnumServiceStatusProcesswServiceNamePtr$[Property.SCMREnumServiceStatusProcesswcount] = this.ReferentID]
+	NdrPtr ServiceNamePtr;
+	[Property.SCMREnumServiceStatusProcesswDisplayNamePtr$[Property.SCMREnumServiceStatusProcesswcount] = this.ReferentID]
+	NdrPtr DisplayNamePtr;
+	SCMRServiceStatusProcess ServiceStatusProcess;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+}
+
+Struct SCMREnumServiceStatusProcesswRef
+{
+	switch
+	{
+		case SCMREnumServiceStatusProcesswServiceNamePtr$[Property.SCMREnumServiceStatusProcesswRefcount] > 0: NdrWideString ServiceName;
+	}
+	switch
+	{
+		case Property.SCMREnumServiceStatusProcesswDisplayNamePtr$[Property.SCMREnumServiceStatusProcesswRefcount] > 0: NdrWideString DisplayName;
+	}
+}
+
+Struct SCMRDesiredAccess
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		case LittleEndian:
+		Struct
+		{
+			UINT32 ServiceQueryConfig:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the QueryServiceConfig and QueryServiceConfig2 functions to query the service configuration." : "Not required to call the QueryServiceConfig and QueryServiceConfig2 functions to query the service configuration.");
+			UINT32 ServiceChangeConfig:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Required to call the ChangeServiceConfig or ChangeServiceConfig2 function to change the service configuration." : "Not required to call the ChangeServiceConfig or ChangeServiceConfig2 function to change the service configuration.");
+			UINT32 ServiceQueryStatus:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the QueryServiceStatusEx function to request the service's status from the service control manager." : "Not required to call the QueryServiceStatusEx function to request the service's status from the service control manager.");
+			UINT32 ServiceEnumerateDependents:1 = FormatString("(%s) %s", this.ToBitString, this ? "Required to call the EnumDependentServices function to enumerate all of the services that are dependent on this service." : "Not required to call the EnumDependentServices function to enumerate all of the services that are dependent on this service.");
+			UINT32 ServiceStart:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Required to call the StartService function to start the service." : "Not required to call the StartService function to start the service.");
+			UINT32 ServiceStop:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to stop the service." : "Not required to call the ControlService function to stop the service.");
+			UINT32 ServicePauseContinue:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to pause or continue the service." : "Not required to call the ControlService function to pause or continue the service.");
+			UINT32 ServiceInterrogate:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to request immediate status from the service." : "Not required to call the ControlService function to request immediate status from the service.");
+			UINT32 ServiceUserDefinedControl:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to specify a user-defined control code." : "Not required to call the ControlService function to specify a user-defined control code.");
+			UINT32 Reserved:23 = FormatString("                  (%s)", this.ToBitString);
+		};
+		case BigEndian:
+		Struct
+		{
+			UINT32 Reserved:23 = FormatString("                  (%s)", this.ToBitString);
+			UINT32 ServiceUserDefinedControl:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to specify a user-defined control code." : "Not required to call the ControlService function to specify a user-defined control code.");
+			UINT32 ServiceInterrogate:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to request immediate status from the service." : "Not required to call the ControlService function to request immediate status from the service.");
+			UINT32 ServicePauseContinue:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to pause or continue the service." : "Not required to call the ControlService function to pause or continue the service.");
+			UINT32 ServiceStop:1 = FormatString("               (%s) %s", this.ToBitString, this ? "Required to call the ControlService function to stop the service." : "Not required to call the ControlService function to stop the service.");
+			UINT32 ServiceStart:1 = FormatString("              (%s) %s", this.ToBitString, this ? "Required to call the StartService function to start the service." : "Not required to call the StartService function to start the service.");
+			UINT32 ServiceEnumerateDependents:1 = FormatString("(%s) %s", this.ToBitString, this ? "Required to call the EnumDependentServices function to enumerate all of the services that are dependent on this service." : "Not required to call the EnumDependentServices function to enumerate all of the services that are dependent on this service.");
+			UINT32 ServiceQueryStatus:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the QueryServiceStatusEx function to request the service's status from the service control manager." : "Not required to call the QueryServiceStatusEx function to request the service's status from the service control manager.");
+			UINT32 ServiceChangeConfig:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Required to call the ChangeServiceConfig or ChangeServiceConfig2 function to change the service configuration." : "Not required to call the ChangeServiceConfig or ChangeServiceConfig2 function to change the service configuration.");
+			UINT32 ServiceQueryConfig:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Required to call the QueryServiceConfig and QueryServiceConfig2 functions to query the service configuration." : "Not required to call the QueryServiceConfig and QueryServiceConfig2 functions to query the service configuration.");
+		}
+	}
+}
+
+//
+//	_UNION_SC_RPC_CONFIG_INFOW
+//	Alignment:NdrAlign
+//
+Struct SCMRUnionScRpcConfigInfow
+{
+	UINT32 SwitchValue;
+	NdrPtr Pointer;
+	switch
+	{
+		case Pointer.ReferentID > 0:
+			Switch( SwitchValue )
+			{
+				Case 1: NdrWIDESTRINGPtr Description;
+				Case 2: SCMRServiceFailureActionsw Sfa;
+				Case 3: BOOL DelayedAutostart;
+				Case 4: BOOL FailureActionsOnNonCrashFailures;
+				Case 5: UINT32 ServiceSidType = SCMRServiceSidTypeTable(this);
+				Case 6: SCMRServiceRpcRequiredPrivilegesInfo Srp;
+				Case 7: UINT32 dwPreshutdownTimeout = FormatString("0x%X milliseconds",this);
+				Case 8: SCMRServiceTriggerInfo Sti;
+				Case 9: SCMRServicePreferredNodeInfo Spn;
+				Default:
+					ReportParserError( ParserErrorProtocolClassWindows, "SCMR", "Unknown Union Switch Value" ) Unknown;
+			}
+	}
+}
+
+//
+//	QUERY_SERVICE_CONFIGA
+//	Alignment:NdrAlgin
+//
+Struct SCMRQueryServiceConfiga
+{
+	SCMRServiceType ServiceType;
+	UINT32 StartType = SCMRQueryServiceConfigaStartTypeTable(this);
+	UINT32 ErrorControl = SCMRRErrorControlTable(this);
+	NdrPtr BinaryPathNamePtr;
+	NdrPtr LoadOrderGroupPtr;
+	UINT32 TagId;
+	NdrPtr DependenciesPtr;
+	NdrPtr ServiceStartNamePtr;
+	NdrPtr DisplayNamePtr;
+	Switch {
+		Case BinaryPathNamePtr.ReferentID != 0:
+			NdrString BinaryPathName;
+	}
+	Switch {
+		Case LoadOrderGroupPtr.ReferentID != 0:
+			NdrString LoadOrderGroup;
+	}
+	Switch {
+		Case DependenciesPtr.ReferentID != 0:
+			NdrString Dependencies;
+	}
+	Switch {
+		Case ServiceStartNamePtr.ReferentID != 0:
+			NdrString ServiceStartName;
+	}
+	Switch {
+		Case DisplayNamePtr.ReferentID != 0:
+			NdrString DisplayName;
+	}
+}
+
+Table SCMRQueryServiceConfigaStartTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "SERVICE_BOOT_START - A device driver started by the system loader. This value is valid only for driver services.";
+		Case 0x00000001: "SERVICE_SYSTEM_START - A device driver started by the input/output (I/O) manager function. This value is valid only for driver services.";
+		Case 0x00000002: "SERVICE_AUTO_START - A service started automatically by the SCM during system startup.";
+		Case 0x00000003: "SERVICE_DEMAND_START - Starts the service when a client requests the SCM to start the service.";
+		Case 0x00000004: "SERVICE_DISABLED - A service that cannot be started. Attempts to start the service result in the error code ERROR_SERVICE_DISABLED.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	QUERY_SERVICE_CONFIGW
+//	Alignment:NdrAlgin
+//
+Struct SCMRQueryServiceConfigw
+{
+	SCMRServiceType ServiceType;
+	UINT32 StartType = SCMRQueryServiceConfigwStartTypeTable(this);
+	UINT32 ErrorControl = SCMRRErrorControlTable(this);
+	NdrPtr BinaryPathNamePtr;
+	NdrPtr LoadOrderGroupPtr;
+	UINT32 TagId;
+	NdrPtr DependenciesPtr;
+	NdrPtr ServiceStartNamePtr;
+	NdrPtr DisplayNamePtr;
+	Switch {
+		Case BinaryPathNamePtr.ReferentID != 0:
+			NdrWideString BinaryPathName;
+	}
+	Switch {
+		Case LoadOrderGroupPtr.ReferentID != 0:
+			NdrWideString LoadOrderGroup;
+	}
+	Switch {
+		Case DependenciesPtr.ReferentID != 0:
+			NdrWideString Dependencies;
+	}
+	Switch {
+		Case ServiceStartNamePtr.ReferentID != 0:
+			NdrWideString ServiceStartName;
+	}
+	Switch {
+		Case DisplayNamePtr.ReferentID != 0:
+			NdrWideString DisplayName;
+	}
+}
+
+Table SCMRQueryServiceConfigwStartTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "SERVICE_BOOT_START - A device driver started by the system loader. This value is valid only for driver services.";
+		Case 0x00000001: "SERVICE_SYSTEM_START - A device driver started by the I/O manager function. This value is valid only for driver services.";
+		Case 0x00000002: "SERVICE_AUTO_START - A service started automatically by the SCM during system startup.";
+		Case 0x00000003: "SERVICE_DEMAND_START - Starts the service when a client requests the SCM to start the service.";
+		Case 0x00000004: "SERVICE_DISABLED - A service that cannot be started. Attempts to start the service result in the error code ERROR_SERVICE_DISABLED.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	QUERY_SERVICE_LOCK_STATUSA
+//	Alignment: NdrAlgin
+//
+Struct SCMRQueryServiceLockStatusa
+{
+	UINT32 IsLocked;
+	NdrPtr LockOwnerPtr;
+	UINT32 LockDuration;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+	Switch {
+		Case LockOwnerPtr.ReferentID != 0:
+			NdrString LockOwner;
+	}
+}
+
+//
+//	QUERY_SERVICE_LOCK_STATUSW
+//	Alginment:NdrAlgin
+//
+Struct SCMRQueryServiceLockStatusw
+{
+	UINT32 IsLocked;
+	NdrPtr LockOwnerPtr;
+	UINT32 LockDuration;
+	Switch
+	{
+		case Property.MSRPCNdr64:
+			Align8 Pad;
+	}
+	Switch {
+		Case LockOwnerPtr.ReferentID != 0:
+			NdrWideString LockOwner;
+	}
+}
+
+Table SCMRRErrorControlTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "SERVICE_ERROR_IGNORE - The SCM ignores the error and continues the startup operation.";
+		Case 0x00000001: "SERVICE_ERROR_NORMAL - The SCM logs the error and displays a message box, but continues the startup operation.";
+		Case 0x00000002: "SERVICE_ERROR_SEVERE - The SCM logs the error. If the last-known good configuration is being started, the startup operation continues. Otherwise, the system is restarted with the last-known good configuration.";
+		Case 0x00000003: "SERVICE_ERROR_CRITICAL - The SCM SHOULD log the error if possible. If the last-known good configuration is being started, the startup operation fails. Otherwise, the system is restarted with the last-known good configuration.";
+		Case 0xFFFFFFFF: "SERVICE_NO_CHANGE - Service error control type does not change.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRRStartTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "SERVICE_BOOT_START - Starts the driver service when the system boots up.";
+		Case 0x00000001: "SERVICE_SYSTEM_START - Starts the driver service when the system boots up.";
+		Case 0x00000002: "SERVICE_AUTO_START - Starts the service automatically during system startup.";
+		Case 0x00000003: "SERVICE_DEMAND_START - Starts the service when a client requests the SCM to start the service.";
+		Case 0x00000004: "SERVICE_DISABLED - Service cannot be started.";
+		Case 0xFFFFFFFF: "SERVICE_NO_CHANGE - Service start type does not change.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRControlTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_CONTROL_STOP - Notifies a service that it should stop. The hService handle MUST have the SERVICE_STOP access right.";
+		Case 0x00000002: "SERVICE_CONTROL_PAUSE - Notifies a service that it should pause. The hService handle MUST have the SERVICE_PAUSE_CONTINUE access right.";
+		Case 0x00000003: "SERVICE_CONTROL_CONTINUE - Notifies a paused service that it should resume. The hService handle MUST have the SERVICE_PAUSE_CONTINUE access right.";
+		Case 0x00000004: "SERVICE_CONTROL_INTERROGATE - Notifies a service that it should report its current status information to the SCM. The hService handle MUST have the SERVICE_INTERROGATE access right.";
+		Case 0x00000006: "SERVICE_CONTROL_PARAMCHANGE - Notifies a service that its startup parameters have changed. The hService handle MUST have the SERVICE_PAUSE_CONTINUE access right.";
+		Case 0x00000007: "SERVICE_CONTROL_NETBINDADD - Notifies a service that there is a new component for binding. The hService handle MAY have the SERVICE_PAUSE_CONTINUE access right.Only windows_2000 and windows_xp notify a network service that there is a new component for binding.";
+		Case 0x00000008: "SERVICE_CONTROL_NETBINDREMOVE - Notifies a network service that a binding component has been removed. The hService handle MAY have the SERVICE_PAUSE_CONTINUE access right.Only windows_2000 and windows_xp notify a network service that there is a new component for binding.";
+		Case 0x00000009: "SERVICE_CONTROL_NETBINDENABLE - Notifies a network service that a disabled binding has been enabled. The hService handle MAY have the SERVICE_PAUSE_CONTINUE access right.Only windows_2000 and windows_xp notify a network service that there is a new component for binding.";
+		Case 0x0000000A: "SERVICE_CONTROL_NETBINDDISABLE - Notifies a network service that one of its bindings has been disabled. The hService handle MAY have the SERVICE_PAUSE_CONTINUE access right.Only windows_2000 and windows_xp notify a network service that there is a new component for binding.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRServiceStateTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_ACTIVE - Enumerates services that are in the following states: SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_RUNNING, SERVICE_CONTINUE_PENDING, SERVICE_PAUSE_PENDING, and SERVICE_PAUSED.";
+		Case 0x00000002: "SERVICE_INACTIVE - Enumerates services that are in the SERVICE_STOPPED state.";
+		Case 0x00000003: "SERVICE_STATE_ALL - Enumerates services that are in either the state SERVICE_ACTIVE or the state SERVICE_INACTIVE.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRServiceTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x0000000F: "SERVICE_DRIVER - Enumerates services of type SERVICE_KERNEL_DRIVER and type SERVICE_FILE_SYSTEM_DRIVER.";
+		Case 0x00000030: "SERVICE_WIN32 - Enumerates services of type SERVICE_WIN32_OWN_PROCESS and type SERVICE_WIN32_SHARE_PROCESS.";
+		Case 0xFFFFFFFF: "SERVICE_NO_CHANGE - The service type does not change.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRRNotifyBootConfigStatusBootAcceptableTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Server immediately reboots, using the previously saved last-known good configuration.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRInfoLevelTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_CONFIG_DESCRIPTION - The lpBuffer parameter is a pointer to a SERVICE_DESCRIPTIONW structure.The server returns data in the following format.typedef struct _SERVICE_DESCRIPTION_WOW64{    DWORD    dwDescriptionOffset;    // Description string starts from the offset specified above. }SERVICE_DESCRIPTION_WOW64, *LPSERVICE_DESCRIPTION_WOW64;";
+		Case 0x00000002: "SERVICE_CONFIG_FAILURE_ACTIONS - The lpBuffer parameter is a pointer to a SERVICE_FAILURE_ACTIONSW structure.The server returns data in the following format.typedef struct _SERVICE_FAILURE_ACTIONS_WOW64{    DWORD    dwResetPeriod;    DWORD    dwRebootMsgOffset;    DWORD    dwCommandOffset;    DWORD    cActions;    DWORD    dwsaActionsOffset;    // the data starts from the offsets specified above.}SERVICE_FAILURE_ACTIONS_WOW64, *LPSERVICE_FAILURE_ACTIONS_WOW64;";
+		Case 0x00000003: "SERVICE_CONFIG_DELAYED_AUTO_START_INFO - The lpBuffer parameter is a pointer to a SERVICE_DELAYED_AUTO_START_INFO structure.";
+		Case 0x00000004: "SERVICE_CONFIG_FAILURE_ACTIONS_FLAG - The lpBuffer parameter is a pointer to a SERVICE_FAILURE_ACTIONS_FLAG structure.";
+		Case 0x00000005: "SERVICE_CONFIG_SERVICE_SID_INFO - The lpBuffer parameter is a pointer to a SERVICE_SID_INFO structure.";
+		Case 0x00000006: "SERVICE_CONFIG_REQUIRED_PRIVILEGES_INFO - The lpBuffer parameter is a pointer to a SERVICE_RPC_REQUIRED_PRIVILEGES_INFO structure.The server returns data in the following format.typedef struct _SERVICE_REQUIRED_PRIVILEGES_INFO_WOW64{    DWORD    dwRequiredPrivilegesOffset;    // the data starts from the offsets specified above}SERVICE_REQUIRED_PRIVILEGES_INFO_WOW64, *LPSERVICE_REQUIRED_PRIVILEGES_INFO_WOW64;";
+		Case 0x00000007: "SERVICE_CONFIG_PRESHUTDOWN_INFO - The lpBuffer parameter is a pointer to a SERVICE_PRESHUTDOWN_INFO structure.";
+		Case 0x00000008: "SERVICE_CONFIG_TRIGGER_INFO - The lpBuffer parameter is a pointer to a SERVICE_TRIGGER_INFO structure.";
+		Case 0x00000009: "SERVICE_CONFIG_PREFERRED_NODE - The lpInfo parameter is a pointer to a SERVICE_PREFERRED_NODE_INFO structure.This value exists only in windows_7.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	SC_ENUM_TYPE
+//
+Struct SCMRScEnumType
+{
+	NdrV1Enum(4) Enum = SCMRScEnumTypeTable(this);
+}
+
+Table SCMRScEnumTypeTable(value)
+{
+	Switch(value)
+	{
+		case 0: "SC_ENUM_PROCESS_INFO";
+	}
+}
+
+//
+//	SC_STATUS_TYPE
+//
+Struct SCMRScStatusType
+{
+	NdrV1Enum(4) Enum = SCMRScStatusTypeTable(this);
+}
+
+Table SCMRScStatusTypeTable(Value)
+{
+	Switch(value)
+	{
+		case 0: "SC_STATUS_PROCESS_INFO";
+	}
+}
+
+//
+//	_SC_RPC_CONFIG_INFOA
+//	Alignment:NdrAlign
+//
+Struct SCMRScRpcConfigInfoa
+{
+	UINT32 InfoLevel;
+	NdrAlign Pad;
+	SCMRUnionScRpcConfigInfoa Info;
+}
+
+//
+//	UNION_SC_RPC_CONFIG_INFOA
+//	Alignment:NdrAlign
+//
+Struct SCMRUnionScRpcConfigInfoa
+{
+	UINT32 SwitchValue;
+	NdrPtr Pointer;
+	Switch
+	{
+		case Pointer.ReferentID > 0:
+			Switch(SwitchValue)
+			{
+				case 1: SCMRServiceDescriptiona sd;
+				Case 2: SCMRServiceFailureActionsa sfa;
+				Case 3: BOOL DelayedAutostart;
+				Case 4: BOOL FailureActionsOnNonCrashFailures;
+				Case 5: UINT32 ServiceSidType = SCMRServiceSidTypeTable (this);
+				Case 6: SCMRServiceRpcRequiredPrivilegesInfo Srp;
+				Case 7: UINT32 dwPreshutdownTimeout = FormatString("0x%X milliseconds",this);
+				Case 8: SCMRServiceTriggerInfo Sti;
+				Case 9: SCMRServicePreferredNodeInfo Spn;
+				Default:
+					ReportParserError( ParserErrorProtocolClassWindows, "SCMR", "Unknown Union Switch Value" ) Unknown;
+			}
+	}
+}
+
+//
+//	_SERVICE_DESCRIPTIONA
+//	Alignment: None
+//
+Struct SCMRServiceDescriptiona
+{
+	NdrStringPtr Description;
+}
+
+//
+//	_SERVICE_FAILURE_ACTIONSA
+//	Alignment: none
+//
+Struct SCMRServiceFailureActionsa
+{
+	NdrAlign Padding;
+	UINT32 ResetPeriod;
+	[SCMRRebootMsg = RebootMsgPtr.ReferentID]
+	NdrPtr RebootMsgPtr;
+	[SCMRCommand = CommandPtr.ReferentID]
+	NdrPtr CommandPtr;
+	UINT32 ActionsCount;
+	[SCMRActions = ActionsPtr.ReferentID]
+	NdrPtr ActionsPtr;
+	Switch {
+		case SCMRRebootMsg > 0 : NdrString RebootMsgString;
+	}
+	Switch {
+		case SCMRCommand > 0 : NdrString CommandString;
+	}
+	Switch {
+		case SCMRActions > 0 : 
+			_struct
+			{
+				NdrConformant ActionSize;
+				SCMRScAction Action[ActionSize.MaxCount];
+			}
+	}
+}
+
+//
+//	2.2.19   SC_ACTION
+//  Alignment: None
+//
+struct SCMRScAction
+{
+	SCMRScActionType Enum;
+	UINT32 Delay;
+}
+
+struct SCMRScActionType = FormatString("0x%08X: ", Enum) + SCMRScActionTypeTable( Enum )
+{
+	NdrV1Enum(4) Enum = SCMRScActionTypeTable(this);
+}
+
+Table SCMRScActionTypeTable( value )
+{
+	switch( value )
+	{
+		case 0: "SC_ACTION_NONE - No action.";
+		case 1: "SC_ACTION_REBOOT - Reboot the computer.";
+		case 2: "SC_ACTION_RESTART - Restart the service.";
+		case 3: "SC_ACTION_RUN_COMMAND - Run a command.";
+		default: "unkown";
+	}
+}
+
+Table SCMRServiceSidTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "SERVICE_SID_TYPE_NONE - No service SID.";
+		Case 0x00000001: "SERVICE_SID_TYPE_UNRESTRICTED - When the service process is created, the service SID is added to the service process token with the following attributes: SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_OWNER.";
+		Case 0x00000003: "SERVICE_SID_TYPE_RESTRICTED - This type includes SERVICE_SID_TYPE_UNRESTRICTED. The service SID is also added to the restricted SID list of the process token. Three additional SIDs are added to the restricted SID list:1. World SID S-1-1-0.2. Service logon SID.3. One access control entry (ACE) that allows GENERIC_ALL access for the service logon SID is also added to the service process token object.If multiple services are hosted in the same process and one service has SERVICE_SID_TYPE_RESTRICTED, all services must have SERVICE_SID_TYPE_RESTRICTED.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVICE_RPC_REQUIRED_PRIVILEGES_INFO
+//	Alignment: NdrAlign
+//
+Struct SCMRServiceRpcRequiredPrivilegesInfo
+{
+	UINT32 cbRequiredPrivileges;
+	NdrPtr RequiredPrivilegesPtr;
+	Switch
+	{
+		case RequiredPrivilegesPtr.ReferentId > 0:
+			Struct RequiredPrivileges
+			{
+				NdrConformant RequiredPrivilegesSize;
+				[Local.RequiredPrivilegesLength = FrameOffset + RequiredPrivilegesSize.MaxCount]
+				While[ (Frameoffset < Local.RequiredPrivilegesLength) && (!(UINT16(FrameData, FrameOffset) == 0))]
+				{
+					UnicodeString RequiredPrivilege;
+				}
+				UINT16 Terminator;
+			}
+	}
+}
+
+//
+//	_SERVICE_TRIGGER_INFO
+//Alignment: NdrAlign
+//
+Struct SCMRServiceTriggerInfo
+{
+	UINT32 cTriggers;
+	NdrPtr TriggersPtr;
+	NdrPtr pReserved;
+	Switch
+	{
+		case TriggersPtr.ReferentId > 0: 
+			Struct
+			{
+				NdrConformant TriggersSize;
+				[MaxLoopCount = TriggersSize.MaxCount,Property.SCMRServiceTriggerCount = 0]
+				while[Property.SCMRServiceTriggerCount < TriggersSize.MaxCount]
+				{
+					[Property.SCMRServiceTriggerCount = Property.SCMRServiceTriggerCount + 1]
+					SCMRServiceTrigger ServiceTrigger;
+				}
+				[MaxLoopCount = TriggersSize.MaxCount,Property.SCMRServiceTriggerRefCount = 0]
+				While [Property.SCMRServiceTriggerRefCount < TriggersSize.MaxCount]
+				{
+					[Property.SCMRServiceTriggerRefCount = Property.SCMRServiceTriggerRefCount  + 1]
+					SCMRServiceTriggerRef ServiceTriggerRef;
+				}
+			}
+	}
+	switch
+	{
+		case pReserved.ReferentId > 0:
+			UINT8 Reserved;
+	}
+}
+
+//
+//	_SERVICE_PREFERRED_NODE_INFO
+//	Alignment:Align4
+//
+Struct SCMRServicePreferredNodeInfo
+{
+	UINT16 UsPreferredNode;
+	Align4 Padding;
+	BOOL Delete;
+}
+
+//
+//	2.2.22   SC_RPC_CONFIG_INFOW
+//	Alignment: NdrAlign
+//
+Struct SCMRScRpcConfigInfow
+{
+	UINT32 InfoLevel;
+	NdrAlign Pad1;
+	SCMRUnionScRpcConfigInfow Info;
+}
+
+//
+//	_UNION_SC_RPC_NOTIFY_PARAMS
+//	Alignment:NdrAlign
+//
+Struct SCMRUnionScRpcNotifyParams
+{
+	[Property.SCMRUnionScRpcNotifyParamsSwitchValue$[Property.SCMRScRpcNotifyParamsCount] = SwitchValue]
+	UINT32 SwitchValue;
+	[Property.SCMRUnionScRpcNotifyParamsPtr$[Property.SCMRScRpcNotifyParamsCount] = NotifyParamsPtr.ReferentID > 0]
+	NdrPtr NotifyParamsPtr;
+}
+
+Struct SCMRUnionScRpcNotifyParamsRef
+{
+	switch{
+		case Property.SCMRUnionScRpcNotifyParamsPtr$[Property.SCMRScRpcNotifyParamsRefcount] > 0:
+			switch( Property.SCMRUnionScRpcNotifyParamsSwitchValue$[Property.SCMRScRpcNotifyParamsRefcount] )
+			{
+				Case 1:
+					SCMRServiceNotifyStatusChangeParams1 StatusChangeParam1;
+				Case 2:
+					SCMRServiceNotifyStatusChangeParams2 StatusChangeParams2;
+				Default:
+					ReportParserError( ParserErrorProtocolClassWindows, "SCMR", "Unknown Union Switch Value" ) Unknown;
+			}
+	}
+}
+
+//
+//	_SC_RPC_NOTIFY_PARAMS
+//	Alignment: NdrAlign
+//
+Struct SCMRScRpcNotifyParams
+{
+	UINT32 InfoLevel;
+	NdrAlign Padding;
+	SCMRUnionScRpcNotifyParams UnionScRpcNotifyParams;
+}
+
+//
+//	_SC_RPC_NOTIFY_PARAMS_LIST
+// Alignment:None
+//
+Struct SCMRScRpcNotifyParamsList
+{
+	NdrConformant SCMRScRpcNotifyParamsListSize;
+	UINT32 Elements;
+	NdrAlign Pad1;
+	[Property.SCMRScRpcNotifyParamsCount = 0]
+	while[Property.SCMRScRpcNotifyParamsCount < SCMRScRpcNotifyParamsListSize.MaxCount]
+	{
+		[Property.SCMRScRpcNotifyParamsCount = Property.SCMRScRpcNotifyParamsCount + 1]
+		SCMRScRpcNotifyParams NotifyParams;
+	}
+	[MaxLoopCount = SCMRScRpcNotifyParamsListSize.MaxCount,Property.SCMRScRpcNotifyParamsRefcount = 0]
+	while[Property.SCMRScRpcNotifyParamsRefcount < SCMRScRpcNotifyParamsListSize.MaxCount]
+	{
+		[Property.SCMRScRpcNotifyParamsRefcount = Property.SCMRScRpcNotifyParamsRefcount + 1]
+		SCMRUnionScRpcNotifyParamsRef NotifyParamsRef;
+	}	
+}
+
+//
+//	Alignment:Align4
+//
+struct SCMRServiceControlStop
+{
+	[Local.ServiceControlStopBit30 = UINT32(FrameData, FrameOffset) & 0x20000000]
+	switch
+	{
+		case Local.ServiceControlStopBit30:
+			UINT32 dwReasonCustom
+			{
+				UINT32 MINOR_CUSTOM:16 = FormatString("(%s) Minor reason codes in the range 0x00000100 through 0x0000FFFF", this.ToBitString);
+				UINT32 MAJOR_CUSTOM:8 = FormatString("(%s) Major reason codes in the range 0x00400000 through 0x00FF0000", this.ToBitString);
+				UINT32 Reserved1:5 = FormatString("    (%s) Reserved", this.ToBitString);
+				UINT32 CUSTOM:1 = FormatString("      (%s) %s", this.ToBitString, this ? "The reason code is defined by the user." : "The reason code is defined by the system.");
+				UINT32 Reserved2:2 = FormatString("    (%s) Reserved", this.ToBitString);
+			};
+		default:
+			UINT32 dwReasonSystem = FormatString("0x%X %s", this, this & 0x10000000 ? "The service stop was not planned.": this & 0x40000000 ? "The service stop was planned.":"");
+	}
+}
+
+//
+//	_SERVICE_CONTROL_STATUS_REASON_IN_PARAMSA
+//	Alignment:NdrAlign
+//
+Struct SCMRServiceControlStatusReasonInParamsa
+{
+	SCMRServiceControlStop dwReason;
+	NdrStringPtr pszComment;
+}
+
+//
+//	_SERVICE_CONTROL_STATUS_REASON_IN_PARAMSW
+//	Alignment:NdrAlign
+//
+Struct SCMRServiceControlStatusReasonInParamsw
+{
+	SCMRServiceControlStop dwReason;
+	NdrStringPtr pszComment;
+}
+
+//
+//	_SERVICE_CONTROL_STATUS_REASON_OUT_PARAMS
+//	Alignment:Align4
+//
+Struct SCMRServiceControlStatusReasonOutParams
+{
+	SCMRServiceStatusProcess ServiceStatus;
+}
+
+//
+//	_SERVICE_FAILURE_ACTIONSW
+//	Alignment: NdrAlign
+//
+Struct SCMRServiceFailureActionsw
+{
+	UINT32 ResetPeriod;
+	NdrPtr RebootMsgPtr;
+	NdrPtr CommandPtr;
+	UINT32 Actions;
+	NdrPtr ActionsPtr;
+	Switch {
+		case RebootMsgPtr.ReferentId > 0 : NdrWideString RebootMsgString;
+	}
+	Switch {
+		case CommandPtr.ReferentID > 0 : NdrWideString CommandString;
+	}
+	Switch {
+		case ActionsPtr.ReferentID > 0 : 
+			Struct
+			{
+				NdrConformant ActionSize;
+				SCMRScAction Action[ActionSize.MaxCount];
+			}
+	}
+}
+
+Struct SCMRNotifyMaskStruct
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		case LittleEndian:
+		Struct
+		{
+			UINT32 dwNotifyMask = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 Stopped:1 = FormatString("        (%s) SERVICE_NOTIFY_STOPPED - %s Report when the service has stopped.", this.ToBitString, this ? "" : "Don't");
+				UINT32 StartPending:1 = FormatString("   (%s) SERVICE_NOTIFY_START_PENDING - %s Report when the service is starting.", this.ToBitString, this ? "" : "Don't");
+				UINT32 StopPending:1 = FormatString("    (%s) SERVICE_NOTIFY_STOP_PENDING - %s Report when the service is stopping.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Running:1 = FormatString("        (%s) SERVICE_NOTIFY_RUNNING - %s Report when the service is running.", this.ToBitString, this ? "" : "Don't");
+				UINT32 ContinuePending:1 = FormatString("(%s) SERVICE_NOTIFY_CONTINUE_PENDING - %s Report when the service is about to continue.", this.ToBitString, this ? "" : "Don't");
+				UINT32 PausePending:1 = FormatString("   (%s) SERVICE_NOTIFY_PAUSE_PENDING - %s Report when the service is pausing.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Paused:1 = FormatString("         (%s) SERVICE_NOTIFY_PAUSED - %s Report when the service has paused.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Created:1 = FormatString("        (%s) SERVICE_NOTIFY_CREATED - %s Report when the service has been created.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Deleted:1 = FormatString("        (%s) SERVICE_NOTIFY_DELETED - %s Report when the service has been deleted.", this.ToBitString, this ? "" : "Don't");
+				UINT32 DeletePending:1 = FormatString("  (%s) SERVICE_NOTIFY_DELETE_PENDING - %s Report when an application has specified the service to delete.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Reserved:22 = FormatString("       (%s)", this.ToBitString);
+			}
+		}
+		Default:
+		Struct
+		{
+			UINT32 dwNotifyMask = FormatString( "0x%08X", UINT32( FrameData, FrameOffset ) )
+			{
+				UINT32 Reserved:22 = FormatString("       (%s)", this.ToBitString);
+				UINT32 DeletePending:1 = FormatString("  (%s) SERVICE_NOTIFY_DELETE_PENDING - %s Report when an application has specified the service to delete.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Deleted:1 = FormatString("        (%s) SERVICE_NOTIFY_DELETED - %s Report when the service has been deleted.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Created:1 = FormatString("        (%s) SERVICE_NOTIFY_CREATED - %s Report when the service has been created.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Paused:1 = FormatString("         (%s) SERVICE_NOTIFY_PAUSED - %s Report when the service has paused.", this.ToBitString, this ? "" : "Don't");
+				UINT32 PausePending:1 = FormatString("   (%s) SERVICE_NOTIFY_PAUSE_PENDING - %s Report when the service is pausing.", this.ToBitString, this ? "" : "Don't");
+				UINT32 ContinuePending:1 = FormatString("(%s) SERVICE_NOTIFY_CONTINUE_PENDING - %s Report when the service is about to continue.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Running:1 = FormatString("        (%s) SERVICE_NOTIFY_RUNNING - %s Report when the service is running.", this.ToBitString, this ? "" : "Don't");
+				UINT32 StopPending:1 = FormatString("    (%s) SERVICE_NOTIFY_STOP_PENDING - %s Report when the service is stopping.", this.ToBitString, this ? "" : "Don't");
+				UINT32 StartPending:1 = FormatString("   (%s) SERVICE_NOTIFY_START_PENDING - %s Report when the service is starting.", this.ToBitString, this ? "" : "Don't");
+				UINT32 Stopped:1 = FormatString("        (%s) SERVICE_NOTIFY_STOPPED - %s Report when the service has stopped.", this.ToBitString, this ? "" : "Don't");
+			}
+		}
+	}
+}
+
+//
+//	_SERVICE_NOTIFY_STATUS_CHANGE_PARAMS_1
+//	Alignment: None
+//
+Struct SCMRServiceNotifyStatusChangeParams1
+{
+	Align8 Padding1;
+	UINT64 UllThreadId;
+	SCMRNotifyMaskStruct NotifyMask;
+	AsciiString(16) CallbackAddressArray;
+	AsciiString(16) CallbackParamAddressArray;
+	SCMRServiceStatusProcess ServiceStatus;
+	UINT32 NotificationStatus;
+	UINT32 Sequence;
+}
+
+//
+//	_SERVICE_NOTIFY_STATUS_CHANGE_PARAMS_2
+//	Alignment: None
+//
+Struct SCMRServiceNotifyStatusChangeParams2
+{
+	Align8 Padding1;
+	UINT64 UllThreadId;
+	SCMRNotifyMaskStruct NotifyMask;
+	AsciiString(16) CallbackAddressArray;
+	AsciiString(16) CallbackParamAddressArray;
+	SCMRServiceStatusProcess ServiceStatus;
+	UINT32 NotificationStatus;
+	UINT32 Sequence;
+	UINT32 NotificationTriggered;
+	NdrWideString ServiceNames;
+}
+
+//
+//	Alignment: Align4
+//
+Struct SCMRControlsAccepted
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		case LittleEndian:
+		Struct
+		{
+			UINT32 ServiceAcceptStop:1 = FormatString("                 (%s) %s", this.ToBitString, this ? "Service can be stopped." : "Service cannot be stopped.");
+			UINT32 ServiceAcceptPauseContinue:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Service can be paused and continued." : "Service cannot be paused and continued.");
+			UINT32 ServiceAcceptShutdown:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Service is notified when system shutdown occurs." : "Service is not notified when system shutdown occurs.");
+			UINT32 ServiceAcceptParamChange:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service can reread its startup parameters without being stopped and restarted." : "Windows 2000/XP: Service cannot reread its startup parameters without being stopped and restarted.");
+			UINT32 ServiceAcceptNetBindChange:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is a network component that can accept changes in its binding without being stopped and restarted." : "Windows 2000/XP: Service is not a network component that can accept changes in its binding without being stopped and restarted.");
+			UINT32 ServiceAcceptHardwareProfileChange:1 = FormatString("(%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is notified when the computer's hardware profile changes." : "Windows 2000/XP: Service is not notified when the computer's hardware profile changes.");
+			UINT32 ServiceAcceptPowerEvent:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is notified when the computer's power status changes." : "Windows 2000/XP: Service is not notified when the computer's power status changes.");
+			UINT32 ServiceAcceptSessionChange:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Windows XP: Service is notified when the computer's session status changes." : "Windows XP: Service is not notified when the computer's session status changes.");
+			UINT32 Reserved:24 = FormatString("                          (%s)", this.ToBitString);
+		};
+		case BigEndian:
+		Struct
+		{
+			UINT32 Reserved:24 = FormatString("                          (%s)", this.ToBitString);
+			UINT32 ServiceAcceptSessionChange:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Windows XP: Service is notified when the computer's session status changes." : "Windows XP: Service is not notified when the computer's session status changes.");
+			UINT32 ServiceAcceptPowerEvent:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is notified when the computer's power status changes." : "Windows 2000/XP: Service is not notified when the computer's power status changes.");
+			UINT32 ServiceAcceptHardwareProfileChange:1 = FormatString("(%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is notified when the computer's hardware profile changes." : "Windows 2000/XP: Service is not notified when the computer's hardware profile changes.");
+			UINT32 ServiceAcceptNetBindChange:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service is a network component that can accept changes in its binding without being stopped and restarted." : "Windows 2000/XP: Service is not a network component that can accept changes in its binding without being stopped and restarted.");
+			UINT32 ServiceAcceptParamChange:1 = FormatString("          (%s) %s", this.ToBitString, this ? "Windows 2000/XP: Service can reread its startup parameters without being stopped and restarted." : "Windows 2000/XP: Service cannot reread its startup parameters without being stopped and restarted.");
+			UINT32 ServiceAcceptShutdown:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Service is notified when system shutdown occurs." : "Service is not notified when system shutdown occurs.");
+			UINT32 ServiceAcceptPauseContinue:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Service can be paused and continued." : "Service cannot be paused and continued.");
+			UINT32 ServiceAcceptStop:1 = FormatString("                 (%s) %s", this.ToBitString, this ? "Service can be stopped." : "Service cannot be stopped.");
+		}
+	}
+}
+
+//
+//	Alignment:Align4
+//
+Struct SCMRServiceType
+{
+	Switch( Property.MSRPCByteOrder )
+	{
+		case LittleEndian:
+		Struct
+		{
+			UINT32 KernelDriver:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A driver service." : "Not a driver service.");
+			UINT32 FileSystemDriver:1 = FormatString("  (%s) %s", this.ToBitString, this ? "A file system driver service." : "Not a file system driver service.");
+			UINT32 Unused1:2 = FormatString("           (%s)", this.ToBitString);
+			UINT32 Win32OwnProcess:1 = FormatString("   (%s) %s", this.ToBitString, this ? "A service that runs in its own process." : "A service that doesn't run in its own process.");
+			UINT32 Win32ShareProcess:1 = FormatString(" (%s) %s", this.ToBitString, this ? "A service that shares a process with other services." : "A service that doesn't share a process with other services.");
+			UINT32 Unused2:2 = FormatString("           (%s)", this.ToBitString);
+			UINT32 InteractiveProcess:1 = FormatString("(%s) %s", this.ToBitString, this ? "The service can interact with the desktop." : "The service can't interact with the desktop.");
+			UINT32 Unused3:23 = FormatString("           (%s)", this.ToBitString);
+		};
+		case BigEndian:
+		Struct
+		{
+			UINT32 Unused3:23 = FormatString("           (%s)", this.ToBitString);
+			UINT32 InteractiveProcess:1 = FormatString("(%s) %s", this.ToBitString, this ? "The service can interact with the desktop." : "The service can't interact with the desktop.");
+			UINT32 Unused2:2 = FormatString("           (%s)", this.ToBitString);
+			UINT32 Win32ShareProcess:1 = FormatString(" (%s) %s", this.ToBitString, this ? "A service that shares a process with other services." : "A service that doesn't share a process with other services.");
+			UINT32 Win32OwnProcess:1 = FormatString("   (%s) %s", this.ToBitString, this ? "A service that runs in its own process." : "A service that doesn't run in its own process.");
+			UINT32 Unused1:2 = FormatString("           (%s)", this.ToBitString);
+			UINT32 FileSystemDriver:1 = FormatString("  (%s) %s", this.ToBitString, this ? "A file system driver service." : "Not a file system driver service.");
+			UINT32 KernelDriver:1 = FormatString("      (%s) %s", this.ToBitString, this ? "A driver service." : "Not a driver service.");
+		}
+	}		
+}
+
+//
+//	SERVICE_STATUS
+//	alignment: 4
+//
+Struct SCMRServiceStatus
+{
+	SCMRServiceType ServiceType;
+	UINT32 CurrentState = SCMRServiceStatusCurrentStateTable(this);
+	SCMRControlsAccepted ControlsAccepted;
+	UINT32 Win32ExitCode;
+	UINT32 ServiceSpecificExitCode;
+	UINT32 CheckPoint;
+	UINT32 WaitHint;
+}
+
+Table SCMRServiceStatusCurrentStateTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_STOPPED";
+		Case 0x00000002: "SERVICE_START_PENDING";
+		Case 0x00000003: "SERVICE_STOP_PENDING";
+		Case 0x00000004: "SERVICE_RUNNING";
+		Case 0x00000005: "SERVICE_CONTINUE_PENDING";
+		Case 0x00000006: "SERVICE_PAUSE_PENDING";
+		Case 0x00000007: "SERVICE_PAUSED";
+		Default: "Unknown";
+	}
+}
+
+//
+//	SERVICE_STATUS_PROCESS
+//	Alignment: Align4
+//
+Struct SCMRServiceStatusProcess
+{
+	SCMRServiceType ServiceType;
+	UINT32 CurrentState = SCMRServiceStatusCurrentStateTable(this);
+	SCMRControlsAccepted ControlsAccepted;
+	UINT32 Win32ExitCode;
+	UINT32 ServiceSpecificExitCode;
+	UINT32 CheckPoint;
+	UINT32 WaitHint;
+	UINT32 ProcessId;
+	UINT32 ServiceFlags = SCMRServiceStatusProcessServiceFlagsTable(this);
+}
+
+Table SCMRServiceStatusProcessServiceFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "Service is either running in a process that is not a system process, or the service is not running at all. In a nonsystem process, dwProcessId is nonzero. If the service is not running, dwProcessId is 0.";
+		Case 0x00000001: "Service runs in a system process that must always be running.";
+		Default: "Unknown";
+	}
+}
+
+//
+//	2.2.50   SERVICE_TRIGGER
+//	Alignment: none
+//
+Struct SCMRServiceTrigger
+{
+	UINT32 TriggerType = SCMRServiceTriggerTypeTable(this);
+	UINT32 Action = SCMRServiceTriggerActionTable(this);
+	[Property.SCMRServiceTriggerTriggerSubtypePtr$[Property.SCMRServiceTriggerCount] = this.ReferentID]
+	NdrPtr TriggerSubtypePtr;
+	UINT32 DataItems;
+	[Property.SCMRServiceTriggerDataItemsPtr$[Property.SCMRServiceTriggerCount] = this.ReferentID]
+	NdrPtr DataItemsPtr;
+}
+
+Struct SCMRServiceTriggerRef
+{
+	switch
+	{
+		case Property.SCMRServiceTriggerTriggerSubtypePtr$[Property.SCMRServiceTriggerRefCount] > 0 : MSRPCGuid TriggerSubtype = SCMRServiceTriggerTriggerSubtypeTable(this.ToString);
+	}
+	Switch
+	{
+		case Property.SCMRServiceTriggerDataItemsPtr$[Property.SCMRServiceTriggerRefCount] > 0:
+			Struct
+			{
+				NdrConformant DataItemSize;
+				
+				[MaxLoopCount = DataItemSize.MaxCount,Property.SCMRServiceTriggerSpecificDataItemCount = 0]
+				while[true]
+				{
+					[Property.SCMRServiceTriggerSpecificDataItemCount = Property.SCMRServiceTriggerSpecificDataItemCount + 1]
+					SCMRServiceTriggerSpecificDataItem DataItem;
+				}
+				[MaxLoopCount = DataItemSize.MaxCount,Property.SCMRServiceTriggerSpecificDataItemRefCount = 0]
+				while[true]
+				{
+					[Property.SCMRServiceTriggerSpecificDataItemRefCount = Property.SCMRServiceTriggerSpecificDataItemRefCount + 1]
+					SCMRServiceTriggerSpecificDataItemRef DataItemRef;
+				}
+			}
+	}
+}
+
+Table SCMRServiceTriggerActionTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_TRIGGER_ACTION_SERVICE_START";
+		Case 0x00000002: "SERVICE_TRIGGER_ACTION_SERVICE_STOP";
+		Default: "Unknown";
+	}
+}
+
+//
+//	_SERVICE_TRIGGER_SPECIFIC_DATA_ITEM
+// Alignment:None
+//
+Struct SCMRServiceTriggerSpecificDataItem
+{
+	[Property.SCMRServiceTriggerSpecificDataItemDataType$[Property.SCMRServiceTriggerSpecificDataItemCount] = this]
+	UINT32 DataType = SCMRServiceTriggerSpecificDataItemDataTypeTable(this);
+	UINT32 cbData;
+	[Property.SCMRServiceTriggerSpecificDataItemDataPtr$[Property.SCMRServiceTriggerSpecificDataItemCount] = this.ReferentId]
+	NdrPtr DataPtr;
+}
+
+Struct SCMRServiceTriggerSpecificDataItemRef
+{
+	Switch
+	{
+		case Property.SCMRServiceTriggerSpecificDataItemDataPtr$[Property.SCMRServiceTriggerSpecificDataItemRefCount] > 0:
+			Switch(Property.SCMRServiceTriggerSpecificDataItemDataType$[Property.SCMRServiceTriggerSpecificDataItemRefCount])
+			{
+				case 0x00000001:
+					Struct
+					{
+						NdrConformant DataSize;
+						BLOB(DataSize.MaxCount) Data;
+					};
+				case 0x00000002:
+					Struct
+					{
+						NdrConformant DataSize;
+						UnicodeString(DataSize.MaxCount/2) Data;
+					};
+			}
+	}
+}
+
+Table SCMRServiceTriggerSpecificDataItemDataTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_TRIGGER_DATA_TYPE_BINARY";
+		Case 0x00000002: "SERVICE_TRIGGER_DATA_TYPE_STRING";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRServiceTriggerTriggerSubtypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case "1ce20aba-9851-4421-9430-1ddeb766e809": "DOMAIN_JOIN_GUID - The event is triggered when the computer joins a domain. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_DOMAIN_JOIN.";
+		Case "ddaf516e-58c2-4866-9574-c3b615d42ea1": "DOMAIN_LEAVE_GUID - The event is triggered when the computer leaves a domain. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_DOMAIN_JOIN.";
+		Case "b7569e07-8421-4ee0-ad10-86915afdad09": "FIREWALL_PORT_OPEN_GUID - The event is triggered when the specified firewall port is opened. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_FIREWALL_PORT_EVENT.";
+		Case "a144ed38-8e12-4de4-9d96-e64740b1a524": "FIREWALL_PORT_CLOSE_GUID - The event is triggered approximately 60 seconds after the specified firewall port is closed. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_FIREWALL_PORT_EVENT.";
+		Case "659FCAE6-5BDB-4DA9-B1FF-CA2A178D46E0": "MACHINE_POLICY_PRESENT_GUID - The event is triggered when the machine policy has changed. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_GROUP_POLICY.";
+		Case "4f27f2de-14e2-430b-a549-7cd48cbc8245": "NETWORK_MANAGER_FIRST_IP_ADDRESS_ARRIVAL_GUID - The event is triggered when the first IP address on the TCP/IP networking stack becomes available. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_IP_ADDRESS_AVAILABILITY.";
+		Case "cc4ba62a-162e-4648-847a-b6bdf993e335": "NETWORK_MANAGER_LAST_IP_ADDRESS_REMOVAL_GUID - The event is triggered when the last IP address on the TCP/IP networking stack becomes unavailable. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_IP_ADDRESS_AVAILABILITY.";
+		Case "54FB46C8-F089-464C-B1FD-59D1B62C3B50": "USER_POLICY_PRESENT_GUID - The event is triggered when the user policy has changed. The dwTriggerType member must be SERVICE_TRIGGER_TYPE_GROUP_POLICY.";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRServiceTriggerTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "SERVICE_TRIGGER_TYPE_DEVICE_INTERFACE_ARRIVALThe event is triggered when a device of the specified device interface class arrives or is present when the system starts. This trigger event is commonly used to start a service.The pTriggerSubtype member specifies the device interface class GUID. These GUIDs are defined in device-specific header files provided with the Windows Driver Kit (WDK) [MSDN-WinDriverKit].The pDataItems member specifies one or more hardware ID and compatible ID strings for the device interface class. Strings must be Unicode. If more than one string is specified, the event is triggered if any one of the strings match. For example, the Wpdbusenum service is started when a device of device interface class GUID_DEVINTERFACE_DISK {53f56307-b6bf-11d0-94f2-00a0c91efb8b} and a hardware ID string of USBSTOR\\GenDisk arrives.";
+		Case 0x00000002: "SERVICE_TRIGGER_TYPE_IP_ADDRESS_AVAILABILITY";
+		Case 0x00000003: "SERVICE_TRIGGER_TYPE_DOMAIN_JOIN";
+		Case 0x00000020: "SERVICE_TRIGGER_TYPE_CUSTOM";
+		Default: "Unknown";
+	}
+}
+
+Table SCMRMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "RCloseServiceHandle";
+		Case 1: "RControlService";
+		Case 2: "RDeleteService";
+		Case 3: "RLockServiceDatabase";
+		Case 4: "RQueryServiceObjectSecurity";
+		Case 5: "RSetServiceObjectSecurity";
+		Case 6: "RQueryServiceStatus";
+		Case 7: "RSetServiceStatus";
+		Case 8: "RUnlockServiceDatabase";
+		Case 9: "RNotifyBootConfigStatus";
+		Case 10: "Opnum10NotUsedOnWire";
+		Case 11: "RChangeServiceConfigW";
+		Case 12: "RCreateServiceW";
+		Case 13: "REnumDependentServicesW";
+		Case 14: "REnumServicesStatusW";
+		Case 15: "ROpenSCManagerW";
+		Case 16: "ROpenServiceW";
+		Case 17: "RQueryServiceConfigW";
+		Case 18: "RQueryServiceLockStatusW";
+		Case 19: "RStartServiceW";
+		Case 20: "RGetServiceDisplayNameW";
+		Case 21: "RGetServiceKeyNameW";
+		Case 22: "Opnum22NotUsedOnWire";
+		Case 23: "RChangeServiceConfigA";
+		Case 24: "RCreateServiceA";
+		Case 25: "REnumDependentServicesA";
+		Case 26: "REnumServicesStatusA";
+		Case 27: "ROpenSCManagerA";
+		Case 28: "ROpenServiceA";
+		Case 29: "RQueryServiceConfigA";
+		Case 30: "RQueryServiceLockStatusA";
+		Case 31: "RStartServiceA";
+		Case 32: "RGetServiceDisplayNameA";
+		Case 33: "RGetServiceKeyNameA";
+		Case 34: "Opnum34NotUsedOnWire";
+		Case 35: "REnumServiceGroupW";
+		Case 36: "RChangeServiceConfig2A";
+		Case 37: "RChangeServiceConfig2W";
+		Case 38: "RQueryServiceConfig2A";
+		Case 39: "RQueryServiceConfig2W";
+		Case 40: "RQueryServiceStatusEx";
+		Case 41: "REnumServicesStatusExA";
+		Case 42: "REnumServicesStatusExW";
+		Case 43: "Opnum43NotUsedOnWire";
+		Case 44: "RCreateServiceWOW64A";
+		Case 45: "RCreateServiceWOW64W";
+		Case 46: "Opnum46NotUsedOnWire";
+		Case 47: "RNotifyServiceStatusChange";
+		Case 48: "RGetNotifyResults";
+		Case 49: "RCloseNotifyHandle";
+		Case 50: "RControlServiceExA";
+		Case 51: "RControlServiceExW";
+		Case 52: "Opnum52NotUsedOnWire";
+		Case 53: "Opnum53NotUsedOnWire";
+		Case 54: "Opnum54NotUsedOnWire";
+		Case 55: "Opnum55NotUsedOnWire";
+		Case 56: "RQueryServiceConfigEx";
+		Default: "unknown";
+	}
+}
+

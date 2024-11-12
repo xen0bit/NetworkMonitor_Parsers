@@ -1,0 +1,223 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Packet Exchange Protocol
+//#
+//#  Details:                part of the IPX/SPX protocol suite
+//#
+//#  Public References:      RFC 1132, 1234
+//#                          http://www.connectotel.com/netware/ipxpack.txt
+//#                          http://www.protocols.com/pbook/novel.htm
+//#                          http://www.rhyshaden.com/ipxsap.htm
+//#                          http://www.rhyshaden.com/ipx.htm
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/2/2009
+//#
+//####
+
+//[DefaultTimeOut = IPXConversationTimeout]
+Protocol IPX = FormatString("%s, %s -> %s, Hop Count = %d",
+							IPXTypeSimpleTable(Type),
+							SrcAddress.ToString,
+							DestAddress.ToString,
+							TransportControl
+							)
+{
+	UINT16 Checksum;
+	[IPXPacketLength]
+	UINT16 PacketLength;
+	UINT8 TransportControl = "Hop count: " + this;
+	[Property.IPXNextProtocol]
+	UINT8 Type = IPXTypeTable(this);
+	
+	[Destination = DestAddress.ToString, DstIPXAddress]
+	IPXAddress DestAddress
+	{
+		UINT32 NetworkNumber = IPXNetworkNumberTable(this);
+		IPXNodeAddress NodeNumber = IPXNodeFormatTable(this);
+		[DstIPXSocket]
+		UINT16 SocketNumber = IPXSocketNumberTable(this);
+	};
+	[
+		Property.NetworkDirection = (SrcAddress-DestAddress)>0?1:(SrcAddress==DestAddress)?0:2,
+		Source = SrcAddress.ToString,
+		SrcIPXAddress,
+		BuildConversation( SrcAddress < DestAddress ? MakeByteArray(SrcAddress, DestAddress) :MakeByteArray(DestAddress, SrcAddress)),
+		Post.Conversation.ConversationDescription = FormatString("(%s - %s) ConvID = %d", SrcAddress.ToDataTypeString, DestAddress.ToDataTypeString,ConvID)
+	]
+	IPXAddress SrcAddress
+	{
+		UINT32 NetworkNumber = IPXNetworkNumberTable(this);
+		IPXNodeAddress NodeNumber = IPXNodeFormatTable(this);
+		[SrcIPXSocket]
+		UINT16 SocketNumber = IPXSocketNumberTable(this);
+	};
+	[DataFieldFrameLength = ProtocolOffset + PacketLength]
+	switch
+	{
+		case FrameOffset < frameLength:
+			switch(Type)
+			{
+				case 0x05: SPX Spx;
+				//case 0x01: RIPX Ripx;
+				//case 0x11: NCP Ncp;
+				default:
+					switch
+					{
+						case (UINT32(FrameData, FrameOffset) == 0xFF534D42): // 0xFF SMB
+							SMB Smb;
+						case DestAddress.SocketNumber == 0x0455:
+						case SrcAddress.SocketNumber == 0x0455: NBIPX Nbipx;
+						
+						case (DestAddress.SocketNumber >= 0x0550 && DestAddress.SocketNumber <= 0x0554):
+						case (SrcAddress.SocketNumber >= 0x0550 && SrcAddress.SocketNumber <= 0x0554): NMPI Nmpi;
+						
+						case DestAddress.SocketNumber == 0x900f:
+						case SrcAddress.SocketNumber == 0x900f: SNMP SnmpGetSet;
+						
+						case DestAddress.SocketNumber == 0x9010:
+						case SrcAddress.SocketNumber == 0x9010: SNMP SnmpTrap;
+						
+						case DestAddress.SocketNumber == 0x036C:
+						case SrcAddress.SocketNumber == 0x036C:
+							[property.MQQBOnIPX = true]
+							MQQB MQQB;
+					}
+			}
+	}
+	switch
+	{
+		case CurrentProtocolOffset < PacketLength:
+			BLOB(PacketLength - CurrentProtocolOffset) UnkownData;
+	}
+}
+UnsignedNumber IPXAddress
+{
+	size = 12,
+	DisplayFormat = FormatString("%02X%02X% 02X%02X.%02X%02X %02X%02X %02X%02X.%02X%02X",
+								this[11],this[10],this[9],this[8],
+								this[7],this[6],this[5],this[4],this[3],this[2],
+								this[1],this[0]
+								),
+}
+
+UnsignedNumber IPXNodeAddress
+{
+	size = 6,
+	DisplayFormat = FormatString("0x%02X%02X%02X%02X%02X%02X",this[5],this[4],this[3],this[2],this[1],this[0]),
+}
+
+Table IPXNetworkNumberTable(netNum)
+{
+	switch(netNum)
+	{
+		case  0:"Local Network (0)";
+		default:FormatString("%u (0x%X)", netNum, netNum);
+	}
+}
+
+Table IPXNodeFormatTable(nodeNum)
+{
+	switch
+	{
+		case nodeNum[5] == 0xFF && nodeNum[4]== 0xFF &&
+			 nodeNum[3] == 0xFF && nodeNum[2]== 0xFF &&
+			 nodeNum[1] == 0xFF && nodeNum[0]== 0xFF : "Broadcast (0xFFFFFFFFFFFF)";
+		case nodeNum[5] == 0x00 && nodeNum[4]== 0x00 &&
+			 nodeNum[3] == 0x00 && nodeNum[2]== 0x00 &&
+			 nodeNum[1] == 0x00 && nodeNum[0]== 0x01 : "NetWare Server (0x000000000001)";
+		default: FormatString("0x%02X%02X%02X%02X%02X%02X",
+							 nodeNum[5],nodeNum[4],nodeNum[3],nodeNum[2],nodeNum[1],nodeNum[0]);
+	}
+}
+
+Table IPXSocketNumberTable(SocketNum)
+{
+	switch
+	{
+		case SocketNum == 0x036C:"MSMQ Directory Discovery, 876(0x036C)";
+		case SocketNum == 0x0451:"NCP, 1105(0x0451)";
+		case SocketNum == 0x0452:"SAP, 1106(0x0452)";
+		case SocketNum == 0x0453:"RIP, 1107(0x0453)";
+		case SocketNum == 0x0455:"NetBIOS, 1109(0x0455)";
+		case SocketNum == 0x0456:"Diagnostics, 1110(0x0456)";
+		case SocketNum == 0x0457:"SER - Serialization packet, 1111(0x0457)";
+		case SocketNum >= 0x4000 && SocketNum <= 0x6000: FormatString("Ephemeral sockets, %d(0x%X)",SocketNum,SocketNum);
+		default: FormatString("%d (0x%X)", SocketNum, SocketNum);
+	}
+}
+
+//http://www.connectotel.com/netware/ipxpack.txt
+Table IPXTypeTable(value)
+{
+	switch
+	{
+		case value == 0x00:FormatString("Unknown Packet Type, %d(0x%X)",value,value);
+		case value == 0x01:FormatString("RIP, Routing Information Packet, %d(0x%X)",value,value);
+		case value == 0x02:FormatString("Echo Packet, %d(0x%X)",value,value);
+		case value == 0x03:FormatString("Error Packet, %d(0x%X)",value,value);
+		case value == 0x04:FormatString("IPX/IDP, %d(0x%X)",value,value);
+		case value == 0x05:FormatString("SPX, Sequenced Packet Protocol, %d(0x%X)",value,value);
+		case value == 0x11:FormatString("NCP, NetWare Core Protocol, %d(0x%X)",value,value);
+		case value == 0x14:FormatString("NetBIOS WAN Broadcast, %d(0x%X)",value,value);
+		case value >= 0x10 &&
+			 value <= 0x1f:FormatString("Experimental Protocols, %d(0x%X)",value,value);
+		case value == 0x68:FormatString("NDS NCP(Novell), %d(0x%X)",value,value);
+		default           :FormatString("UNHANDLED IPX Packet Type, %d(0x%X)",value,value);
+	}
+}
+
+Table IPXTypeSimpleTable(value)
+{
+	switch
+	{
+		case value == 0x01:"RIP Packet";
+		case value == 0x02:"Echo Packet";
+		case value == 0x03:"Error Packet";
+		case value == 0x04:"SAP Packet";
+		case value == 0x05:"SPX Packet";
+		case value == 0x11:"NCP Packet";
+		case value == 0x14:"WAN Broadcast Packet";
+		case value >= 0x10 &&
+			 value <= 0x1f:"Experimental Packet";
+		case value == 0x68:"NDS NCP Packet";
+		default           :"IPX Packet";
+	}
+}
+
+Table IPXSocketsTable(value)
+{
+	switch
+	{
+		case value == 0x0001:FormatString("RIP, Routing Information Packet, %d(0x%X)",value,value);
+		case value == 0x0002:FormatString("Echo Protocol Packet, %d(0x%X)",value,value);
+		case value == 0x0003:FormatString("Error Handling Packet, %d(0x%X)",value,value);
+		case value >= 0x0020 &&
+			 value <= 0x003f:FormatString("Experimental, %d(0x%X)",value,value);
+		case value == 0x0451:FormatString("NCP, NetWare Core Protocol, %d(0x%X)",value,value);
+		case value == 0x0452:FormatString("SAP, Service Advertising Protocol, %d(0x%X)",value,value);
+		case value == 0x0453:FormatString("RIP, Routing Information Protocol, %d(0x%X)",value,value);
+		case value == 0x0455:FormatString("NetBIOS, %d(0x%X)",value,value);
+		case value == 0x0456:FormatString("Diagnostic, %d(0x%X)",value,value);
+		case value == 0x0457:FormatString("Serialization, %d(0x%X)",value,value);
+		case value == 0x0550:FormatString("NMPI Server Announce, %d(0x%X)",value,value);
+		case value == 0x0551:FormatString("NMPI Name Claim, %d(0x%X)",value,value);
+		case value == 0x0552:FormatString("NMPI Workstation, %d(0x%X)",value,value);
+		case value == 0x0553:FormatString("NMPI Mailslot, %d(0x%X)",value,value);
+		case value == 0x0554:FormatString("NMPI Messenger, %d(0x%X)",value,value);
+		case value <= 0x0BB8:FormatString("Xerox registered, %d(0x%X)",value,value);
+		case value == 0x0BB9:FormatString("Dynamically Assigned, %d(0x%X)",value,value);
+		case value == 0x6055:FormatString("HTTP, %d(0x%X)",value,value);
+		case value == 0x8060:FormatString("IPX, %d(0x%X)",value,value);
+		case value == 0x900f:FormatString("SNMP Get/Set, %d(0x%X)",value,value);
+		case value == 0x9010:FormatString("SNMP Trap, %d(0x%X)",value,value);
+		case value == 0x9091:FormatString("TCP over IPXF, %d(0x%X)",value,value);
+		case value == 0x9092:FormatString("UDP over IPXF, %d(0x%X)",value,value);
+		case value == 0x9093:FormatString("IPXF, IPX Fragmentation Protocol, %d(0x%X)",value,value);
+		default             :FormatString("Unhandled IPX Socket, %d(0x%X)",value,value);
+	}
+}
+
+
+

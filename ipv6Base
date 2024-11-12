@@ -1,0 +1,846 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Protocol version 6
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1719, 1881, 1884, 1886, 2402, 2460, 2675, 2711, 3122
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/23/2010
+//#
+//####
+[DefaultTimeOut = IPv6ConversationTimeout]
+Protocol IPv6 = FormatString("Next Protocol = %s, Payload Length = %d",
+							ProtocolTypeAbbreviationTable(Property.IPNextProtocol),
+							PayloadLength)
+{
+	// Ipv6Header
+	[DSCP = (UINT32(FrameData, FrameOffset) && 0x0FC00000)>>22]
+	UINT32 Versions = FormatString("%s, DSCP %d",IPVersionTable(Version),DSCP)
+	{
+		UINT32 Version:4  = FormatString(" (%s) %s, %d(%#x)",this.ToBitString, IPVersionTable(this), this, this);
+		UINT32 DSCP:6  = FormatString("    (%s) %s %d", this.ToBitString, "Differentiated services codepoint",this);
+		UINT32 ECT:1  = FormatString("     (%s) %s", this.ToBitString, this?"ECN-Capable Transport set":"ECN-Capable Transport not set");
+		UINT32 CE:1  = FormatString("      (%s) %s", this.ToBitString, this?"ECN-CE set":"ECN-CE not set");
+		UINT32 FlowLabe:20 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	
+	[IPEndOffset = ProtocolOffset + 40 + this > frameLength ? frameLength : ProtocolOffset + 40 + this, IPPayloadLength]
+	UINT16 PayloadLength;
+	
+	[Property.IPNextProtocol]
+	UINT8 NextProtocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	UINT8 HopLimit;
+	[
+		Pair = Address,
+		//Source = TEREDO ? Source + " (" + this.ToDataTypeString + ")" : this.ToDataTypeString,
+		Property.SourceName = Global.NameTable$[this], 
+		Property.SourceIPv6Alias = Global.AliasTable$[this],
+		Property.Source = Property.OverIP ? Property.Source
+					: Property.SourceIPv6Alias ? Property.SourceIPv6Alias
+					: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+					: Property.SourceName ?  Property.SourceName
+					: this.ToDataTypeString,
+		Property.SourceNetworkAddress,
+		Property.SourceNetworkAddressString = SourceAddress.ToDataTypeString
+	]
+	IPv6Address SourceAddress
+	{
+		switch(UINT32(FrameData, FrameOffset))
+		{
+			case 0x3FFE831F:
+				//# http://www.ietf.org/internet-drafts/draft-huitema-v6ops-teredo-05.txt
+				//TEREDO ADDRESS FORMAT
+				_struct TeredoAddress
+				{
+					UINT32 TeredoPrefix = FormatString("%02X%02X:%02X%02X::", this[3], this[2], this[1], this[0]);
+					IPv4Address TeredoServer;
+					UINT16 Flag
+					{
+						UINT16 C:1  = FormatString("        (%s) %s", this.ToBitString,
+														this ? "The client is behind a cone NAT"
+							 								: "The client is NOT behind a cone NAT");
+										 						
+						UINT16 Reserved2:5 = FormatString("(%s)", this.ToBitString);
+						UINT16 UG:2  = FormatString("       (%s) %s", this.ToBitString, this ? "" : "Non-global unicast identifier");
+						UINT16 Reserved1:8 = FormatString("(%s)", this.ToBitString);
+					};
+					UINT16 MappedPort = PortNameTable(this^0xFFFF);
+					IPv4Address MappedAddress = FormatString("%d.%d.%d.%d",this[3]^0xFF,this[2]^0xFF,this[1]^0xFF,this[0]^0xFF);
+				}
+			case 0x00000000:
+				switch(UINT64(FrameData, FrameOffset + 4))
+				{
+					case 0x0000000000000000:
+						//# RFC 2373, page 10, 2.5.4 IPv6 Addresses with Embedded IPv4 Addresses
+						//# "IPv4-compatible IPv6 address"
+						_struct EmbeddedIPv4Address1
+						{
+							BLOB(12) Prefix = FormatString("::");
+							IPv4Address EmbeddedIPv4Address;
+						}
+					case 0x000000000000FFFF:
+						//# RFC 2373, page 10, 2.5.4 IPv6 Addresses with Embedded IPv4 Addresses
+						//# "IPv4-mapped IPv6 address"
+						_struct EmbeddedIPv4Address2
+						{
+							BLOB(12) Prefix = FormatString("::FFFF");
+							IPv4Address EmbeddedIPv4Addresses;
+						}
+			}
+		}
+	};
+	[
+		Pair = Address,
+		//Destination = TEREDO ? Destination + " (" + this.ToDataTypeString + ")" : this.ToDataTypeString,
+		Property.DestinationName = Global.NameTable$[this], 
+		Property.DestinationIPv6Alias = Global.AliasTable$[this],
+		Property.Destination = Property.OverIP ? Property.Destination
+					: Property.DestinationIPv6Alias ? Property.DestinationIPv6Alias
+					: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+					: Property.DestinationName ?  Property.DestinationName
+					: this.ToDataTypeString,
+		Property.NetworkDirection = Property.OverIP ? Property.NetworkDirection
+					: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+		Property.DestinationNetworkAddress,
+		Property.DestinationNetworkAddressString = this.ToDataTypeString,
+	]
+	IPv6Address DestinationAddress
+	{
+		switch(UINT32(FrameData, FrameOffset))
+		{
+			case 0x3FFE831F:
+				//# http://www.ietf.org/internet-drafts/draft-huitema-v6ops-teredo-05.txt
+				//TEREDO ADDRESS FORMAT
+				_struct TeredoAddress
+				{
+					UINT32 TeredoPrefix = FormatString("%02X%02X:%02X%02X::", this[3], this[2], this[1], this[0]);
+					IPv4Address TeredoServer;
+					UINT16 Flag
+					{
+						UINT16 C:1  = FormatString("        (%s) %s", this.ToBitString,
+														this ? "The client is behind a cone NAT"
+							 								: "The client is NOT behind a cone NAT");
+										 						
+						UINT16 Reserved2:5 = FormatString("(%s)", this.ToBitString);
+						UINT16 UG:2  = FormatString("       (%s) %s", this.ToBitString, this ? "" : "Non-global unicast identifier");
+						UINT16 Reserved1:8 = FormatString("(%s)", this.ToBitString);
+					};
+					UINT16 MappedPort = PortNameTable(this^0xFFFF);
+					IPv4Address MappedAddress = FormatString("%d.%d.%d.%d",this[3]^0xFF,this[2]^0xFF,this[1]^0xFF,this[0]^0xFF);
+				}
+			case 0x00000000:
+				switch(UINT64(FrameData, FrameOffset + 4))
+				{
+					case 0x0000000000000000:
+						//# RFC 2373, page 10, 2.5.4 IPv6 Addresses with Embedded IPv4 Addresses
+						//# "IPv4-compatible IPv6 address"
+						_struct EmbeddedIPv4Address1
+						{
+							BLOB(12) Prefix = FormatString("::");
+							IPv4Address EmbeddedIPv4Address;
+						}
+					case 0x000000000000FFFF:
+						//# RFC 2373, page 10, 2.5.4 IPv6 Addresses with Embedded IPv4 Addresses
+						//# "IPv4-mapped IPv6 address"
+						_struct EmbeddedIPv4Address2
+						{
+							BLOB(12) Prefix = FormatString("::FFFF");
+							IPv4Address EmbeddedIPv4Addresses;
+						}
+			}
+		}
+	};
+
+	[
+		Property.OverIP = true,
+		Property.IPTruncated =  IsValueNone(Property.IPFragment) || Property.IPFragment == 0 ? 
+								((Property.IPPayloadLength > FrameLength - FrameOffset) ? true : false) : Property.IPTruncated,
+		BuildConversationWithParent(
+			Property.SourceNetworkAddress < Property.DestinationNetworkAddress ?
+			MakeByteArray(Property.SourceNetworkAddress, Property.DestinationNetworkAddress) :
+			MakeByteArray(Property.DestinationNetworkAddress, Property.SourceNetworkAddress)
+			),
+		conversation.ConversationDescription = Conversation.IPv6.ConversationDescription.IsValueNone() ? 
+							FormatString("(%s - %s) ConvID = %d", Property.SourceNetworkAddressString, Property.DestinationNetworkAddressString,ConvID) : Conversation.IPv6.ConversationDescription
+	]
+	
+	// Ipv6ExtHeaders
+	[Property.IPv6Fragmented = false]
+	while ExtensionHeaders[Property.IPNextProtocol == 0x00 || Property.IPNextProtocol == 0x2B || Property.IPNextProtocol == 0x2C || Property.IPNextProtocol == 0x3C || Property.IPNextProtocol == 0x87]
+	{
+		switch(Property.IPNextProtocol)
+		{
+			case 0x00: IPv6ExtensionHopbyHopHeader HopbyHopHeader;
+			case 0x2B: IPv6ExtensionRoutingHeader RoutingHeader;
+			case 0x2C: IPv6ExtensionFragmentHeader FragmentHeader;
+			case 0x3C: IPv6ExtensionDestOptionsHeader DestOptionsHeader;
+			case 0x87: IPv6ExtensionMobilityHeader MobilityHeader;
+		}
+	}
+	
+	// Save property to support high layer reassemble
+	switch
+	{
+		case (!Property.IPv6Fragmented):
+		[PayloadStart(
+			Property.NetworkDirection, /* direction */
+			0, /* id */
+			0, /* sequence token */
+			0, /* next sequence token */
+			0, /* total payload length */
+			1, /* is first */
+			1, /* is last */
+			RssmblyIndStartBit+RssmblyIndEndBit,
+			0x1004,
+			Property.SourceNetworkAddress,
+			0x1004,
+			Property.DestinationNetworkAddress,
+			0x0104,
+			0xFF
+			)]
+		struct{};
+	}
+	
+	// Upper layer protocols	
+	switch
+	{
+		case Property.IPPayloadLength > 0:
+			switch
+			{
+				case !Property.IPv6Fragmented:
+				case Property.IPv6Fragmented && IPv6FragmentOffset == 0:
+				[DataFieldFrameLength = FrameOffset + IPPayloadLength]
+				struct
+				{
+					switch(Property.IPNextProtocol)
+					{
+						case 0x06: TCP Tcp;
+						case 0x11: UDP Udp;
+						case 0x32: ESP Esp;
+						case 0x3A: ICMPv6 Icmpv6;
+						case 0x01: ICMP Icmp;
+						case 0x02: IGMP Igmp;
+						case 0x04: IPv4 IPinIP;
+						case 0x25: DDP Ddp;
+						case 0x29: IPv6 Ipv6;
+						case 0x2E: RSVP Rsvp;
+						case 0x2F: GRE Gre;
+						case 0x33: AH Ah;
+						case 0x59: OSPF Ospf;
+						case 0x5A: SunRPC SunRPC;
+						case 0x5B: ARP LocusARP;
+						case 0x5E: IPv4 IPwhithinIP;
+						case 0x6F: IPX Ipx;
+						case 0x3B: BLOB(IPPayloadLength) PayloadData = FormatString( "%d bytes data remaining", IPPayloadLength );
+					}
+					switch
+					{
+						case FrameOffset < FrameLength: BLOB(FrameLength - Offset) UnparsedData;
+					}					
+				}
+				case IPv6FragmentOffset > 0:
+					BLOB(FrameLength - Offset < Property.IPPayloadLength ? FrameLength - Offset : Property.IPPayloadLength) FragmentData;
+			}
+	}
+	struct{} // to avoid self-recursive issue
+}
+
+// IPV6ExtHeaders Protocol is used to parse fragment ipv6 protocol which contains extension headers after FragmentHeader
+Protocol IPV6ExtHeaders = FormatString("Next Protocol = %s, Payload Length = %d",
+													ProtocolTypeAbbreviationTable(Property.IPNextProtocol),
+													IPPayloadLength)
+{
+	// Ipv6ExtHeaders
+	while ExtensionHeaders[Property.IPNextProtocol == 0x2B || Property.IPNextProtocol == 0x3C || Property.IPNextProtocol == 0x87]
+	{
+		switch(Property.IPNextProtocol)
+		{
+			case 0x2B: IPv6ExtensionRoutingHeader RoutingHeader;
+			case 0x3C: IPv6ExtensionDestOptionsHeader DestOptionsHeader;
+			case 0x87: IPv6ExtensionMobilityHeader MobilityHeader;
+		}
+	}
+}
+Table IPv6ExtenOptionTypeActionTable(action)
+{
+	switch(action)
+	{
+		case  0: "Skip over this option";
+		case  1: "Discard the packet";
+		case  2: "Discard the packet and send an ICMP Parameter Problem";
+		case  3: "Discard the packet, send an ICMP if Destination Address was not a multicast";
+		default: "Undefined action";
+	}
+}
+
+Table IPv6ExtensionHeaderOptionTypeTable(value)
+{
+	switch(value)
+	{
+		case  0x00: "Pad1";
+		case  0x01: "PadN";
+		case  0x02: "Jumbograms";
+		case  0x05: "Router Alert";
+		case  0x06: "Binding Updating";
+		case  0x07: "Binding Acknowlegment";
+		case  0x08: "Binding Request";
+		case  0x09: "Home Addresses";
+		default:    "Unknown  IPv6 Extension Header Option Type";
+	}
+}
+
+//http://www.iana.org/assignments/mobility-parameters
+Table IPv6MobilityBindingAckStatusCodeTable(code)
+{
+	switch(code)
+	{
+		//RFC3775
+		case   0: "Binding Update accepted";
+		case   1: "Accepted but prefix discovery necessary";
+		case 128: "Reason unspecified";
+		case 129: "Administratively prohibited";
+		case 130: "Insufficient resources";
+		case 131: "Home registration not supported";
+		case 132: "Not home subnet";
+		case 133: "Not home agent for this mobile node";
+		case 134: "Duplicate Address Detection failed";
+		case 135: "Sequence number out of window";
+		case 136: "Expired home nonce index";
+		case 137: "Expired care-of nonce index";
+		case 138: "Expired nonces";
+		case 139: "Registration type change disallowed";
+		//RFC3963
+		case 140: "Mobile Router Operation not permitted";
+		case 141: "Invalid Prefix";
+		case 142: "Not Authorized for Prefix";
+		case 143: "Forwarding Setup failed";
+		default:  "Unassigned Mobility Binding Ack Status Code";
+	}
+}
+
+struct IPv6ExtensionHeaderOptionType = IPv6ExtensionHeaderOptionTypeTable(OptionType)
+{
+	UINT8 Action:2 = FormatString("    (%s) %s", this.ToBitString, IPv6ExtenOptionTypeActionTable(this));
+	UINT8 C:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Option Data may change en-route" : "Option Data does not change en-route");
+	UINT8 OptionType:5 = FormatString("(%s) %s", this.ToBitString, IPv6ExtensionHeaderOptionTypeTable(this));
+}
+
+//the Hop-by-Hop Options header and the Destination Options header
+struct IPv6ExtensionHeaderOption
+{
+	IPv6ExtensionHeaderOptionType OptionType;
+	[IPv6ExHrEndOffset = IPv6ExHrEndOffset]
+	UINT8 OptDataLen = FormatString("%d bytes",this);
+	BLOB(OptDataLen < Property.IPv6ExHrEndOffset - offset ? OptDataLen : Property.IPv6ExHrEndOffset - offset ) OptionData;
+}
+
+struct IPv6ExtensionHeaderOptionPadN
+{
+	IPv6ExtensionHeaderOptionType OptionType;//1
+	UINT8 OptDataLen = FormatString("%d bytes",this);
+	BLOB(OptDataLen) OptionData = FormatString("%d bytes",OptDataLen);//0
+}
+
+//rfc 2675 page 3
+struct IPv6ExtensionHeaderOptionJumbo
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0xC2
+	UINT8 OptDataLen = FormatString("%d bytes",this);//4
+	//Must be greater than 65,535
+	[IPEndOffset = ProtocolOffset + 40 + this > frameLength ? frameLength : ProtocolOffset + 40 + this,IPPayloadLength]
+	UINT32 JumboPayloadLength;
+}
+
+Table IPv6ExtensionHeaderOptionRouterAlertValueTable(value)
+{
+	switch(value)
+	{
+		case  0: FormatString("Datagram contains a Multicast Listener Discovery message, %d (0x%X)", value, value);
+		case  1: FormatString("Datagram contains RSVP message, %d (0x%X)", value, value);
+		case  2: FormatString("Datagram contains an Active Networks message, %d (0x%X)", value, value);
+		default: FormatString("Reserved to IANA for future use, %d (0x%X)", value, value);
+	}
+}
+
+
+//rfc 2711 page 2
+struct IPv6ExtensionHeaderOptionRouterAlert
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0x05
+	UINT8 OptDataLen = FormatString("%d bytes",this);//2
+	UINT16 Value = IPv6ExtensionHeaderOptionRouterAlertValueTable(this);
+}
+
+struct IPv6ExtensionHeaderMobileSubOpts
+{
+	UINT8 SubOptType;
+	UINT8 SubOptLength;
+	switch(SubOptType)
+	{
+		case  2: UINT16 UniqueID;
+		case  4: IPv6Address HomeAgent[SubOptLength/16];
+		default: BLOB(SubOptLength) SubOptUnrecognizedValue;//0
+	}
+}
+
+//parser\ip6.h line 214
+//RFC 3775 page 51 6.3.  Home Address Option
+struct IPv6ExtensionHeaderOptionHomeAddr
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0xC9
+	UINT8 OptDataLen = FormatString("%d bytes",this);//8n+6
+	IPv6Address HomeAddress;
+	//#?
+	switch
+	{
+		case OptDataLen > 2:IPv6ExtensionHeaderMobileSubOpts MobileSubOpts;
+	}
+}
+
+//parser\ip6.h line 201
+struct IPv6ExtensionHeaderOptionBindingAck
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0x07
+	UINT8 OptDataLen = FormatString("%d bytes",this);//11
+	UINT8 Status = FormatString("%s, %d(%#x)", IPv6MobilityBindingAckStatusCodeTable(this), this, this);
+	UINT16 SeqNumber;
+	UINT32 Lifetime;     // Granted lifetime if binding accepted.
+	UINT32 Refresh;
+	switch
+	{
+		case OptDataLen > 2: IPv6ExtensionHeaderMobileSubOpts MobileSubOpts;
+	}
+}
+
+
+//parser\ip6.h line 224
+struct IPv6ExtensionHeaderOptionBindingReq
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0x08
+	[BindingReqEndOffset = offset + 1 + this]
+	UINT8 OptDataLen = FormatString("%d bytes",this);//0
+	//# dev note 2006-05-24
+	while option[offset < Property.BindingReqEndOffset]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case 0x00: IPv6ExtensionHeaderOptionType OptionPad1;
+			case 0x01: IPv6ExtensionHeaderOptionPadN OptionPadN;
+			case 0xC2: IPv6ExtensionHeaderOptionJumbo OptionJumbo;
+			case 0x05: IPv6ExtensionHeaderOptionRouterAlert OptionRouterAlert;
+			case 0xC6: IPv6ExtensionHeaderOptionBindingUpdate OptionBindingUpdate;
+			case 0x07: IPv6ExtensionHeaderOptionBindingAck OptionBindingAck;
+			case 0x08: IPv6ExtensionHeaderOptionBindingReq OptionBindingReq;
+			case 0xC9: IPv6ExtensionHeaderOptionHomeAddr OptionHomeAddr;
+			default  : IPv6ExtensionHeaderOption Option;
+		}
+	}
+}
+
+//parser\ip6.h line 187
+struct IPv6ExtensionHeaderOptionBindingUpdate
+{
+	IPv6ExtensionHeaderOptionType OptionType;//0xC6
+	UINT8 OptDataLen = FormatString("%d bytes",this);//24
+	UINT8 Flags
+	{
+		UINT8 R:1 = FormatString("  (%s) %s",
+								this.ToBitString,
+								this ? "Request a binding acknowlegement response"
+									 : "not a request for a binding acknowlegement response"
+								);
+		UINT8 H:1 = FormatString("  (%s) %s",
+								this.ToBitString,
+								this ? "Request for host to act as home agent"
+									 : "not a request for host to act as home agent"
+								);
+		UINT8 S:1 = FormatString("  (%s) %s",
+								this.ToBitString,
+								this ? "Sender is a router"
+									 : "Sender is not a router"
+								);
+		UINT8 D:1 = FormatString("  (%s) %s",
+								this.ToBitString,
+								this ? "Request duplicate address detection"
+									 : "not a request for duplicate address detection"
+								);
+		UINT8 Rsv:4 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 PrefixLength;    // Only used for "home registration" updates.
+	UINT16 SeqNumber;
+	UINT32 Lifetime;        // Number of seconds before binding expires.
+	//# ? dev note 2005-9-12 - comments moved to nmwiki
+}
+
+// RFC 2460
+// The Hop-by-Hop Options header is restricted to appear immediately after an IPv6 header only
+struct IPv6ExtensionHopbyHopHeader
+{
+	[Property.IPNextProtocol]
+	UINT8 NextHeader = ProtocolTypeTable(this);
+	[IPPayloadLength = IPPayloadLength - (this + 1) * 8, IPv6ExHrEndOffset = offset - 1 + (this + 1) * 8]
+	UINT8 ExtHdrLen = FormatString("%d(%d bytes)", this,(this + 1) * 8);
+	
+	while option[ offset < Property.IPv6ExHrEndOffset ]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case 0x00: IPv6ExtensionHeaderOptionType OptionPad1;
+			case 0x01: IPv6ExtensionHeaderOptionPadN OptionPadN;
+			case 0xC2: IPv6ExtensionHeaderOptionJumbo OptionJumbo;
+			case 0x05: IPv6ExtensionHeaderOptionRouterAlert OptionRouterAlert;
+			case 0xC6: IPv6ExtensionHeaderOptionBindingUpdate OptionBindingUpdate;
+			case 0x07: IPv6ExtensionHeaderOptionBindingAck OptionBindingAck;
+			case 0x08: IPv6ExtensionHeaderOptionBindingReq OptionBindingReq;
+			case 0xC9: IPv6ExtensionHeaderOptionHomeAddr OptionHomeAddr;
+			default  : IPv6ExtensionHeaderOption Option;
+		}
+	}
+}
+
+struct IPv6ExtensionRoutingHeader
+{
+	[Property.IPNextProtocol]
+	UINT8 NextHeader = ProtocolTypeTable(this);
+	[IPPayloadLength = IPPayloadLength - (this + 1) * 8, ]
+	UINT8 ExtHdrLen = FormatString("%d(%d bytes)",this, (this + 1) * 8);
+	UINT8 RoutingType;
+	UINT8 SegmentsLeft;
+	UINT32 Reserved;
+	switch(RoutingType)
+	{
+		case  0: IPv6Address RouteAddress[ExtHdrLen/2];
+		//rfc 3775 page 53, 6.4.  Type 2 Routing Header
+		case  2: IPv6Address DestMobileNodeHomeAddress;
+		default: BLOB(ExtHdrLen * 8) RouteData;
+	}
+}
+
+struct IPv6ExtensionFragmentHeader
+{
+	[Property.IPv6Fragmented = true, IPPayloadLength = IPPayloadLength - 8, Property.IPNextProtocol]
+	UINT8 NextHeader = ProtocolTypeTable(this);
+	UINT8 Reserved;
+	struct FragmentInfor
+	{
+		[IPv6FragmentOffset = FragmentOffset * 8]
+		UINT16 FragmentOffset:13 = FormatString("%d(%#X)",this * 8, this * 8);
+		UINT16 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		[IPv6FragmentMoreFrag, Property.IPFragment]
+		UINT16 M:1 = FormatString("       (%s) %s",this.ToBitString, this ? "More fragments":"Last fragment");
+		[IPv6FragmentID]
+		UINT32 Identification;
+	};
+
+	[
+		PayloadStart(
+			NetworkDirection, /* direction */
+			IPv6FragmentID, /* id */
+			IPv6FragmentOffset, /* sequence token */
+			IPv6FragmentOffset + IPPayloadLength, /* next sequence token */
+			0, /* total payload length */
+			IPv6FragmentOffset == 0, /* is first */
+			IPv6FragmentMoreFrag == 0, /* is last */
+			RssmblyIndStartBit+RssmblyIndEndBit+RssmblySequenceBit,
+			0x1004,
+			SourceNetworkAddress,
+			0x1004,
+			DestinationNetworkAddress,
+			0x0104,
+			NextHeader
+			)
+	]
+	struct{}
+}
+
+// RFC 2460
+// Destination Options header should occur at most twice (once
+// before a Routing header and once before the upper-layer header).
+struct IPv6ExtensionDestOptionsHeader
+{
+	[Property.IPNextProtocol]
+	UINT8 NextHeader = ProtocolTypeTable(this);
+	[IPPayloadLength = IPPayloadLength - (this + 1) * 8, IPv6ExHrEndOffset = offset - 1 + (this + 1) * 8]
+	UINT8 ExtHdrLen = FormatString("%d(%d bytes)", this,(this + 1) * 8);
+	
+	while option[ offset < IPv6ExHrEndOffset ]
+	{
+		switch ( UINT8( Framedata, Offset ) )
+		{
+			case 0x00: IPv6ExtensionHeaderOptionType OptionPad1;
+			case 0x01: IPv6ExtensionHeaderOptionPadN OptionPadN;
+			case 0xC2: IPv6ExtensionHeaderOptionJumbo OptionJumbo;
+			case 0x05: IPv6ExtensionHeaderOptionRouterAlert OptionRouterAlert;
+			case 0xC6: IPv6ExtensionHeaderOptionBindingUpdate OptionBindingUpdate;
+			case 0x07: IPv6ExtensionHeaderOptionBindingAck OptionBindingAck;
+			case 0x08: IPv6ExtensionHeaderOptionBindingReq OptionBindingReq;
+			case 0xC9: IPv6ExtensionHeaderOptionHomeAddr OptionHomeAddr;
+			default  : IPv6ExtensionHeaderOption Option;
+		}
+	}
+}
+
+//http://www.iana.org/assignments/mobility-parameters
+Table IPv6MobilityHeaderTable(type)
+{
+	switch(type)
+	{
+		//RFC3775
+		case  0: "Binding Refresh Request";
+		case  1: "Home Test Init";
+		case  2: "Care-of Test Init";
+		case  3: "Home Test";
+		case  4: "Care-of Test";
+		case  5: "Binding Update";
+		case  6: "Binding Acknowledgement";
+		case  7: "Binding Error";
+		//RFC-ietf-mipshop-fast-mipv6-03.txt
+		case  8: "Fast Binding Update";
+		case  9: "Fast Binding Acknowledgment";
+		case 10: "Fast Neighbor Advertisement";
+		default: "Unassigned Mobility Header";
+	}
+}
+
+//RFC3775 page 45
+Table IPv6MobilityBindingErrorStatusCodeTable(code)
+{
+	switch(code)
+	{
+		case  1: "Unknown binding for Home Address destination option";
+		case  2: "Unrecognized MH Type value";
+		default: "Unassigned Mobility Binding Error Status Code";
+	}
+}
+
+UnsignedNumber IPv6MobCookie
+{
+	size = 8,
+	DisplayFormat = FormatString("%2X%2X%2X%2X%2X%2X%2X%2X",
+								this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]);
+}
+
+UnsignedNumber IPv6MobToken
+{
+	size = 8,
+	DisplayFormat = FormatString("%2X%2X%2X%2X%2X%2X%2X%2X",
+								this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]);
+}
+
+//http://www.iana.org/assignments/mobility-parameters
+Table IPv6MobilityHeaderOptionTypeTable(type)
+{
+	switch(type)
+	{
+		//RFC3775
+		case  0: "Pad1";
+		case  1: "PadN";
+		case  2: "Binding Refresh Advice";
+		case  3: "Alternate Care-of Address";
+		case  4: "Nonce Indices";
+		case  5: "Authorization Data ";
+		//RFC3963
+		case  6: "Mobile Network Prefix Option";
+		//RFC-ietf-mipshop-fast-mipv6-03.txt
+		case  7: "Mobility Header Link-Layer Address option";
+		default: "Unassigned MobHdr Option Type";
+	}
+}
+
+struct IPv6MobHdrPadN
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 PadingLength;
+	switch
+	{
+		case PadingLength > 0:BLOB(PadingLength) PadingData;
+	}
+}
+
+struct IPv6MobHdrBindingRefreshAdvice = RefreshInterval.ToString
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 OptionLength; //2
+	UINT16 RefreshInterval = FormatString(" %d seconds", this * 4);
+}
+
+struct IPv6MobHdrAlternateCareofAddress = AlternateCareofAddress.ToString
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 OptionLength; //16
+	IPv6Address AlternateCareofAddress;
+}
+
+struct IPv6MobHdrNonceIndices
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 OptionLength; //4
+	UINT16 HomeNonceIndex;
+	UINT16 CareofNonceIndex;
+}
+
+struct IPv6MobHdrAuthorization
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 OptionLength;
+	switch
+	{
+		case OptionLength > 0: BLOB(OptionLength) Authenticator;
+	}
+}
+
+//rfc 3963 page 8, 4.3.  Mobile Network Prefix Option
+struct IPv6MobHdrMobileNetworkPrefix
+{
+	UINT8 Type = FormatString("%s, %d(%#x)", IPv6MobilityHeaderOptionTypeTable(this), this, this);
+	UINT8 OptionLength;
+	UINT8 Reserved;
+	UINT8 PrefixLength;
+	IPv6Address MobileNetworkPrefix;
+}
+
+//rfc 3775 page 32
+//The Mobility Header is identified by a Next Header value of 135(0x87)
+struct IPv6ExtensionMobilityHeader
+{
+	// Should be IPPROTO_NONE (59 decimal).
+	[Property.IPNextProtocol]
+	UINT8 NextHeader = ProtocolTypeTable(this);
+	switch
+	{
+		case NextHeader != 0x3B: 	ReportParserWarning( "IPV6", "NextHeader doesn't equal to 0x3B so that the capture file looks like fabricated.") ParserWarning;
+	}
+	[IPPayloadLength = IPPayloadLength - (this + 1) * 8, IPv6ExHrEndOffset = offset - 1 + (this + 1) * 8]
+	UINT8 ExtHdrLen = FormatString("%d(%d bytes)", this,(this + 1) * 8);
+	UINT8 MobilityHeaderType = FormatString("%s, %d(%#x)", IPv6MobilityHeaderTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 Checksum;
+	switch(MobilityHeaderType)
+	{
+		case  0: //Binding Refresh Request
+			struct BindingRefreshRequest
+			{
+				UINT16 Reserved;
+				// Mobility options
+			}
+		case  1: //Home Test Init
+			struct HomeTestInit
+			{
+				UINT16 Reserved;
+				IPv6MobCookie HomeInitCookie;
+				// Mobility options
+			}
+		case  2: //Care-of Test Init
+			struct CareofTestInit
+			{
+				UINT16 Reserved;
+				IPv6MobCookie CareofInitCookie;
+				// Mobility options
+			}
+		case  3: //Home Test
+			struct HomeTest
+			{
+				UINT16 HomeNonceIndex;
+				IPv6MobCookie HomeInitCookie;
+				IPv6MobToken HomeKeygenToken;
+				// Mobility options
+			}
+		case  4: //Care-of Test
+			struct CareofTest
+			{
+				UINT16 CareofNonceIndex;
+				IPv6MobCookie CareofInitCookie;
+				IPv6MobToken CareofKeygenToken;
+				// Mobility options
+			}
+		case  5: //Binding Update
+			struct BindingUpdate
+			{
+				UINT16 Sequence;
+				UINT16 Flags
+				{
+					UINT16 A:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Acknowledge Bit Set"
+									 					: "Acknowledge Bit Cleared");
+									 						
+					UINT16 H:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Home Registration Bit Set"
+									 					: "Home Registration Bit Cleared");
+									 						
+					UINT16 L:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Link-Local Address Compatibility Bit Set"
+													 	: "Link-Local Address Compatibility Bit Cleared");
+													 		
+					//rfc 3775 page 39, 6.1.7.  Binding Update Message
+					UINT16 K:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Key Management Mobility Capability Bit Set"
+														: "Key Management Mobility Capability Bit Cleared");
+															
+					UINT16 M:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Mobility Option Bit Set"
+														: "Mobility Option Bit Cleared");
+															
+					//rfc 3963 page 7, 4.1.  Binding Update
+					UINT16 R:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Mobile Router Flag Set"
+														: "Mobile Router Flag Cleared");
+					UINT16 Rsv:10 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT16 Lifetime = FormatString("%d seconds", this * 4);
+				// Mobility options
+			}
+		case  6: //Binding Acknowledgement
+			struct BindingAcknowledgement
+			{
+				UINT8 Status = FormatString("%s, %d(%#x)", IPv6MobilityBindingAckStatusCodeTable(this), this, this);
+				UINT8 Flags
+				{
+					UINT8 K:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Key Management Mobility Capability Bit Set"
+														: "Key Management Mobility Capability Bit Cleared");
+															
+					//rfc 3963 page 7, 4.2.  Binding Acknowledgement
+					UINT8 R:1 = FormatString("  (%s) %s", this.ToBitString,
+													this ? "Mobile Router Flag Set"
+														: "Mobile Router Flag Cleared");
+					UINT8 Rsv:6 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT16 Sequence;
+				UINT16 Lifetime = FormatString("%d seconds", this * 4);
+				// Mobility options
+				//Binding Authorization Data option
+				//Binding Refresh Advice option
+			}
+		case  7: //Binding Error
+			struct BindingError
+			{
+				UINT8 Status = FormatString("%s, %d(%#x)", IPv6MobilityBindingErrorStatusCodeTable(this), this, this);
+				UINT8 Reserved;
+				IPv6Address HomeAddress;
+				// Mobility options
+			}
+		//RFC-ietf-mipshop-fast-mipv6-03.txt
+		//case  8: //Fast Binding Update
+		//case  9: //Fast Binding Acknowledgment
+		//case 10: //Fast Neighbor Advertisement
+		default: BLOB(IPv6ExHrEndOffset - offset) UnassignedMobilityData;
+	}
+	
+	while MobilityOptions[ offset < IPv6ExHrEndOffset ]
+	{
+		switch(UINT8( Framedata, Offset ))
+		{
+			case  0: UINT8 Pad1;
+			case  1: IPv6MobHdrPadN PadN;
+			case  2: IPv6MobHdrBindingRefreshAdvice BindingRefreshAdvice;
+			case  3: IPv6MobHdrAlternateCareofAddress AlternateCareofAddress;
+			case  4: IPv6MobHdrNonceIndices NonceIndices;
+			case  5: IPv6MobHdrAuthorization Authorization;
+			case  6: IPv6MobHdrMobileNetworkPrefix MobileNetworkPrefix;
+			default: BLOB(IPv6ExHrEndOffset - offset) UnassignedMobilityOption;
+		}
+	}
+}

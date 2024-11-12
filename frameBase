@@ -1,0 +1,157 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Frame - Network Monitor Frame Descriptor
+//#
+//#  Details:                This parser is the starting point for all parsing and linking;
+//#                          the 'frame' described here is virtual, it will not be shown
+//#                          in the summary view of Network Monitor.
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 5/6/2010
+//#
+//####
+
+Protocol Frame = FormatString("Number = %d, Captured Frame Length = %d%s, MediaType = %s"
+								, FrameNumber+1, FrameLength
+								, FrameLength < FrameVariable.FrameLengthWire ? FormatString("(Truncated frame, FrameWireLength = %d)", FrameVariable.FrameLengthWire) : ""
+								, MediaTypeTable(MediaType))
+{
+	switch(Blob(FrameData, FrameOffset, 5))
+	{
+		// Netmon captures packets from Ndiswan.sys, an intermediate NDIS driver that provides an IEEE 802.3 miniport interface. 
+		// As a result, the captured PPP frames do not contain Media Type but do contain Ethernet-like source address and destination address.
+		// The addresses are set to " SEND" or " RECV" which always start with 0x20 and capitalized.
+		case 0x2053454E44:	// " SEND"
+		case 0x2052454356:	// " RECV"
+			PPP Ppp;
+		default:
+			switch(MediaType)
+			{
+				case 0:
+				case 1:
+					ETHERNET Ethernet;
+				case 6:
+					WiFi WiFi;
+				case 0xFFFC:
+					PayloadHeader PayloadHeader;
+				case 2:
+					TOKENRING TokenRing;
+				case 3:
+					FDDI Fddi;
+				case 4:
+					ATM Atm;
+				case 5:
+					IP1394 Ip1394;
+				case 7:
+				case 8:
+				case 9:
+					switch (UINT8(FrameData, FrameOffset) & 0xF0)
+					{
+						case 0x40:
+							IPv4 IPv4;
+						case 0x60:
+							IPv6 IPv6;
+						default:
+							UndescribedFrameData UnknownPayload;
+					}
+				case 0xE000:
+				case 0xE001:
+					struct
+					{
+						ReportParserWarning("MediaType", "Unsupported PCAP media type") ProtocolWarning;
+						BLOB(FrameLength - FrameOffset) UnsupportedPCAPData;
+					}
+				case 0xE071:
+					Linuxcookedmode Linuxcookedmode;
+				case 0xFFE0:
+					NetEvent NetEvent;
+				case 0xFFFA:
+					DecryptedPayloadHeader DecryptedPayloadHeader;
+				case 0xFFFF:
+					NetmonFilter NetmonFilter;
+				case 0xFFFE: 
+					DnsCache DnsCache;     
+				case 0xFFFD: 
+					NetworkInfo NetworkInfo;
+				case 0xFFFB:
+					NetworkInfoEx NetworkInfoEx;
+				default:
+					switch
+					{
+						case MediaType >= 0xE002 && MediaType <= 0xEFFF:
+							struct
+							{
+								ReportParserWarning("MediaType", "Media Type not supported, please report to www.codeplex.com/nmparsers") ProtocolWarning;
+								BLOB(FrameLength - FrameOffset) UnsupportedMediaTypeData;
+							}
+						default:
+							ReportParserError(ParserErrorProtocolClassPublic, "Frame", FormatString("Unhandled Media Type %d", MediaType)) FrameMediaTypeError;
+					}
+			}
+	}
+
+	// This consumes everything left.
+	switch
+	{
+		case FrameOffset < FrameLength:
+			UndescribedFrameData remainder;
+	}
+}
+
+//
+// The following protocol consumes all undefined data and reports the length of the remaining data.
+//
+Protocol UndescribedFrameData = FormatString( "Length = %d", FrameLength - FrameOffset )
+{
+	BLOB( FrameLength - FrameOffset ) Data;
+}
+Table MediaTypeTable(Value)
+{
+	switch( Value)
+	{
+		case 0:
+		case 1:
+			"ETHERNET";
+		case 2:
+			"TokenRing";
+		case 3:
+			"FDDI";
+		case 4:
+			"ATM";
+		case 5:
+			"IP1394";
+		case 6:
+			"WiFi";
+		case 7:
+			"Tunneling Interfaces";
+		case 8:
+			"Wireless WAN";
+		case 9:
+			"Raw IP Frames";
+		case 0xE000:
+		case 0xE001:
+			"Unsupported PCAP media type";
+		case 0xE071:
+			"Linux cooked mode";
+		case 0xFFE0:
+			"NetEvent";
+		case 0xFFFA:
+			"DecryptedPayloadHeader";
+		case 0xFFFC:
+			"PayloadHeader";
+		case 0xFFFF:
+			"NetmonFilter";
+		case 0xFFFE:
+			"DnsCache";
+		case 0xFFFD:
+			"NetworkInfo";
+		case 0xFFFB:
+			"NetworkInfoEx";
+		default:
+			FormatString("Unhandled Media Type %d", Value);
+		}
+}
+
+
+

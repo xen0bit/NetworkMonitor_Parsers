@@ -1,0 +1,538 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Network Basic Input Output System
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1001, 1002
+//#                          http://timothydevans.me.uk/nbf2cifs/nbf2cifs.pdf
+//#                          http://is-it-true.org/WindowsTips/WindowsNT/AdminTips/Accounts/Nbtstatrevealswhoisloggedon.html
+//#
+//#  Comments:               The data types defined in this NPL will be used in NETBIOS, Nbtns, NbIpx, Xns
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian, DefaultTimeOut = NETBIOSConversationTimeout]
+Protocol NETBIOS = FormatString("%s %s",
+								NETBIOSCommandTable(Command),
+								Property.NETBIOSDescription
+								)
+{
+	UINT16 Length = FormatString("%d bytes", this);
+	UINT16 Deliminator;
+	UINT8 Command = FormatString("%s, %d(0x%02X)", NETBIOSCommandTable(this), this, this);
+	//(NBFrame->command < 0x14) ? 44 : 14
+	switch(Command)
+	{
+		case 0x00: //# ADD GROUP Name QUERY
+			_struct NETBIOSAddGroupNameQuery
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				BLOB(5) Reserved;
+				UINT16 ResponseCorrelator;
+				//NETBIOSName DestinationName = "Reserved";
+				BLOB(16) Reserved1;
+				[NETBIOSDescription = ", Name = " + this.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x01: //# ADD Name QUERY
+			_struct NETBIOSAddNameQuery
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				BLOB(5) Reserved;
+				UINT16 ResponseCorrelator;
+				//NETBIOSName DestinationName = "Reserved";
+				BLOB(16) Reserved1;
+				[NETBIOSDescription = ", SrcName = " + this.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x02: //# Name IN CONFLICT
+			_struct NETBIOSNameInConflict
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				//UINT16 ResponseCorrelator = "Reserved";
+				BLOB(7) reserved;
+				[NETBIOSDescription = ", Name = " + this.ToString]
+				BLOB(16) NameInConflict;
+				[NETBIOSDescription = NETBIOSDescription + ", Node Address = " + this.ToString]
+				NETBIOSName1 NodeAddress;
+			};
+		case 0x0D: //# ADD Name RESPONSE
+			_struct NETBIOSAddNameResponse
+			{
+				UINT8  Data1 = this ? "Add Name in process"
+									: "Add Name not in process";
+				UINT16 Data2 = NETBIOSNameTypeTable(this);
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", Name = " + this.ToString]
+				NETBIOSName NameToBeAdded;
+				NETBIOSName AgainNameToBeAdded;
+				//# netmonII source code
+				//NETBIOSName1 AgainNameToBeAdded;
+			};
+		case 0x0A: //# Name QUERY
+			_struct NETBIOSNameQuery
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2
+				{
+					UINT8 SessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+					UINT8 NameType = NETBIOSNameTypeTable(this);
+				};
+				UINT16 TransmitCorrelator = "Reserved";
+				UINT16 ResponseCorrelator;
+				NETBIOSName DestName;
+				[NETBIOSDescription = ", " + this.ToString + "->" + DestName.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x0E: //# Name RECOGNISED
+			_struct NETBIOSNameRecognised
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2
+				{
+					UINT8 SessionNumber = NETBIOSNameStatusTable(this);
+					UINT8 NameType = NETBIOSNameTypeTable(this);
+				};
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator;
+				NETBIOSName DestName;
+				[NETBIOSDescription = ", " + this.ToString + "->" + DestName.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x08: //# DATAGRAM
+			_struct NETBIOSDatagram
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				//UINT16 ResponseCorrelator = "Reserved";
+				BLOB(7) reserved;
+				NETBIOSName DestName;
+				[NETBIOSDescription = ", " + this.ToString + "->" + DestName.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x09: //# DATAGRAM BROADCAST
+			_struct NETBIOSDatagramBroadcast
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				//UINT16 ResponseCorrelator = "Reserved";
+				//NETBIOSName DestName = "Reserved";
+				BLOB(23) reserved;
+				[NETBIOSDescription = ", Sender = " + this.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x03: //# STATUS QUERY
+			_struct NETBIOSStatusQuery
+			{
+				UINT8  Data1 = NETBIOSRequestStatusTable(this);
+				UINT16 Data2 = FormatString("Length of User Status Buffer is %d bytes", this);
+				UINT16 TransmitCorrelator = "Reserved";
+				UINT16 ResponseCorrelator;
+				[NETBIOSDescription = ", Receiver = " + this.ToString]
+				NETBIOSName DestName;
+				[NETBIOSDescription = NETBIOSDescription + ", Sender Address = " + this.ToString]
+				NETBIOSName1 SrcName;
+			};
+		case 0x0f: //# STATUS RESPONSE
+			_struct NETBIOSStatusResponse
+			{
+				UINT8  Data1 = NETBIOSRequestStatusTable(this);
+				UINT16 Data2
+				{
+					UINT16 StatusDataLength:14 = FormatString("(%s) %d bytes",this.ToBitString, this);
+					UINT16 Y:1 = FormatString("               (%s) %S",this.ToBitString,
+											this ? "Length exceeds the size of the user's buffer" : "");
+									
+					UINT16 X:1 = FormatString("               (%s) %S",this.ToBitString,
+											this ? "Length of the status data exceeds the frame size" : "");
+				};
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", Receiver Address = " + this.ToString]
+				NETBIOSName1 DestName;
+				[NETBIOSDescription = NETBIOSDescription + ", Sender = " + this.ToString]
+				NETBIOSName SrcName;
+			};
+		case 0x07:  //# TERMINATE TRACE
+			_struct NETBIOSTerminateTrace
+			{
+				[NETBIOSDescription = ""]
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				//UINT16 ResponseCorrelator = "Reserved";
+				//NETBIOSName DestName = "Reserved";
+				//NETBIOSName SrcName = "Reserved";
+				BLOB(39) Reserved;
+			};
+		case 0x13:  //# Terminate local & remote trace
+			_struct NETBIOSTerminateLocalAndRemoteTrace
+			{
+				[NETBIOSDescription = ""]
+				//UINT8 Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				//UINT16 TransmitCorrelator = "Reserved";
+				//UINT16 ResponseCorrelator = "Reserved";
+				//NETBIOSName DestName = "Reserved";
+				//NETBIOSName SrcName = "Reserved";
+				BLOB(39) Reserved;
+			};
+		case 0x17: //# SESSION CONFIRM
+			_struct NETBIOSSessionConfirm
+			{
+				UINT8 Data1
+				{
+					UINT8 X:1 = FormatString("       (%s) %s",this.ToBitString,this ? "NETBIOS version 2.00 or above"
+									 : "NETBIOS version 1.xx");
+					UINT8 Reverved:6 =  FormatString("(%s)",this.ToBitString);				 
+					UINT8 Y:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Higher version NETBIOS 2.20"
+									 : "Prior to NETBIOS version 2.20");
+				};
+				UINT16 Data2 = FormatString("User's receive buffer: %d bytes", this);
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator;
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x18: //# SESSION END
+			_struct NETBIOSSessionEnd
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2 = this ? "terminated by abnormal session end"
+									: "terminated by normal session end";
+				UINT16 TransmitCorrelator = "Reserved";
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x19: //# SESSION INITIALIZE
+			_struct NETBIOSSessionInitialize
+			{
+				UINT8 Data1
+				{
+					UINT8 Y:1 = FormatString("       (%s) %s",this.ToBitString,this ? "NETBIOS version 2.00 or above"
+									 : "NETBIOS version 1.xx");
+					UINT8 X:3 = FormatString("       (%s) largest frame value as seen by the MAC layer: %d bytes",this.ToBitString,this);
+					UINT8 Reverved:3 = FormatString("(%s)",this.ToBitString);
+					UINT8 Z:1 = FormatString("       (%s) %s",this.ToBitString,
+									this ? "Higher version NETBIOS 2.20"
+									 : "Prior to NETBIOS version 2.20");
+				};
+				UINT16 Data2 = FormatString("User's receive buffer: %d bytes", this);
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator;
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x1F: //# SESSION ALIVE
+			_struct NETBIOSSessionAlive
+			{
+				//UINT8  Data1 = "Reserved";
+				//UINT16 Data2 = "Reserved";
+				BLOB(7) reserved;
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber;
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber;
+			};
+		case 0x14: //DATA ACK
+			_struct NETBIOSDataAck
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2 = "Reserved";
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x15: //DATA FIRST MIDDLE
+			_struct NETBIOSDataFirstMiddle
+			{
+				UINT8 Data1
+				{
+					UINT8 Z:1 = FormatString("        (%s) %s",
+										this.ToBitString, this ? "A RECEIVE CONTINUE was requested" : "A RECEIVE CONTINUE was not requested"
+										);
+					UINT8 Y:1 =FormatString("        (%s) %s",
+										this.ToBitString, this ? "Higher version NETBIOS 2.20" : "Prior to NETBIOS version 2.20"
+										);
+					UINT8 Reserved2:1 = FormatString("(%s)",this.ToBitString);
+					UINT8 X:1 = FormatString("        (%s) %s",
+										this.ToBitString, this ? "Acknowledgment is included" : "Acknowledgment is not included"
+										);
+					UINT8 Rsv:4 = FormatString("      (%s)", this.ToBitString);
+				};
+				UINT16 ReSynchIndicator = FormatString("%s 0x%04X", this == 0x0001 ? "This is the first DATA FIRST MIDDLE frame, ":"", this);
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator;
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x16: //DATA ONLY LAST
+			_struct NETBIOSDataOnlyLast
+			{
+				UINT8 Data1
+				{
+					UINT8 Reserved:1 =FormatString("(%s)",this.ToBitString);
+					UINT8 Z:1 = FormatString("       (%s) %s",this.ToBitString,
+									this ? "NO_ACK indicator is set"
+									 : "NO_ACK indicator is not set");
+					UINT8 Y:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Acknowledge with data allowed is permitted" 
+									 : "Acknowledge with data allowed is not permitted" );
+					UINT8 X:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Acknowledgment is included"
+									 : "Acknowledgment is not included" );
+					UINT8 Rsv:4 = FormatString("     (%s)", this.ToBitString);
+				};
+				UINT16 ReSynchIndicator = FormatString("%s 0x%04X", this == 0x0001 ? "This is the first DATA FIRST MIDDLE frame, ":"", this);
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator;
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x1A: //No RECEIVE
+			_struct NETBIOSNoReceive
+			{
+				UINT8  Data1
+				{
+					UINT8 Reserved:1  =FormatString("(%s)",this.ToBitString);
+					UINT8 X:1 = FormatString("       (%s) %s",this.ToBitString,this ? "Higher version NETBIOS 2.20"
+									 : "Prior to NETBIOS version 2.20");
+					UINT8 Rsv:6 = FormatString("     (%s)", this.ToBitString);
+				};
+				UINT16 Data2 = FormatString("%d bytes accepted", this);
+				UINT16 TransmitCorrelator = "Reserved";
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x1B:  //RECEIVE OUTSTANDING
+			_struct NETBIOSReceiveOutstanding
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2 = FormatString("%d bytes accepted", this);
+				UINT16 TransmitCorrelator = "Reserved";
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+		case 0x1C:  //RECEIVE CONTINUE
+			_struct NETBIOSReceiveContinue
+			{
+				UINT8  Data1 = "Reserved";
+				UINT16 Data2 = "Reserved";
+				UINT16 TransmitCorrelator;
+				UINT16 ResponseCorrelator = "Reserved";
+				[NETBIOSDescription = ", RSN = " + FormatString("0x%02X",this)]
+				UINT8  RemoteSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+				[NETBIOSDescription = NETBIOSDescription + ", LSN = " + FormatString("0x%02X",this)]
+				UINT8  LocalSessionNumber = FormatString("0x%02X %s", this, NETBIOSSessionNumberTable(this));
+			};
+	}
+	switch(Command)
+	{
+		case 0x8:
+		case 0x9: 
+		case 0x15:
+		case 0x16:
+		switch(UINT32(FrameData, FrameOffset))
+		{
+			case 0x424D53FF: // 0xFF + "SMB"
+				[ BuildConversation("NETBIOSForSMB"), conversation.ConversationDescription = FormatString("(%s) ConvID = %d","SMB", ConvID)]
+				SMB Smb;
+			default:
+				switch
+				{
+					case FrameLength > FrameOffset:
+						Blob(FrameLength - FrameOffset) UnknownNetBiosData;
+				}
+		}
+	}
+}
+
+// http://support.microsoft.com/?kbid=119495
+// http://is-it-true.org/nt/atips/atips316.shtml
+// http://is-it-true.org/WindowsTips/WindowsNT/AdminTips/Accounts/Nbtstatrevealswhoisloggedon.html
+// http://technet.microsoft.com/en-us/library/cc779578.aspx
+Table NETBIOSNamePostfixTable(postfix)
+{
+	switch(postfix)
+	{
+		case 0x00:FormatString("<0x%02X> Workstation Service", postfix);
+		case 0x01:FormatString("<0x%02X> Messenger Service/Master Browser", postfix);
+		case 0x02:FormatString("<0x%02X> Workstation/Redirector", postfix);
+		case 0x03:FormatString("<0x%02X> Messenger Service/Main name", postfix);
+		case 0x05:FormatString("<0x%02X> Forwarded name", postfix);
+		case 0x06:FormatString("<0x%02X> RAS Server Service", postfix);
+		case 0x1B:FormatString("<0x%02X> Domain Master Browser", postfix);
+		case 0x1C:FormatString("<0x%02X> Domain Controllers", postfix);
+		case 0x1D:FormatString("<0x%02X> Master Browser", postfix);
+		case 0x1E:FormatString("<0x%02X> Browser Service Elections", postfix);
+		case 0x1F:FormatString("<0x%02X> NetDDE Service", postfix);
+		case 0x20:FormatString("<0x%02X> File Server Service", postfix);
+		case 0x21:FormatString("<0x%02X> RAS Client Service", postfix);
+		case 0x22:FormatString("<0x%02X> Microsoft Exchange Interchange(MSMail Connector)", postfix);
+		case 0x23:FormatString("<0x%02X> Microsoft Exchange Store", postfix);
+		case 0x24:FormatString("<0x%02X> Microsoft Exchange Directory", postfix);
+		case 0x2B:FormatString("<0x%02X> Lotus Notes Server Service", postfix);
+		case 0x2F:FormatString("<0x%02X> Lotus Notes", postfix);
+		case 0x30:FormatString("<0x%02X> Modem Sharing Server Service", postfix);
+		case 0x31:FormatString("<0x%02X> Modem Sharing Client Service", postfix);
+		case 0x33:FormatString("<0x%02X> Lotus Notes", postfix);
+		case 0x42:FormatString("<0x%02X> Mccaffee Anti-virus", postfix);
+		case 0x43:FormatString("<0x%02X> SMS Clients Remote Control", postfix);
+		case 0x44:FormatString("<0x%02X> SMS Administrators Remote Control Tool", postfix);
+		case 0x45:FormatString("<0x%02X> SMS Clients Remote Chat", postfix);
+		case 0x46:FormatString("<0x%02X> SMS Clients Remote Transfer", postfix);
+		case 0x4C:FormatString("<0x%02X> DEC Pathworks TCPIP service on Windows NT", postfix);
+		case 0x52:FormatString("<0x%02X> DEC Pathworks TCPIP service on Windows NT", postfix);
+		case 0x6A:FormatString("<0x%02X> Microsoft Exchange IMC", postfix);
+		case 0x87:FormatString("<0x%02X> Microsoft Exchange MTA", postfix);
+		case 0xBE:FormatString("<0x%02X> Network Monitor Agent", postfix);
+		case 0xBF:FormatString("<0x%02X> Network Monitor Application", postfix);
+		default  :FormatString("<0x%02X> Program Defined", postfix);
+	}
+}
+
+Table NETBIOSNameAsciiTable(char, suffix)
+{
+	switch
+	{
+		case char >= 0x20 && char <= 0x7E:FormatString("%c", char);
+		default:FormatString("<%02X>", char);
+	}
+}
+
+struct NETBIOSName = Name.ToString + ", " + NETBIOSNamePostfixTable(Suffix)
+{
+	BLOB(15) Name = FormatString("%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+								NETBIOSNameAsciiTable(this[0], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[1], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[2], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[3], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[4], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[5], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[6], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[7], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[8], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[9], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[10], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[11], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[12], UINT8( Framedata, Offset + 15 )),
+								NETBIOSNameAsciiTable(this[13], UINT8( Framedata, Offset + 15 )), 
+								NETBIOSNameAsciiTable(this[14], UINT8( Framedata, Offset + 15 ))
+								);
+	UINT8 Suffix = NETBIOSNamePostfixTable(this);
+}
+
+//http://timothydevans.me.uk/nbf2cifs/nbf2cifs.pdf page 15
+UnsignedNumber NETBIOSName1
+{
+	size = 16,
+	DisplayFormat = FormatString("%02X-%02X-%02X-%02X-%02X-%02X",this[5],this[4],this[3],this[2],this[1],this[0]),
+	Byteorder = BigEndian
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                     End of definition for Datatype NemtbiosName                               //
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+//# nbf2cifs.pdf page 13~14
+Table NETBIOSCommandTable(value)
+{
+	switch(value)
+	{
+		case 0x01:"Add Name Query";
+		case 0x00:"Add Group Name";
+		case 0x0D:"Add Name Response";
+		case 0x02:"Name In Conflict";
+		case 0x03:"Status Query";
+		case 0x07:"Terminate Trace";
+		case 0x08:"Datagram";
+		case 0x09:"Broadcast Datagram";
+		case 0x0A:"Name Query";
+		case 0x0E:"Name Recognize";
+		case 0x0F:"Status Response";
+		case 0x13:"Terminate Trace";
+		case 0x14:"Data Ack";
+		case 0x15:"Data First Middle";
+		case 0x16:"Data Only Last";
+		case 0x17:"Session Confirm";
+		case 0x18:"Session End";
+		case 0x19:"Session Initialize";
+		case 0x1A:"No Receive";
+		case 0x1B:"Receive Outstanding";
+		case 0x1C:"Receive Continue";
+		case 0x1F:"Session Alive";
+		default  :"Unhandled NETBIOS Command";
+	}
+}
+
+//# nbf2cifs.pdf page 17
+Table NETBIOSNameTypeTable(type)
+{
+	switch(type)
+	{
+		case 0x00:FormatString("Unique Name (0x%02X)", type);
+		case 0x01:FormatString("Group Name (0x%02X)", type);
+		default  :FormatString("Unknown NETBIOS Name Type (0x%02X)", type);
+	}
+}
+
+//# nbf2cifs.pdf page 22
+Table NETBIOSRequestStatusTable(type)
+{
+	switch(type)
+	{
+		case 0x00:FormatString("NETBIOS 1.x or 2.0 request (0x%02X)", type);
+		default  :FormatString("NETBIOS 2.1 request (0x%02X)", type);
+	}
+}
+
+//# nbf2cifs.pdf page 18
+Table NETBIOSNameStatusTable(ss)
+{
+	switch(ss)
+	{
+		case 0x00:FormatString("Station is not listening for this Name (%d)", ss);
+		case 0xFF:FormatString("Station is listening for this Name, but can not establish a session (%d)", ss);
+		default  :FormatString("session number: %d", ss);
+	}
+}
+
+//# NETBIOS\Format.c Line 330
+Table NETBIOSSessionNumberTable(ss)
+{
+	switch(ss)
+	{
+		case 0x00:" (NCB.FINDNAME request)";
+		case 0xFF:" (Invalid session number)";
+		default  :" ";
+	}
+}

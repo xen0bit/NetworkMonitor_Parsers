@@ -1,0 +1,1018 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Web Services Metadata Exchange (WS-MetadataExchange)
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.w3.org/Submission/WS-Transfer/
+//#                          http://specs.xmlsoap.org/ws/2004/09/mex/WS-MetadataExchange.pdf
+//#                          http://www.w3.org/Submission/WS-Policy/
+//#                          http://www.w3.org/TR/2001/NOTE-wsdl-20010315#_document-s
+//#  Microsoft References:   [MS-CTAP]: CardSpace Token Acquisition Protocol Specification (4.0)
+//#
+//#  Comments:               Microsoft implementation is encrypted
+//#
+//#  Revision Class and Date:Major, 9/8/2009
+//#                          Minor, 12/9/2009
+//#
+//####
+
+[Property.SoapBodySummary = "WSMetadataExchange Payload"]
+[RegisterBefore(SoapBody.DefaultSoapBody, WSMetadataExchange, WSMetadataExchangeSoapActionTable(Property.SOAPAction))]
+Protocol WSMetadataExchange = Property.WSMetadataExchangeSummary
+{
+	Switch(Property.SOAPAction)
+	{
+		Case "http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Request":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Response":
+			[Property.WSMetadataExchangeSummary = this.ToString]
+			WSMetadataExchangeadata WSMetadataExchangeMetadata;
+		Default:
+			While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+			{
+				XmlElement(true) AnyNode;
+			}
+	}
+	
+}
+
+struct WSMetadataExchangeadata = FormatString("%s Message", Property.WSMetadataExchangeMetadataSummary)
+{
+	[Post.Local.BDSRRGetRepositoryElements_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Body") STag;
+	switch
+	{
+		Case !Local.BDSRRGetRepositoryElements_IsEmpty:
+			struct
+			{
+				Switch
+				{
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "GetMetadata"):
+						[Property.WSMetadataExchangeMetadataSummary = "GetMetadata"]
+						WSMetadataExchangeGetMetadata WSMetadataExchangeGetMetadata;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Metadata"):
+						[Property.WSMetadataExchangeMetadataSummary = "Metadata"]
+						WSMetadataExchangeMetadata WSMetadataExchangeMetadata;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Fault"):
+						[Property.WSMetadataExchangeMetadataSummary = "Fault Metadata Response"]
+						SoapFaultElement FaultGetRepositoryElementsElement;
+					Case Contains(StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "EncryptedData"):
+						[Property.WSMetadataExchangeMetadataSummary = "Encrypted Metadata Data"]
+						XMLENCEncryptedData EncryptedData;
+					Default:
+						While ElementNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+						{
+							XmlElement(true) AnyNode;
+						}
+				}
+				
+				XmlTag("Body") ETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeGetMetadata
+{
+	XMLTag("GetMetadata") GetMetadataSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Dialect"):
+							xmlelement(true) Dialect;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Identifier"):
+							xmlelement(true) Identifier;
+						default:
+							xmlelement(true) Element;
+					}
+				}
+				XMLTag("GetMetadata") GetMetadataETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeMetadata = FormatString("There are %d MetadataSection", local.WSMetadataExchangeMetadataSectionCount)
+{
+	XMLTag("Metadata") MetadataSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				[local.WSMetadataExchangeMetadataSectionCount = 0]
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("MetadataSection"):
+							[local.WSMetadataExchangeMetadataSectionCount = local.WSMetadataExchangeMetadataSectionCount + 1]
+							WSMetadataExchangeMetadataSection MetadataSection;
+						default:
+							xmlelement(true) Element;
+					}
+				}
+				XMLTag("Metadata") MetadataETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeMetadataSection
+{
+	XMLTag("MetadataSection") MetadataSectionSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("definitions"):
+							WSMetadataExchangeDefinitions Definitions;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Location"):
+							xmlelement(true) Location;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("MetadataReference"):
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("EndpointReference>"):
+										WSADDREndpointReferenceType EndpointReference;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+						default:
+							xmlelement(true) MessageBody;
+					}
+				}
+				XMLTag("MetadataSection") MetadataSectionETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeDefinitions
+{
+	XMLTag("definitions") DefinitionsSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("types"):
+							xmlelement(true) Types;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("message "):
+							xmlelement(true) Message;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("portType"):
+							xmlelement(true) PortType ;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("binding"):
+							WSMetadataExchangeBinding Binding;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("service"):
+							WSMetadataExchangeService Service;
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Policy"):
+							WSMetadataExchangePolicy Policy;
+						default:
+							xmlelement(true) Element;
+					}
+				}
+					XMLTag("definitions") DefinitionsETag;
+			}
+	}
+}
+
+Struct WSMetadataExchangeBinding
+{
+	XMLTag("Binding") BindingSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Policy"):
+							struct
+							{
+								XMLTag("Policy") PoliceSTag;
+									switch
+									{
+										case !(Property.IsXmlEmptyElement):
+											struct
+											{
+												While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+												{
+													switch
+													{
+														default:
+															xmlelement(true) PolicyElement;
+													}
+												}
+												XMLTag("Policy") PoliceETag;
+											}
+									}
+							}
+						default:
+							xmlelement(true) Element;
+					}
+				}
+				XMLTag("Binding") BindingETag;
+			}
+	}
+}
+
+Struct WSMetadataExchangeService
+{
+	XMLTag("Service") ServiceSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("port"):
+							WSMetadataExchangePort Port;
+						default:
+							xmlelement(true) Element;
+					}
+				}
+				XMLTag("Service") ServiceETag;
+			}
+	}
+}
+
+Struct WSMetadataExchangePort
+{
+	XMLTag("Port") PortSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("Policy"):
+							struct
+							{
+								XMLTag("Policy") PoliceSTag;
+									switch
+									{
+										case !(Property.IsXmlEmptyElement):
+											struct
+											{
+												While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+												{
+													switch
+													{
+														default:
+															xmlelement(true) PolicyElement;
+													}
+												}
+												XMLTag("Policy") PoliceETag;
+											}
+									}
+							}
+						default:
+							xmlelement(true) Element;
+						}
+					}
+					XMLTag("Port") PortETag;
+				}
+	}
+}
+
+struct WSMetadataExchangePolicy
+{
+	XMLTag("Policy") PoliceSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					Switch
+					{
+						case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("ExactlyOne"):
+							Struct
+							{
+								XMLTag("ExactlyOne") ExactlyOneSTag;
+									switch
+									{
+										case !(Property.IsXmlEmptyElement):
+											struct
+											{
+												While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+												{
+													switch
+													{
+														case StringTerm(FrameData,FrameOffset,Property.XMLEncoding,Property.XMLElementNameTerm,true,false,false).contains("All"):
+															WSMetadataExchangeAll All;
+														default:
+															xmlelement(true) ExactlyOneElement;
+													}
+												}
+												XMLTag("ExactlyOne") ExactlyOneETag;
+											}
+									}
+							}
+					default:
+						xmlelement(true) Element;
+				}
+				}
+				XMLTag("Policy") PoliceETag;
+			}
+	}
+}
+struct WSMetadataExchangeAll
+{
+	XMLTag("All") AllSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+				{
+					switch
+					{
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("TransportBinding"):
+							WSMetadataExchangeTransportBinding TransportBinding;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("SymmetricBinding"):
+							WSMetadataExchangeSymmetricBinding SymmetricBinding;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("EndorsingSupportingTokens"):
+							WSMetadataExchangeEndorsingSupportingTokens EndorsingSupportingTokens;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("SignedSupportingTokens"):
+							WSMetadataExchangeSignedSupportingTokens SignedSupportingTokens;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Wss11"):
+							WSMetadataExchangeWss11 Wss11;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Trust10"):
+							WSMetadataExchangeTrust10 Trust10;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Trust13"):
+							WSMetadataExchangeTrust13 Trust13;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("UsingAddressing"):
+							xmlelement(true) UsingAddressing;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("SignedParts"):
+							WSMetadataExchangeSignedParts SignedParts;
+						case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("EncryptedParts "):
+							WSMetadataExchangeEncryptedParts EncryptedParts;
+						default:
+							xmlelement(true) Element;
+					}
+				}
+				XMLTag("All") AllETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeTransportBinding
+{
+	XMLTag("TransportBinding") TransportBindingSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("TransportToken"):
+										struct WSMetadataExchangeTransportToken
+										{
+											XMLTag("TransportToken") TransportTokenSTag;
+											switch
+											{
+												case !(Property.IsXmlEmptyElement):
+													struct
+													{
+														XMLTag("Policy") PolicySTag;
+														switch
+														{
+															case !(Property.IsXmlEmptyElement):
+																struct
+																{
+																	While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+																	{
+																		switch
+																		{
+																			case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("HttpsToken"):
+																				xmlelement(true) HttpsToken;
+																			default:
+																				xmlelement(true) Element;
+																		}
+																	}
+																	XMLTag("Policy") PolicyETag;
+																}
+														}
+														XMLTag("TransportToken") TransportTokenETag;
+													}
+											}
+										}
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("AlgorithmSuite"):
+										WSMetadataExchangeAlgorithmSuite AlgorithmSuite;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Layout"):
+										WSMetadataExchangeLayout Layout;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("IncludeTimestamp"):
+										xmlelement(true) IncludeTimestamp;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("TransportBinding") TransportBindingETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeLayout
+{
+	XMLTag("Layout") LayoutSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Strict"):
+										xmlelement(true) Strict;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("Layout") LayoutETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeSymmetricBinding
+{
+	XMLTag("SymmetricBinding") SymmetricBindingSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("ProtectionToken"):
+										struct ProtectionToken
+										{
+											XMLTag("ProtectionToken") ProtectionTokenSTag;
+											switch
+											{
+												case !(Property.IsXmlEmptyElement):
+													struct
+													{
+														XMLTag("Policy") PolicySTag;
+														switch
+														{
+															case !(Property.IsXmlEmptyElement):
+																struct
+																{
+																	While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+																	{
+																		switch
+																		{
+																			case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("SpnegoContextToken"):
+																				WSMetadataExchangeSpnegoContextToken SpnegoContextToken;
+																			case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("X509Token"):
+																				WSMetadataExchangeX509Token X509Token;
+																			default:
+																				xmlelement(true) Element;
+																		}
+																	}
+																	XMLTag("Policy") PolicyETag;
+																}
+														}
+														XMLTag("ProtectionToken") ProtectionTokenETag;
+													}
+											}
+										}
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("AlgorithmSuite"):
+										WSMetadataExchangeAlgorithmSuite AlgorithmSuite;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("IncludeTimestamp"):
+										xmlelement(true) IncludeTimestamp;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Layout"):
+										WSMetadataExchangeLayout Layout;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("EncryptSignature"):
+										xmlelement(true) EncryptSignature;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("OnlySignEntireHeadersAndBody"):
+										xmlelement(true) OnlySignEntireHeadersAndBody;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("SymmetricBinding") SymmetricBindingETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeSpnegoContextToken
+{
+	XMLTag("SpnegoContextToken") SpnegoContextTokenSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireDerivedKeys"):
+										xmlelement(true) RequireDerivedKeys;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("SpnegoContextToken") SpnegoContextTokenETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeX509Token
+{
+	XMLTag("X509Token") X509TokenSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("wPolicy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireDerivedKeys"):
+										xmlelement(true) RequireDerivedKeys;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireThumbprintReference"):
+										xmlelement(true) RequireThumbprintReference;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("WssX509V3Token10"):
+										xmlelement(true) WssX509V3Token10;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("X509Token") X509TokenSTag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeAlgorithmSuite
+{
+	XMLTag("AlgorithmSuite") AlgorithmSuiteSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Basic256"):
+										xmlelement(true) Basic256;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("TripleDes"):
+										xmlelement(true) TripleDes;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("AlgorithmSuite") AlgorithmSuiteETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeEndorsingSupportingTokens
+{
+	XMLTag("EndorsingSupportingTokens") EndorsingSupportingTokensSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							switch
+							{
+								case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("X509Token"):
+									WSMetadataExchangeX509Token X509Token;
+								case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("SpnegoContextToken"):
+									struct SpnegoContextTokenNull
+									{
+										XMLTag("SpnegoContextToken") SpnegoContextTokenSTag;
+										switch
+										{
+											case !(Property.IsXmlEmptyElement):
+												struct
+												{
+													While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+													{
+														switch
+														{
+															case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Policy"):
+																xmlelement(true) Policy;
+															default:
+																xmlelement(true) Element;
+														}
+													}
+													XMLTag("SpnegoContextToken") SpnegoContextTokenETag;
+												}
+										}
+									}
+								case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("KerberosToken"):
+									struct KerberosToken
+									{
+										XMLTag("KerberosToken") KerberosTokenSTag;
+										switch
+										{
+											case !(Property.IsXmlEmptyElement):
+												struct
+												{
+													XMLTag("Policy") PolicySTag;
+													switch
+													{
+														case !(Property.IsXmlEmptyElement):
+															struct
+															{
+																While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+																{
+																	switch
+																	{
+																		case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("WssGssKerberosV5ApReqToken11"):
+																			xmlelement(true) WssGssKerberosV5ApReqToken11;
+																		default:
+																			xmlelement(true) Element;
+																	}
+																}
+																XMLTag("Policy") PolicyETag;
+															}
+													}
+													XMLTag("KerberosToken") KerberosTokenETag;
+												}
+										}
+									}
+								case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RsaToken"):
+									xmlelement(true) RsaToken;
+								case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("IssuedToken"):
+									struct WSMetadataExchangeIssuedToken
+									{
+										XMLTag("IssuedToken") IssuedTokenSTag;
+										switch
+										{
+											case !(Property.IsXmlEmptyElement):
+												struct
+												{
+													
+													xmlelement(true) RequestSecurityTokenTemplate;
+													XMLTag("Policy") PolicySTag;
+													switch
+													{
+														case !(Property.IsXmlEmptyElement):
+															struct
+															{
+																While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+																{
+																	switch
+																	{
+																		case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireDerivedKeys"):
+																			xmlelement(true) RequireDerivedKeys;
+																		case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireInternalReference"):
+																			xmlelement(true) RequireInternalReference;
+																		default:
+																			xmlelement(true) Element;
+																	}
+																}
+																XMLTag("Policy") PolicyETag;
+															}
+													}
+													XMLTag("IssuedToken") IssuedTokenETag;
+												}
+										}
+									}
+								//case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("sp:SignedParts"):
+									//xmlelement(true) SignedParts;
+								default:
+									ReportParserError("ParserErrorProtocolClassMsOffice", "WSMetadataExchange", "There is no such Element") ElementError;
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("EndorsingSupportingTokens") EndorsingSupportingTokensETag;
+			}
+	}
+}
+
+
+struct WSMetadataExchangeSignedSupportingTokens
+{
+	XMLTag("SignedSupportingTokens") SignedSupportingTokensSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							XMLTag("UsernameToken") UsernameTokenSTag;
+							switch
+							{
+								case !(Property.IsXmlEmptyElement):
+									struct
+									{
+										XMLTag("Policy") UsernameTokenPolicySTag;
+										switch
+										{
+											case !(Property.IsXmlEmptyElement):
+												struct
+												{
+													While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+													{
+														switch
+														{
+															case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("WssUsernameToken10"):
+																xmlelement(true) WssUsernameToken10;
+														}
+													}
+													XMLTag("Policy") UsernameTokenPolicyETag;
+												}
+										}
+										XMLTag("UsernameToken") UsernameTokenETag;
+									}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("SignedSupportingTokens") SignedSupportingTokensETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeWss11
+{
+	XMLTag("Wss11") Wss11STag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportRefKeyIdentifier"):
+										xmlelement(true) MustSupportRefKeyIdentifier;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportRefIssuerSerial"):
+										xmlelement(true) MustSupportRefIssuerSerial;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportRefThumbprint"):
+										xmlelement(true) MustSupportRefThumbprint;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportRefEncryptedKey"):
+										xmlelement(true) MustSupportRefEncryptedKey;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireSignatureConfirmation"):
+										xmlelement(true) RequireSignatureConfirmation;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("Wss11") Wss11ETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeTrust10
+{
+	XMLTag("Trust10") Trust10STag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireClientEntropy"):
+										xmlelement(true) RequireClientEntropy;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireServerEntropy"):
+										xmlelement(true) RequireServerEntropy;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportIssuedTokens"):
+										xmlelement(true) MustSupportIssuedTokens;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("Trust10") Trust10ETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeTrust13
+{
+	XMLTag("Trust13") Trust13STag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" && String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireClientEntropy"):
+										xmlelement(true) RequireClientEntropy;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("RequireServerEntropy"):
+										xmlelement(true) RequireServerEntropy;
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("MustSupportIssuedTokens"):
+										xmlelement(true) MustSupportIssuedTokens;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+						}
+				}
+				XMLTag("Trust13") Trust13ETag;
+			}
+	}
+}
+
+struct  WSMetadataExchangeSignedParts
+{
+	XMLTag("SignedParts") SignedPartsSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							xmlelement(true) Body;
+							While [StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Header") && !StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("</")]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("Header"):
+										xmlelement(true) Header;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("SignedParts") SignedPartsETag;
+			}
+	}
+}
+
+struct WSMetadataExchangeEncryptedParts
+{
+	XMLTag("EncryptedParts") EncryptedPartsSTag;
+	switch
+	{
+		case !(Property.IsXmlEmptyElement):
+			struct
+			{
+				XMLTag("Policy") PolicySTag;
+				switch
+				{
+					case !(Property.IsXmlEmptyElement):
+						struct
+						{
+							While [StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("<") && !StringTerm(FrameData, FrameOffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false).contains("</")]
+							{
+								switch
+								{
+									case StringTerm(FrameData, FrameOffset, Property.XMLEncoding,XMLElementNameTerm, true, false, false).contains("Body"):
+										xmlelement(true) Body;
+									default:
+										xmlelement(true) Element;
+								}
+							}
+							XMLTag("Policy") PolicyETag;
+						}
+				}
+				XMLTag("EncryptedParts") EncryptedPartsETag;
+			}
+	}
+}
+
+Table WSMetadataExchangeSoapActionTable(value)
+{
+	Switch(value)
+	{
+		Case "http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Request":
+		Case "http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Response": true;
+		Default:false;
+	}
+}

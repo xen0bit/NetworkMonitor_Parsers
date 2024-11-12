@@ -1,0 +1,138 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Group Policy: Audit Configuration Extension
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-GPAC]: Terminal Services Workspace Provisioning Protocol Specification (0.1.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/4/2009
+//#                          Minor, 11/17/2009
+//#
+//####
+
+[ RegisterBefore( FileTypeContent.FileData, GPAC, Contains(property.SmbFileName, "audit.csv")) ]
+Protocol GPAC = formatstring("Action: %s, MachineName: %s", Property.GPACAction, Property.GPACMachineName)
+{
+	[ Property.GPACMachineName = "Null" ]
+	GPACHeader Header;
+	while [ Contains(StringTerm(FrameData, FrameOffset, Ascii, "\r\n", true, false, false), "{") ]
+	{
+		[ Property.GPACAction = "SubcategorySettings" ]
+		GPACSubcategorySettings SubcategorySettings;
+	}
+	while [ Contains(StringTerm(FrameData, FrameOffset, Ascii, "\r\n", true, false, false), ",,Option:") ]
+	{
+		[ Property.GPACAction = "AuditOptions" ]
+		GPACAuditOptions AuditOptions;
+	}
+	while [ Contains(StringTerm(FrameData, FrameOffset, Ascii, "\r\n", true, false, false), ",,,,") ]
+	{
+		[ Property.GPACAction = "GlobalObjectAccessAuditSettings" ]
+		GPACGlobalObjectAccessAuditSettings GlobalObjectAccessAuditSettings;
+	}
+}
+
+Struct GPACHeader
+{
+	StringTerm(Ascii, ",", true, false, true) MachineName = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) PolicyTarget = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) Subcategory = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) SubcategoryGUID = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) InclusionSetting = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) ExclusionSetting = this == "" ? "Null":this;
+	StringTerm(Ascii, "\r\n", true, false, true) SettingValue = this == "" ? "Null":this;
+}
+
+Struct GPACAuditOptions = formatstring("MachineName: %s", Property.GPACMachineName)
+{
+	[ Property.GPACMachineName ]
+	StringTerm(Ascii, ",,", true, false, true) MachineName = this == "" ? "Null":this;
+	StringTerm(Ascii, ",,", true, false, true) AuditOptionType = GPACAuditOptionTypeTable(this);
+	StringTerm(Ascii, ",,", true, false, true) AuditOptionValueText = this == "" ? "Null":this;
+	StringTerm(Ascii, "\r\n", true, false, true) AuditOptionValue = this == "" ? "Null":this;
+}
+
+Struct GPACGlobalObjectAccessAuditSettings = formatstring("MachineName: %s", Property.GPACMachineName)
+{
+	[ Property.GPACMachineName ]
+	StringTerm(Ascii, ",,", true, false, true) MachineName = this == "" ? "Null":this;
+	StringTerm(Ascii, ",,,,", true, false, true) ResourceGlobalSaclType = GPACResourceGlobalSaclTypeTable(this);
+	StringTerm(Ascii, "\r\n", true, false, true) GlobalSACL = this == "" ? "Null":this;
+}
+
+Struct GPACSubcategorySettings = formatstring("MachineName: %s", Property.GPACMachineName)
+{
+	[ Property.GPACMachineName ]
+	StringTerm(Ascii, ",", true, false, true) MachineName = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) PolicyTarget = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) Subcategory = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) SubcategoryGUID = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) InclusionSetting = this == "" ? "Null":this;
+	StringTerm(Ascii, ",", true, false, true) ExclusionSetting = this == "" ? "Null":this;
+	StringTerm(Ascii, "\r\n", true, false, true) SettingValue = PolicyTarget == "system" ? GPACSystemSettingValueTable(this) : GPACPerUserSettingValueTable(this);
+}
+
+Table GPACActionTable(value)
+{
+	switch(value)
+	{
+		Case "AuditOptions":					"Enable an administrator to set the audit options for an audit policy";
+		Case "GlobalObjectAccessAuditSettings": "Enable an administrator to set the global object access auditing settings for an audit policy";
+		Case "SubcategorySettings":				"Enable an administrator to set the subcategory settings for an audit policy";
+		default:								"Unknown action";
+	}
+}
+
+Table GPACAuditOptionTypeTable(value)
+{
+	switch(value)
+	{
+		Case "CrashOnAuditFail":		"This audit option specifies whether the system shuts down if it is unable to log security events";
+		Case "FullPrivilegeAuditing":	"This audit option specifies whether the system generates an event when one or more of these privileges are assigned to a user token";
+		Case "AuditBaseObjects":		"This security setting specifies whether to audit the access of global system objects";
+		Case "AuditBaseDirectories":	"The AuditBaseDirectories option specifies that named kernel objects (such as mutexes and semaphores) are to be given SACLs when they are created";
+		default:						"Unknown value";
+	}
+}
+
+Table GPACResourceGlobalSaclTypeTable(value)
+{
+	switch(value)
+	{
+		Case "FileGlobalSacl":		"Defines a global SACL for the File System resource manager";
+		Case "RegistryGlobalSacl":	"Defines a global SACL for the Registry resource manager";
+		default:					"Unknown value";
+	}
+}
+
+Table GPACSystemSettingValueTable(value)
+{
+	switch(value)
+	{
+		Case "0":		"This audit subcategory setting should remain unchanged";
+		Case "1":		"This audit subcategory setting is set to Success Audits Only";
+		Case "2":		"This audit subcategory setting is set to Failure Audits Only";
+		Case "3":		"This audit subcategory setting is set to Success and Failure Audits";
+		Case "4":		"This audit subcategory setting is set to None";
+		default:	"Unknown value";
+	}
+}
+
+Table GPACPerUserSettingValueTable(value)
+{
+	switch(value)
+	{
+		Case "0":		"This audit subcategory setting should remain unchanged";
+		Case "1":
+		Case "3":		"A Success Audit is generated even if not specified by the system audit policy";
+		Case "2":		"A Success Audit is suppressed regardless of the system audit policy";
+		Case "4":
+		Case "12":	"A Failure Audit is generated even if not specified by the system audit policy";
+		Case "8":		"A Failure Audit is suppressed regardless of the system audit policy";
+		Case "16":	"This audit subcategory setting is set to None";
+		default:	"Unknown value";
+	}
+}

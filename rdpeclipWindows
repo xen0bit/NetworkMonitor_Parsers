@@ -1,0 +1,138 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Desktop Protocol: Clipboard Virtual Channel Extension
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-RDPECLIP]: Remote Desktop Protocol: Clipboard Virtual Channel Extension
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol RDPECLIP = RDPECLIPMsgTypeTable(ClipHeader.MsgType)
+{
+	RDPECLIPCliprdrHeader ClipHeader;
+	switch (ClipHeader.MsgType)
+	{
+		case 2:
+			// We can not determine whether to use long format or short 
+			// format because one of capability set packets must be encrypted
+			BLOB(ClipHeader.DataLen) FormatList;
+		case 4:
+			UINT32 FormatID;
+		case 5:
+			// The format is determined by requestedFormatId transferred
+			// in another direction, so one of the two packets must be encrypted
+			BLOB(ClipHeader.DataLen) FormatDataResponsePDU;
+		case 6:
+			UnicodeString(260) TemporaryDirectoryName;
+		case 7:
+			RDPECLIPCliprdrCaps CliprdrCaps;
+		case 8:
+			RDPECLIPCliprdrFileContentsRequest CliprdrFileContentsRequest;
+		case 9:
+			struct FileContentsResponse = FormatString("StreamId = %s", StreamId)
+			{
+				UINT32 StreamId;
+				// The format is determined by FileContentsRequest transferred
+				// in another direction, so one of the two packets must be encrypted
+				BLOB(ClipHeader.DataLen - 4 > FrameLength - FrameOffset ? FrameLength - FrameOffset : ClipHeader.DataLen - 4) FileContentsResponse;
+			}
+	}
+}
+
+// 2.2.1 Clipboard PDU Header (CLIPRDR_HEADER)
+struct RDPECLIPCliprdrHeader = RDPECLIPMsgTypeTable(MsgType)
+{
+	UINT16 MsgType = RDPECLIPMsgTypeTable(this);
+	UINT16 MsgFlags
+	{
+		UINT16 ResponseOK:1 = FormatString("  (%s) %s",this.ToBitString,this ? "Response OK" : "Not Response OK");
+		UINT16 ResponseFail:1 = FormatString("(%s) %s",this.ToBitString,this ? "Response Fail" : "Not Response Fail");
+		UINT16 ASCIINames:1 = FormatString("  (%s) %s",this.ToBitString,this ? "ASCII Names" : "Not ASCII Names");
+		UINT16 Reserved:13 = FormatString("    (%s)",this.ToBitString);
+	};
+	UINT32 DataLen;
+}
+
+Table RDPECLIPMsgTypeTable(code)
+{
+	switch (code)
+	{
+		case 1: "CB_MONITOR_READY";
+		case 2: "CB_FORMAT_LIST";
+		case 3: "CB_FORMAT_LIST_RESPONSE";
+		case 4: "CB_FORMAT_DATA_REQUEST";
+		case 5: "CB_FORMAT_DATA_RESPONSE";
+		case 6: "CB_TEMP_DIRECTORY";
+		case 7: "CB_CLIP_CAPS";
+		case 8: "CB_FILECONTENTS_REQUEST";
+		case 9: "CB_FILECONTENTS_RESPONSE";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+// 2.2.2.1 Clipboard Capabilities PDU (CLIPRDR_CAPS)
+struct RDPECLIPCliprdrCaps
+{
+	UINT16 CapabilitiesSets;
+	UINT16 Pad1;
+	RDPECLIPCliprdrCapsSet CapabilitySet[CapabilitiesSets];
+}
+
+// 2.2.2.1.1 Capability Set (CLIPRDR_CAPS_SET)
+struct RDPECLIPCliprdrCapsSet = RDPECLIPCliprdrCapsSetTypeTable(CapabilitySetType)
+{
+	UINT16 CapabilitySetType = RDPECLIPCliprdrCapsSetTypeTable(this);
+	UINT16 LengthCapability;
+	switch (CapabilitySetType)
+	{
+		case 0x0001:
+			RDPECLIPCliprdrGeneralCapability  GeneralCapability;
+		default:
+			BLOB(LengthCapability - 32) UnknownCapability;
+	}
+}
+
+Table RDPECLIPCliprdrCapsSetTypeTable(code)
+{
+	switch (code)
+	{
+		case 0x0001: "CB_CAPSTYPE_GENERAL";
+		default: FormatString("Undefined Value(%u)", code);
+	}
+}
+
+// 2.2.2.1.1.1 General Capability Set (CLIPRDR_GENERAL_CAPABILITY)
+struct RDPECLIPCliprdrGeneralCapability = FormatString("Version%u", Version)
+{
+	UINT32 Version;
+	UINT32 GeneralFlags
+	{
+		UINT32 Unused1:1 = FormatString("              (%s)", this.ToBitString);
+		UINT32 UseLongFormatNames:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Use long format names" : "Not use long format names");
+		UINT32 StreamFileclipEnabled:1 = FormatString("(%s) %s", this.ToBitString, this ? "Stream-based operations supported" : "Stream-based operations not supported");
+		UINT32 FileclipNoFilePaths:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Description of files MUST NOT include the source path" : "Description of files may include the source path");
+		UINT32 Unused2:28 = FormatString("              (%s)", this.ToBitString);
+	};
+}
+
+// 2.2.4.3 File Contents Request PDU (CLIPRDR_FILECONTENTS_REQUEST)
+struct RDPECLIPCliprdrFileContentsRequest
+{
+	UINT32 StreamId;
+	INT32 Index;
+	UINT32 Flags = FormatString("Requesting %s", Size ? "Size" : (Range ? "Range" : "Nothing"))
+	{
+		UINT32 Size:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Requesting size" : "Not requesting size");
+		UINT32 Range:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Requesting range" : "Not requesting range");
+		UINT32 Unused:30 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT32 PositionLow;
+	UINT32 PositionHigh;
+	UINT32 Requested;
+}

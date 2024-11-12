@@ -1,0 +1,546 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  IManagedObject Interface Protocol
+//#
+//#  Details:                formerly called DotNetDCOM.npl
+//#
+//#  Microsoft References:   [MS-IOI]: IManagedObject Interface Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 4/20/2010
+//#
+//####
+
+Protocol IMngdObj = FormatString( "%s %s%s%s%s%s", 
+	Property.IMngdObjMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	( Property.MSRPCPfcFlags & 0x03 ) == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? ", *Un-Interpreted*": "",
+	Property.IMngdObjSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.IMngdObjSummary : "" )
+{
+	[Property.IMngdObjSummary = ""]
+	Switch( Property.MSRPCIfUuid )
+	{
+		Case "{8165B19E-8D3A-4D0B-80C8-97DE310DB583}":
+			[Property.IMngdObjMethodName = "iservicedcomponentinfo:" + IMngdObjiservicedcomponentinfoMethodNameTable( Property.MSRPCOpnum )]
+			_Struct iservicedcomponentinfo
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetComponentInfo
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[IMngdObjSummary = FormatString( "InfoMask=0x%X", InfoMask )]
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													INT32 InfoMask;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									[IMngdObjSummary = FormatString( "InfoMask=0x%X", InfoMask )]
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													INT32 InfoMask;
+													Align8 Pad1;
+													OLEAUTWireSafeArray InfoArray;
+													Align4 Pad2;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "IMngdObj", "Unknown iservicedcomponentinfo method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+		Case "{C3FCC19E-A970-11D2-8B5A-00A0C9B7C9C4}":
+			[Property.IMngdObjMethodName = "imanagedobject:" + IMngdObjimanagedobjectMethodNameTable( Property.MSRPCOpnum )]
+			_Struct imanagedobject
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetSerializedBuffer
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													IMngdObjCustomBstr STR;
+													Align4 Pad;
+													[ Conversation.IMngdObjReturenValue$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] = UINT32(FrameData, FrameOffset) ]
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 4:
+						_Struct GetObjectIdentity
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+
+								Case 0x02: //RESPONSE
+									[IMngdObjSummary = FormatString( "AppDomainID=0x%X CCW=0x%X", AppDomainID, CCW )]
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													BSTR BSTRGUID;
+													Align4 Padding;
+													INT32 AppDomainID;
+													INT32 CCW;
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "IMngdObj", "Unknown imanagedobject method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+		Case "{6619A740-8154-43BE-A186-0319578E02DB}":
+			[Property.IMngdObjMethodName = "iremotedispatch:" + IMngdObjiremotedispatchMethodNameTable( Property.MSRPCOpnum )]
+			_Struct iremotedispatch
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					case 0x03:
+						_struct GetTypeInfoCount
+						{
+							switch(property.MSRPCptype)
+							{
+								case 0x00:
+									_struct Request
+									{
+									}
+								case 0x02:
+									_struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												struct
+												{
+													UINT32 pctInfo;
+													[RAPRDecomResult = HResult.ToString]
+													HRESULT HResult;
+												}
+										}
+									}
+							}
+						}
+					case 0x04:
+						_struct GetTypeInfo
+						{
+							switch(property.MSRPCptype)
+							{
+								case 0x00:
+									_struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												struct
+												{
+													UINT32 iTInfo;
+													OLEAUTLCID Lcid;
+												}
+										}
+									}
+								case 0x02:
+									_struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												struct
+												{
+													NdrPtr pTInfo;
+													switch
+													{
+														case pTInfo.ReferentID:
+															DCOMMInterfacePointer TInfo;
+													}
+													[RAPRDecomResult = HResult.ToString]
+													HRESULT HResult;
+												}
+										}
+									}
+							}
+						}
+					case 0x05:
+						_struct GetIDsOfNames
+						{
+							switch (Property.MSRPCptype)
+							{
+								case 0x00:
+									_struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												struct
+												{
+													OLEAUTRefIId riid;
+													NdrConformant NamesCount;
+													OLEAUTLPOLESTR(NamesCount.MaxCount) rgszNames;
+													Align4 pad;
+													UINT32 cNames;
+													OLEAUTLCID lcid;
+												}
+										}
+									}
+								case 0x02:
+									_struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												struct
+												{
+													NdrConformant prgDispId;
+													OLEAUTDISPID rgDispId[prgDispId.MaxCount];
+													[RAPRDecomResult = HResult.ToString]
+													HRESULT HResult;
+												}
+										}
+									}
+							}
+						}
+					case 0x06:
+						_struct Invoke
+						{
+							switch (Property.MSRPCptype)
+							{
+								case 0x00:
+								_struct Request
+								{
+									Switch
+									{
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											struct
+											{
+												OLEAUTDISPID dispIdMember;
+												OLEAUTRefIId riid;
+												OLEAUTLCID lcid;
+												switch( Property.MSRPCByteOrder )
+												{
+													case LittleEndian:
+														_struct LittleEndian
+														{
+															UINT32 dwFlags
+															{
+																[Local.InvocationType = this ? "Method" : Local.InvocationType]
+																UINT32 Method:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Invoked as a method" : "Not invoked as a method");
+																[Local.InvocationType = this ? "PropertyGet" : Local.InvocationType]
+																UINT32 PropertyGet:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Retrieved as a property or data membe" : "Not retrieved as a property or data membe");
+																[Local.InvocationType = this ? "PropertyPut" : Local.InvocationType]
+																UINT32 PropertyPut:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Changed as a property or data member" : "Not changed as a property or data member");
+																[Local.InvocationType = this ? "PropertyPutRef" : Local.InvocationType]
+																UINT32 PropertyPutRef:1 = FormatString("(%s) %s", this.ToBitString, this ? "Changed by a reference assignment" : "Not changed by a value assignment");
+																UINT32 Reserved1:13 = FormatString("     (%s)", this.ToBitString);
+																UINT32 ZeroVarResult:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pVarResult argument" : "Interested in the actual pVarResult argument");
+																UINT32 ZeroExcepInfo:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pExcepInfo argument" : "Interested in the actual pExcepInfo argument");
+																UINT32 ZeroArgErr:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Not interested in the actual pArgerr argument" : "Interested in the actual pArgerr argument");
+																UINT32 Reserved2:12 = FormatString("     (%s)", this.ToBitString);
+															}
+														}
+													default:
+														_struct BigEndian
+														{
+															UINT32 dwFlags
+															{
+																UINT32 Reserved2:12 = FormatString("     (%s)", this.ToBitString);
+																UINT32 ZeroArgErr:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Not interested in the actual pArgerr argument" : "Interested in the actual pArgerr argument");
+																UINT32 ZeroExcepInfo:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pExcepInfo argument" : "Interested in the actual pExcepInfo argument");
+																UINT32 ZeroVarResult:1 = FormatString(" (%s) %s", this.ToBitString, this ? "Not interested in the actual pVarResult argument" : "Interested in the actual pVarResult argument");
+																UINT32 Reserved1:13 = FormatString("     (%s)", this.ToBitString);
+																[Local.InvocationType = this ? "PropertyPutRef" : Local.InvocationType]
+																UINT32 PropertyPutRef:1 = FormatString("(%s) %s", this.ToBitString, this ? "Changed by a reference assignment" : "changed by a value assignment");
+																[Local.InvocationType = this ? "PropertyPut" : Local.InvocationType]
+																UINT32 PropertyPut:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Changed as a property or data member" : "Not changed as a property or data member");
+																[Local.InvocationType = this ? "PropertyGet" : Local.InvocationType]
+																UINT32 PropertyGet:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Retrieved as a property or data membe" : "Not retrieved as a property or data membe");
+																[Local.InvocationType = this ? "Method" : Local.InvocationType]
+																UINT32 Method:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Invoked as a method" : "Not invoked as a method");
+															}
+														}
+												}
+												[Local.DecomParameters = FormatString("dispIdMemeber = %s, InvocationType = %s", dispIdMember.ToString, Local.InvocationType)]
+												OLEAUTDISPPARAMS DispParams;
+												UINT32 cVarRef;
+												NdrConformant VarRefIdxConformant;
+												UINT32 rgVarRefIdx[VarRefIdxConformant.MaxCount];
+												OLEAUTSafeArrVariant VarRef;
+											}
+									}
+								}
+								case 0x02:
+								_struct Response
+								{
+									Switch
+									{
+										Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+										Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+										Default:
+											struct
+											{
+												OLEAUTVariant VarResult;
+												NdrAlign pad;
+												OLEAUTExcepInfo ExcepInfo;
+												UINT32 Argerr;
+												OLEAUTSafeArrVariant rgVarRef;
+												Align4 padding;
+												[RAPRDecomResult = HResult.ToString]
+												HRESULT HResult;
+											}
+									}
+								}
+							}
+						}
+					Case 7:
+						_Struct RemoteDispatchAutoDone
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													IMngdObjCustomBstr s;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													IMngdObjCustomBstr RetVal;
+													Align4 Pad;
+													[ Conversation.IMngdObjReturenValue$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] = UINT32(FrameData, FrameOffset) ]
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Case 8:
+						_Struct RemoteDispatchNotAutoDone
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													IMngdObjCustomBstr S;
+												}
+										}
+									}
+
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData:	Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													IMngdObjCustomBstr RetVal;
+													Align4 Pad;
+													[ Conversation.IMngdObjReturenValue$[ MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId ) ] = UINT32(FrameData, FrameOffset) ]
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+
+					Default:
+						ReportParserError(ParserErrorProtocolClassWindows, "IMngdObj", "Unknown iremotedispatch method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+
+	}
+}
+
+Table IMngdObjiservicedcomponentinfoMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 3: "GetComponentInfo";
+		Default: "unknown";
+	}
+}
+
+Table IMngdObjimanagedobjectMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 4: "GetObjectIdentity";
+		Case 3: "GetSerializedBuffer";
+		Default: "unknown";
+	}
+}
+
+Table IMngdObjiremotedispatchMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 7: "RemoteDispatchAutoDone";
+		Case 8: "RemoteDispatchNotAutoDone";
+		Default: "unknown";
+	}
+}
+
+/*Struct imnSAFEARRAY
+{
+	UINT16 cDims;
+	UINT16 fFeatures;
+	UINT32 cbElements;
+	UINT32 cLocks;
+	SAFEARRAYUNION uArrayStructs;
+	[size_is(cDims)] SAFEARRAYBOUND rgsabound[];
+}
+
+Struct SAFEARRAYUNION
+{
+	UINT32 sfType;
+	switch(sfType)
+	{
+		case 0x0008: BSTR BstrStr;
+		case 0x000D: SAFEARRUNKNOWN UnknownStr;
+		case 0x0009: SAFEARRDISPATCH DispatchStr;
+		case 0x000C: SAFEARRVARIANT VariantStr;
+		case 0x0024: SAFEARRBRECORD RecordStr;
+		case 0x800D: SAFEARRHAVEIID HaveIidStr;
+		case 0x0010: BYTESIZEDARR ByteStr;
+		case 0x0002: WORDSIZEDARR WordStr;
+		case 0x0003: DWORDSIZEDARR LongStr;
+		case 0x0014: HYPERSIZEDARR HyperStr;
+}*/
+
+struct IMngdObjCustomBstr
+{
+	NdrPtr	Pointer;
+	Switch {
+		Case Pointer.ReferentID != 0:
+			Struct FlaggedWordBlob
+			{
+				NdrConformant Size;
+				UINT32 CBytes;
+				UINT32 CSize;
+				Switch
+				{
+					Case CBytes != 0xFFFFFFFF:
+						Switch
+						{
+							//if the method returned a negative value that indicates failure
+							Case (Conversation.IMngdObjReturenValue$[MakeByteArray( Property.MSRPCCallId, Property.MSRPCPContId )] & 0x80000000) == 0x80000000:
+								[DataFieldByteOrder = LittleEndian]
+								UnicodeString(CSize) Data;
+
+							//if the method returned a positive value or 0 that indicates successful completion						
+							Default:
+								Struct
+								{
+									//should use embedded protocol
+									[DataFieldFrameLength = FrameOffset + CSize * 2, property.OffsetBeforeNRBF = FrameOffset]
+									NRBF_struct	Serialization;
+									switch
+									{
+										case Frameoffset - property.OffsetBeforeNRBF < CSize * 2:
+											BLOB(CSize * 2 - Frameoffset + property.OffsetBeforeNRBF) Remain;
+									}
+								}
+						}
+				}
+			}
+	}
+}

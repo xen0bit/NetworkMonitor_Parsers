@@ -1,0 +1,2054 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  FrontPage Server Extensions Remote Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-FPSE]: FrontPage Server Extensions Remote Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+[Property.FPSEDataTags = "",Property.FPSEConversationType = "(Request) "]
+Protocol FPSE = Property.FPSEConversationType + Property.FPSEMothodVersion + ";" + Property.FPSEDataTags
+{
+	[Property.FPSEType = "",Property.FPSESeparator=""]
+	switch(AsciiString(FrameData,FrameOffset,6))
+	{
+		case "<html>":
+			[Property.FPSEType = "HTML",Property.FPSEConversationType = "(Response) ",Property.FPSESeparator = 0x0A]
+			struct FrontPageHtml
+			{
+				AsciiString(6) FPSHtmlBegin;
+				
+				struct FPSHtmlHead = "HtmlTitle = " + FPSHtmlTitle.tostring
+				{
+					AsciiString(6) FPSHtmlHeadBegin;
+					struct FPSHtmlTitle = Property.FPSEHtmlTitle
+					{
+						AsciiString(7) FPSHtmlTitleBegin;
+						[POST.Property.FPSEHtmlTitle = Property.FPSESummary]
+						FPSECommonString(0x3C) FPSHtmlTitleData;
+						AsciiString(8) FPSHtmlTitleEnd;
+					}
+					AsciiString(7) FPSHtmlHeadEnd;	
+				}
+				
+				struct FPSHtmlBody = Property.FPSEMothodVersion + ";" + Property.FPSEDataTags
+				{
+					AsciiString(7) FPSHtmlBodyBegin;
+					FPSECommonData  FPSHtmlBodyData;
+					AsciiString(8) FPSHtmlBodyEnd;
+				}
+
+				AsciiString(8) FPSHtmlEnd;
+			}
+		case "<?xml ":
+			XMLparser XML;
+		default:
+			[Property.FPSEType = "URL",Property.FPSESeparator = 0x26]
+			FPSECommonData FrontPageUrl;
+	}
+	
+	switch
+	{
+		case FrameOffset < FrameLength && UINT8( Framedata, Offset ) == 0x0A:
+			CHAR End; 
+	}
+	
+	switch
+	{
+		case FrameLength > FrameOffset:
+			Mime HttpPayLoad;
+	}
+}
+
+Table FPSEActTable(value)
+{
+	switch(value)
+	{
+		case "0": "Return all Web discussion threads associated with the given URL";
+		case "1": "Add the Web discussion";
+		case "2": "Edit the Web discussion";
+		case "3": "Delete the Web discussion";
+		case "4": "Check whether Web discussions are enabled";
+		case "5": "Subscribe to changes in the Web discussion for the document at the specified URL";
+		case "6": "Close the Web discussion";
+		case "7": "Close the Web discussion and its replies";
+		case "8": "Activate the Web discussion";
+		default : "Unknown value";
+	}
+}
+
+Table FPSEApplyOptTable(value)
+{
+	switch
+	{
+		case value.contains("web")  && value.contains("rfi"):
+			"Apply theme to entire Web and Return file information in the form of metakey data";
+		case value.contains("page") && value.contains("rfi"):
+			"Apply theme to one or more pages and Return file information in the form of metakey data";
+		case value.contains("web") :
+			"Apply theme to entire Web";
+		case value.contains("page"):
+			"Apply theme to one or more pages";
+		case value.contains("rfi") :
+			"Return file information in the form of metakey data";
+		default: "Unknown value";
+	}
+}
+
+Table FPSEBorderSpecTable(value)
+{
+	switch(value)
+	{
+		case "t": "Border at top of page";
+		case "b": "Border at bottom of page";
+		case "r": "Border on right side of page";
+		case "l": "Border on left side of page";
+		default : "Unknown value";
+	}
+}
+
+Table FPSEDecipherTable(value)
+{
+	switch
+	{
+		case value.contains("%0a"): " ";
+		case value.contains("%21"): "!";
+		case value.contains("%22"): "\"";
+		case value.contains("%26"): "&";
+		case value.contains("%27"): "'";
+		case value.contains("%28"): "(";
+		case value.contains("%29"): ")";
+		case value.contains("%2a"): "*";
+		case value.contains("%2b"): "+";
+		case value.contains("%2c"): ",";
+		case value.contains("%2d"): "-";
+		case value.contains("%2e"): ".";
+		case value.contains("%2f"): "/";
+		case value.contains("%3a"): ":";
+		case value.contains("%3b"): ";";
+		case value.contains("%3c"): "<";
+		case value.contains("%3d"): "=";
+		case value.contains("%3e"): ">";
+		case value.contains("%3f"): "?";
+		case value.contains("%5b"): "[";
+		case value.contains("%5c"): "\\";
+		case value.contains("%5d"): "]";
+		case value.contains("%5f"): "_";
+		case value.contains("%7b"): "{";
+		case value.contains("%7c"): "|";
+		case value.contains("%7d"): "}";
+		
+		case value == "\n<li>" : ";";
+		case value == "\n<ul>" : "[";
+		case value == "\n</ul>": "]";
+		
+		case value == "&#33;": "!";
+		case value == "&#34;": "\"";
+		case value == "&#38;": "&";
+		case value == "&#40;": "(";
+		case value == "&#41;": ")";
+		case value == "&#47;": "/";
+		case value == "&#58;": ":";
+		case value == "&#59;": ";";
+		case value == "&#60;": "<";
+		case value == "&#61;": "=";
+		case value == "&#62;": ">";
+		case value == "&#64;": "@";
+		case value == "&#91;": "[";
+		case value == "&#92;": "\\";
+		case value == "&#93;": "]";
+		
+		default              : value;
+	}
+}
+
+Table FPSEFlagsTable(value)
+{
+	switch(value)
+	{
+		case "KeepGoing"   : "Ignore the error";
+		case "StopOnFirst" : "Stop processing";
+		case "Atomic"      : "Not currently implemented";
+		case "0"           : "This parameter is ignored by the server but can be sent by the client and should equal 0";
+		case "default"     : "Default";
+		default            : "Unknown Value";
+	}
+}
+
+Table FPSEForceTable(value)
+{
+	switch(value)
+	{
+		case "0"    : "This feature is currently unimplemented and reserved for future use. The default value is 0";
+		case "1"    : "This flag allows source control to reverse another user's file checkout";
+		case "2"    : "refresh short-term checkout";
+		case "true" : "protocol is earlier than 4.0.0.1606";
+		case "false": "This feature is currently unimplemented and reserved for future use";
+		default     : "";
+	}
+}
+
+Table FPSEInfoDataTable(valuecase,value)
+{
+	switch
+	{
+		case valuecase.contains("dir_name")       : "DirName = "      + value + ";";
+		case valuecase.contains("dir%5fname")     : "DirName = "      + value + ";";
+		case valuecase.contains("document_name")  : "DocumentName = " + value + ";";
+		case valuecase.contains("document%5fname"): "DocumentName = " + value + ";";
+		case valuecase.contains("group_name")     : "GroupName = "    + value + ";";
+		case valuecase.contains("group%5fname")   : "GroupName = "    + value + ";";
+		case valuecase.contains("newName")        : "NewName = "      + value + ";";
+		case valuecase.contains("newUrl")         : "NewUrl = "       + value + ";";
+		case valuecase.contains("oldUrl")         : "OldUrl = "       + value + ";";
+		case valuecase.contains("rowId")          : "RowId = "        + value + ";";
+		case valuecase.contains("service_name")   : "ServiceName = "  + value + ";";
+		case valuecase.contains("service%5fname") : "ServiceName = "  + value + ";";
+		case valuecase.contains("theme_name")     : "ThemeName = "    + value + ";";
+		case valuecase.contains("theme%5fname")   : "ThemeName = "    + value + ";";
+		case valuecase.contains("url")            : "Url = "          + value + ";";
+		case valuecase.contains("url_renames")    : "UrlRenames = "   + value + ";";
+		case valuecase.contains("url%5frenames")  : "UrlRenames = "   + value + ";";
+		case valuecase.contains("Name")           : "Name = "         + value + ";";
+	}
+}
+
+Table FPSEListTemplateTable(value)
+{
+	switch(value)
+	{
+		case "100" : "Custom";
+		case "101" : "Document Library";
+		case "102" : "Survey";
+		case "103" : "Favorites";
+		case "104" : "Links";
+		case "105" : "Announcements";
+		case "106" : "Contacts";
+		case "107" : "Events";
+		case "108" : "Discussion Board";
+		case "109" : "Picture library";
+		case "110" : "Data sources";
+		case "111" : "Site template gallery";
+		case "113" : "Web Part gallery";
+		case "114" : "List template gallery";
+		case "115" : "XML Form library";
+		case "120" : "Custom grid for a list";
+		case "200" : "Meeting Series list";
+		case "201" : "Meeting Agenda list";
+		case "202" : "Meeting Attendees list";
+		case "204" : "Meeting Decisions list";
+		case "207" : "Meeting Objectives list";
+		case "210" : "Meeting text box";
+		case "211" : "Meeting Things To Bring list";
+		case "212" : "Meeting Workspace Pages list";
+		case "1100": "Issue tracking";
+		default    : "Unknown Value";
+	}
+}
+
+Table FPSELevelsTable(value)
+{
+	switch(value)
+	{
+		case "-1": "All levels below the specified starting node should be used";
+		case "0" : "Only the specified node should be retrieved";
+		default  : "Retrieve 'n' levels of children";
+	}
+}
+
+Table FPSEKeepCheckedOutTable(value)
+{
+	switch(value)
+	{
+		case "true" : "The document is checked into source control and immediately checked back out";
+		case "false": "The document is simply checked in";
+	}
+}
+
+Table FPSEMetaInfoDataTypeTable(value)
+{
+	switch
+	{
+		case value.contains("I") && value.contains("R"): "Int and Read Only";
+		case value.contains("I") && value.contains("W"): "Int and Write Enable";
+		case value.contains("I") && value.contains("X"): "Int and Ignore";
+		case value.contains("T") && value.contains("R"): "Time and Read Only";
+		case value.contains("T") && value.contains("W"): "Time and Write Enable";
+		case value.contains("T") && value.contains("X"): "Time and Ignore";
+		case value.contains("V") && value.contains("R"): "String Vector and Read Only";
+		case value.contains("V") && value.contains("W"): "String Vector and Write Enable";
+		case value.contains("V") && value.contains("X"): "String Vector and Ignore";
+		case value.contains("B") && value.contains("R"): "Boolean and Read Only";
+		case value.contains("B") && value.contains("W"): "Boolean and Write Enable";
+		case value.contains("B") && value.contains("X"): "Boolean and Ignore";
+		case value.contains("U") && value.contains("R"): "Unsigned Int Vector and Read Only";
+		case value.contains("U") && value.contains("W"): "Unsigned Int Vector and Write Enable";
+		case value.contains("U") && value.contains("X"): "Unsigned Int Vector and Ignore";
+		case value.contains("D") && value.contains("R"): "Double and Read Only";
+		case value.contains("D") && value.contains("W"): "Double and Write Enable";
+		case value.contains("D") && value.contains("X"): "Double and Ignore";
+		case value.contains("S") && value.contains("R"): "String and Read Only";
+		case value.contains("S") && value.contains("W"): "String and Write Enable";
+		case value.contains("S") && value.contains("X"): "String and Ignore";
+		case value == ""                               : "";
+		default                                        : "Unknown Type";
+	}
+}
+
+Table FPSEMethodTable(value)
+{
+	switch (value)
+	{
+		case "add%20document%20to%20source%20control"  :
+		case "add+document+to+source+control"  : "The name of add a document to a source control database";
+		case "add document to source control"  : "The name of add a document to a source control database";
+		case "apply%20border"                  :
+		case "apply border"                    : "Designate the top, bottom, left, or right side of a page as reserved";
+		case "apply+border"                    : "Designate the top, bottom, left, or right side of a page as reserved";
+		case "apply%20stylesheet"              :
+		case "apply stylesheet"                : "Apply a style sheet as a link";
+		case "apply+stylesheet"                : "Apply a style sheet as a link";
+		case "apply%20theme"                   :
+		case "apply theme"                     : "Indicate which theme is applyed and whether usable";
+		case "apply+theme"                     : "Indicate which theme is applyed and whether usable";
+		case "browser%20recalc"                :
+		case "browser recalc"                  : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "browser+recalc"                  : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "change%20password"               :
+		case "change password"                 : "It is used only with UNIX-based Web servers";
+		case "change+password"                 : "It is used only with UNIX-based Web servers";
+		case "checkin%20document"              :
+		case "checkin document"                : "Return a file to source control";
+		case "checkin+document"                : "Return a file to source control";
+		case "checkout%20document"             :
+		case "checkout document"               : "Authenticate the current user before that user can make changes to a document under source control";
+		case "checkout+document"               : "Authenticate the current user before that user can make changes to a document under source control";
+		case "create%20service"                :
+		case "create service"                  : "Create a Web (service) called service_name";
+		case "create+service"                  : "Create a Web (service) called service_name";
+		case "create%20url-directory"          :
+		case "create url-directory"            : "Create a folder for the current Web";
+		case "create+url-directory"            : "Create a folder for the current Web";
+		case "create%20url-directories"        :
+		case "create url-directories"          : "Create a set of standard folders";
+		case "create+url%2ddirectories"        : "Create a set of standard folders";
+		case "get%20bot"                       :
+		case "get bot"                         : "Add a custom FrontPage bot (component) to a page in the service_name Web";
+		case "get+bot"                         : "Add a custom FrontPage bot (component) to a page in the service_name Web";
+		case "get%20database+schema"           :
+		case "get database+schema"             : "Retrieve the database schema information or verify the database connection";
+		case "get+database+schema"             : "Retrieve the database schema information or verify the database connection";
+		case "getdocsmetainfo"                 : "Retrieve meta information for the files in the current Web";
+		case "get%20document"                  :
+		case "get document"                    : "Retrieve a document for viewing on a client computer";
+		case "get+document"                    : "Retrieve a document for viewing on a client computer";
+		case "get%20documents"                 :
+		case "get documents"                   : "Retrieve a document for viewing in a server extensions client";
+		case "get+documents"                   : "Retrieve a document for viewing in a server extensions client";
+		case "get%20manifest"                  :
+		case "get manifest"                    : "Retrieve a manifest for the specified site";
+		case "get+manifest"                    : "Retrieve a manifest for the specified site";
+		case "get%20query%20schema"            :
+		case "get query schema"                : "Retrieve database schema information for the results of an SQL query or verify an SQL validity";
+		case "get+query+schema"                : "Retrieve database schema information for the results of an SQL query or verify an SQL validity";
+		case "get%20record%20source%20schema"  :
+		case "get record source schema"        : "Request schema information for the record sources of a given table or view in a database";
+		case "get+record+source+schema"        : "Request schema information for the record sources of a given table or view in a database";
+		case "get%20service%20access%20control":
+		case "get service access control"      : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "get+service+access+control"      : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "get%20theme"                     :
+		case "get theme"                       : "Download a customized theme from the server";
+		case "get+theme"                       : "Download a customized theme from the server";
+		case "get%20web%20struct"              :
+		case "get web struct"                  : "Provide the meta information and internal element identification information (EID) of the pages that make up the service_name Web's navigational structure";
+		case "get+web+struct"                  : "Provide the meta information and internal element identification information (EID) of the pages that make up the service_name Web's navigational structure";
+		case "get%20web%20struct%20by%20url"   :
+		case "get web struct by url"           : "Get_web_structure start with the specified URL";
+		case "get+web+struct+by+url"           : "Get_web_structure start with the specified URL";
+		case "html-table%20add%20row"          :
+		case "html-table add row"              : "Adds a row to a table";
+		case "html-table+add+row"              : "Adds a row to a table";
+		case "html-table%20change%20row"       :
+		case "html-table change row"           : "Only used with the Tasks report table in Microsoft FrontPage.It sends a change in the Task status table";
+		case "html%2dtable+change+row"         : "Only used with the Tasks report table in Microsoft FrontPage.It sends a change in the Task status table";
+		case "html-table%20remove%20row"       :
+		case "html-table remove row"           : "Only used with the Tasks report table in Microsoft FrontPage.It removes a row in the Task status table maintained";
+		case "html%2dtable+remove+row"         : "Only used with the Tasks report table in Microsoft FrontPage.It removes a row in the Task status table maintained";
+		case "list%20access"                   :
+		case "list access"                     : "It is used only with server extensions for FrontPage 98 and earlier.";
+		case "list+access"                     : "It is used only with server extensions for FrontPage 98 and earlier.";
+		case "list%20data%20sources"           :
+		case "list data sources"               : "Request the data source names (DSNs) and associated drivers that the server uses for database connectivity";
+		case "list+data+sources"               : "Request the data source names (DSNs) and associated drivers that the server uses for database connectivity";
+		case "list%20documents"                :
+		case "list documents"                  : "Provide a list for each file in the service_name Web's initialUrl";
+		case "list+documents"                  : "Provide a list for each file in the service_name Web's initialUrl";
+		case "list%20domains"                  :
+		case "list domains"                    : "Return a list of known Windows NT domains that have access to the service_name Web";
+		case "list+domains"                    : "Return a list of known Windows NT domains that have access to the service_name Web";
+		case "list%20drivers"                  :
+		case "list drivers"                    : "Request a list of available open database connectivity (ODBC) drivers and their attributes, as configured on the server";
+		case "list+drivers"                    : "Request a list of available open database connectivity (ODBC) drivers and their attributes, as configured on the server";
+		case "list%20groups"                   :
+		case "list groups"                     : "Request the names of the groups that are known to the server in the named domain";
+		case "list+groups"                     : "Request the names of the groups that are known to the server in the named domain";
+		case "list%20interpreters"             :
+		case "list interpreters"               : "This packet is not implemented";
+		case "list+interpreters"               : "This packet is not implemented";
+		case "list%20libraries"                :
+		case "list libraries"                  : "This packet is not implemented";
+		case "list+libraries"                  : "This packet is not implemented";
+		case "list%20record%20sources"         :
+		case "list record sources"             : "The packet returns a list of the table names and types defined in the database server named";
+		case "list+record+sources"             : "The packet returns a list of the table names and types defined in the database server named";
+		case "list%20services"                 :
+		case "list services"                   : "List the Webs (services) stored on the Web server";
+		case "list+services"                   : "List the Webs (services) stored on the Web server";
+		case "list%20special%20access"         :
+		case "list special access"             : "Return the access list for the service_name Web";
+		case "list+special+access"             : "Return the access list for the service_name Web";
+		case "list%20themes"                   :
+		case "list themes"                     : "Return a list of the themes applied to the selected Web";
+		case "list+themes"                     : "Return a list of the themes applied to the selected Web";
+		case "list%20url%20directories"        :
+		case "list url directories"            : "It is used only in conjunction with FrontPage version 1.1, and is included here for backward compatibility";
+		case "list+url+directories"            : "It is used only in conjunction with FrontPage version 1.1, and is included here for backward compatibility";
+		case "list%20users"                    :
+		case "list users"                      : "List the users in the domain or domains returned by the list_domains packet";
+		case "list+users"                      : "List the users in the domain or domains returned by the list_domains packet";
+		case "list%20versions"                 :
+		case "list versions"                   : "Retrieve metadata for all the versions of the specified document";
+		case "list+versions"                   : "Retrieve metadata for all the versions of the specified document";
+		case "mark%20url-directory%20executable":
+		case "mark url-directory executable"   : "Send the server a permission setting that determines the action a user can take in a directory";
+		case "mark+url%2ddirectory+executable" : "Send the server a permission setting that determines the action a user can take in a directory";
+		case "modify%20access%20setup"         :
+		case "modify access setup"             : "Change a Web's permission settings";
+		case "modify+access+setup"             : "Change a Web's permission settings";
+		case "move%20document"                 :
+		case "move document"                   : "Change the name or directory of a selected document in the Web to a new name or directory provided by the user";
+		case "move+document"                   : "Change the name or directory of a selected document in the Web to a new name or directory provided by the user";
+		case "open%20service"                  :
+		case "open service"                    : "Provides a Web's meta information to the client";
+		case "open+service"                    : "Provides a Web's meta information to the client";
+		case "put%20document"                  :
+		case "put document"                    : "Write a file to a directory in an existing Web";
+		case "put+document"                    : "Write a file to a directory in an existing Web";
+		case "put+documents"                   : "Write files to a directory in an existing Web";
+		case "put%20documents"                 :
+		case "put documents"                   : "Write files to a directory in an existing Web";
+		case "put%20manifest"                  :
+		case "put manifest"                    : "Deploys a manifest on the specified site";
+		case "put+manifest"                    : "Deploys a manifest on the specified site";
+		case "put%20nav%20text%20overlays"     :
+		case "put nav text overlays"           : "Assign text labels to a navigation bar in an existing Web";
+		case "put+nav+text+overlays"           : "Assign text labels to a navigation bar in an existing Web";
+		case "put%20theme"                     :
+		case "put theme"                       : "Upload a theme to a Web";
+		case "put+theme"                       : "Upload a theme to a Web";
+		case "put%20web%20struct"              :
+		case "put web struct"                  : "Send changes to a Web's navigation structure to the Web server";
+		case "put+web+struct"                  : "Send changes to a Web's navigation structure to the Web server";
+		case "query%20access%20setup"          :
+		case "query access setup"              : "Tell the server to prepare an access list for the service_name list";
+		case "query+access+setup"              : "Tell the server to prepare an access list for the service_name list";
+		case "recalc%20control"                :
+		case "recalc control"                  : "Tell the server extensions whether to recalculate links, bots, and other dependencies in the Web";
+		case "recalc+control"                  : "Tell the server extensions whether to recalculate links, bots, and other dependencies in the Web";
+		case "recalc%20pages"                  :
+		case "recalc pages"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "recalc+pages"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "remove%20documents"              :
+		case "remove documents"                : "Delete specified documents or folders from the service_name Web";
+		case "remove+documents"                : "Delete specified documents or folders from the service_name Web";
+		case "remove%20links"                  :
+		case "remove links"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "remove+links"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "remove%20service"                :
+		case "remove service"                  : "Delete the service_name Web";
+		case "remove+service"                  : "Delete the service_name Web";
+		case "remove%20url-directory"          :
+		case "remove+url-directory"            : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "remove url-directory"            : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "rename%20service"                :
+		case "rename service"                  : "It allows changes to the name of a Web";
+		case "rename+service"                  : "It allows changes to the name of a Web";
+		case "rename%20url"                    :
+		case "rename url"                      : "It update the hyperlinks in a Web document whose name or directory has changed";
+		case "rename+url"                      : "It update the hyperlinks in a Web document whose name or directory has changed";
+		case "replace%20web%20struct"          :
+		case "replace web struct"              : "Set the structure for a published Web";
+		case "replace+web+struct"              : "Set the structure for a published Web";
+		case "restart%20server"                :
+		case "restart server"                  : "It is used only with O'Reilly Web site servers";
+		case "restart+server"                  : "It is used only with O'Reilly Web site servers";
+		case "server%20version"                :
+		case "server version"                  : "Request the version of the server extensions in use on the Web server";
+		case "server+version"                  : "Request the version of the server extensions in use on the Web server";
+		case "setdocsmetainfo"                 : "Provide the server with standard meta information for a designated file";
+		case "set%20document%20meta-info"      :
+		case "set document meta-info"          : "It is included to provide backward compatibility with FrontPage 98 clients";
+		case "set+document+meta%2dinfo"        : "It is included to provide backward compatibility with FrontPage 98 clients";
+		case "set%20service%20access%20control":
+		case "set service access control"      : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "set+service+access+control"      : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "set%20service%20meta-info"       :
+		case "set service meta-info"           : "Provide a way of adding or changing metakey values on the server for the service_name Web";
+		case "set+service+meta%2dinfo"         : "Provide a way of adding or changing metakey values on the server for the service_name Web";
+		case "set%20source%20control"          :
+		case "set source control"              : "Turn source control on or off for the service_name Web";
+		case "set+source+control"              : "Turn source control on or off for the service_name Web";
+		case "table%20add%20row"               :
+		case "table add row"                   : "Add a row to an HTML table";
+		case "table+add+row"                   : "Add a row to an HTML table";
+		case "table%20change%20row"            :
+		case "table change row"                : "Change a row in the Task status table kept by the server extensions";
+		case "table+change+row"                : "Change a row in the Task status table kept by the server extensions";
+		case "table%20remove%20row"            :
+		case "table remove row"                : "Remove a row from the Task status table kept by the server extensions";
+		case "table+remove+row"                : "Remove a row from the Task status table kept by the server extensions";
+		case "uncheckout%20document"           :
+		case "uncheckout document"             : "Undo a checkout of a file from a source control database";
+		case "uncheckout+document"             : "Undo a checkout of a file from a source control database";
+		case "update%20access"                 :
+		case "update access"                   : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update+access"                   : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update%20group"                  :
+		case "update group"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update+group"                    : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update%20group%20list"           :
+		case "update group list"               : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update+group+list"               : "It is used only with server extensions for FrontPage 98 and earlier";
+		case "update%20special%20access"       :
+		case "update special access"           : "Add or remove users from the list of those allowed access to the service_name Web";
+		case "update+special+access"           : "Add or remove users from the list of those allowed access to the service_name Web";
+		case "update%20user%20list"            :
+		case "update user list"                : "Supply names to add or remove from the user list for the service_name Web";
+		case "update+user+list"                : "Supply names to add or remove from the user list for the service_name Web";
+		case "url%20to%20web%20url"            :
+		case "url to web url"                  : "Return the URL of the Web site to which a designated file belongs, including its subordinate Web if applicable";
+		case "url+to+web+url"                  : "Return the URL of the Web site to which a designated file belongs, including its subordinate Web if applicable";
+		case "verify%20user"                   :
+		case "verify user"                     : "Determine whether a user has the appropriate access level to perform the action that is currently pending";
+		case "verify+user"                     : "Determine whether a user has the appropriate access level to perform the action that is currently pending";
+		
+		case "Cltreq"                          : "Performs all Web discussion operations";
+		case "Cltreq "                         : "Performs all Web discussion operations";
+		case "Delete"                          : "Deletes the specified item from the list or document library";
+		case "Delete "                         : "Deletes the specified item from the list or document library";
+		case "DELETEFIELD"                     : "Delete a field from a SharePoint Team Services list";
+		case "DELETEFIELD "                    : "Delete a field from a SharePoint Team Services list";
+		case "DeleteList"                      : "Deletes the specified list";
+		case "DeleteList "                     : "Deletes the specified list";
+		case "DeleteView"                      : "Deletes the specified view";
+		case "DeleteView "                     : "Deletes the specified view";
+		case "Dialogview"                      : "Opens a view of the document libraries";
+		case "Dialogview "                     : "Opens a view of the document libraries";
+		case "Display"                         : "Run a database query and return results in either XML or HTML";
+		case "Display "                        : "Run a database query and return results in either XML or HTML";
+		case "DisplayPost"                     : "Request that SharePoint Team Services render the Collaborative Application Markup Language (CAML) assigned to the PostBody variable";
+		case "DisplayPost "                    : "Request that SharePoint Team Services render the Collaborative Application Markup Language (CAML) assigned to the PostBody variable";
+		case "ExportList"                      : "Export the schema of a list in Collaborative Application Markup Language (CAML) format";
+		case "ExportList "                     : "Export the schema of a list in Collaborative Application Markup Language (CAML) format";
+		case "GetProjSchema"                   : "Request the XML schema for a Web site that is based on SharePoint Team Services";
+		case "GetProjSchema "                  : "Request the XML schema for a Web site that is based on SharePoint Team Services";
+		case "GetUsageBlob"                    : "Returns information about the usage of a Web site";
+		case "GetUsageBlob "                   : "Returns information about the usage of a Web site";
+		case "HitCounter"                      : "Generates a hit on a page containing a hit counter";
+		case "HitCounter "                     : "Generates a hit on a page containing a hit counter";
+		case "ImportList"                      : "Request that SharePoint Team Services create a new list based on the specified XML schema";
+		case "ImportList "                     : "Request that SharePoint Team Services create a new list based on the specified XML schema";
+		case "MODLISTSETTINGS"                 : "Change the properties of a SharePoint Team Services list";
+		case "MODLISTSETTINGS "                : "Change the properties of a SharePoint Team Services list";
+		case "MtgKeep"                         : "Clears the orphaned state of a meeting occurrence";
+		case "MtgKeep "                        : "Clears the orphaned state of a meeting occurrence";
+		case "MtgMove"                         : "Deletes or Moves an orphaned meeting occurrence";
+		case "MtgMove "                        : "Deletes or Moves an orphaned meeting occurrence";
+		case "NEWFIELD"                        : "Add a new field to a SharePoint Team Services list";
+		case "NEWFIELD "                       : "Add a new field to a SharePoint Team Services list";
+		case "NewList"                         : "Create a new SharePoint Team Services list of a specified type (such as Discussion Board, Contacts, or Survey)";
+		case "NewList "                        : "Create a new SharePoint Team Services list of a specified type (such as Discussion Board, Contacts, or Survey)";
+		case "NewView"                         : "Creates a view for the specified list";
+		case "NewView "                        : "Creates a view for the specified list";
+		case "NewViewPage"                     : "Control the display of items in a SharePoint Team Services list";
+		case "NewViewPage "                    : "Control the display of items in a SharePoint Team Services list";
+		case "NewWebPage"                      : "Creates a new Web Part Page or a new basic page in the specified document library";
+		case "NewWebPage "                     : "Creates a new Web Part Page or a new basic page in the specified document library";
+		case "RenderView"                      : "Request the contents of a view for a SharePoint Team Services list";
+		case "RenderView "                     : "Request the contents of a view for a SharePoint Team Services list";
+		case "ReorderFields"                   : "Change the order in which fields in a list are displayed in the list's data entry form";
+		case "ReorderFields "                  : "Change the order in which fields in a list are displayed in the list's data entry form";
+		case "Save"                            : "Adds or modifies an item in a list, or modifies properties for a folder or for a file in a document library";
+		case "Save "                           : "Adds or modifies an item in a list, or modifies properties for a folder or for a file in a document library";
+		case "SiteProvision"                   : "Request that SharePoint Team Services add the default set of lists to an existing Web site";
+		case "SiteProvision "                  : "Request that SharePoint Team Services add the default set of lists to an existing Web site";
+		case "UPDATEFIELD"                     : "Modify the schema of an existing field in a SharePoint Team Services list";
+		case "UPDATEFIELD "                    : "Modify the schema of an existing field in a SharePoint Team Services list";
+		case "UpdateView"                      : "Modifies the specified view of a list";
+		case "UpdateView "                     : "Modifies the specified view of a list";
+		
+		case "SaveForm"                        : "Save a special form";
+		case "SaveForm "                       : "Save a special form";
+
+		default                                : "Unkonwn value";
+	}
+}
+
+Table FPSEOldThemeHtmlTable(value)
+{
+	switch(value)
+	{
+		case "true" : "The page is returned using HTML that is compatible with effective_protocol_version";
+		case "false": "The effective_protocol_version corresponds to FrontPage 97 or an earlier version of FrontPage that does not support themes";
+	}
+}
+
+Table FPSEOptionTable(value)
+{
+	switch(value)
+	{
+		case "none"              : "Do not check out the file";
+		case "0"                 : "Do not check out the file";
+		case "chkoutExclusive"   : "Check out the file exclusively";			
+		case "1"                 : "Check out the file exclusively";	
+		case "chkoutNonExclusive": "Check out the file non-exclusively";
+		case "2"                 : "Check out the file non-exclusively";	
+		default                  : "Unknown value";
+	}
+}
+
+Table FPSEPutOptionTable(value)
+{
+	switch(value)
+	{
+		case "overwrite"	 : "File overwrites are allowed";
+		case "edit"     	 : "File overwrites are not allowed";
+		case "atomic"			 : "The server does all the needed checking to ensure that all the files can be updated before changing the first one";
+		case "createdir"	 : "The parent directory is created if it does not exist";
+		case "listthickets": "Requests that metadata be returned for thicket supporting files";
+		case "thicket"		 : "Specifies that the associated file is a thicket supporting file";
+		default         	 : "Unknown value";
+	}
+}
+
+Table FPSERWSecurityTable(value)
+{
+	switch(value)
+	{
+		case "1": "Users can read all items";
+		case "2": "Users can read only items they created";
+		case "4": "Only the creator of the list can read or wrght items";
+		default : "Unknown value";
+	}
+}
+
+Table FPSERealmTypeTable(value)
+{
+	switch(value)
+	{
+		case "effective": "Use lists for the highest-level Web from which the current Web inherits its permissions. The current Web can be the one presently in use or one of its parent Webs";
+		case "world"    : "Use lists that are global for the Web server. This value is valid only for servers that do not allow new users to be defined, such as Internet Information Services (IIS)";
+		default         : "Retrieve 'n' levels of children";
+	}
+}
+
+Table FPSERecalcOpTable(value)
+{
+	switch(value)
+	{
+		case "suspend"   : "Do not recalculate";
+		case "resume"    : "Continue recalculating";
+		case "recalc+now": "Recalculate now";
+		default          : "Unknown Value";
+	}
+}
+
+Table FPSERecordsrcTypeTable(value)
+{
+	switch(value)
+	{
+		case "0" : "Table";
+		case "1" : "View";
+		case "2" : "Table or View";
+		case "3" : "Procedure";
+		case "4" : "Synonym or Alias";
+		case "5" : "All";
+		default  : "";
+	}
+}
+
+Table FPSERenameOptionTypeTable(value)
+{
+	switch(value)
+	{
+		case "createdir"             : "Create the parent directory if it does not already exist";
+		case "findbacklinks"         : "Perform link fix up on other files than those moved";
+		case "nochangeall"           : "Do not perform fix up on links in moved documents. This value is not supported in Windows SharePoint Services version 2 or later";
+		case "patchprefix"           : "Simulates the move of a directory rather than a file, but invalid for the move document request";
+		case "createdirnochange"     : "Create the parent directory if it does not already exist & Do not perform fix up on links in moved documents";
+		case "createdirfindbacklinks": "Create the parent directory if it does not already exist & Perform link fix up on other files than those moved";
+	}
+}
+
+Table FPSESchemaSecurityTable(value)
+{
+	switch(value)
+	{
+		case "1" : "Any user can add fields";
+		case "2" : "Only the creator of the list can add fields";
+		default  : "Unkonwn value";
+	}
+}
+
+Table FPSEServerVersionTable(value)
+{
+	switch(value)
+	{
+		case "n"        : "Positive integer";
+		case "v"        : "Positive 4-digit integer";
+		case "major ver": "Major release number of the Web server extensions";
+		case "minor ver": "Minor release number of the Web server extensions";
+		case "phase ver": "Phase release number of the minor release";
+		case "verincr"  : "Incremental phase number of the minor release";
+		default         : "Unkonwn value";
+	}
+}
+
+Table FPSETitleTable(value)
+{
+	switch (value)
+	{
+		case "add%20document%20to%20source%20control"  :
+		case "add document to source control"  : "add_document_to_source_control";
+		case "add+document+to+source+control"  : "add_document_to_source_control";
+		case "apply%20border"                  :
+		case "apply border"                    : "apply_border";
+		case "apply+border"                    : "apply_border";
+		case "apply%20stylesheet"              :
+		case "apply stylesheet"                : "apply_stylesheet";
+		case "apply+stylesheet"                : "apply_stylesheet";
+		case "apply%20theme"                   :
+		case "apply theme"                     : "apply_theme";
+		case "apply+theme"                     : "apply_theme";
+		case "browser%20recalc"                :
+		case "browser recalc"                  : "browser_recalc";
+		case "browser+recalc"                  : "browser_recalc";
+		case "change%20password"               :
+		case "change password"                 : "change_password";
+		case "change+password"                 : "change_password";
+		case "checkin%20document"              :
+		case "checkin document"                : "checkin_document";
+		case "checkin+document"                : "checkin_document";
+		case "checkout%20document"             :
+		case "checkout document"               : "checkout_document";
+		case "checkout+document"               : "checkout_document";
+		case "create%20service"                :
+		case "create service"                  : "create_service";
+		case "create+service"                  : "create_service";
+		case "create%20url-directory"          :
+		case "create url-directory"            : "create_url_directory";
+		case "create+url-directory"            : "create_url_directory";
+		case "create%20url-directories"        :
+		case "create url-directories"          : "create_url_dirs";
+		case "create+url%2ddirectories"        : "create_url_dirs";
+		case "get%20bot"                       :
+		case "get bot"                         : "get_bot";
+		case "get+bot"                         : "get_bot";
+		case "get%20database%20schema"         :
+		case "get database schema"             : "get_database_schema";
+		case "get+database+schema"             : "get_database_schema";
+		case "getdocsmetainfo"                 : "get_docs_metainfo";
+		case "get%20document"                  :
+		case "get document"                    : "get_document";
+		case "get+document"                    : "get_document";
+		case "get%20documents"                 :
+		case "get documents"                   : "get_documents";
+		case "get+documents"                   : "get_documents";
+		case "get%20manifest"                  :
+		case "get manifest"                    : "get_manifest";
+		case "get+manifest"                    : "get_manifest";
+		case "get%20query%20schema"            :
+		case "get query schema"                : "get_query_schema";
+		case "get+query+schema"                : "get_query_schema";
+		case "get%20record%20source%20schema"  :
+		case "get record source schema"        : "get_record_source_schema";
+		case "get+record+source+schema"        : "get_record_source_schema";
+		case "get%20service%20access%20control":
+		case "get service access control"      : "get_service_access_control";
+		case "get+service+access+control"      : "get_service_access_control";
+		case "get%20theme"                     :
+		case "get theme"                       : "get_theme";
+		case "get+theme"                       : "get_theme";
+		case "get%20web%20struct"              :
+		case "get web struct"                  : "get_web_structure";
+		case "get+web+struct"                  : "get_web_structure";
+		case "get%20web%20struct%20by%20url"   :
+		case "get web struct by url"           : "get_web_structure_by_url";
+		case "get+web+struct+by+url"           : "get_web_structure_by_url";
+		case "html-table%20add%20row"          :
+		case "html-table add row"              : "html_table_add_row";
+		case "html-table+add+row"              : "html_table_add_row";
+		case "html-table%20change%20row"       :
+		case "html-table change row"           : "html_table_change_row";
+		case "html%2dtable+change+row"         : "html_table_change_row";
+		case "html-table%20remove%20row"       :
+		case "html-table remove row"           : "html_table_remove_row";
+		case "html%2dtable+remove+row"         : "html_table_remove_row";
+		case "list%20access"                   :
+		case "list access"                     : "list_access";
+		case "list+access"                     : "list_access";
+		case "list%20data%20sources"           :
+		case "list data sources"               : "list_data_sources";
+		case "list+data+sources"               : "list_data_sources";
+		case "list%20documents"                :
+		case "list documents"                  : "list_documents";
+		case "list+documents"                  : "list_documents";
+		case "list%20domains"                  :
+		case "list domains"                    : "list_domains";
+		case "list+domains"                    : "list_domains";
+		case "list%20drivers"                  :
+		case "list drivers"                    : "list_drivers";
+		case "list+drivers"                    : "list_drivers";
+		case "list%20groups"                   :
+		case "list groups"                     : "list_groups";
+		case "list+groups"                     : "list_groups";
+		case "list%20interpreters"             :
+		case "list interpreters"               : "list_interpreters";
+		case "list+interpreters"               : "list_interpreters";
+		case "list%20libraries"                :
+		case "list libraries"                  : "list_libraries";
+		case "list+libraries"                  : "list_libraries";
+		case "list%20record%20sources"         :
+		case "list record sources"             : "list_record_sources";
+		case "list+record+sources"             : "list_record_sources";
+		case "list%20services"                 :
+		case "list services"                   : "list_services";
+		case "list+services"                   : "list_services";
+		case "list%20special%20access"         :
+		case "list special access"             : "list_special_access";
+		case "list+special+access"             : "list_special_access";
+		case "list%20themes"                   :
+		case "list themes"                     : "list_themes";
+		case "list+themes"                     : "list_themes";
+		case "list%20url%20directories"        :
+		case "list url directories"            : "list_url_directories";
+		case "list+url+directories"            : "list_url_directories";
+		case "list%20users"                    :
+		case "list users"                      : "list_users";
+		case "list+users"                      : "list_users";
+		case "list%20versions"                 :
+		case "list versions"                   : "list_versions";
+		case "list+versions"                   : "list_versions";
+		case "mark%20url-directory%20executable"   :
+		case "mark url-directory executable"   : "mark_url_directory_executable";
+		case "mark+url%2ddirectory+executable" : "mark_url_directory_executable";
+		case "modify%20access%20setup"         :
+		case "modify access setup"             : "modify_access_setup";
+		case "modify+access+setup"             : "modify_access_setup";
+		case "move%20document"                 :
+		case "move document"                   : "move_document";
+		case "move+document"                   : "move_document";
+		case "open%20service"                  :
+		case "open service"                    : "open_service";
+		case "open+service"                    : "open_service";
+		case "put%20document"                  :
+		case "put document"                    : "put_document";
+		case "put+document"                    : "put_document";
+		case "put%20documents"                 :
+		case "put documents"                   : "put_documents";
+		case "put+documents"                   : "put_documents";
+		case "put%20manifest"                  :
+		case "put manifest"                    : "put_manifest";
+		case "put+manifest"                    : "put_manifest";
+		case "put%20nav%20text%20overlays"     :
+		case "put nav text overlays"           : "put_nav_text_overlays";
+		case "put+nav+text+overlays"           : "put_nav_text_overlays";
+		case "put%20theme"                     :
+		case "put theme"                       : "put_theme";
+		case "put+theme"                       : "put_theme";
+		case "put%20web%20struct"              :
+		case "put web struct"                  : "put_web_struct";
+		case "put+web+struct"                  : "put_web_struct";
+		case "query%20access%20setup"          :
+		case "query access setup"              : "query_access_setup";
+		case "query+access+setup"              : "query_access_setup";
+		case "recalc%20control"                :
+		case "recalc control"                  : "recalc_control";
+		case "recalc+control"                  : "recalc_control";
+		case "recalc%20pages"                  :
+		case "recalc pages"                    : "recalc_pages";
+		case "recalc+pages"                    : "recalc_pages";
+		case "remove%20documents"              :
+		case "remove documents"                : "remove_documents";
+		case "remove+documents"                : "remove_documents";
+		case "remove%20links"                  :
+		case "remove links"                    : "remove_links";
+		case "remove+links"                    : "remove_links";
+		case "remove%20service"                :
+		case "remove service"                  : "remove_service";
+		case "remove+service"                  : "remove_service";
+		case "remove%20url-directory"          :
+		case "remove url-directory"            : "remove_url_directory";
+		case "remove+url-directory"            : "remove_url_directory";
+		case "rename%20service"                :
+		case "rename service"                  : "rename_service";
+		case "rename+service"                  : "rename_service";
+		case "rename%20url"                    :
+		case "rename url"                      : "rename_url";
+		case "rename+url"                      : "rename_url";
+		case "replace%20web%20struct"          :
+		case "replace web struct"              : "replace_web_struct";
+		case "replace+web+struct"              : "replace_web_struct";
+		case "restart%20server"                : 
+		case "restart server"                  : "restart_server";
+		case "restart+server"                  : "restart_server";
+		case "server%20version"                :
+		case "server version"                  : "server_version";
+		case "server+version"                  : "server_version";
+		case "setdocsmetainfo"                 : "set_docs_metainfo";
+		case "set%20document%20meta-info"      :
+		case "set document meta-info"          : "set_document_metainfo";
+		case "set+document+meta%2dinfo"        : "set_document_metainfo";
+		case "set%20service%20access%20control":
+		case "set service access control"      : "set_service_access_control";
+		case "set+service+access+control"      : "set_service_access_control";
+		case "set%20service%20meta-info"       :
+		case "set service meta-info"           : "set_service_metainfo";
+		case "set+service+meta%2dinfo"         : "set_service_metainfo";
+		case "set%20source%20control"          :
+		case "set source control"              : "set_source_control";
+		case "set+source+control"              : "set_source_control";
+		case "table%20add%20row"               :
+		case "table add row"                   : "table_add_row";
+		case "table+add+row"                   : "table_add_row";
+		case "table%20change%20row"            :
+		case "table change row"                : "table_change_row";
+		case "table+change+row"                : "table_change_row";
+		case "table%20remove%20row"            :
+		case "table remove row"                : "table_remove_row";
+		case "table+remove+row"                : "table_remove_row";
+		case "uncheckout%20document"           :
+		case "uncheckout document"             : "uncheckout_document";
+		case "uncheckout+document"             : "uncheckout_document";
+		case "update%20access"                 :
+		case "update access"                   : "update_access";
+		case "update+access"                   : "update_access";
+		case "update%20group"                  :
+		case "update group"                    : "update_group";
+		case "update+group"                    : "update_group";
+		case "update%20group%20list"           :
+		case "update group list"               : "update_group_list";
+		case "update+group+list"               : "update_group_list";
+		case "update%20special%20access"       :
+		case "update special access"           : "update_special_access";
+		case "update+special+access"           : "update_special_access";
+		case "update%20user%20list"            :
+		case "update user list"                : "update_user_list";
+		case "update+user+list"                : "update_user_list";
+		case "url%20to%20web%20url"            :
+		case "url to web url"                  : "url_to_web_url";
+		case "url+to+web+url"                  : "url_to_web_url";
+		case "verify%20user"                   :
+		case "verify user"                     : "verify_user";
+		case "verify+user"                     : "verify_user";
+		
+		case "Cltreq"                          : "Cltreq";
+		case "Cltreq "                         : "Cltreq";
+		case "Delete"                          : "Delete";
+		case "Delete "                         : "Delete";
+		case "DELETEFIELD"                     : "SharePoint DeleteField";
+		case "DELETEFIELD "                    : "SharePoint DeleteField";
+		case "DeleteList"                      : "DeleteList";
+		case "DeleteList "                     : "DeleteList";
+		case "DeleteView"                      : "DeleteView";
+		case "DeleteView "                     : "DeleteView";
+		case "DialogView"                      : "DialogView";
+		case "DialogView "                     : "DialogView";
+		case "Display"                         : "SharePoint Display";
+		case "Display "                        : "SharePoint Display";
+		case "DisplayPost"                     : "SharePoint DisplayPost";
+		case "DisplayPost "                    : "SharePoint DisplayPost";
+		case "ExportList"                      : "SharePoint ExportList";
+		case "ExportList "                     : "SharePoint ExportList";
+		case "GetProjSchema"                   : "SharePoint GetProjSchema";
+		case "GetProjSchema "                  : "SharePoint GetProjSchema";
+		case "GetUsageBlob"                    : "GetUsageBlob";
+		case "GetUsageBlob "                   : "GetUsageBlob";
+		case "HitCounter"                      : "HitCounter";
+		case "HitCounter "                     : "HitCounter";
+		case "ImportList"                      : "SharePoint ImportList";
+		case "ImportList "                     : "SharePoint ImportList";
+		case "MODLISTSETTINGS"                 : "SharePoint MODListSettings";
+		case "MODLISTSETTINGS "                : "SharePoint MODListSettings";
+		case "MtgKeep"                         : "MtgKeep";
+		case "MtgKeep "                        : "MtgKeep";
+		case "MtgMove"                         : "MtgMove";
+		case "MtgMove "                        : "MtgMove";
+		case "NEWFIELD"                        : "SharePoint NewField";
+		case "NEWFIELD "                       : "SharePoint NewField";
+		case "NewList"                         : "SharePoint NewList";
+		case "NewList "                        : "SharePoint NewList";
+		case "NewView"                         : "NewView";
+		case "NewView "                        : "NewView"; 
+		case "NewViewPage"                     : "SharePoint NewViewPage";
+		case "NewViewPage "                    : "SharePoint NewViewPage";
+		case "NewWebPage"                      : "NewWebPage";
+		case "NewWebPage "                     : "NewWebPage";
+		case "RenderView"                      : "SharePoint RenderView";
+		case "RenderView "                     : "SharePoint RenderView";
+		case "ReorderFields"                   : "SharePoint ReorderFields";
+		case "ReorderFields "                  : "SharePoint ReorderFields";
+		case "Save"                            : "Save";
+		case "Save "                           : "Save";
+		case "SiteProvision"                   : "SharePoint SiteProvision";
+		case "SiteProvision "                  : "SharePoint SiteProvision";
+		case "UPDATEFIELD"                     : "SharePoint UpdateField";
+		case "UPDATEFIELD "                    : "SharePoint UpdateField";
+		case "UpdateView"                      : "UpdateView";
+		case "UpdateView "                     : "UpdateView";
+		
+		case "SaveForm"                        : "DialogView SaveForm";
+		case "SaveForm "                       : "DialogView SaveForm";
+
+		default                                : "Unkonwn value";
+	}
+}
+
+Table FPSEThemeParamsTable(value)
+{
+	switch(value)
+	{
+		case "1"   : "Apply Using CSS";
+		case "16"  : "Vivid Color";
+		case "17"  : "Vivid Color and Apply Using CSS";
+		case "256" : "Active Graphics";
+		case "257" : "Active Graphics and Apply Using CSS";
+		case "272" : "Active Graphics and Vivid Color";
+		case "273" : "Active Graphics and Vivid Color and Apply Using CSS";
+		case "4096": "Background Picture";
+		case "4097": "Background Picture and Apply Using CSS";
+		case "4112": "Background Picture and Vivid Color";
+		case "4113": "Background Picture and Vivid Color and Apply Using CSS";
+		case "4352": "Background Picture and Active Graphics";
+		case "4353": "Background Picture and Active Graphics and Apply Using CSS";
+		case "4368": "Background Picture and Active Graphics and Vivid Color";
+		case "4369": "Background Picture and Active Graphics and Vivid Color and Apply Using CSS";
+		default    : "Unkonwn value";
+	}
+}
+
+Table FPSEValidateWelcomeNamesTable(value)
+{
+	switch(value)
+	{
+		case "true" : "Checking for default names is done";
+		case "false": "No checking is done";
+	}
+}
+
+Table FPSEWebPartTempTable(value)
+{
+	switch(value)
+	{
+		case "1": "Full Page, Vertical";
+		case "2": "Header, Footer, 3 Columns";
+		case "3": "Header, Left Column, Body";
+		case "4": "Header, Right Column, Body";
+		case "5": "Header, Footer, 2 Columns, 4 Rows";
+		case "6": "Header, Footer, 4 Columns, Top Row";
+		case "7": "Left Column, Header, Footer, Top Row, 3 Columns";
+		case "8": "Right Column, Header, Footer, Top Row, 3 Columns";
+		default : "Unknown value";
+	}
+}
+
+Table FPSEXMLDataTable(value)
+{
+	switch(value)
+	{
+		case "1": "The packet returns an XML representation of the request page";
+		case "0": "The packet returns the result as XML-encoded HTML";
+	}
+}
+
+Table FPSEGetdocumentForceTable(value)
+{
+	switch
+	{
+		case value.contains("get_document"):" - The parameter is reserved for future use.";
+		default:"";
+	}
+}
+
+[Property.FPSEMemberHeaderExist = "False",Property.FPSEMemberInfoData = ""]
+struct FPSECommonMemberInfo = Property.FPSEMemberInfoData
+{
+	switch
+	{
+		case Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) == "%5b"   :
+			[Property.FPSEInfoSeparator = 0x253362,Property.FPSEInfoSeparatorS = "%3b", Property.FPSEInfoEqualSign = "%3d",Property.FPSEInfoComma = "%7c",Property.FPSEMemberHeaderExist = "True"]
+			AsciiString(3) MemberInfoUrlBegin = "[";
+		case Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,5) == "\n<ul>":
+			[Property.FPSEInfoSeparator = 0x0A3C6C693E,Property.FPSEInfoSeparatorS = "\n<li>",Property.FPSEInfoEqualSign = "=",Property.FPSEInfoComma = "|",Property.FPSEMemberHeaderExist = "True"]
+			AsciiString(5) MemberInfoHtmlBegin = "[";
+	}
+	
+	switch
+	{
+		case AsciiString(FrameData,FrameOffset,3) == "%3b"    && Property.FPSEType == "URL" :
+			AsciiString(3) InfoBeginUrl = "";
+		case AsciiString(FrameData,FrameOffset,5) == "\n<li>" && Property.FPSEType == "HTML":
+			AsciiString(5) InfoBeginHtml = "";
+	}
+	
+	switch(Property.FPSEType)
+	{
+		case "URL":
+			_struct FrontPageMemberBracketURL
+			{
+				while Field1[(AsciiString(FrameData,FrameOffset,3) != "%5d" && Property.FPSEType == "URL") && FrameLength > FrameOffset]
+				{
+					[Property.FPSEInfoStyleBracket = AsciiStringTerm(Framedata, FrameOffset, "%5d")]
+					switch
+					{
+						case Property.FPSEInfoStyleBracket.contains("%3b"):
+							_struct FrontPageMemberSemicolon
+							{
+								[Property.FPSEInfoStyleSemicolon = AsciiStringTerm(Framedata, FrameOffset, "%3b")]
+								switch
+								{
+									case Property.FPSEInfoStyleSemicolon.contains("%5b"):
+									case Property.FPSEInfoStyleSemicolon.contains("%3d"):
+										_struct FrontPageMemberNormal
+										{
+											DynamicSwitch AsciiStringTerm("%3d")
+											{
+												case "meta_info"       :
+												case "meta%5finfo"     :
+												case "meta-info"       :
+												case "meta%2dinfo"     :
+													FPSECommonMetaDict MetaInfo;
+												case "metaInfoList"    :
+													FPSECommonMetaDict MetaInfoList;
+												case "document_name"   :
+												case "document%5fname" :
+													[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DocumetName.tostring)]
+													FPSECommonString(Property.FPSEInfoSeparator) DocumetName;
+												default: 
+													[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DefaultName.tostring)]
+													FPSECommonString(Property.FPSEInfoSeparator) DefaultName;
+											}
+										}
+									case Property.FPSEInfoStyleSemicolon.contains("%7c"):
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + MemberListDataWithType.tostring + ";"]
+										struct MemberListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+										{
+											[Property.FPSEInfoListDataType]
+											AsciiStringTerm("%7c") MemberListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+											[Property.FPSEInfoListDataValue = MemberListDataValue.tostring]
+											FPSECommonString(Property.FPSEInfoSeparator) MemberListDataValue;
+										}
+									default:
+										FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("%5b"):
+							_struct FrontPageMemberNoSemicolon
+							{
+								DynamicSwitch AsciiStringTerm("%3d")
+								{
+									case "meta_info"       :
+									case "meta%5finfo"     :
+									case "meta-info"       :
+									case "meta%2dinfo"     :
+										FPSECommonMetaDict MetaInfo;
+									case "metaInfoList"    :
+										FPSECommonMetaDict MetaInfoList;
+									case "document_name"   :
+									case "document%5fname" :
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DocumetName.tostring)]
+										FPSECommonString(Property.FPSEInfoSeparator) DocumetName;
+									default: 
+										FPSECommonMemberInfo DefaultName;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("%3d"):
+							_struct FrontPageMemberEqual
+							{
+								DynamicSwitch AsciiStringTerm("%3d")
+								{
+									default: 
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DefaultName.tostring)]
+										FPSECommonString(Property.FPSEInfoSeparator) DefaultName;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("%7c"):
+							[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + MemberListDataWithType.tostring + ";"]
+							struct MemberListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+							{
+								[Property.FPSEInfoListDataType]
+								AsciiStringTerm("%7c") MemberListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+								[Property.FPSEInfoListDataValue = MemberListDataValue.tostring]
+								FPSECommonString(Property.FPSEInfoSeparator) MemberListDataValue;
+							}
+						default:
+							FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+					}
+				}
+			}
+		case "HTML":
+			_struct FrontPageMemberBracketHTML
+			{
+				while Field5[(AsciiString(FrameData,FrameOffset,6) != "\n</ul>" && Property.FPSEType == "HTML") && FrameLength > FrameOffset]
+				{
+					[Property.FPSEInfoStyleBracket = AsciiStringTerm(Framedata, FrameOffset, "\n</ul>")]
+					switch
+					{
+						case Property.FPSEInfoStyleBracket.contains("\n<li>"):
+							_struct FrontPageMemberSemicolon
+							{
+								[Property.FPSEInfoStyleSemicolon = AsciiStringTerm(Framedata, FrameOffset, "\n<li>")]
+								switch
+								{
+									case Property.FPSEInfoStyleSemicolon.contains("\n<ul>"):
+									case Property.FPSEInfoStyleSemicolon.contains("="):
+										_struct FrontPageMemberNormal
+										{
+											DynamicSwitch AsciiStringTerm("=")
+											{
+												case "meta_info"       :
+												case "meta%5finfo"     :
+												case "meta-info"       :
+												case "meta%2dinfo"     :
+													FPSECommonMetaDict MetaInfo;
+												case "metaInfoList"    :
+													FPSECommonMetaDictList MetaInfoList;
+												case "document_name"   :
+												case "document%5fname" :
+													[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DocumetName.tostring)]
+													FPSECommonString(Property.FPSEInfoSeparator) DocumetName;
+												default: 
+													[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DefaultName.tostring)]
+													FPSECommonString(Property.FPSEInfoSeparator) DefaultName;
+											}
+										}
+									case Property.FPSEInfoStyleSemicolon.contains("|"):
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + MemberListDataWithType.tostring + ";"]
+										struct MemberListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+										{
+											[Property.FPSEInfoListDataType]
+											AsciiStringTerm("|") MemberListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+											[Property.FPSEInfoListDataValue = MemberListDataValue.tostring]
+											FPSECommonString(Property.FPSEInfoSeparator) MemberListDataValue;
+										}
+									default:
+										FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("\n<ul>"):
+							_struct FrontPageMemberNoSemicolon
+							{
+								DynamicSwitch AsciiStringTerm("=")
+								{
+									case "meta_info"       :
+									case "meta%5finfo"     :
+									case "meta-info"       :
+									case "meta%2dinfo"     :
+										FPSECommonMetaDict MetaInfo;
+									case "metaInfoList"    :
+										FPSECommonMetaDictList MetaInfoList;
+									case "document_name"   :
+									case "document%5fname" :
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DocumetName.tostring)]
+										FPSECommonString(Property.FPSEInfoSeparator) DocumetName;
+									default: 
+										FPSECommonMemberInfo DefaultName;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("="):
+							_struct FrontPageMemberEqual
+							{
+								DynamicSwitch AsciiStringTerm("=")
+								{
+									default: 
+										[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + FPSEInfoDataTable(Property.FPSEInfoStyleSemicolon,DefaultName.tostring)]
+										FPSECommonString(Property.FPSEInfoSeparator) DefaultName;
+								}
+							}
+						case Property.FPSEInfoStyleBracket.contains("|"):
+							[Property.FPSEMemberInfoData = Property.FPSEMemberInfoData + MemberListDataWithType.tostring + ";"]
+							struct MemberListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+							{
+								[Property.FPSEInfoListDataType]
+								AsciiStringTerm("|") MemberListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+								[Property.FPSEInfoListDataValue = MemberListDataValue.tostring]
+								FPSECommonString(Property.FPSEInfoSeparator) MemberListDataValue;
+							}
+						default:
+							FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+					}
+				}
+			}
+	}
+	
+	switch
+	{
+		case Property.FPSEType == "URL" && Property.FPSEMemberHeaderExist == "True":
+			AsciiString(3) MemberInfoUrlEnd = "]";
+		case Property.FPSEType == "HTML"&& Property.FPSEMemberHeaderExist == "True":
+			AsciiString(6) MemberInfoHtmlEnd = "]";
+	}
+	
+	switch
+	{
+		case Property.FPSEType == "URL" && AsciiString(FrameData,FrameOffset,1) == "&":
+			AsciiString(1) TerminalUrl = ";";
+		case Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,5) == "\n<li>":
+			AsciiString(5) TerminalHtml = ";";
+	}
+}
+
+[Property.FPSEMetaListHeaderExist = "False",Property.FPSEMetaListCount = 0]
+struct FPSECommonMetaDictList = FormatString("%s",Property.FPSEMetaListCount > 0 ? Property.FPSEMetaListCount + " MetaDicts":"")
+{
+	switch
+	{
+		case Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) == "%5b"   :
+			[Property.FPSEInfoSeparator = 0x253362,Property.FPSEInfoSeparatorS = "%3b", Property.FPSEInfoEqualSign = "%3d",Property.FPSEInfoComma = "%7c",Property.FPSEMetaListHeaderExist = "True"]
+			AsciiString(3) MetaInfoListUrlBegin = "[";
+		case Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,5) == "\n<ul>":
+			[Property.FPSEInfoSeparator = 0x0A3C6C693E,Property.FPSEInfoSeparatorS = "\n<li>",Property.FPSEInfoEqualSign = "=",Property.FPSEInfoComma = "|",Property.FPSEMetaListHeaderExist = "True"]
+			AsciiString(5) MetaInfoListHtmlBegin = "[";
+	}
+	
+	switch
+	{
+		case AsciiString(FrameData,FrameOffset,3) == "%3b"    && Property.FPSEType == "URL" :
+			AsciiString(3) ListInfoBeginUrl = "";
+		case AsciiString(FrameData,FrameOffset,5) == "\n<li>" && Property.FPSEType == "HTML":
+			AsciiString(5) ListInfoBeginHtml = "";
+	}
+	
+	while Field2[FrameLength > FrameOffset && 
+				 ((Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,6) != "\n</ul>") ||
+				  (Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) != "%5d"))]
+	{
+		switch
+		{
+			case AsciiString(FrameData,FrameOffset,3) == "%5b":
+			case AsciiString(FrameData,FrameOffset,3) == "\n<ul>":
+				[Property.FPSEMetaListCount = Property.FPSEMetaListCount + 1]
+				FPSECommonMetaDict MetaInfo;
+		}
+	}
+	
+	switch
+	{
+		case Property.FPSEType == "URL"  && Property.FPSEMetaListHeaderExist == "True":
+			AsciiString(3) MetaInfoListUrlEnd = "]";
+		case Property.FPSEType == "HTML" && Property.FPSEMetaListHeaderExist == "True":
+			AsciiString(6) MetaInfoListHtmlEnd = "]";
+	}
+}
+
+[Property.FPSEMetaHeaderExist = "False",Property.FPSEMetaDictInfo = ""]
+struct FPSECommonMetaDict = Property.FPSEMetaDictInfo
+{
+	switch
+	{
+		case Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) == "%5b"   :
+			[Property.FPSEInfoSeparator = 0x253362,Property.FPSEInfoSeparatorS = "%3b", Property.FPSEInfoEqualSign = "%3d",Property.FPSEInfoComma = "%7c",Property.FPSEMetaHeaderExist = "True"]
+			AsciiString(3) MetaInfoUrlBegin = "[";
+		case Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,5) == "\n<ul>":
+			[Property.FPSEInfoSeparator = 0x0A3C6C693E,Property.FPSEInfoSeparatorS = "\n<li>",Property.FPSEInfoEqualSign = "=",Property.FPSEInfoComma = "|",Property.FPSEMetaHeaderExist = "True"]
+			AsciiString(5) MetaInfoHtmlBegin = "[";
+	}
+	
+	switch
+	{
+		case AsciiString(FrameData,FrameOffset,3) == "%3b"    && Property.FPSEType == "URL" :
+			AsciiString(3) InfoBeginUrl = "";
+		case AsciiString(FrameData,FrameOffset,5) == "\n<li>" && Property.FPSEType == "HTML":
+			AsciiString(5) InfoBeginHtml = "";
+	}
+	
+	while Field2[FrameLength > FrameOffset && 
+				 ((Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,6) != "\n</ul>") ||
+				  (Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) != "%5d"))]
+	{
+		[local.FPSMetaDictSign = "",local.FPSMetaDictDataName = "",local.FPSMetaDictDataType = ""]
+		struct MetaInfoData = local.FPSMetaDictDataName + local.FPSMetaDictSign + local.FPSMetaDictDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(local.FPSMetaDictDataType) + ")"
+		{
+			[local.FPSMetaDictNameExist = AsciiStringTerm(FrameData,FrameOffset,Property.FPSEInfoSeparatorS)]
+			switch
+			{
+				case !local.FPSMetaDictNameExist.contains(Property.FPSEInfoComma):
+					[local.FPSMetaDictDataName = MetaDictDataName.tostring,local.FPSMetaDictSign = " = "]
+					FPSECommonString(Property.FPSEInfoSeparator) MetaDictDataName;
+			}
+			
+			[local.FPSMetaDictUpright = AsciiStringTerm(Framedata, FrameOffset, Property.FPSEInfoSeparatorS)]
+			switch
+			{
+				case local.FPSMetaDictUpright.contains(Property.FPSEInfoComma):
+					[local.FPSMetaDictDataType]
+					AsciiStringTerm(Property.FPSEInfoComma) MetaInfoDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+			}
+			
+			switch
+			{
+				case local.FPSMetaDictDataName.contains("vti_metatags"):
+					[local.FPSMetaDictDataValue = MetaDictTagsValue.tostring,Property.FPSEMetaDictInfo = MetaDictTagsValue.tostring]
+					FPSECommonString(Property.FPSEInfoSeparator) MetaDictTagsValue;
+				default:
+					[local.FPSMetaDictDataValue = MetaDictDataValue.tostring]
+					FPSECommonString(Property.FPSEInfoSeparator) MetaDictDataValue;
+			}
+		}
+	}
+	
+	switch
+	{
+		case Property.FPSEType == "URL"  && Property.FPSEMetaHeaderExist == "True":
+			AsciiString(3) MetaInfoUrlEnd = "]";
+		case Property.FPSEType == "HTML" && Property.FPSEMetaHeaderExist == "True":
+			AsciiString(6) MetaInfoHtmlEnd = "]";
+	}
+}
+
+[Property.FPSEListCount = 0,Property.FPSEInfoHeaderExist = "False",Property.FPSEInfoData = ""]
+struct FPSECommonInfo = FormatString("%s %s",Property.FPSEListCount > 0 ? Property.FPSEListCount + " Members":"",Property.FPSEInfoData)
+{
+		switch
+		{
+			case Property.FPSEType == "URL"  && AsciiString(FrameData,FrameOffset,3) == "%5b"   :
+				[Property.FPSEInfoSeparator = 0x253362,Property.FPSEInfoSeparatorS = "%3b", Property.FPSEInfoEqualSign = "%3d",Property.FPSEInfoComma = "%7c",Property.FPSEInfoHeaderExist = "True"]
+				AsciiString(3) ListInfoUrlBegin = "[";
+			case Property.FPSEType == "HTML" && AsciiString(FrameData,FrameOffset,5) == "\n<ul>":
+				[Property.FPSEInfoSeparator = 0x0A3C6C693E,Property.FPSEInfoSeparatorS = "\n<li>",Property.FPSEInfoEqualSign = "=",Property.FPSEInfoComma = "|",Property.FPSEInfoHeaderExist = "True"]
+				AsciiString(5) ListInfoHtmlBegin = "[";
+		}
+		
+		switch
+		{
+			case AsciiString(FrameData,FrameOffset,3) == "%3b"    && Property.FPSEType == "URL" :
+				AsciiString(3) InfoBeginUrl = "";
+			case AsciiString(FrameData,FrameOffset,5) == "\n<li>" && Property.FPSEType == "HTML":
+				AsciiString(5) InfoBeginHtml = "";
+		}
+		
+		switch(Property.FPSEType)
+		{
+			case "URL":
+				_struct FrontPageInfoBracketURL
+				{
+					while Field1[(AsciiString(FrameData,FrameOffset,3) != "%5d" && Property.FPSEType == "URL") && FrameLength > FrameOffset]
+					{
+						[Property.FPSEInfoStyleBracket = AsciiStringTerm(Framedata, FrameOffset, "%5d")]
+						switch
+						{
+							case Property.FPSEInfoStyleBracket.contains("%3b"):
+								_struct FrontPageInfoSemicolon
+								{
+									[Property.FPSEInfoStyleSemicolon = AsciiStringTerm(Framedata, FrameOffset, "%3b")]
+									switch
+									{
+										case Property.FPSEInfoStyleSemicolon.contains("%3d"):
+										case Property.FPSEInfoStyleSemicolon.contains("%5b"):
+											_struct FrontPageInfoNormal
+											{
+												switch
+												{
+													case AsciiString(FrameData,FrameOffset,3) == "%5b"      :
+														[Property.FPSEListCount = Property.FPSEListCount + 1]
+														FPSECommonMemberInfo MemberInfo;
+													case AsciiString(FrameData,FrameOffset,9) == "meta_info":
+													case AsciiString(FrameData,FrameOffset,9) == "meta-info":
+														FPSECommonMetaDict MetaInfo;
+													default                                                 :
+														[Property.FPSEListCount = Property.FPSEListCount + 1]
+														FPSECommonMemberInfo InfoData;
+												}
+											}
+										case Property.FPSEInfoStyleSemicolon.contains("%7c"):
+											[Property.FPSEInfoData = Property.FPSEInfoData + InfoListDataWithType.tostring + ";"]
+											struct InfoListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+											{
+												[Property.FPSEInfoListDataType]
+												AsciiStringTerm("%7c") InfoListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+												[Property.FPSEInfoListDataValue = InfoListDataValue.tostring]
+												FPSECommonString(Property.FPSEInfoSeparator) InfoListDataValue;
+											}
+										default:
+											[Property.FPSEInfoData = Property.FPSEInfoData + InfoListData.tostring + ";"]
+											FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+									}
+								}
+							case Property.FPSEInfoStyleBracket.contains("%7c"):
+								[Property.FPSEInfoData = Property.FPSEInfoData + InfoListDataWithType.tostring + ";"]
+								struct InfoListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+								{
+									[Property.FPSEInfoListDataType]
+									AsciiStringTerm("%7c") InfoListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+									[Property.FPSEInfoListDataValue = InfoListDataValue.tostring]
+									FPSECommonString(Property.FPSEInfoSeparator) InfoListDataValue;
+								}
+							default:
+								[Property.FPSEInfoData = Property.FPSEInfoData + InfoListData.tostring + ";"]
+								FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+						}
+					}
+				}
+			case "HTML":
+				_struct FrontPageInfoBracketHTML
+				{
+					while Field4[(AsciiString(FrameData,FrameOffset,6) != "\n</ul>" && Property.FPSEType == "HTML") && FrameLength > FrameOffset]
+					{
+						[Property.FPSEInfoStyleBracket = AsciiStringTerm(Framedata, FrameOffset, "\n</ul>")]
+						switch
+						{
+							case Property.FPSEInfoStyleBracket.contains("\n<li>"):
+								_struct FrontPageInfoSemicolon
+								{
+									[Property.FPSEInfoStyleSemicolon = AsciiStringTerm(Framedata, FrameOffset, "\n<li>")]
+									switch
+									{
+										case Property.FPSEInfoStyleSemicolon.contains("="):
+										case Property.FPSEInfoStyleSemicolon.contains("\n<ul>"):
+											_struct FrontPageInfoNormal
+											{
+												switch
+												{
+													case AsciiString(FrameData,FrameOffset,5) == "\n<ul>"   :
+														[Property.FPSEListCount = Property.FPSEListCount + 1]
+														FPSECommonMemberInfo MemberInfo;
+													case AsciiString(FrameData,FrameOffset,9) == "meta_info":
+													case AsciiString(FrameData,FrameOffset,9) == "meta-info":
+														FPSECommonMetaDict MetaInfo;
+													default                                                 :
+														[Property.FPSEListCount = Property.FPSEListCount + 1]
+														FPSECommonMemberInfo InfoData;
+												}
+											}
+										case Property.FPSEInfoStyleSemicolon.contains("|"):
+											[Property.FPSEInfoData = Property.FPSEInfoData + InfoListDataWithType.tostring + ";"]
+											struct InfoListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+											{
+												[Property.FPSEInfoListDataType]
+												AsciiStringTerm("|") InfoListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+												[Property.FPSEInfoListDataValue = InfoListDataValue.tostring]
+												FPSECommonString(Property.FPSEInfoSeparator) InfoListDataValue;
+											}
+										default:
+											[Property.FPSEInfoData = Property.FPSEInfoData + InfoListData.tostring + ";"]
+											FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+									}
+								}
+							case Property.FPSEInfoStyleBracket.contains("|"):
+								[Property.FPSEInfoData = Property.FPSEInfoData + InfoListDataWithType.tostring + ";"]
+								struct InfoListDataWithType = Property.FPSEInfoListDataValue + " (Type = " + FPSEMetaInfoDataTypeTable(Property.FPSEInfoListDataType) + ")"
+								{
+									[Property.FPSEInfoListDataType]
+									AsciiStringTerm("|") InfoListDataType = FormatString("%s - %s",this,FPSEMetaInfoDataTypeTable(this));
+									[Property.FPSEInfoListDataValue = InfoListDataValue.tostring]
+									FPSECommonString(Property.FPSEInfoSeparator) InfoListDataValue;
+								}
+							default:
+								[Property.FPSEInfoData = Property.FPSEInfoData + InfoListData.tostring + ";"]
+								FPSECommonString(Property.FPSEInfoSeparator) InfoListData;
+						}
+					}
+				}
+		}
+
+		switch
+		{
+			case Property.FPSEType == "URL"  && Property.FPSEInfoHeaderExist == "True":
+				Blob(3) ListInfoUrlEnd = "]";
+			case Property.FPSEType == "HTML" && Property.FPSEInfoHeaderExist == "True":
+				Blob(6) ListInfoHtmlEnd = "]";
+		}
+}
+
+[Property.FPSEMothodVersion = ""]
+struct FPSECommonMethodVersion(value,CommandType,HtmlType) = Property.FPSEMothodVersion
+{
+	switch(HtmlType)
+	{
+		case true:
+			switch(CommandType)
+			{
+				case "method":
+					switch
+					{
+						case value.contains(":"):
+							_struct FPMothodVersion
+							{
+								[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+								AsciiStringTerm(":") Method = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+								[Post.Property.FPSEMothodVersion = Property.FPSEMothodVersion + ":" + Property.FPSESummary]
+								FPSECommonString(Property.FPSESeparator) ServerVersion;
+							}
+						default:
+							[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+							AsciiStringTerm("\n") Method = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+					}
+				case "cmd":
+					[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+					AsciiStringTerm(":") Cmd = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+				case "dialogview":
+					[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+					AsciiStringTerm(":") DialogView = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+			}
+		case false:
+			switch(CommandType)
+			{
+				case "method":
+					switch
+					{
+						case value.contains("%3a"):
+							_struct FPMothodVersion
+							{
+								[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+								AsciiStringTerm("%3a") Method = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+								[Post.Property.FPSEMothodVersion = Property.FPSEMothodVersion + ":" + Property.FPSESummary]
+								FPSECommonString(Property.FPSESeparator) ServerVersion;
+							}
+						default:
+							[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+							AsciiStringTerm("&") Method = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+					}
+				case "cmd":
+					[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+					AsciiStringTerm("&") Cmd = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+				case "dialogview":
+					[Property.FPSEMothodVersion = Property.FPSEMothodVersion + FPSETitleTable(this)]
+					AsciiStringTerm("&") DialogView = FormatString("%s - %s",FPSETitleTable(this),FPSEMethodTable(this));
+			}
+	}
+}
+
+[Property.FPSESummary = ""]
+struct FPSECommonString(value) = Property.FPSESummary
+{
+	switch(value)
+	{
+		case 0x26:
+			_struct FPSStringUrl
+			{
+				while Fields1[ !(UINT8(FrameData, FrameOffset) == value) && !(UINT8(FrameData, FrameOffset) == 0x0a) ]
+				{
+					switch
+					{
+						case AsciiString(FrameData,FrameOffset,3) == "%5b":
+							[POST.Property.FPSESummary = Property.FPSEInfoData]
+							FPSECommonInfo ListInfo;
+						case UINT8(FrameData, FrameOffset) == 0x25:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(3) FPByte = FPSEDecipherTable(this);
+						default:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							CHAR char;
+					}
+				}
+				
+				switch
+				{
+					case UINT8(FrameData, FrameOffset) == value:
+						CHAR Terminal;
+				}
+			}
+		
+		case 0x253362:
+			_struct FPSStringUrlInfo
+			{
+				while Fields1[ (!(UINT24(FrameData, FrameOffset) == value) || AsciiString(FrameData,FrameOffset - 3,6) == "%5c%3b") && !(UINT24(FrameData, FrameOffset) == 0x253564)]
+				{
+					switch
+					{
+						case AsciiString(FrameData, FrameOffset,4) == "%5c%":
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(6) FPByte6 = FPSEDecipherTable(this);
+						case UINT8(FrameData, FrameOffset) == 0x25:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(3) FPByte3 = FPSEDecipherTable(this);
+    					case AsciiString(FrameData, FrameOffset,2) == "&#":
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(5) FPByte5 = FPSEDecipherTable(this);
+						case AsciiString(FrameData, FrameOffset,1) == "+":
+							[Property.FPSESummary = Property.FPSESummary + " "]
+							AsciiString(1) FPByte1 = " ";
+						default:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							CHAR char;
+					}
+				}
+				
+				switch
+				{
+					case UINT24(FrameData, FrameOffset) == value:
+						AsciiString(3) Terminal = ";";
+				}
+			}
+		
+		case 0x0A:
+			_struct FPSStringHtml
+			{
+				while Fields2[ !(UINT8(FrameData, FrameOffset) == 0x0A) || (UINT16(FrameData, FrameOffset) == 0x0A3C && !(UINT24(FrameData, FrameOffset) == 0x0A3C70) && AsciiString(FrameData, FrameOffset,8) != "\n</body>")]
+				{
+					switch
+					{
+						case AsciiString(FrameData,FrameOffset,5) == "\n<ul>" && AsciiString(FrameData,FrameOffset + 5 ,5) == "\n<ul>":
+							AsciiString(5) TopLevelstart;
+						case AsciiString(FrameData,FrameOffset,5) == "\n<ul>":
+							[POST.Property.FPSESummary = Property.FPSEInfoData]
+							FPSECommonInfo ListInfo;
+						case AsciiString(FrameData,FrameOffset,8) != "\n</body>" && UINT8(FrameData, FrameOffset) == 0x0A:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(5) FPByte = FPSEDecipherTable(this);
+						case AsciiString(FrameData,FrameOffset,8) != "\n</body>":
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							char char;
+					}
+				}
+			}
+			
+		case 0x0A3E:
+			_struct FPSStringPair
+			{
+				while Fields3[ !(UINT8(FrameData, FrameOffset) == 0x3E)]
+				{
+					[Property.FPSESummary = Property.FPSESummary + this.ToString]
+					CHAR char;
+				}
+				
+				[Property.FPSESummary = Property.FPSESummary + this.ToString]
+				char Terminal;
+			}
+		
+		case 0x0A3C6C693E:
+			_struct FPSStringInfo
+			{
+				while Fields4[!(BLOB(FrameData,FrameOffset,5) == 0x0A3C6C693E) && AsciiString(FrameData,FrameOffset,6) != "\n</ul>"]
+				{
+					switch
+					{
+						case AsciiString(FrameData, FrameOffset,2) == "&#":
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							AsciiString(5) FPByte = FPSEDecipherTable(this);
+						default:
+							[Property.FPSESummary = Property.FPSESummary + this.ToString]
+							CHAR char;
+					}
+				}
+				
+				switch
+				{
+					case BLOB(FrameData,FrameOffset,5) == 0x0A3C6C693E:
+						AsciiString(5) Terminal = ";";
+				}
+			}
+
+		default:
+			_struct FPSString
+			{
+				while Fields5[ !(UINT8(FrameData, FrameOffset) == value)]
+				{
+					[Property.FPSESummary = Property.FPSESummary + this.ToString]
+					CHAR char;
+				}
+			}
+	}
+
+	switch(value)
+	{
+		case 0x26:
+			switch
+			{
+				case UINT8(FrameData, FrameOffset) == value:
+					CHAR Terminal;
+			}
+	}
+}
+
+struct FPSECommonData = Property.FPSEMothodVersion + ";" + Property.FPSEDataTags
+{
+	while Fields2[(!(UINT8(FrameData, FrameOffset) == 0x0A) ||
+				   (Property.FPSEType == "HTML" && AsciiString(FrameData, FrameOffset,8) != "\n</body>")
+				  ) && FrameLength > FrameOffset]
+	{
+		[Property.FPSEInfoStyleName = AsciiStringTerm(FrameData,FrameOffset,"=")]
+		switch
+		{
+			case AsciiString(FrameData,FrameOffset,5) != "\n<li>" &&
+				 AsciiString(FrameData,FrameOffset,5) != "\n<ul>" &&
+				 AsciiString(FrameData,FrameOffset,6) != "\n</ul>"&&
+				 AsciiString(FrameData,FrameOffset,2) == "\n<":
+				FPSECommonString(0x0A3E) HtmlSign;
+		}
+		
+		DynamicSwitch AsciiStringTerm("=")
+		{
+			case "cmd"                           : 
+				switch(Property.FPSESeparator)
+				{
+					case 0x26:
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "&"), "cmd",false) Cmd;
+					case 0x0A:
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "\n"), "cmd",true) CmdHtml;
+				}
+			case "Method"                        : 
+				switch(Property.FPSESeparator)
+				{
+					case 0x26:
+						[post.Property.FPSEMethod = FPMethod.tostring]
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "&"), "method",false) FPMethod;
+					case 0x0A:
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "\n"), "method",true) FPMethodHtml;
+				}
+			
+			case "dialogview"                    : 
+				switch(Property.FPSESeparator)
+				{
+					case 0x26:
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "&"), "dialogview",false) DialogView;
+					case 0x0A:
+						FPSECommonMethodVersion(AsciiStringTerm(FrameData, FrameOffset, "\n"), "dialogview",true) DialogViewHtml;
+				}
+				
+			case "access_level"                  : 
+			case "access%5flevel"                : FPSECommonString(Property.FPSESeparator) AccessLevel;
+			case "access_setup"                  :
+			case "access%5fsetup"                : FPSECommonString(Property.FPSESeparator) Access_Setup;
+			case "accesssetup"                   : FPSECommonString(Property.FPSESeparator) AccessSetup;
+			case "add_existing_pages"            :
+			case "add%5fexisting%5fpages"        : FPSECommonString(Property.FPSESeparator) AddExistingPages;
+			case "add_groups"                    : 
+			case "add%5fgroups"                  : FPSECommonString(Property.FPSESeparator) AddGroups;
+			case "add_ips"                       :
+			case "add%5fips"                     : FPSECommonString(Property.FPSESeparator) AddIps;
+			case "add_users"                     :
+			case "add%5fusers"                   : FPSECommonString(Property.FPSESeparator) AddUsers;
+			case "adminAccess"                   : FPSECommonString(Property.FPSESeparator) AdminAccess;
+			case "author"                        : FPSECommonString(Property.FPSESeparator) Author;
+			case "authorAccess"                  : FPSECommonString(Property.FPSESeparator) AuthorAccess;
+			case "apply_opt"                     : 
+			case "apply%5fopt"                   : FPSECommonString(Property.FPSESeparator) ApplyOpt = FormatString("%s - %s",Property.FPSESummary,FPSEApplyOptTable(Property.FPSESummary));
+			case "bookmark"                      : FPSECommonString(Property.FPSESeparator) BookMark;
+			case "border_spec"                   : 
+			case "border%5fspec"                 : FPSECommonString(Property.FPSESeparator) BorderSpec = FormatString("%s - %s",Property.FPSESummary,FPSEBorderSpecTable(Property.FPSESummary));
+			case "bot_list"                      :
+			case "bot%5flist"                    : FPSECommonString(Property.FPSESeparator) BotList;
+			case "changes"                       : FPSECommonString(Property.FPSESeparator) Changes;
+			case "client_module"                 : 
+			case "client%5fmodule"               : FPSECommonString(Property.FPSESeparator) ClientModule;
+			case "comment"                       : FPSECommonString(Property.FPSESeparator) Comment;
+			case "connect_str"                   : 
+			case "connect%5fstr"                 : FPSECommonString(Property.FPSESeparator) ConnectStr;
+			case "connect_string"                :
+			case "connect%5fstring"              : FPSECommonString(Property.FPSESeparator) ConnectString;
+			case "datasource_type"               :
+			case "datasource%5ftype"             : FPSECommonString(Property.FPSESeparator) DatasourceType;
+			case "dir_name"                      : 
+			case "dir%5fname"                    : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,DirName.tostring)]
+				FPSECommonString(Property.FPSESeparator) DirName;
+			case "doc_version"                   :
+			case "doc%5fversion"                 : FPSECommonString(Property.FPSESeparator) DocVersion;
+			case "docopy"                        : FPSECommonString(Property.FPSESeparator) DoCopy;
+			case "document"                      : FPSECommonString(Property.FPSESeparator) Document;
+			case "document_list"                 : 
+			case "document%5flist"               : FPSECommonString(Property.FPSESeparator) DocumentList;
+			case "document_name"                 : 
+			case "document%5fname"               : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,DocumentName.tostring)]
+				FPSECommonString(Property.FPSESeparator) DocumentName;
+			case "domain"                        : FPSECommonString(Property.FPSESeparator) Domain;
+			case "driver_type"                   :  
+			case "driver%5ftype"                 : FPSECommonString(Property.FPSESeparator) DriverType = FormatString("%s - Always uses parameter with a value of 3",Property.FPSESummary);
+			case "effective_protocol_version"    :
+			case "effective%5fprotocol%5fversion": FPSECommonString(Property.FPSESeparator) EffectiveProtocolVersion;
+			case "eidHead"                       : FPSECommonString(Property.FPSESeparator) EidHead;
+			case "elements"                      : FPSECommonString(Property.FPSESeparator) Elements;
+			case "errorFlags"                    : FPSECommonString(Property.FPSESeparator) ErrorFlags = FormatString("%s - %s",Property.FPSESummary,FPSEFlagsTable(Property.FPSESummary));
+			case "executable"                    : FPSECommonString(Property.FPSESeparator) Executable;
+			case "expandWebPartPages"            : FPSECommonString(Property.FPSESeparator) ExpandWebPartPages = FormatString("%s - This parameter is reserved for future use",Property.FPSESummary);
+			case "field"                         : FPSECommonString(Property.FPSESeparator) Field;
+			case "fiellist"                      : FPSECommonString(Property.FPSESeparator) FielList;
+			case "flags"                         : FPSECommonString(Property.FPSESeparator) Flags = FormatString("%s - %s",Property.FPSESummary,FPSEFlagsTable(Property.FPSESummary));
+			case "folderList"                    : FPSECommonString(Property.FPSESeparator) FolderList;
+			case "force"                         : FPSECommonString(Property.FPSESeparator) Force = FormatString("%s - %s%s",Property.FPSESummary,FPSEForceTable(Property.FPSESummary),FPSEGetdocumentForceTable(Property.FPSEMethod));
+			case "get_option"                    : 
+			case "get%5foption"                  : FPSECommonString(Property.FPSESeparator) GetOption = FormatString("%s - %s",Property.FPSESummary,FPSEOptionTable(Property.FPSESummary));
+			case "group"                         : FPSECommonString(Property.FPSESeparator) Group;
+			case "group_name"                    : 
+			case "group%5fname"                  : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,GroupName.tostring)]
+				FPSECommonString(Property.FPSESeparator) GroupName;
+			case "includeHead"                   : FPSECommonString(Property.FPSESeparator) IncludeHead;
+			case "initialUrl"                    : FPSECommonString(Property.FPSESeparator) InitialUrl;
+			case "keep_checked_out"              :  
+			case "keep%5fchecked%5fout"          : FPSECommonString(Property.FPSESeparator) KeepCheckedOut = FormatString("%s - %s",Property.FPSESummary,FPSEKeepCheckedOutTable(Property.FPSESummary));
+			case "levels"                        : FPSECommonString(Property.FPSESeparator) Levels = FormatString("%s - %s",Property.FPSESummary,FPSELevelsTable(Property.FPSESummary));
+			case "lcid"                          : FPSECommonString(Property.FPSESeparator) Lcid;
+			case "link_list"                     :
+			case "link%5flist"                   : FPSECommonString(Property.FPSESeparator) LinkList;
+			case "links_to_remove"               : 
+			case "links%5fto%5fremove"           : FPSECommonString(Property.FPSESeparator) LinksToRemove;
+			case "listBorders"                   : FPSECommonString(Property.FPSESeparator) ListBorders;
+			case "listChildWebs"                 : FPSECommonString(Property.FPSESeparator) ListChildWebs = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "true"?"Server response includes the names of the child Web folders":"Server response not includes the names of the child Web folders");
+			case "listDerived"                   : FPSECommonString(Property.FPSESeparator) ListDerived;
+			case "listExplorerDocs"              : FPSECommonString(Property.FPSESeparator) ListExplorerDocs;
+			case "listFiles"                     : FPSECommonString(Property.FPSESeparator) ListFiles;
+			case "listFolders"                   : FPSECommonString(Property.FPSESeparator) ListFolders;
+			case "listHiddenDocs"                : FPSECommonString(Property.FPSESeparator) ListHiddenDocs;
+			case "listIncludeParent"             : FPSECommonString(Property.FPSESeparator) ListIncludeParent;
+			case "listLinkInfo"                  : FPSECommonString(Property.FPSESeparator) ListLinkInfo;
+			case "listRecurse"                   : FPSECommonString(Property.FPSESeparator) ListRecurse;
+			case "listThickets"                  : FPSECommonString(Property.FPSESeparator) ListThickets = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "true"?"The supporting files and folders are included":"The supporting files and folders are not included");
+			case "meta_info"                     : 
+			case "meta%5finfo"                   : FPSECommonMetaDict MetaInfo;
+			case "metaInfoList"                  : FPSECommonMetaDictList MetaInfoList;
+			case "mnemonic"                      : FPSECommonString(Property.FPSESeparator) Mnemonic;
+			case "newName"                       : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,NewName.tostring)]
+				FPSECommonString(Property.FPSESeparator) NewName;
+			case "newRow"                        : FPSECommonString(Property.FPSESeparator) NewRow;
+			case "newUrl"                        : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,NewUrl.tostring)]
+				FPSECommonString(Property.FPSESeparator) NewUrl;
+			case "noreturndata"                  : FPSECommonString(Property.FPSESeparator) NoReturnData;
+			case "office_themed_documents"       :
+			case "office%5fthemed%5fdocuments"   : FPSECommonString(Property.FPSESeparator) OfficeThemedDocuments;
+			case "old_theme_html"                : 
+			case "old%5ftheme%5fhtml"            : FPSECommonString(Property.FPSESeparator) OldThemeHtml = FormatString("%s - %s",Property.FPSESummary,FPSEOldThemeHtmlTable(Property.FPSESummary));
+			case "oldUrl"                        : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,OldUrl.tostring)]
+				FPSECommonString(Property.FPSESeparator) OldUrl;
+			case "option"                        : FPSECommonString(Property.FPSESeparator) Option;
+			case "options"                       : FPSECommonString(Property.FPSESeparator) Options;
+			case "override"                      : FPSECommonString(Property.FPSESeparator) Override;
+			case "password"                      : FPSECommonString(Property.FPSESeparator) Password;
+			case "platform"                      : FPSECommonString(Property.FPSESeparator) Platform;
+			case "project"                       : FPSECommonString(Property.FPSESeparator) Project;
+			case "put_option"                    :  
+			case "put%5foption"                  : FPSECommonString(Property.FPSESeparator) PutOption = FormatString("%s - %s",Property.FPSESummary,FPSEPutOptionTable(Property.FPSESummary));
+			case "query"                         : FPSECommonString(Property.FPSESeparator) Query;
+			case "realm_type"                    : 
+			case "realm%5ftype"                  : FPSECommonString(Property.FPSESeparator) RealmType = FormatString("%s - %s",Property.FPSESummary,FPSERealmTypeTable(Property.FPSESummary));
+			case "readable"                      : FPSECommonString(Property.FPSESeparator) Readable;
+			case "recalc_op"                     : 
+			case "recalc%5fop"                   : FPSECommonString(Property.FPSESeparator) RecalcOp = FormatString("%s - %s",Property.FPSESummary,FPSERecalcOpTable(Property.FPSESummary));
+			case "record%5fsource"               : FPSECommonString(Property.FPSESeparator) RecordSource;
+			case "recordsrc_type"                : 
+			case "recordsrc%5ftype"              : FPSECommonString(Property.FPSESeparator) RecordsrcType = FormatString("%s - %s",Property.FPSESummary,FPSERecordsrcTypeTable(Property.FPSESummary));
+			case "rem_groups"                    : 
+			case "rem%5fgroups"                  : FPSECommonString(Property.FPSESeparator) RemGroups;
+			case "rem_ips"                       : 
+			case "rem%5fips"                     : FPSECommonString(Property.FPSESeparator) RemIps;
+			case "rem_users"                     : 
+			case "rem%5fusers"                   : FPSECommonString(Property.FPSESeparator) RemUsers;
+			case "rename_option"                 : 
+			case "rename%5foption"               : FPSECommonString(Property.FPSESeparator) RenameOption = FormatString("%s - %s",Property.FPSESummary,FPSERenameOptionTypeTable(Property.FPSESummary));
+			case "rowId"                         : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,RowId.tostring)]
+				FPSECommonString(Property.FPSESeparator) RowId;
+			case "rlsshortterm"                  : FPSECommonString(Property.FPSESeparator) Rlsshortterm;
+			case "scriptable"                    : FPSECommonString(Property.FPSESeparator) Scriptable;
+			case "service_name"                  : 
+			case "service%5fname"                : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,ServiceName.tostring)]
+				FPSECommonString(Property.FPSESeparator) ServiceName;
+			case "theme_name"                    :
+			case "theme%5fname"                  : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,ThemeName.tostring)]
+				FPSECommonString(Property.FPSESeparator) ThemeName;
+			case "theme_params"                  : 
+			case "theme%5fparams"                : FPSECommonString(Property.FPSESeparator) ThemeParams = FormatString("%s - %s",Property.FPSESummary,FPSEThemeParamsTable(Property.FPSESummary));
+			case "theme_version"                 : 
+			case "theme%5fversion"               : FPSECommonString(Property.FPSESeparator) ThemeVersion;
+			case "time_checked_out"              : 
+			case "time%5fchecked%5fout"          : FPSECommonString(Property.FPSESeparator) TimeCheckedOut;
+			case "time_out"                      : 
+			case "time%5fout"                    : FPSECommonString(Property.FPSESeparator) TimeOut;
+			case "time_tokens"                   : 
+			case "time%5ftokens"                 : FPSECommonString(Property.FPSESeparator) TimeTokens;
+			case "timelastmodified"              : FPSECommonString(Property.FPSESeparator) TimeLastModified;
+			case "url"                           : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,Url.tostring)]
+				FPSECommonString(Property.FPSESeparator) Url;
+			case "url_list"                      : 
+			case "url%5flist"                    : FPSECommonString(Property.FPSESeparator) Url_List;
+			case "url_renames"                   : 
+			case "url%5frenames"                 : 
+				[Property.FPSEDataTags = Property.FPSEDataTags + FPSEInfoDataTable(Property.FPSEInfoStyleName,Url_Renames.tostring)]
+				FPSECommonString(Property.FPSESeparator) Url_Renames;
+			case "urldirs"                       : FPSECommonString(Property.FPSESeparator) UrlDirs;
+			case "urllist"                       : FPSECommonString(Property.FPSESeparator) UrlList = FormatString("%s - Used only with server extensions for FrontPage 97 or earlier",Property.FPSESummary);
+			case "users"                         : FPSECommonString(Property.FPSESeparator) Users;
+			case "user_or_group"                 : 
+			case "user%5for%5fgroup"             : FPSECommonString(Property.FPSESeparator) UserOrGroup;
+			case "userAccess"                    : FPSECommonString(Property.FPSESeparator) UserAccess;
+			case "validateWelcomeNames"          : FPSECommonString(Property.FPSESeparator) ValidateWelcomeNames = FormatString("%s - %s",Property.FPSESummary,FPSEValidateWelcomeNamesTable(Property.FPSESummary));
+			
+			case "Act"                           : FPSECommonString(Property.FPSESeparator) Act = FormatString("%s - %s",Property.FPSESummary,FPSEActTable(Property.FPSESummary));
+			case "AddToDefaultView"              : FPSECommonString(Property.FPSESeparator) AddToDefaultView;
+			case "AllowMultiVote"                : FPSECommonString(Property.FPSESeparator) AllowMultiVote = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "ON" ? "Allow users to vote more than once in a survey" : "");
+			case "BlobType"                      : FPSECommonString(Property.FPSESeparator) BlobType;
+			case "CreateLists"                   : FPSECommonString(Property.FPSESeparator) CreateLists;
+			case "Custom"                        : FPSECommonString(Property.FPSESeparator) Custom;
+			case "Description"                   : FPSECommonString(Property.FPSESeparator) Description;
+			case "Digits"                        : FPSECommonString(Property.FPSESeparator) Digits;
+			case "DisplayName"                   : FPSECommonString(Property.FPSESeparator) DisplayName;
+			case "DisplayOnLeft"                 : FPSECommonString(Property.FPSESeparator) DisplayOnLeft = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "TRUE" ? "Display the list on the Quick Launch bar" : "");
+			case "EditInstanceID"                : FPSECommonString(Property.FPSESeparator) EditInstanceID;
+			case "FieldXML"                      : FPSECommonString(Property.FPSESeparator) FieldXML;
+			case "FileDialogFilterValue"         : FPSECommonString(Property.FPSESeparator) FileDialogFilterValue;
+			case "FromInstanceID"                : FPSECommonString(Property.FPSESeparator) FromInstanceID;
+			case "GlobalMtgDataList"             : FPSECommonString(Property.FPSESeparator) GlobalMtgDataList = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "TRUE" ? "Specify that the list is a series list" : "specify a normal list");
+			case "HiddenView"                    : FPSECommonString(Property.FPSESeparator) HiddenView = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "TRUE" ? "Make the view hidden" : "");
+			case "ID"                            : FPSECommonString(Property.FPSESeparator) Id;
+			case "IDText"                        : FPSECommonString(Property.FPSESeparator) IdText;
+			case "Image"                         : FPSECommonString(Property.FPSESeparator) Image;
+			case "LangID"                        : FPSECommonString(Property.FPSESeparator) LangID;
+			case "ListSchema"                    : FPSECommonString(Property.FPSESeparator) ListSchema;
+			case "ListTemplate"                  : FPSECommonString(Property.FPSESeparator) ListTemplate = FormatString("%s - %s",Property.FPSESummary,FPSEListTemplateTable(Property.FPSESummary));
+			case "location"                      : FPSECommonString(Property.FPSESeparator) Location;
+			case "NewListTitle"                  : FPSECommonString(Property.FPSESeparator) NewListTitle;
+			case "NextUsing"                     : FPSECommonString(Property.FPSESeparator) NextUsing;
+			case "OldListTitle"                  : FPSECommonString(Property.FPSESeparator) OldListTitle;
+			case "Overwrite"                     : FPSECommonString(Property.FPSESeparator) Overwrite = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "1" ? "deletes the associated workspace content of the destination occurrence" : "");
+			case "OWS%3AMaxLength%3ALocal"       : FPSECommonString(Property.FPSESeparator) OWSMaxLengthALoca;
+			case "Owsfileref"                    : FPSECommonString(Property.FPSESeparator) OWSFileref;
+			case "Owshiddenversion"              : FPSECommonString(Property.FPSESeparator) OWSHiddenVersion;
+			case "Page"                          : FPSECommonString(Property.FPSESeparator) Page;
+			case "PageURL"                       : FPSECommonString(Property.FPSESeparator) PageURL;
+			case "PostBody"                      : FPSECommonString(Property.FPSESeparator) PostBody;
+			case "ReadSecurity"                  : FPSECommonString(Property.FPSESeparator) ReadSecurity = FormatString("%s - %s",Property.FPSESummary,FPSERWSecurityTable(Property.FPSESummary));
+			case "ReorderedFields"               : FPSECommonString(Property.FPSESeparator) ReorderedFields;
+			case "RootFolder"                    : FPSECommonString(Property.FPSESeparator) RootFolder;
+			case "SchemaSecurity"                : FPSECommonString(Property.FPSESeparator) SchemaSecurity = FormatString("%d - %s",Property.FPSESummary,FPSESchemaSecurityTable(Property.FPSESummary));
+			case "ShowUsernames"                 : FPSECommonString(Property.FPSESeparator) ShowUserNames = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "ON" ? "Specify that the user name be displayed in the results of a survey" : "");
+			case "Strmver"                       : FPSECommonString(Property.FPSESeparator) Strmver;
+			case "Title"                         : FPSECommonString(Property.FPSESeparator) Title;
+			case "ToInstanceID"                  : FPSECommonString(Property.FPSESeparator) ToInstanceID;
+			case "Type"                          : FPSECommonString(Property.FPSESeparator) Type;
+			case "UL"                            : FPSECommonString(Property.FPSESeparator) UL;
+			case "URLBase"                       : FPSECommonString(Property.FPSESeparator) URLBase;
+			case "VersioningEnabled"             : FPSECommonString(Property.FPSESeparator) VersioningEnabled = FormatString("%s - %s",Property.FPSESummary,Property.FPSESummary == "TRUE" ? "Enable versioning for a document library" : "");
+			case "View"                          : FPSECommonString(Property.FPSESeparator) View;
+			case "WebPartPageTemplate"           : FPSECommonString(Property.FPSESeparator) WebPartPageTemplate = FormatString("%s - %s",Property.FPSESummary,FPSEWebPartTempTable(Property.FPSESummary));
+			case "WriteSecurity"                 : FPSECommonString(Property.FPSESeparator) WriteSecurity = FormatString("%s - %s",Property.FPSESummary,FPSERWSecurityTable(Property.FPSESummary));
+			case "XMLDATA"                       : FPSECommonString(Property.FPSESeparator) XMLData = FormatString("%s - %s",Property.FPSESummary,FPSEXMLDataTable(Property.FPSESummary));
+			
+			default                              : FPSECommonString(Property.FPSESeparator) DefaultName;
+		}
+	}
+}

@@ -1,0 +1,478 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  SOAP - Simple Object Access Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.w3schools.com/soap/default.asp
+//#                          http://www.w3.org/TR/soap/
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 3/11/2009
+//#
+//####
+
+[Property.SOAPParser = true]
+Protocol SOAP = Envelope.STag.Tag.Attributes.ToString
+{
+	switch
+	{
+		case IsValueNone(Property.IsXmlPropertiesInitiated) || Property.IsXmlPropertiesInitiated == false:
+            		XmlPropertiesInitiator XmlPropertiesInitiator;
+	}
+	
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	while [String(FrameData, FrameOffset, Property.XMLEncoding, 4) == "<!--" ]
+	{
+		XmlTag("") CommentTag;
+	}
+	
+	//
+	// Soap Envelope (Required)
+	//
+	[DataFieldByteOrder = (Property.XMLEncoding == UTF16_LEN || Property.XMLEncoding == UTF32_LEN) ? LittleEndian : BigEndian]
+	switch
+	{
+		case AsciiString(FrameData, FrameOffset, 1) == "<" || UnicodeString(FrameData, FrameOffset, 1) == "<" :
+			SoapEnvelope Envelope;
+		default:
+			Blob(framelength - frameoffset) remainder = "May Need Reassemble";
+	}
+}
+
+struct SoapHeader = FormatString("<%s>", Property.SoapHeaderNodeName)
+{
+	[Post.Property.SoapHeaderNodeName = Property.XmlTagName]
+	XmlTag("Header") STag;
+	switch
+	{
+		case Property.IsXmlEmptyElement == false:
+		struct
+		{
+			switch
+			{
+				case String(FrameData, FrameOffset, Property.XMLEncoding, 1) != "<":
+					StringTerm(Property.XMLEncoding, "<", true, false, false) SoapBodyContent;
+				default:
+					While SoapHeaderNodes[String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<" 
+						&& String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+					{
+						switch
+						{
+							default:
+								XMLElement(true) Node;
+						}
+					}
+			}
+			
+			XmlTag("Header") ETag;
+		}
+	}
+}
+
+struct SoapBody = FormatString("%s", Property.SoapBodySummary)
+{
+	switch
+	{
+		//
+		// Here is the entry point for protocols based on SOAP.
+		//
+		default:
+			_struct DefaultSoapBody
+			{
+                		[Post.Property.SoapBodyNodeName = Property.XmlTagName]
+				[Post.Property.SoapBodySummary = "<"+Property.XmlTagName+">"]
+				[Post.Property.SoapBodyTagNameLen = property.XmlTagNameLength]
+				XmlTag("Body") STag;
+				[
+					Property.SOAPBodyMethodName = StringTerm(FrameData, FrameOffset + Property.XMLCharLen * 1,  Property.XMLEncoding, Property.XMLElementNameTerm, true, false)
+				]
+				switch
+				{
+					case Property.IsXmlEmptyElement == false:
+					struct
+					{
+						switch
+						{
+							case String(FrameData, FrameOffset, Property.XMLEncoding, 1) != "<":
+								StringTerm(Property.XMLEncoding, "<", true, false, false) SoapBodyContent;
+							default:
+								While SoapBodyNodes[(String(FrameData, FrameOffset, Property.XMLEncoding, 1) == "<")
+									&& String(FrameData, FrameOffset, Property.XMLEncoding, 2) != "</"]
+								{
+									switch
+									{
+										default:
+											XMLElement(true) Node;
+									}
+								}
+						}
+						//
+						// If the parser hooked in SOAP Body can't consume all the content, parser error will be reported
+						//
+						switch
+						{
+							case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">", true, true) != "</" + Property.SoapBodyNodeName + ">" && ((FrameLength - FrameOffset) > (Property.SoapBodyTagNameLen + 3 * Property.XMLCharLen)):
+									StringTerm(Property.XMLEncoding, "</" + Property.SoapBodyNodeName + ">", true, false, false) SoapContent;
+						}
+						XmlTag("Body") ETag;
+					}
+				}
+			}
+	}
+}
+
+struct SoapEnvelope = FormatString("<%s>", Property.SoapEnvelopeNodeName)
+{
+	[Post.Property.SoapEnvelopeNodeName = Property.XmlTagName]
+	[Post.Property.SoapEnvelopeAttributes = Property.XMLTagAttributes]
+	XmlTag("Envelope") STag;
+	//
+	// Soap Header (Optional)
+	//
+	switch
+	{
+		case StringTerm(FrameData, FrameOffset, Property.XMLEncoding, ">").contains("Header"):
+			SoapHeader Header;
+	}
+	
+	//
+	// Soap Body (Required)
+	//
+	SoapBody Body;
+	
+	XmlTag("Envelope") ETag;
+}
+
+//
+// Element Fault
+//
+struct SoapFaultElement = this.STag.ToString
+{
+	[Post.Local.SoapFaultElement_IsEmpty = Property.IsXmlEmptyElement]
+	XmlTag("Fault") STag;
+	switch
+	{
+		Case !Local.SoapFaultElement_IsEmpty:
+			struct
+			{
+				switch
+				{
+					Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "faultcode"):
+						SoapFaultType11 SoapFaultType11;
+					Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Code"):
+						SoapFaultType12 SoapFaultType12;
+				}
+				XmlTag("Fault") ETag;
+			}
+	}
+}
+
+//Soap version 1.2 : http://www.w3.org/2003/05/soap-envelope/
+Struct SoapFaultType12
+{
+	struct Code = this.STag.ToString
+	{
+		[Post.Local.Code_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("Code") STag;
+		switch
+		{
+			Case !Local.Code_IsEmpty:
+				struct
+				{
+					SoapFaultcodeType Code;
+					XmlTag("Code") ETag;
+				}
+		}
+	}
+	
+	struct Reason = this.STag.ToString
+	{
+		[Post.Local.Reason_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("Reason") STag;
+		switch
+		{
+			Case !Local.Reason_IsEmpty:
+				struct
+				{
+					SoapFaultreason Reason;
+					XmlTag("Reason") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Node") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Node = this.Node
+			{
+				[Post.Local.Node_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("Node") STag;
+				switch
+				{
+					Case !Local.Node_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) Node;
+							XmlTag("Node") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Role") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Role = this.Role
+			{
+				[Post.Local.Role_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("Role") STag;
+				switch
+				{
+					Case !Local.Role_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) Role;
+							XmlTag("Role") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Detail") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Detail = this.STag.ToString
+			{
+				[Post.Local.Detail_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("Detail") STag;
+				switch
+				{
+					Case !Local.Detail_IsEmpty:
+						struct
+						{
+							SoapDetail Detail;
+							XmlTag("Detail") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//Soap version 1.1 : http://schemas.xmlsoap.org/soap/envelope/ 
+Struct SoapFaultType11
+{
+	struct Faultcode = this.Faultcode
+	{
+		[Post.Local.Faultcode_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("faultcode") STag;
+		switch
+		{
+			Case !Local.Faultcode_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Faultcode;
+					XmlTag("faultcode") ETag;
+				}
+		}
+	}
+	
+	struct Faultstring = this.Faultstring
+	{
+		[Post.Local.Faultstring_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("faultstring") STag;
+		switch
+		{
+			Case !Local.Faultstring_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Faultstring;
+					XmlTag("faultstring") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "faultactor") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Faultactor = this.Faultactor
+			{
+				[Post.Local.Faultactor_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("faultactor") STag;
+				switch
+				{
+					Case !Local.Faultactor_IsEmpty:
+						struct
+						{
+							StringTerm(Property.XMLEncoding, "<", true, false, false) Faultactor;
+							XmlTag("faultactor") ETag;
+						}
+				}
+			}
+			
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "detail") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Detail = this.STag.ToString
+			{
+				[Post.Local.Detail_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("detail") STag;
+				switch
+				{
+					Case !Local.Detail_IsEmpty:
+						struct
+						{
+							SoapDetail Detail;
+							XmlTag("detail") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+//
+// ComplexType faultreason
+//
+Struct SoapFaultreason
+{
+	While [Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Text") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+	{
+		struct Text = this.STag.ToString
+		{
+			[Post.Local.Text_IsEmpty = Property.IsXmlEmptyElement]
+			XmlTag("Text") STag;
+			switch
+			{
+				Case !Local.Text_IsEmpty:
+					struct
+					{
+						SoapReasontext Text;
+						XmlTag("Text") ETag;
+					}
+			}
+		}
+		
+	}
+}
+
+//
+// ComplexType reasontext
+//
+Struct SoapReasontext = this.BaseType
+{
+	StringTerm(Property.XMLEncoding, "<", true, false, false) BaseType;
+}
+
+//
+// ComplexType faultcode
+//
+Struct SoapFaultcodeType
+{
+	struct Value = this.Value
+	{
+		[Post.Local.Value_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("Value") STag;
+		switch
+		{
+			Case !Local.Value_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Value;
+					XmlTag("Value") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Subcode") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Subcode = this.STag.ToString
+			{
+				[Post.Local.Subcode_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("Subcode") STag;
+				switch
+				{
+					Case !Local.Subcode_IsEmpty:
+						struct
+						{
+							SoapSubcode Subcode;
+							XmlTag("Subcode") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType subcode
+//
+Struct SoapSubcode
+{
+	struct Value = this.Value
+	{
+		[Post.Local.Value_IsEmpty = Property.IsXmlEmptyElement]
+		XmlTag("Value") STag;
+		switch
+		{
+			Case !Local.Value_IsEmpty:
+				struct
+				{
+					StringTerm(Property.XMLEncoding, "<", true, false, false) Value;
+					XmlTag("Value") ETag;
+				}
+		}
+	}
+	
+	Switch
+	{
+		Case Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "Subcode") && !Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</"):
+			struct Subcode = this.STag.ToString
+			{
+				[Post.Local.Subcode_IsEmpty = Property.IsXmlEmptyElement]
+				XmlTag("Subcode") STag;
+				switch
+				{
+					Case !Local.Subcode_IsEmpty:
+						struct
+						{
+							SoapSubcode Subcode;
+							XmlTag("Subcode") ETag;
+						}
+				}
+			}
+			
+	}
+	
+}
+
+//
+// ComplexType detail
+//
+Struct SoapDetail
+{
+	Switch
+	{
+		Case String( FrameData, FrameOffset, Property.XMLEncoding, 1 ) != "<":
+			StringTerm(Property.XMLEncoding, "<", true, false, false) Detail;
+		Default:
+			While [!Contains(StringTerm(Framedata, Frameoffset, Property.XMLEncoding, Property.XMLElementNameTerm, true, false, false), "</")]
+			{
+				switch
+				{
+					default:
+						XmlElement(true) OtherElement;
+				}
+			}
+	}
+	
+}

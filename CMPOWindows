@@ -1,0 +1,655 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  MSDTC Connection Manager: OleTx Transports Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-CMPO]: MSDTC Connection Manager: OleTx Transports Protocol Specification (15.0)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1577.0
+//#
+//#  Revision Class and Date:Major, 6/15/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol CMPO = FormatString( "%s %s%s%s%s%s", 
+	Property.CMPOMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.CMPOSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.CMPOSummary : "" )
+{
+	[Property.CMPOSummary = ""]
+	[Property.CMPOMethodName = CMPOMethodNameTable( Property.MSRPCOpnum )]
+	Switch( Property.MSRPCOpnum )
+	{
+		Case 0:
+			_Struct Poke
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "CalleeUuid=%s HostName=%s UuidString=%s DwcbSizeOfBlob=%u", CalleeUuid.ToString, HostName.ToString, UuidString.ToString, DwcbSizeOfBlob )]
+									Struct
+									{
+										CMPOSessionRank Rank = CMPOPokeRankTable(this);
+										NdrString CalleeUuid;
+										NdrString HostName;
+										NdrString UuidString;
+										Align4 Pad1;
+										UINT32 DwcbSizeOfBlob = MustBeSetToTable(this,"8");
+										CMPOBindInfoBlob RguchBlob;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 1:
+			_Struct BuildContext
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "CalleeUuid=%s HostName=%s UuidString=%s GuidIn=%s GuidOut=%s DwcbSizeOfBlob=%u", CalleeUuid.ToString, HostName.ToString, UuidString.ToString, GuidIn.ToString, GuidOut.ToString, DwcbSizeOfBlob )]
+									Struct
+									{
+										CMPOSessionRank Rank = CMPOBuildContextRankTable(this);
+										Align4 Pad1;
+										CMPOBindVersionSet BindVersionSet;
+										NdrString CalleeUuid;
+										NdrString HostName;
+										NdrString UuidString;
+										NdrString GuidIn;
+										NdrString GuidOut;
+										Align4 Pad2;
+										CMPOBoundVersionSet BoundVersionSet;
+										UINT32 DwcbSizeOfBlob = MustBeSetToTable(this,"8");
+										CMPOBindInfoBlob RguchBlob;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "GuidOut=%s ReturnValue=%s", GuidOut.ToString, ReturnValue.ToString )]
+									Struct
+									{
+										NdrString GuidOut;
+										Align4 Pad;
+										CMPOBoundVersionSet BoundVersionSet;
+										ContextHandle Handle;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 2:
+			_Struct NegotiateResources
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "DwcRequested=%u PdwcAccepted=%u", DwcRequested, PdwcAccepted )]
+									Struct
+									{
+										ContextHandle Context;
+										CMPOResourceType ResourceType;
+										Align4 pad;
+										UINT32 DwcRequested;
+										UINT32 PdwcAccepted;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "PdwcAccepted=%u ReturnValue=%s", PdwcAccepted, ReturnValue.ToString )]
+									Struct
+									{
+										UINT32 PdwcAccepted;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 3:
+			_Struct SendReceive
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "DwcMessages=%u DwcbSizeOfBoxCar=%u", DwcMessages, DwcbSizeOfBoxCar )]
+									Struct
+									{
+										ContextHandle Context;
+										UINT32 DwcMessages;
+										UINT32 DwcbSizeOfBoxCar;
+										CMPBoxCarHeader RguchBoxCar;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 4:
+			_Struct TearDownContext
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle ContextHandle;
+										CMPOSessionRank Rank = CMPOTearDownContextRankTable(this);
+										CMPOTearDownType TearDownType = CMPOTearDownContextTearDownTypeTable(this);
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										ContextHandle ContextHandle;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 5:
+			_Struct BeginTearDown
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									Struct
+									{
+										ContextHandle ContextHandle;
+										CMPOTearDownType TearDownType ;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 6:
+			_Struct PokeW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "CalleeUuid=%s HostName=%s UuidString=%s DwcbSizeOfBlob=%u", CalleeUuid.ToString, HostName.ToString, UuidString.ToString, DwcbSizeOfBlob )]
+									Struct
+									{
+										CMPOSessionRank Rank = CMPOPokeWRankTable(this);
+										NdrWideString CalleeUuid;
+										NdrWideString HostName;
+										NdrWideString UuidString;
+										Align4 Pad;
+										UINT32 DwcbSizeOfBlob = MustBeSetToTable(this,"8");
+										CMPOBindInfoBlob RguchBlob;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "ReturnValue=%s", ReturnValue.ToString )]
+									Struct
+									{
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Case 7:
+			_Struct BuildContextW
+			{
+				Switch( Property.MSRPCPType )
+				{
+					Case 0x00: //REQUEST
+						_Struct Request
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "CalleeUuid=%s HostName=%s UuidString=%s GuidIn=%s GuidOut=%s DwcbSizeOfBlob=%u", CalleeUuid.ToString, HostName.ToString, UuidString.ToString, GuidIn.ToString, GuidOut.ToString, DwcbSizeOfBlob )]
+									Struct
+									{
+										CMPOSessionRank Rank = CMPOBuildContextWRankTable(this);
+										Align4 pad1;
+										CMPOBindVersionSet BindVersionSet;
+										NdrWideString CalleeUuid;
+										NdrWideString HostName;
+										NdrWideString UuidString;
+										NdrWideString GuidIn;
+										NdrWideString GuidOut;
+										Align4 pad2;
+										CMPOBoundVersionSet BoundVersionSet;
+										UINT32 DwcbSizeOfBlob = MustBeSetToTable(this,"8");
+										CMPOBindInfoBlob RguchBlob;
+									}
+							}
+						}
+					
+					Case 0x02: //RESPONSE
+						_Struct Response
+						{
+							Switch
+							{
+								Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+								Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob (FrameLength - Frameoffset) PayloadData = MSRPCEncryptionTable( Property.MSRPCEncrypted );
+								Default:
+									[CMPOSummary = FormatString( "GuidOut=%s ReturnValue=%s", GuidOut.ToString, ReturnValue.ToString )]
+									Struct
+									{
+										NdrWideString GuidOut;
+										Align4 pad;	
+										CMPOBoundVersionSet BoundVersionSet;
+										ContextHandle Handle;
+										HRESULT ReturnValue;
+									}
+							}
+						}
+				}
+			}
+		
+		Default:
+			Switch
+			{
+				case IsValueNone(Property.MSRPCOpnum):
+					struct
+					{
+						Blob( FrameLength - Offset ) data;
+						ReportParserWarning("CMPO", "Property MSRPCOpnum is missing") ParserWarning;
+					}
+				default:
+					ReportParserError( ParserErrorProtocolClassWindows, "CMPO", "Unknown IXnRemote method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+			}
+	}
+}
+
+
+
+//
+//	_BindVersionSet
+//	Alignment: 4
+//
+Struct CMPOBindVersionSet
+{
+	UINT32 MinLevelOne = CMPOBindVersionSetMinLevelOneTable(this);
+	UINT32 MaxLevelOne = CMPOBindVersionSetMaxLevelOneTable(this);
+	UINT32 MinLevelTwo;
+	UINT32 MaxLevelTwo;
+	UINT32 MinLevelThree;
+	UINT32 MaxLevelThree;
+}
+
+Table CMPOBindVersionSetMaxLevelOneTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The ANSI character set should be used.";
+		Case 0x00000002: "V2 - The Unicode character set should be used.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+Table CMPOBindVersionSetMinLevelOneTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - The ANSI character set should be used.";
+		Case 0x00000002: "V2 - The Unicode character set should be used.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+//
+//	_BoundVersionSet
+//	Alignment: 4
+//
+Struct CMPOBoundVersionSet
+{
+	UINT32 LevelOneAccepted = CMPOBoundVersionSetLevelOneAcceptedTable(this);
+	UINT32 LevelTwoAccepted;
+	UINT32 LevelThreeAccepted;
+}
+
+Table CMPOBoundVersionSetLevelOneAcceptedTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000001: "V1 - ANSI character set should be used.";
+		Case 0x00000002: "V2 - Unicode character set should be used.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+
+Table CMPOBuildContextRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "SRANK_PRIMARY - The caller is the primary partner in this session.";
+		Case 2: "SRANK_SECONDARY - The caller is the secondary partner in this session.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+
+
+Table CMPOBuildContextWRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x01: "SRANK_PRIMARY - The caller is the primary partner in this session.";
+		Case 0x02: "SRANK_SECONDARY - The caller is the secondary partner in this session.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+//
+// Bind_Info_Blob
+// Alignment: NdrAlign
+//
+Struct CMPOBindInfoBlob
+{
+	NdrConformant Size;
+	switch
+	{
+	case Size.MaxCount > 0:
+		_struct
+		{
+			UINT32				StructTotalSize; // Must be 8.
+			CMPOComProtocol		ComProtocols;
+		}
+	}
+}
+
+//
+// COM_PROTOCOL
+// Alignment: 4
+//
+struct CMPOComProtocol
+{
+	UINT32 ProtocolFlags = FormatString( "0x%08X", this )
+	{
+		switch( Property.MSRPCByteOrder )
+		{
+		case LittleEndian:
+			struct
+			{
+				UINT32 TcpIpEndpoint:1 = FormatString( "         (%s)", this.ToBitString );
+				UINT32 SpxEndpoint:1 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 NetBeuiNetBiosEndpoint:1 = FormatString( "(%s)", this.ToBitString );
+				UINT32 UdpEndpoint:1 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 Unused1:1 = FormatString( "               (%s)", this.ToBitString );
+				UINT32 LocalSupport:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 Unused2:26 = FormatString( "              (%s)", this.ToBitString );
+			}
+		default:
+			struct
+			{
+				UINT32 Unused2:26 = FormatString( "              (%s)", this.ToBitString );
+				UINT32 LocalSupport:1 = FormatString( "          (%s)", this.ToBitString );
+				UINT32 Unused1:1 = FormatString( "               (%s)", this.ToBitString );
+				UINT32 UdpEndpoint:1 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 NetBeuiNetBiosEndpoint:1 = FormatString( "(%s)", this.ToBitString );
+				UINT32 SpxEndpoint:1 = FormatString( "           (%s)", this.ToBitString );
+				UINT32 TcpIpEndpoint:1 = FormatString( "         (%s)", this.ToBitString );
+			}
+		}
+	}
+}
+
+
+Table CMPOPokeRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x02: "SRANK_SECONDARY - The caller is the secondary participant.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+
+Table CMPOPokeWRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x02: "SRANK_SECONDARY - The caller is the secondary participant.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+//
+//	_ResourceType
+//  Alignment: None
+//
+Struct CMPOResourceType
+{
+	NdrEnum Value = CMPOResourceTypeTable(this.value);
+	
+}
+
+Table CMPOResourceTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "RT_CONNECTIONS - Indicates that the resource is a connection.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+//
+//	_SessionRank
+//	Alignment: None
+//
+Struct CMPOSessionRank
+{
+	NdrEnum Value = CMPOSessionRankTable(this.value);
+
+}
+
+Table CMPOSessionRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 1: "SRANK_PRIMARY - Primary partner.";
+		Case 2: "SRANK_SECONDARY - Secondary partner.";
+		Default : FormatString("Unkown Value(%u)",Value);
+	}
+}
+
+Table CMPOTearDownContextRankTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x01: "SRANK_PRIMARY - The caller is the primary partner in this session.";
+		Case 0x02: "SRANK_SECONDARY - The caller is the secondary partner in this session.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+Table CMPOTearDownContextTearDownTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00: "TT_FORCE - The session is being forcefully torn down.";
+		Case 0x02: "TT_PROBLEM - The session is being torn down because an error has occurred.";
+		Default: FormatString("Unkown Value(%u)",value);
+	}
+}
+
+//
+//	_TearDownType
+//	Alignment: None
+//
+Struct CMPOTearDownType
+{
+	NdrEnum Value = CMPOTearDownTypeTable(this.value);
+
+}
+
+Table CMPOTearDownTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0: "TT_FORCE - Force a teardown.";
+		Case 2: "TT_PROBLEM - Severe session error detected; start a teardown.";
+		Default : FormatString("Unkown Value(%u)",Value);
+	}
+}
+
+Table CMPOMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "Poke";
+		Case 1: "BuildContext";
+		Case 2: "NegotiateResources";
+		Case 3: "SendReceive";
+		Case 4: "TearDownContext";
+		Case 5: "BeginTearDown";
+		Case 6: "PokeW";
+		Case 7: "BuildContextW";
+		Default: FormatString("Unkown Opnum(%u)",Opnum);
+	}
+}
+

@@ -1,0 +1,4713 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  T.124 Protocol
+//#
+//#  Details:                www.ITU.org specification
+//#
+//#  OEM References:         T.124 Generic Conference Control.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 7/10/2009
+//#
+//####
+
+//Application Sharing Structs
+
+//
+[DataTypeBitAlign]
+struct T124ChannelId = ChannelIdValue
+{
+	[Post.ChannelIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 65535) ChannelId;
+}
+
+[DataTypeBitAlign]
+struct T124DynamicChannelId = ChannelIdValue
+{
+	[Post.ChannelIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1001, 65535) ChannelId;
+}
+
+[DataTypeBitAlign]
+struct T124UserID = UserIDValue
+{
+	[Post.UserIDValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1001, 65535) UserID;
+}
+
+[DataTypeBitAlign]
+struct T124TokenID = TokenIdValue
+{
+	[Post.TokenIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 65535) TokenId;
+}
+
+[DataTypeBitAlign]
+struct T124Handle = theHandleValue
+{
+	[Post.theHandleValue = ConstrainedValue]
+	AsnPerConstrainedInteger( 0, 65535 ) HandleValue;
+}
+
+Table T124KeyTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "object";
+		case (ExtensionBit == 0) && (Choice== 1): "h221NonStandard";
+	}
+}
+
+Table T124PasswordTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "graphic-string";
+		case (ExtensionBit == 0) && (Choice== 1): "octet-string";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124Key  = T124KeyTable(0, Property.KeyChoice)		// CHOICE
+{
+	[Post.KeyChoice = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 1) ChoiceValue = T124KeyTable(0, ConstrainedValue)	;
+	switch (KeyChoice)
+	{
+		case 0:
+			[Post.T124Identifier = ASNOID] 
+			AsnPerObjectIdentifier object;
+		case 1: 
+			[
+			//#define PROSHARE_STRING                 "NetMeeting 1 MBFT" -16
+			//#define PROSHARE_FILE_END_STRING        "NetMeeting 1 FileEnd" -17
+			//#define PROSHARE_CHANNEL_LEAVE_STRING   "NetMeeting 1 ChannelLeave" -18
+				Post.MBFTPDUChoice=((OCTETSTRINGLENGTH==18)?16:
+								((OCTETSTRINGLENGTH==21)?17:
+								(OCTETSTRINGLENGTH==26)?18:13)),
+				
+				Post.T124Identifier = PEROctetStringValue					
+			]
+				H221NonStandardIdentifier h221NonStandard;	
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NonStandardParameter	= FormatString("Key: %s", key.ToString) //Sequence
+{
+	T124Key key;
+	AsnPerOctetString(-1, -1) data; 
+	switch{
+		case MBFTPDUChoice == 16 ||
+			 MBFTPDUChoice == 17 ||
+			 MBFTPDUChoice == 18 :
+			switch{
+				case PERLengthValue < 0x80: BLOB(1) Padding;
+			}
+	}  
+}
+
+[DataTypeBitAlign]
+struct T124TextString	= TextString.ToString //Sequence
+{
+	AsnPerBMPString (0,255) TextString;   
+}
+
+[DataTypeBitAlign]
+struct T124Password  = T124PasswordTable(0, property.PasswordChoice)		// CHOICE
+{
+	[Post.PasswordChoice = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 1) ChoiceValue = T124PasswordTable(0, ConstrainedValue);
+	switch (PasswordChoice)
+	{
+		case 0: AsnPerGraphicString(-1, -1) graphicstring;
+		case 1: AsnPerOctetString(-1, -1) octetstring;
+	}
+}
+
+
+Table T126PrivilegeTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "terminate";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "ejectUser";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "add";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "lockUnlock";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "transfer";
+	}
+}
+
+Table T124IndicationPDUTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "UserIDIndication";
+		case (ExtensionBit == 0) && (Choice== 1): "conferenceLockIndication";
+		case (ExtensionBit == 0) && (Choice== 2): "conferenceUnlockIndication";
+		case (ExtensionBit == 0) && (Choice== 3): "conferenceTerminateIndication";
+		case (ExtensionBit == 0) && (Choice== 4): "conferenceEjectUserIndication";
+		case (ExtensionBit == 0) && (Choice== 5): "conferenceTransferIndication";
+		case (ExtensionBit == 0) && (Choice== 6): "rosterUpdateIndication";
+		case (ExtensionBit == 0) && (Choice== 7): "applicationInvokeIndication";
+		case (ExtensionBit == 0) && (Choice== 8): "registryMonitorEntryIndication";
+		case (ExtensionBit == 0) && (Choice== 9): "conductorAssignIndication";
+		case (ExtensionBit == 0) && (Choice== 10): "conductorReleaseIndication";
+		case (ExtensionBit == 0) && (Choice== 11): "conductorPermissionAskIndication";
+		case (ExtensionBit == 0) && (Choice== 12): "conductorPermissionGrantIndication";
+		case (ExtensionBit == 0) && (Choice== 13): "conferenceTimeRemainingIndication";
+		case (ExtensionBit == 0) && (Choice== 14): "conferenceTimeInquireIndication";
+		case (ExtensionBit == 0) && (Choice== 15): "conferenceTimeExtendIndication";
+		case (ExtensionBit == 0) && (Choice== 16): "conferenceAssistanceIndication";
+		case (ExtensionBit == 0) && (Choice== 17): "textMessageIndication";
+		case (ExtensionBit == 0) && (Choice== 18): "nonStandardIndication";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124IndicationPDU = T124IndicationPDUTable(ExtensionBit, IndicationPDUChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.IndicationPDUChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124IndicationPDUTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.IndicationPDUChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 18) ChoiceValue = T124IndicationPDUTable(ExtensionBit, ConstrainedValue);
+				switch (IndicationPDUChoice)
+				{
+					case 0: [post.GCCPDUSummaryDetail = UserIDIndication.ToString]
+									T124UserIDIndication UserIDIndication;
+					case 1: T124ConferenceLockIndication conferenceLockIndication;
+					case 2: T124ConferenceUnlockIndication conferenceUnlockIndication;
+					case 3: T124ConferenceTerminateIndication conferenceTerminateIndication;
+					case 4: T124ConferenceEjectUserIndication conferenceEjectUserIndication;
+					case 5: T124ConferenceTransferIndication conferenceTransferIndication;
+					case 6: [post.GCCPDUSummaryDetail = RosterUpdateIndication.ToString]
+									T124RosterUpdateIndication rosterUpdateIndication;
+					case 7: T124ApplicationInvokeIndication applicationInvokeIndication;
+					case 8: T124RegistryMonitorEntryIndication registryMonitorEntryIndication;
+					case 9: T124ConductorAssignIndication conductorAssignIndication;
+					case 10: T124ConductorReleaseIndication conductorReleaseIndication;
+					case 11: T124ConductorPermissionAskIndication conductorPermissionAskIndication;
+					case 12: T124ConductorPermissionGrantIndication conductorPermissionGrantIndication;
+					case 13: T124ConferenceTimeRemainingIndication conferenceTimeRemainingIndication;
+					case 14: T124ConferenceTimeInquireIndication conferenceTimeInquireIndication;
+					case 15: T124ConferenceTimeExtendIndication conferenceTimeExtendIndication;
+					case 16: T124ConferenceAssistanceIndication conferenceAssistanceIndication;
+					case 17: T124TextMessageIndication textMessageIndication;
+					case 18: T124NonStandardPDU nonStandardIndication;
+
+				}
+			}
+	}
+}
+
+Table T124ResponsePDUTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "conferenceJoinResponse";
+		case (ExtensionBit == 0) && (Choice== 1): "conferenceAddResponse";
+		case (ExtensionBit == 0) && (Choice== 2): "conferenceLockResponse";
+		case (ExtensionBit == 0) && (Choice== 3): "conferenceUnlockResponse";
+		case (ExtensionBit == 0) && (Choice== 4): "conferenceTerminateResponse";
+		case (ExtensionBit == 0) && (Choice== 5): "conferenceEjectUserResponse";
+		case (ExtensionBit == 0) && (Choice== 6): "conferenceTransferResponse";
+		case (ExtensionBit == 0) && (Choice== 7): "registryResponse";
+		case (ExtensionBit == 0) && (Choice== 8): "registryAllocateHandleResponse";
+		case (ExtensionBit == 0) && (Choice== 9): "functionNotSupportedResponse";
+		case (ExtensionBit == 0) && (Choice== 10): "nonStandardResponse";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ResponsePDU = T124ResponsePDUTable(ExtensionBit, ResponsePDUChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ResponsePDUChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ResponsePDUTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ResponsePDUChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 10) ChoiceValue = T124ResponsePDUTable(ExtensionBit, ConstrainedValue);
+				switch (ResponsePDUChoice)
+				{
+					case 0: T124ConferenceJoinResponse conferenceJoinResponse;
+					case 1: T124ConferenceAddResponse conferenceAddResponse;
+					case 2: T124ConferenceLockResponse conferenceLockResponse;
+					case 3: T124ConferenceUnlockResponse conferenceUnlockResponse;
+					case 4: T124ConferenceTerminateResponse conferenceTerminateResponse;
+					case 5: T124ConferenceEjectUserResponse conferenceEjectUserResponse;
+					case 6: T124ConferenceTransferResponse conferenceTransferResponse;
+					case 7: [post.GCCPDUSummaryDetail = RegistryResponse.ToString]
+									T124RegistryResponse registryResponse;
+					case 8: T124RegistryAllocateHandleResponse registryAllocateHandleResponse;
+					case 9: T124FunctionNotSupportedResponse functionNotSupportedResponse;
+					case 10: T124NonStandardPDU nonStandardResponse;
+
+				}
+			}
+	}
+}
+
+Table T124RequestPDUTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "conferenceJoinRequest";
+		case (ExtensionBit == 0) && (Choice== 1): "conferenceAddRequest";
+		case (ExtensionBit == 0) && (Choice== 2): "conferenceLockRequest";
+		case (ExtensionBit == 0) && (Choice== 3): "conferenceUnlockRequest";
+		case (ExtensionBit == 0) && (Choice== 4): "conferenceTerminateRequest";
+		case (ExtensionBit == 0) && (Choice== 5): "conferenceEjectUserRequest";
+		case (ExtensionBit == 0) && (Choice== 6): "conferenceTransferRequest";
+		case (ExtensionBit == 0) && (Choice== 7): "registryRegisterChannelRequest";
+		case (ExtensionBit == 0) && (Choice== 8): "registryAssignTokenRequest";
+		case (ExtensionBit == 0) && (Choice== 9): "registrySetParameterRequest";
+		case (ExtensionBit == 0) && (Choice== 10): "registryRetrieveEntryRequest";
+		case (ExtensionBit == 0) && (Choice== 11): "registryDeleteEntryRequest";
+		case (ExtensionBit == 0) && (Choice== 12): "registryMonitorEntryRequest";
+		case (ExtensionBit == 0) && (Choice== 13): "registryAllocateHandleRequest";
+		case (ExtensionBit == 0) && (Choice== 14): "nonStandardRequest";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RequestPDU = T124RequestPDUTable(ExtensionBit, RequestPDUChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.RequestPDUChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124RequestPDUTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.RequestPDUChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 14) ChoiceValue = T124RequestPDUTable(ExtensionBit, ConstrainedValue);
+				switch (RequestPDUChoice)
+				{
+					case 0:  T124ConferenceJoinRequest conferenceJoinRequest;
+					case 1:  T124ConferenceAddRequest conferenceAddRequest;
+					case 2:  T124ConferenceLockRequest conferenceLockRequest;
+					case 3:  T124ConferenceUnlockRequest conferenceUnlockRequest;
+					case 4:  T124ConferenceTerminateRequest conferenceTerminateRequest;
+					case 5:  T124ConferenceEjectUserRequest conferenceEjectUserRequest;
+					case 6:  T124ConferenceTransferRequest conferenceTransferRequest;
+					case 7:  [post.GCCPDUSummaryDetail = T124RegistryRegisterChannelRequest.ToString]
+									 T124RegistryRegisterChannelRequest registryRegisterChannelRequest;
+					case 8:  [post.GCCPDUSummaryDetail = RegistryAssignTokenRequest.ToString]
+									 T124RegistryAssignTokenRequest registryAssignTokenRequest;
+					case 9:  T124RegistrySetParameterRequest registrySetParameterRequest;
+					case 10: T124RegistryRetrieveEntryRequest registryRetrieveEntryRequest;
+					case 11: [post.GCCPDUSummaryDetail = RegistryDeleteEntryRequest.ToString]
+									 T124RegistryDeleteEntryRequest registryDeleteEntryRequest;
+					case 12: T124RegistryMonitorEntryRequest registryMonitorEntryRequest;
+					case 13: [post.GCCPDUSummaryDetail = RegistryAllocateHandleRequest.ToString]
+									 T124RegistryAllocateHandleRequest registryAllocateHandleRequest;
+					case 14: T124NonStandardPDU nonStandardRequest;
+
+				}
+			}
+	}
+}
+
+Table T124GCCPDUTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "request";
+		case (ExtensionBit == 0) && (Choice== 1): "response";
+		case (ExtensionBit == 0) && (Choice== 2): "indication";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124GCCPDU = T124GCCPDUTable(0, Property.GCCPDUChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.GCCPDUChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 2) ChoiceValue = T124GCCPDUTable(0, ConstrainedValue);
+		switch (GCCPDUChoice)
+		{
+					case 0: 
+						[post.GCCPDUSummary = T124RequestPDU.ToString]					
+						T124RequestPDU request;
+					case 1: 
+						[post.GCCPDUSummary = T124ResponsePDU.ToString]
+						T124ResponsePDU response;
+					case 2: 
+						[post.GCCPDUSummary = T124IndicationPDU.ToString]
+						T124IndicationPDU indication;
+
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124Privileges 
+{
+	[Post.PERArraySize = PERLengthValue, CurrentPrivilege = 0]
+	AsnPerLengthDeterminant Size;
+	while [CurrentPrivilege < PERArraySize]
+	{
+		[CurrentPrivilege = CurrentPrivilege + 1]
+		AsnPerEnumerated(4, 1) Privilege = T126PrivilegeTable(EnumeratedExt, EnumeratedIndex);
+	}
+}
+
+Table T124JoinResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "userRejected";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "invalidConference";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "invalidPassword";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "invalidConvenerPassword";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 5): "challengeResponseRequired";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 6): "invalidChallengeResponse";
+
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceJoinResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 nodeIDPresent:1;
+	UINT8 conferenceNameAliasPresent:1;
+	UINT8 conductorPrivilegesPresent:1;
+	UINT8 conductedPrivilegesPresent:1;
+	UINT8 nonConductedPrivilegesPresent:1;
+	UINT8 conferenceDescriptionPresent:1;
+	UINT8 passwordPresent:1;
+	UINT8 userDataPresent:1;
+	
+	switch
+	{
+		case nodeIDPresent: T124UserID nodeID;
+	}
+	T124UserID topNodeID;
+  
+	AsnPerInteger tag;
+	switch
+	{
+		case conferenceNameAliasPresent : T124ConferenceNameSelector conferenceNameAlias;
+	}
+	AsnPerBoolean(0) passwordInTheClearRequired;
+	AsnPerBoolean(0) lockedConference;
+	AsnPerBoolean(0) listedConference;
+	AsnPerBoolean(0) conductibleConference;
+	AsnPerEnumerated(1, 1) TerminationMethod = T124TerminationMethodTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case conductorPrivilegesPresent : T124Privileges conductorPrivileges;
+	}
+	switch
+	{
+		case conductedPrivilegesPresent : T124Privileges conductedPrivileges;
+	}
+	switch
+	{
+		case nonConductedPrivilegesPresent : T124Privileges nonConductedPrivileges;
+	}
+	switch
+	{
+		case conferenceDescriptionPresent : T124TextString conferenceDescription;
+	}
+	switch
+	{
+		case passwordPresent : T124PasswordChallengeRequestResponse Password;
+	}
+	AsnPerEnumerated(6, 1) result = T124JoinResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 nodeCategoryPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 conferenceModePresent:1;
+				}
+				
+				switch
+				{
+					case nodeCategoryPresent :
+						struct nodeCategory = nodeCategory.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[nodeCategoryEndOffset = FrameOffset + PERLengthValue]
+							T124NodeCategory nodeCategory;
+							switch
+							{
+								case FrameBitOffset < nodeCategoryEndOffset * 8: 
+									AsnPerPadding(nodeCategoryEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case conferenceModePresent :
+						struct conferenceMode = conferenceMode.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferenceModeEndOffset = FrameOffset + PERLengthValue]
+							T124ConferenceMode conferenceMode;
+							switch
+							{
+								case FrameBitOffset < conferenceModeEndOffset * 8: 
+									AsnPerPadding(conferenceModeEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceCreateRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 convenerPasswordPresent:1;
+	UINT8 passwordPresent:1;
+	UINT8 conductorPrivilegesPresent:1;
+	UINT8 conductedPrivilegesPresent:1;
+	UINT8 nonConductedPrivilegesPresent:1;
+	UINT8 conferenceDescriptionPresent:1;
+	UINT8 callerIdentifierPresent:1;
+	UINT8 userDataPresent:1;
+	
+	T124ConferenceName conferenceName;
+	switch
+	{
+		case convenerPasswordPresent : T124Password convenerPassword;
+	}
+	switch
+	{
+		case passwordPresent : T124Password Password;
+	}
+	AsnPerBoolean(0) lockedConference;
+	AsnPerBoolean(0) listedConference;
+	AsnPerBoolean(0) conductibleConference;
+	AsnPerEnumerated(1, 1) TerminationMethod = T124TerminationMethodTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case conductorPrivilegesPresent : T124Privileges conductorPrivileges;
+	}
+	switch
+	{
+		case conductedPrivilegesPresent : T124Privileges conductedPrivileges;
+	}
+	switch
+	{
+		case nonConductedPrivilegesPresent : T124Privileges nonConductedPrivileges;
+	}
+	switch
+	{
+		case conferenceDescriptionPresent : T124TextString conferenceDescription;
+	}
+	switch
+	{
+		case callerIdentifierPresent : T124TextString callerIdentifier;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 conferencePriorityPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 conferenceModePresent:1;
+				}
+				
+				switch
+				{
+					case conferencePriorityPresent :
+						struct conferencePriority = conferencePriority.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferencePriorityEndOffset = FrameOffset + PERLengthValue]
+							T124ConferencePriority conferencePriority;
+							switch
+							{
+								case FrameBitOffset < conferencePriorityEndOffset * 8: 
+									AsnPerPadding(conferencePriorityEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case conferenceModePresent :
+						struct conferenceMode = conferenceMode.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferenceModeEndOffset = FrameOffset + PERLengthValue]
+							T124ConferenceMode conferenceMode;
+							switch
+							{
+								case FrameBitOffset < conferenceModeEndOffset * 8: 
+									AsnPerPadding(conferenceModeEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceQueryRequest	//Sequence
+{	   
+	UINT8 ExtensionBit:1;
+	
+	UINT8 asymmetryIndicatorPresent:1;
+	UINT8 userDataPresent:1;
+	
+	AsnPerEnumerated(2, 1) NodeType = T124NodeTypeTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case asymmetryIndicatorPresent : T124AsymmetryIndicator T124AsymmetryIndicator;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124CreateResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "userRejected";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "resourcesNotAvailable";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "rejectedForSymmetryBreaking";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "lockedConferenceNotSupported";
+
+	}
+}
+
+
+
+[DataTypeBitAlign]
+struct T124ConferenceCreateResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 userDataPresent:1;
+	
+	T124UserID nodeID;
+	AsnPerInteger tag;
+	AsnPerEnumerated(4, 1) result = T124CreateResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124conferenceList
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124ConferenceDescriptor conferenceList[PERArraySize];
+}
+
+Table T124QueryResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "userRejected";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceQueryResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 asymmetryIndicatorPresent:1;
+	UINT8 userDataPresent:1;
+	
+	AsnPerEnumerated(2, 1) NodeType = T124NodeTypeTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case asymmetryIndicatorPresent : T124AsymmetryIndicator T124AsymmetryIndicator;
+	}
+	T124conferenceList conferenceList;
+	AsnPerEnumerated(1, 1) result = T124QueryResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 waitForInvitationFlagPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 noUnlistedConferenceFlagPresent:1;
+				}
+				
+				switch
+				{
+					case waitForInvitationFlagPresent :
+						struct waitForInvitationFlag = waitForInvitationFlag.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[waitForInvitationFlagEndOffset = FrameOffset + PERLengthValue]
+							AsnPerBoolean(1) waitForInvitationFlag;
+							switch
+							{
+								case FrameBitOffset < waitForInvitationFlagEndOffset * 8: 
+									AsnPerPadding(waitForInvitationFlagEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case noUnlistedConferenceFlagPresent :
+						struct noUnlistedConferenceFlag = noUnlistedConferenceFlag.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[noUnlistedConferenceFlagEndOffset = FrameOffset + PERLengthValue]
+							AsnPerBoolean(1) noUnlistedConferenceFlag;
+							switch
+							{
+								case FrameBitOffset < noUnlistedConferenceFlagEndOffset * 8: 
+									AsnPerPadding(noUnlistedConferenceFlagEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceInviteRequest = FormatString("ConferenceName = %s, nodeID = %s, topNodeId = %s",
+															 conferenceName.ToString, nodeID.ToString, topNodeID.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 conductorPrivilegesPresent:1;
+	UINT8 conductedPrivilegesPresent:1;
+	UINT8 nonConductedPrivilegesPresent:1;
+	UINT8 conferenceDescriptionPresent:1;
+	UINT8 callerIdentifierPresent:1;
+	UINT8 userDataPresent:1;
+	
+	T124ConferenceName conferenceName;
+	T124UserID nodeID;
+	T124UserID topNodeID;
+	AsnPerInteger tag;
+	AsnPerBoolean(0) passwordInTheClearRequired;
+	AsnPerBoolean(0) lockedConference;
+	AsnPerBoolean(0) listedConference;
+	AsnPerBoolean(0) conductibleConference;
+	AsnPerEnumerated(1, 1) TerminationMethod = T124TerminationMethodTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case conductorPrivilegesPresent : T124Privileges conductorPrivileges;
+	}
+	switch
+	{
+		case conductedPrivilegesPresent : T124Privileges conductedPrivileges;
+	}
+	switch
+	{
+		case nonConductedPrivilegesPresent : T124Privileges nonConductedPrivileges;
+	}
+	switch
+	{
+		case conferenceDescriptionPresent : T124TextString conferenceDescription;
+	}
+	switch
+	{
+		case callerIdentifierPresent : T124TextString callerIdentifier;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 conferencePriorityPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 nodeCategoryPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 2 : UINT8 conferenceModePresent:1;
+				}
+				
+				switch
+				{
+					case conferencePriorityPresent :
+						struct conferencePriority = conferencePriority.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferencePriorityEndOffset = FrameOffset + PERLengthValue]
+							T124ConferencePriority conferencePriority;
+							switch
+							{
+								case FrameBitOffset < conferencePriorityEndOffset * 8: 
+									AsnPerPadding(conferencePriorityEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case nodeCategoryPresent :
+						struct nodeCategory = nodeCategory.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[nodeCategoryEndOffset = FrameOffset + PERLengthValue]
+							T124NodeCategory nodeCategory;
+							switch
+							{
+								case FrameBitOffset < nodeCategoryEndOffset * 8: 
+									AsnPerPadding(nodeCategoryEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case conferenceModePresent :
+						struct conferenceMode = conferenceMode.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferenceModeEndOffset = FrameOffset + PERLengthValue]
+							T124ConferenceMode conferenceMode;
+							switch
+							{
+								case FrameBitOffset < conferenceModeEndOffset * 8: 
+									AsnPerPadding(conferenceModeEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+Table T124InviteResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "userRejected";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceInviteResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 userDataPresent:1;
+	AsnPerEnumerated(1, 1) result = T124InviteResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceAddRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 addingMCUPresent:1;
+	UINT8 userDataPresent:1;
+	
+	T124NetworkAddress networkAddressValue;
+	T124UserID requestingNode;
+	AsnPerInteger tag;
+	switch
+	{
+		case addingMCUPresent : T124UserID addingMCU;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 nodeCategoryPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 networkAddressV2Present:1;
+				}
+				
+				switch
+				{
+					case nodeCategoryPresent :
+						struct nodeCategory = nodeCategory.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[nodeCategoryEndOffset = FrameOffset + PERLengthValue]
+							T124NodeCategory nodeCategory;
+							switch
+							{
+								case FrameBitOffset < nodeCategoryEndOffset * 8: 
+									AsnPerPadding(nodeCategoryEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case networkAddressV2Present :
+						struct networkAddressV2 = networkAddressV2.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[networkAddressV2EndOffset = FrameOffset + PERLengthValue]
+							T124NetworkAddressV2 networkAddressV2;
+							switch
+							{
+								case FrameBitOffset < networkAddressV2EndOffset * 8: 
+									AsnPerPadding(networkAddressV2EndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+Table T124AddResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "invalidNetworkType";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "invalidNetworkAddress";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "addedNodeBusy";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 5): "networkBusy";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 6): "noPortsAvailable";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 7): "connectionUnsuccessful";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceAddResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 userDataPresent:1;
+	AsnPerInteger tag;
+	AsnPerEnumerated(7, 1) result = T124AddResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceLockRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124LockResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "alreadyLocked";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceLockResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerEnumerated(2, 1) result = T124LockResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceLockIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceUnlockRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124UnlockResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "alreadyUnlocked";
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceUnlockResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerEnumerated(2, 1) result = T124UnlockResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124UserDataKey = T124Identifier	//Sequence
+{
+	
+	UINT8 valuePresent:1;
+	
+	T124Key key;
+	switch
+	{
+		case valuePresent :
+			switch
+			{
+				case T124Identifier == 0x44756361:
+					RDPBCGRClientMcsConnectInitialPdu ClientMcsConnectInitialPdu;
+				case T124Identifier == 0x4d63446e:
+					RDPBCGRServerMcsConnectResponsePdu ServerMcsConnectResponsePdu;
+				default:
+					AsnPerOctetString(-1, -1) value;
+			}
+	}   
+}
+
+[DataTypeBitAlign]
+struct T124UserData
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124UserDataKey UserData[PERArraySize];
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceName	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 textPresent:1;
+	
+	T124SimpleNumericString numeric;
+	switch
+	{
+		case textPresent : T124SimpleTextString text;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 unicodetextPresent:1;
+				}
+				
+				switch
+				{
+					case unicodetextPresent :
+						struct unicodetext = unicodetext.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[unicodetextEndOffset = FrameOffset + PERLengthValue]
+							T124TextString unicodetext;
+							switch
+							{
+								case FrameBitOffset < unicodetextEndOffset * 8: 
+									AsnPerPadding(unicodetextEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+
+Table T124choiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "aggregatedChannel";
+		case (ExtensionBit == 0) && (Choice== 1): "transportConnection";
+		case (ExtensionBit == 0) && (Choice== 2): "nonStandard";
+
+	}
+}
+
+//New
+[DataTypeBitAlign]
+struct T124transferModes	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerBoolean(0) speech;
+	AsnPerBoolean(0) voiceband;
+	AsnPerBoolean(0) digital56k;
+	AsnPerBoolean(0) digital64k;
+	AsnPerBoolean(0) digital128k;
+	AsnPerBoolean(0) digital192k;
+	AsnPerBoolean(0) digital256k;
+	AsnPerBoolean(0) digital320k;
+	AsnPerBoolean(0) digital384k;
+	AsnPerBoolean(0) digital512k;
+	AsnPerBoolean(0) digital768k;
+	AsnPerBoolean(0) digital1152k;
+	AsnPerBoolean(0) digital1472k;
+	AsnPerBoolean(0) digital1536k;
+	AsnPerBoolean(0) digital1920k;
+	AsnPerBoolean(0) packetmode;
+	AsnPerBoolean(0) framemode;
+	AsnPerBoolean(0) atm;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124highLayerCompatibility	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerBoolean(0) telephony3kHz;
+	AsnPerBoolean(0) telephony7kHz;
+	AsnPerBoolean(0) videotelephony;
+	AsnPerBoolean(0) videoconference;
+	AsnPerBoolean(0) audiographic;
+	AsnPerBoolean(0) audiovisual;
+	AsnPerBoolean(0) multimedia;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124aggregatedChannel	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 subAddressPresent:1;
+	UINT8 extraDiallingPresent:1;
+	UINT8 highLayerCompatibilityPresent:1;
+	
+	T124transferModes transferModes;
+	T124DiallingString internationalNumber;
+	switch
+	{
+		case subAddressPresent : T124SubAddressString subAddress;
+	}
+	switch
+	{
+		case extraDiallingPresent : T124ExtraDiallingString extraDialling;
+	}
+	switch
+	{
+		case highLayerCompatibilityPresent : T124highLayerCompatibility highLayerCompatibility;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124transportConnection	//Sequence
+{
+	
+	UINT8 transportSelectorPresent:1;
+	
+	AsnPerOctetString(1, 20) nsapAddress;
+	switch
+	{
+		case transportSelectorPresent : AsnPerOctetString(-1, -1) transportSelector;
+	}   
+}
+
+Table T124NetworkAddressChoiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "aggregatedChannel";
+		case (ExtensionBit == 0) && (Choice== 1): "transportConnection";
+		case (ExtensionBit == 0) && (Choice== 2): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NetworkAddrChoice = T124NetworkAddressChoiceTable(ExtensionBit, NetworkAddressChoiceChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.NetworkAddressChoiceChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124NetworkAddressChoiceTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.NetworkAddressChoiceChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124NetworkAddressChoiceTable(ExtensionBit, ConstrainedValue);
+				switch (NetworkAddressChoiceChoice)
+				{
+					case 0: T124aggregatedChannel aggregatedChannel;
+					case 1: T124transportConnection transportConnection;
+					case 2: NonStandardParameter nonStandard;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NetworkAddress
+{
+	[Post.PERArraySize = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 64) Size;
+	T124NetworkAddrChoice NetworkAddressValue[PERArraySize];
+}
+
+Table T124NodeCategoryTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "conventional";
+		case (ExtensionBit == 0) && (Choice== 1): "counted";
+		case (ExtensionBit == 0) && (Choice== 2): "anonymous";
+		case (ExtensionBit == 0) && (Choice== 3): "nonStandardCategory";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NodeCategory = T124NodeCategoryTable(ExtensionBit, NodeCategoryChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.NodeCategoryChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124NodeCategoryTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.NodeCategoryChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 3) ChoiceValue = T124NodeCategoryTable(ExtensionBit, ConstrainedValue);
+				switch (NodeCategoryChoice)
+				{
+					case 3: T124NonStandardParameter nonStandardCategory;
+
+				}
+			}
+	}
+}
+
+Table T124connectionChoiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "isdnConnection";
+		case (ExtensionBit == 0) && (Choice== 1): "csdnConnection";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124connectionChoice = T124connectionChoiceTable(ExtensionBit, connectionChoiceChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.connectionChoiceChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124connectionChoiceTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.connectionChoiceChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124connectionChoiceTable(ExtensionBit, ConstrainedValue);
+				switch (connectionChoiceChoice)
+				{
+					case 0: T124ISDNConnection T124ISDNConnection;
+					case 1: T124CSDNConnection csdnConnection;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124connectionList
+{
+	[Post.PERArraySize = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 30) Size;
+	T124connectionChoice connectionList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124aggregationMethods
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124ChannelAggregationMethod aggregationMethods[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124aggregatedConnections	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 aggregationMethodsPresent:1;
+	
+	T124connectionList connectionList;
+	switch
+	{
+		case aggregationMethodsPresent : T124aggregationMethods aggregationMethods;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124NetworkAddressV2NetworkConnectionTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "singleConnection";
+		case (ExtensionBit == 0) && (Choice== 1): "aggregatedConnections";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NetworkAddressV2NetworkConnection  = T124NetworkAddressV2NetworkConnectionTable(0, Property.NetworkAddressV2NetworkConnectionChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.NetworkAddressV2NetworkConnectionChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 1) ChoiceValue = T124NetworkAddressV2NetworkConnectionTable(0, ConstrainedValue);
+		switch (NetworkAddressV2NetworkConnectionChoice)
+		{
+					case 0: T124NetworkConnection singleConnection;
+					case 1: T124aggregatedConnections aggregatedConnections;
+
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124profiles
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124Profile profiles[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124NetworkAddressV2Sequence	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 profilesPresent:1;
+	UINT8 mediaConcernedPresent:1;
+	
+	T124NetworkAddressV2NetworkConnection NetworkAddressV2NetworkConnection;
+	switch
+	{
+		case profilesPresent : T124profiles profiles;
+	}
+	switch
+	{
+		case mediaConcernedPresent : T124MediaList mediaConcerned;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NetworkAddressV2
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124NetworkAddressV2Sequence NetworkAddressV2[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124NonStandardPDU	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124NonStandardParameter data;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124simpleProfileTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "speech";
+		case (ExtensionBit == 0) && (Choice== 1): "telephony_3kHz";
+		case (ExtensionBit == 0) && (Choice== 2): "telephony_7kHz";
+		case (ExtensionBit == 0) && (Choice== 3): "voice_band";
+		case (ExtensionBit == 0) && (Choice== 4): "frameRelay";
+		case (ExtensionBit == 0) && (Choice== 5): "t123_pstn_basic";
+		case (ExtensionBit == 0) && (Choice== 6): "t123_psdn_basic";
+		case (ExtensionBit == 0) && (Choice== 7): "t123_b_isdn_basic";
+
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124simpleProfile  = T124simpleProfileTable(0, Property.simpleProfileChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.simpleProfileChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 7) ChoiceValue = T124simpleProfileTable(0, ConstrainedValue);
+	}
+}
+
+Table T124ProfileTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "h310";
+		case (ExtensionBit == 0) && (Choice== 1): "h320";
+		case (ExtensionBit == 0) && (Choice== 2): "h321";
+		case (ExtensionBit == 0) && (Choice== 3): "h322";
+		case (ExtensionBit == 0) && (Choice== 4): "h323";
+		case (ExtensionBit == 0) && (Choice== 5): "h324";
+		case (ExtensionBit == 0) && (Choice== 6): "h324m";
+		case (ExtensionBit == 0) && (Choice== 7): "asvd";
+		case (ExtensionBit == 0) && (Choice== 8): "dsvd";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124profileChoice  = T124ProfileTable(0, Property.profileChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.profileChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 8) ChoiceValue = T124ProfileTable(0, ConstrainedValue);
+	}
+}
+
+[DataTypeBitAlign]
+struct T124multimediaProfile	//Sequence
+{
+	T124profileChoice profileChoice;
+	AsnPerBoolean(0) t120Data;   
+}
+
+Table T124multimediaProfileTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "simpleProfile";
+		case (ExtensionBit == 0) && (Choice== 1): "multimediaProfile";
+		case (ExtensionBit == 0) && (Choice== 2): "dsmccDownloadProfile";
+		case (ExtensionBit == 0) && (Choice== 3): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124Profile = T124multimediaProfileTable(ExtensionBit, ProfileChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ProfileChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124multimediaProfileTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ProfileChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 3) ChoiceValue = T124multimediaProfileTable(ExtensionBit, ConstrainedValue);
+				switch (ProfileChoice)
+				{
+					case 0: T124simpleProfile simpleProfile;
+					case 1: T124multimediaProfile multimediaProfile;
+					case 3: T124NonStandardParameter nonStandard;
+
+				}
+			}
+	}
+}
+
+
+Table T124circuitTypesChoiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "digital_64k";
+		case (ExtensionBit == 0) && (Choice== 1): "digital_2x64k";
+		case (ExtensionBit == 0) && (Choice== 2): "digital_384k";
+		case (ExtensionBit == 0) && (Choice== 3): "digital-1536";
+		case (ExtensionBit == 0) && (Choice== 4): "digital-1920k";
+		case (ExtensionBit == 0) && (Choice== 5): "multirate_base_64k";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124circuitTypesChoice  = T124circuitTypesChoiceTable(0, Property.circuitTypesChoiceChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.circuitTypesChoiceChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 5) ChoiceValue = T124circuitTypesChoiceTable(0, ConstrainedValue);
+		switch (circuitTypesChoiceChoice)
+		{
+								case 5: AsnPerConstrainedInteger(1, 30) multiratebase64k;
+
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ISDNcircuitTypes
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124circuitTypesChoice circuitTypes[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ISDNConnection	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 highLayerCompatibilityPresent:1;
+	
+	T124ISDNcircuitTypes circuitTypes;
+	T124ExtendedE164NetworkAddress networkAddressValue;
+	switch
+	{
+		case highLayerCompatibilityPresent : T124highLayerCompatibility highLayerCompatibility;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124CSDNConnectionChoiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "digital_56k";
+		case (ExtensionBit == 0) && (Choice== 1): "digital_64k";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124CSDNConnectionChoice  = T124CSDNConnectionChoiceTable(0, Property.CSDNConnectionChoiceChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.CSDNConnectionChoiceChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 1) ChoiceValue = T124CSDNConnectionChoiceTable(0, ConstrainedValue);
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124circuitTypes
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124CSDNConnectionChoice circuitTypes[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124CSDNConnection	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124circuitTypes circuitTypes;
+	T124ExtendedE164NetworkAddress networkAddressValue;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ExtendedE164NetworkAddress	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 subAddressPresent:1;
+	UINT8 extraDiallingPresent:1;
+	
+	T124DiallingString internationalNumber;
+	switch
+	{
+		case subAddressPresent : T124SubAddressString subAddress;
+	}
+	switch
+	{
+		case extraDiallingPresent : T124ExtraDiallingString extraDialling;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124ChannelAggregationMethodTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "h221";
+		case (ExtensionBit == 0) && (Choice== 1): "h244";
+		case (ExtensionBit == 0) && (Choice== 2): "iso_iec-13871";
+		case (ExtensionBit == 0) && (Choice== 3): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ChannelAggregationMethod = T124ChannelAggregationMethodTable(ExtensionBit, ChannelAggregationMethodChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ChannelAggregationMethodChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ChannelAggregationMethodTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ChannelAggregationMethodChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 3) ChoiceValue = T124ChannelAggregationMethodTable(ExtensionBit, ConstrainedValue);
+				switch (ChannelAggregationMethodChoice)
+				{
+					case 3: T124NonStandardParameter nonStandard;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124MediaList	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerBoolean(0) audio;
+	AsnPerBoolean(0) video;
+	AsnPerBoolean(0) data;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124TerminationMethodTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "automatic";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "manual";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferencePriority	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerConstrainedInteger(0, 65535) priority;
+	T124ConferencePriorityScheme scheme;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceModeTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "conventional_only";
+		case (ExtensionBit == 0) && (Choice== 1): "counted_only";
+		case (ExtensionBit == 0) && (Choice== 2): "anonymous_only";
+		case (ExtensionBit == 0) && (Choice== 3): "conventional_control";
+		case (ExtensionBit == 0) && (Choice== 4): "unrestricted_mode";
+		case (ExtensionBit == 0) && (Choice== 5): "non_standard_mode";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceMode = T124ConferenceModeTable(ExtensionBit, ConferenceModeChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ConferenceModeChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ConferenceModeTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ConferenceModeChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 5) ChoiceValue = T124ConferenceModeTable(ExtensionBit, ConstrainedValue);
+				switch (ConferenceModeChoice)
+				{
+					case 5: T124NonStandardParameter nonstandardmode;
+
+				}
+			}
+	}
+}
+
+Table T124ConferenceNameSelectorTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "numeric";
+		case (ExtensionBit == 0) && (Choice== 1): "text";
+		case (ExtensionBit == 1) && (Choice== 0): "unicode_text";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceNameSelector = T124ConferenceNameSelectorTable(ExtensionBit, ConferenceNameSelectorChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ConferenceNameSelectorChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ConferenceNameSelectorTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+				switch(ConferenceNameSelectorChoice)
+				{
+					case 0: T124TextString unicodetext;
+
+				}
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ConferenceNameSelectorChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124ConferenceNameSelectorTable(ExtensionBit, ConstrainedValue);
+				switch (ConferenceNameSelectorChoice)
+				{
+					case 0: T124SimpleNumericString numeric;
+					case 1: T124SimpleTextString text;
+
+				}
+			}
+	}
+}
+
+Table T124NodeTypeTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "terminal";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "multiportTerminal";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "mcu";
+
+	}
+}
+
+Table T124AsymmetryIndicatorTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "callingNode";
+		case (ExtensionBit == 0) && (Choice== 1): "calledNode";
+		case (ExtensionBit == 0) && (Choice== 2): "unknown";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124AsymmetryIndicator  = T124AsymmetryIndicatorTable(0, Property.AsymmetryIndicatorChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.AsymmetryIndicatorChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 2) ChoiceValue = T124AsymmetryIndicatorTable(0, ConstrainedValue);
+		switch (AsymmetryIndicatorChoice)
+		{
+			case 2: AsnPerConstrainedInteger(0, 4294967295) unknown;
+
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceDescriptor	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 conferenceNameModifierPresent:1;
+	UINT8 conferenceDescriptionPresent:1;
+	UINT8 networkAddressPresent:1;
+	
+	T124ConferenceName conferenceName;
+	switch
+	{
+		case conferenceNameModifierPresent : T124ConferenceNameModifier conferenceNameModifier;
+	}
+	switch
+	{
+		case conferenceDescriptionPresent : T124TextString conferenceDescription;
+	}
+	AsnPerBoolean(0) lockedConference;
+	AsnPerBoolean(0) passwordInTheClearRequired;
+	switch
+	{
+		case networkAddressPresent : T124NetworkAddress networkAddressValue;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 defaultConferenceFlagPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 conferenceModePresent:1;
+				}
+				
+				switch
+				{
+					case defaultConferenceFlagPresent :
+						struct defaultConferenceFlag = defaultConferenceFlag.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[defaultConferenceFlagEndOffset = FrameOffset + PERLengthValue]
+							AsnPerBoolean(1) defaultConferenceFlag;
+							switch
+							{
+								case FrameBitOffset < defaultConferenceFlagEndOffset * 8: 
+									AsnPerPadding(defaultConferenceFlagEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case conferenceModePresent :
+						struct conferenceMode = conferenceMode.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[conferenceModeEndOffset = FrameOffset + PERLengthValue]
+							T124ConferenceMode conferenceMode;
+							switch
+							{
+								case FrameBitOffset < conferenceModeEndOffset * 8: 
+									AsnPerPadding(conferenceModeEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+Table T124ConferencePrioritySchemeTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "nonStandardScheme";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferencePriorityScheme = T124ConferencePrioritySchemeTable(ExtensionBit, ConferencePrioritySchemeChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ConferencePrioritySchemeChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124AsymmetryIndicatorTable(0, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ConferencePrioritySchemeChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 0) ChoiceValue = T124AsymmetryIndicatorTable(0, ConstrainedValue);
+				switch (ConferencePrioritySchemeChoice)
+				{
+					case 0: T124NonStandardParameter nonStandardScheme;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124challengeRequestResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 challengeRequestPresent:1;
+	UINT8 challengeResponsePresent:1;
+	
+	switch
+	{
+		case challengeRequestPresent : T124ChallengeRequest challengeRequest;
+	}
+	switch
+	{
+		case challengeResponsePresent : T124ChallengeResponse challengeResponse;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124PasswordChallengeRequestResponseTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "passwordInTheClear";
+		case (ExtensionBit == 0) && (Choice== 1): "challengeRequestResponse";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124PasswordChallengeRequestResponse = T124PasswordChallengeRequestResponseTable(ExtensionBit, PasswordChallengeRequestResponseChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.PasswordChallengeRequestResponseChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = 
+						T124PasswordChallengeRequestResponseTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.PasswordChallengeRequestResponseChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = 
+						T124PasswordChallengeRequestResponseTable(ExtensionBit, ConstrainedValue);
+				switch (PasswordChallengeRequestResponseChoice)
+				{
+					case 0: T124PasswordSelector passwordInTheClear;
+					case 1: T124challengeRequestResponse challengeRequestResponse;
+
+				}
+			}
+	}
+}
+
+Table T124PasswordSelectorTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "numeric";
+		case (ExtensionBit == 0) && (Choice== 1): "text";
+		case (ExtensionBit == 1) && (Choice== 0): "unicode_text";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124PasswordSelector = T124PasswordSelectorTable(ExtensionBit, PasswordSelectorChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.PasswordSelectorChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124PasswordSelectorTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+				switch(PasswordSelectorChoice)
+				{
+					case 0: T124TextString unicodetext;
+
+				}
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.PasswordSelectorChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124PasswordSelectorTable(ExtensionBit, ConstrainedValue);
+				switch (PasswordSelectorChoice)
+				{
+					case 0: T124SimpleNumericString numeric;
+					case 1: T124SimpleTextString text;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceJoinRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 conferenceNamePresent:1;
+	UINT8 conferenceNameModifierPresent:1;
+	UINT8 tagPresent:1;
+	UINT8 passwordPresent:1;
+	UINT8 convenerPasswordPresent:1;
+	UINT8 callerIdentifierPresent:1;
+	UINT8 userDataPresent:1;
+	
+	switch
+	{
+		case conferenceNamePresent : T124ConferenceNameSelector conferenceName;
+	}
+	switch
+	{
+		case conferenceNameModifierPresent : T124ConferenceNameModifier conferenceNameModifier;
+	}
+	switch
+	{
+		case tagPresent : AsnPerInteger tag;
+	}
+	switch
+	{
+		case passwordPresent : T124PasswordChallengeRequestResponse password;
+	}
+	switch
+	{
+		case convenerPasswordPresent : T124PasswordSelector convenerPassword;
+	}
+	switch
+	{
+		case callerIdentifierPresent : T124TextString callerIdentifier;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 nodeCategoryPresent:1;
+				}
+				
+				switch
+				{
+					case nodeCategoryPresent :
+						struct nodeCategory = nodeCategory.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[nodeCategoryEndOffset = FrameOffset + PERLengthValue]
+							T124NodeCategory nodeCategory;
+							switch
+							{
+								case FrameBitOffset < nodeCategoryEndOffset * 8: 
+									AsnPerPadding(nodeCategoryEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+Table T124ConferenceTerminateRequestReasonTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "userInitiated";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "timedConferenceTermination";
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceTerminateRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerEnumerated(1, 1) ConferenceTerminateRequestReason = T124ConferenceTerminateRequestReasonTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceEjectUserRequestReasonTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "userInitiated";
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceEjectUserRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	T124UserID nodeToEject;
+	AsnPerEnumerated(0, 1) ConferenceEjectUserRequestReason = T124ConferenceEjectUserRequestReasonTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124transferringNodes
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124UserID transferringNodes[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTransferRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 conferenceNameModifierPresent:1;
+	UINT8 networkAddressPresent:1;
+	UINT8 transferringNodesPresent:1;
+	UINT8 passwordPresent:1;
+	
+	T124ConferenceNameSelector conferenceName;
+	switch
+	{
+		case conferenceNameModifierPresent : T124ConferenceNameModifier conferenceNameModifier;
+	}
+	switch
+	{
+		case networkAddressPresent : T124NetworkAddress networkAddressValue;
+	}
+	switch
+	{
+		case transferringNodesPresent : T124transferringNodes transferringNodes;
+	}
+	switch
+	{
+		case passwordPresent : T124PasswordSelector password;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 networkAddressV2Present:1;
+				}
+				
+				switch
+				{
+					case networkAddressV2Present :
+						struct networkAddressV2 = networkAddressV2.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[networkAddressV2EndOffset = FrameOffset + PERLengthValue]
+							T124NetworkAddressV2 networkAddressV2;
+							switch
+							{
+								case FrameBitOffset < networkAddressV2EndOffset * 8: 
+									AsnPerPadding(networkAddressV2EndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryRegisterChannelRequest	= FormatString("EntityID = %s, channelID = %s",entityID.ToString ,channelID.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124EntityID entityID;
+	T124RegistryKey key;
+	T124DynamicChannelId channelID;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124challengeSet = "Size = "  + PERArraySize
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124ChallengeItem challengeSet[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ChallengeRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerInteger challengeTag;
+	T124challengeSet challengeSet;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ChallengeResponse	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerInteger challengeTag;
+	T124ChallengeResponseAlgorithm responseAlgorithm;
+	T124ChallengeResponseItem responseItem;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ChallengeItem	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124ChallengeResponseAlgorithm responseAlgorithm;
+	T124UserData challengeData;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124ChallengeResponseAlgorithmTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "passwordInTheClear";
+		case (ExtensionBit == 0) && (Choice== 1): "nonStandardAlgorithm";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ChallengeResponseAlgorithm = T124ChallengeResponseAlgorithmTable(ExtensionBit, ChallengeResponseAlgorithmChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ChallengeResponseAlgorithmChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ChallengeResponseAlgorithmTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ChallengeResponseAlgorithmChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124ChallengeResponseAlgorithmTable(ExtensionBit, ConstrainedValue);
+				switch (ChallengeResponseAlgorithmChoice)
+				{
+					case 1: T124NonStandardParameter nonStandardAlgorithm;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124EntityID = entityID.ToString 
+{
+	AsnPerConstrainedInteger(0, 65535) entityID;   
+}
+
+Table T124ChallengeResponseItemTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "passwordString";
+		case (ExtensionBit == 0) && (Choice== 1): "responseData";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ChallengeResponseItem = T124ChallengeResponseItemTable(ExtensionBit, ChallengeResponseItemChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ChallengeResponseItemChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ChallengeResponseItemTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ChallengeResponseItemChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124ChallengeResponseItemTable(ExtensionBit, ConstrainedValue);
+				switch (ChallengeResponseItemChoice)
+				{
+					case 0: T124PasswordSelector passwordString;
+					case 1: T124UserData responseData;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryKey
+{
+	T124SessionKey sessionKey;
+	AsnPerOctetString(0, 64) resourceID;   
+}
+
+[DataTypeBitAlign]
+struct T124RegistryAssignTokenRequest	= FormatString("EntityID = %s",entityID.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	T124EntityID entityID;
+	T124RegistryKey key;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistrySetParameterRequest	= FormatString("EntityID = %s, Parameter=%s",entityID.ToString, parameter.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 modificationRightsPresent:1;
+	T124EntityID entityID;
+	T124RegistryKey key;
+	AsnPerOctetString(0, 64) parameter;
+	switch
+	{
+		case modificationRightsPresent : 
+		AsnPerEnumerated(2, 0) RegistryModificationRights = T124RegistryModificationRightsTable(EnumeratedExt, EnumeratedIndex);
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryRetrieveEntryRequest	 = FormatString("EntityID = %s", entityID.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124EntityID entityID;
+	T124RegistryKey key;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryDeleteEntryRequest	= FormatString("EntityID = %s", entityID.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124EntityID entityID;
+	T124RegistryKey key;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryMonitorEntryRequest	= FormatString("EntityID = %s", entityID.ToString) //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124EntityID entityID;
+	T124RegistryKey key;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryAllocateHandleRequest	= FormatString("EntityID = %s, HandleNumber = %s", entityID.ToString, numberOfHandles.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	T124EntityID entityID;
+	AsnPerConstrainedInteger(1, 1024) numberOfHandles;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124RegistryModificationRightsTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "owner";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "session";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "public";
+
+	}
+}
+
+Table T124ConferenceTerminateResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTerminateResponse	= "Result=" + Result //Sequence
+{
+	UINT8 ExtensionBit:1;
+	[Post.Result = T124ConferenceTerminateResponseResultTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(1, 1) ConferenceTerminateResponseResult = T124ConferenceTerminateResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceEjectUserResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "invalidNode";
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124ConferenceEjectUserResponse	= "UserID=" + nodeToEject.ToString + ",Result=" + Result //Sequence
+{
+	UINT8 ExtensionBit:1;
+	T124UserID nodeToEject;
+	[Post.Result = T124ConferenceEjectUserResponseResultTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(2, 1) ConferenceEjectUserResponseResult = T124ConferenceEjectUserResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceTransferResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "success";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "invalidRequester";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTransferResponse	= "Result=" + Result //Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 conferenceNameModifierPresent:1;
+	UINT8 transferringNodesPresent:1;
+	T124ConferenceNameSelector conferenceName;
+	switch
+	{
+		case conferenceNameModifierPresent : T124ConferenceNameModifier conferenceNameModifier;
+	}
+	switch
+	{
+		case transferringNodesPresent : T124transferringNodes transferringNodes;
+	}
+	[Post.Result = T124ConferenceTransferResponseResultTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(1, 1) ConferenceTransferResponseResult = T124ConferenceTransferResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124primitiveTypeTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "registerChannel";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "assignToken";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "setParameter";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "retrieveEntry";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "deleteEntry";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 5): "monitorEntry";
+
+	}
+}
+
+Table T124RegistryResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "successful";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "belongsToOther";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "tooManyEntries";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "inconsistentType";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 4): "entryNotFound";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 5): "entryAlreadyExists";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 6): "invalidRequester";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryResponse	= FormatString("%s, %s",primitiveType.ToString, item.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 modificationRightsPresent:1;
+	T124EntityID entityID;
+	AsnPerEnumerated(5, 1) primitiveType = T124primitiveTypeTable(EnumeratedExt, EnumeratedIndex);
+	T124RegistryKey key;
+	T124RegistryItem item;
+	T124RegistryEntryOwner owner;
+	
+	switch
+	{
+		case modificationRightsPresent : 
+			AsnPerEnumerated(2, 0) RegistryModificationRights = T124RegistryModificationRightsTable(EnumeratedExt, EnumeratedIndex);
+	}
+	AsnPerEnumerated(6, 1) RegistryResponseResult = T124RegistryResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124SessionKey	= (sessionIDPresent ? ("SessionId = " + sessionID.ToString):"SessionKey")//Sequence
+{
+	UINT8 sessionIDPresent:1;
+	T124Key applicationProtocolKey;
+	switch
+	{
+		case sessionIDPresent : T124ChannelId sessionID;
+	}   
+}
+
+[DataTypeBitAlign]
+struct T124SimpleNumericString = SimpleNumericString.ToString
+{
+	AsnPerNumericString(1, 255) SimpleNumericString;   
+}
+
+[DataTypeBitAlign]
+struct T124DiallingString	= DiallingString.ToString
+{
+	AsnPerNumericString(1, 16) DiallingString;    
+}
+
+[DataTypeBitAlign]
+struct T124SubAddressString	= SubAddressString.ToString
+{
+	AsnPerNumericString(1, 40) SubAddressString;   
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceNameModifier = ConferenceNameModifier.ToString
+{
+	AsnPerNumericString(1, 255) ConferenceNameModifier;   
+}
+
+Table T124RegistryItemTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "channelID";
+		case (ExtensionBit == 0) && (Choice== 1): "tokenID";
+		case (ExtensionBit == 0) && (Choice== 2): "parameter";
+		case (ExtensionBit == 0) && (Choice== 3): "vacant";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryItem = FormatString("%s = %s", T124RegistryItemTable(ExtensionBit, RegistryItemChoice), 
+											(ExtensionBit == 0 && RegistryItemChoice == 3)? "Empty": valueofid)// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.RegistryItemChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124RegistryItemTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.RegistryItemChoice = ConstrainedValue, Post.T124RegistryItemType = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 3) ChoiceValue = T124RegistryItemTable(ExtensionBit, ConstrainedValue);
+				
+				switch (RegistryItemChoice)
+				{
+					case 0: 
+						[
+						Post.Global.T124DynamicChannel$
+							[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, ChannelIdValue):
+																				MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, ChannelIdValue)] = T124Identifier, 
+						post.valueofid=T124DynamicChannelID.ToString
+						]
+						T124DynamicChannelId channelID;
+					case 1: 
+						[
+						Post.Global.T124DynamicToken$
+							[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, TokenIdValue):
+																				MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, TokenIdValue)] = T124Identifier, 
+						Post.valueofid=DynamicTokenID.ToString
+						]
+						T124DynamicTokenID tokenID;
+					case 2: 
+						AsnPerOctetString(0, 64) parameter;
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124owned	= FormatString("T124UserID = %s,EntityID = %s", nodeID.ToString, entityID.ToString)//Sequence
+{
+	T124UserID nodeID;
+	T124EntityID entityID;   
+}
+
+Table T124RegistryEntryOwnerTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "owned";
+		case (ExtensionBit == 0) && (Choice== 1): "notOwned";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryEntryOwner  = FormatString("%s", T124RegistryEntryOwnerTable(0, Property.RegistryEntryOwnerChoice))		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.RegistryEntryOwnerChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 1) ChoiceValue = T124RegistryEntryOwnerTable(0, ConstrainedValue);
+		switch (RegistryEntryOwnerChoice)
+		{
+			case 0: T124owned owned;
+		}
+	}
+}
+
+Table T124RegistryAllocateHandleResponseResultTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "successful";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "noHandlesAvailable";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryAllocateHandleResponse	= FormatString("Result, EntityId = %s, HandleNumber = %s", entityID.ToString, numberOfHandles.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	T124EntityID entityID;
+	AsnPerConstrainedInteger(1, 1024) numberOfHandles;
+	T124Handle firstHandle;
+	[Post.Result = T124RegistryAllocateHandleResponseResultTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(1, 1) RegistryAllocateHandleResponseResult = T124RegistryAllocateHandleResponseResultTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124FunctionNotSupportedResponse	//Sequence
+{
+	T124RequestPDU request;   
+}
+
+[DataTypeBitAlign]
+struct T124UserIDIndication	= FormatString("Tag = %d", UserIDIndicationTag) //Sequence
+{
+	UINT8 ExtensionBit:1;
+	[post.UserIDIndicationTag = PERIntegerValue]
+	AsnPerInteger tag;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceUnlockIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceTerminateIndicationReasonTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "userInitiated";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "timedConferenceTermination";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTerminateIndication	= "Reason = " + Reason //Sequence
+{
+	UINT8 ExtensionBit:1;
+	[Post.Reason = T124ConferenceTerminateIndicationReasonTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(1, 1) ConferenceTerminateIndicationReason = T124ConferenceTerminateIndicationReasonTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ConferenceEjectUserIndicationReasonTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "userInitiated";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "higherNodeDisconnected";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "higherNodeEjected";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceEjectUserIndication	= Reason + ", T124UserID = " + nodeToEject.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	T124UserID nodeToEject;
+	[Post.Reason = T124ConferenceEjectUserIndicationReasonTable(EnumeratedExt, EnumeratedIndex)]
+	AsnPerEnumerated(2, 1) ConferenceEjectUserIndicationReason = T124ConferenceEjectUserIndicationReasonTable(EnumeratedExt, EnumeratedIndex);
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTransferIndication		= "ConferenceName = " + conferenceName.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 conferenceNameModifierPresent:1;
+	UINT8 networkAddressPresent:1;
+	UINT8 transferringNodesPresent:1;
+	UINT8 passwordPresent:1;
+	T124ConferenceNameSelector conferenceName;
+	switch
+	{
+		case conferenceNameModifierPresent : T124ConferenceNameModifier conferenceNameModifier;
+	}
+	switch
+	{
+		case networkAddressPresent : T124NetworkAddress networkAddressValue;
+	}
+	switch
+	{
+		case transferringNodesPresent : T124transferringNodes transferringNodes;
+	}
+	switch
+	{
+		case passwordPresent : T124PasswordSelector password;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 networkAddressV2Present:1;
+				}
+				
+				switch
+				{
+					case networkAddressV2Present :
+						struct networkAddressV2 = networkAddressV2.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[networkAddressV2EndOffset = FrameOffset + PERLengthValue]
+							T124NetworkAddressV2 networkAddressV2;
+							switch
+							{
+								case FrameBitOffset < networkAddressV2EndOffset * 8: 
+									AsnPerPadding(networkAddressV2EndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124SimpleTextString = PERSimpleTextStringValue
+{
+	AsnPerConstrainedInteger(0, 255) Length;
+	[PERSimpleTextStringValue]
+	AsciiString(ConstrainedValue) SimpleTextStringValue;	
+}
+
+[DataTypeBitAlign]
+struct T124DynamicTokenID	= DynamicTokenID.ToString //Sequence
+{
+	[Post.TokenIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(16384, 65535) DynamicTokenID;   
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceAssistanceIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 userDataPresent:1;
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTimeExtendIndication	= "TimeToExtend = " + timeToExtend.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124Time timeToExtend;
+	AsnPerBoolean(0) nodeSpecificTimeFlag;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124Time	= TimeValue //Sequence
+{
+	[Post.TimeValue = ConstrainedValue]
+	AsnPerConstrainedInteger(-2147483648, 2147483647) Time;   
+}
+
+[DataTypeBitAlign]
+struct T124applicationProtocolEntiyList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124ApplicationInvokeSpecifier applicationProtocolEntiyList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124destinationNodes = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124UserID destinationNodes[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ApplicationInvokeIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 destinationNodesPresent:1;
+	
+	T124applicationProtocolEntiyList applicationProtocolEntiyList;
+	switch
+	{
+		case destinationNodesPresent : T124destinationNodes destinationNodes;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124RegistryMonitorEntryIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 modificationRightsPresent:1;
+	
+	T124RegistryKey key;
+	T124RegistryItem item;
+	T124RegistryEntryOwner owner;
+	switch
+	{
+		case modificationRightsPresent : 
+			AsnPerEnumerated(2, 0) RegistryModificationRights = T124RegistryModificationRightsTable(EnumeratedExt, EnumeratedIndex);
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConductorAssignIndication	= "T124UserID = " + conductingNode.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124UserID conductingNode;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConductorReleaseIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConductorPermissionAskIndication	= "GrantFlag = " + grantFlag.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	AsnPerBoolean(0) grantFlag;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124permissionList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 65535) Size;
+	T124UserID permissionList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124waitingList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124UserID waitingList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ConductorPermissionGrantIndication	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 waitingListPresent:1;
+	
+	T124permissionList permissionList;
+	switch
+	{
+		case waitingListPresent : T124waitingList waitingList;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTimeRemainingIndication	= "TimeRemaining = " + timeRemaining.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 nodeIDPresent:1;
+	T124Time timeRemaining;
+	switch
+	{
+		case nodeIDPresent : T124UserID nodeID;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConferenceTimeInquireIndication	= "NodeSpecificTimeFlag = " + nodeSpecificTimeFlag.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerBoolean(0) nodeSpecificTimeFlag;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124expectedCapabilitySetSequence	= FormatString("CapabilityID=%s,CapabilityClass=%s",capabilityID.ToString,capabilityClass.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124CapabilityID capabilityID;
+	T124CapabilityClass capabilityClass;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124expectedCapabilitySet = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124expectedCapabilitySetSequence expectedCapabilitySet[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ApplicationInvokeSpecifier	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 expectedCapabilitySetPresent:1;
+	UINT8 startupChannelPresent:1;
+	
+	T124SessionKey sessionKey;
+	switch
+	{
+		case expectedCapabilitySetPresent : T124expectedCapabilitySet expectedCapabilitySet;
+	}
+	switch
+	{
+		case startupChannelPresent : AsnPerEnumerated(3, 0) ChannelType = T124ChannelTypeTable(EnumeratedExt, EnumeratedIndex);
+	}
+	AsnPerBoolean(0) mandatoryFlag;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table CapabilityIDTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "standard";
+		case (ExtensionBit == 0) && (Choice== 1): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124CapabilityID  = CapabilityIDTable(0, Property.CapabilityIDChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.CapabilityIDChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 1) ChoiceValue = CapabilityIDTable(0, ConstrainedValue);
+		switch (CapabilityIDChoice)
+		{
+			case 0: AsnPerConstrainedInteger(0, 65535) standard;
+			case 1: T124Key nonStandard;
+
+		}
+	}
+}
+
+Table T124CapabilityClassTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "logical";
+		case (ExtensionBit == 0) && (Choice== 1): "unsignedMin";
+		case (ExtensionBit == 0) && (Choice== 2): "unsignedMax";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124CapabilityClass = T124CapabilityClassTable(ExtensionBit, CapabilityClassChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.CapabilityClassChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124CapabilityClassTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.CapabilityClassChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124CapabilityClassTable(ExtensionBit, ConstrainedValue);
+				switch (CapabilityClassChoice)
+				{
+					case 1: AsnPerSemiConstrainedInteger(0) unsignedMin;
+					case 2: AsnPerSemiConstrainedInteger(0) unsignedMax;
+				}
+			}
+	}
+}
+
+Table T124ChannelTypeTable(EnumeratedExt, EnumeratedIndex)
+{
+	switch 
+	{
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 0): "static";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 1): "dynamicMulticast";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 2): "dynamicPrivate";
+		case (EnumeratedExt == 0) && (EnumeratedIndex== 3): "dynamicUserID";
+
+	}
+}
+
+
+[DataTypeBitAlign]
+struct T124nodeRecordListRefreshSequence	//Sequence
+{
+	T124UserID nodeID;
+	T124NodeRecord nodeRecord; 
+}
+
+Table T124nodeUpdateTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "addRecord";
+		case (ExtensionBit == 0) && (Choice== 1): "replaceRecord";
+		case (ExtensionBit == 0) && (Choice== 2): "removeRecord";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124nodeUpdate = T124nodeUpdateTable(ExtensionBit, nodeUpdateChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.nodeUpdateChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124nodeUpdateTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.nodeUpdateChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124nodeUpdateTable(ExtensionBit, ConstrainedValue);
+				switch (nodeUpdateChoice)
+				{
+					case 0: T124NodeRecord addRecord;
+					case 1: T124NodeRecord replaceRecord;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124nodeRecordListUpdateSeq = FormatString("nodeID = %s, %s", nodeID.ToString, nodeUpdate.ToString)//Sequence
+{
+	T124UserID nodeID;
+	T124nodeUpdate nodeUpdate;   
+}
+
+[DataTypeBitAlign]
+struct T124nodeRecordListRefresh
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124nodeRecordListRefreshSequence nodeRecordListRefreshSeq[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124nodeRecordListUpdate = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124nodeRecordListUpdateSeq nodeRecordListUpdate[PERArraySize];
+}
+
+Table T124nodeRecordListTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "noChange";
+		case (ExtensionBit == 0) && (Choice== 1): "nodeRecordListRefresh";
+		case (ExtensionBit == 0) && (Choice== 2): "nodeRecordListUpdate";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124nodeRecordList = ExtensionBit ? "" : FormatString("%s%s%s",
+												T124nodeRecordListTable(ExtensionBit, nodeRecordListChoice),
+												nodeRecordListChoice == 1 ? ", " + T124nodeRecordListRefresh.ToString : "",
+												nodeRecordListChoice == 2 ? ", " + T124nodeRecordListUpdate.ToString : "")	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.nodeRecordListChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124nodeRecordListTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.nodeRecordListChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124nodeRecordListTable(ExtensionBit, ConstrainedValue);
+				switch (nodeRecordListChoice)
+				{
+					case 1: T124nodeRecordListRefresh nodeRecordListRefresh;
+					case 2: T124nodeRecordListUpdate nodeRecordListUpdate;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124nodeInformation = FormatString("nodeRecordList: %s, rosterInstanceNumber=%s, nodesAdded=%s, nodesRemoved=%s",
+												 nodeInformationstruct.nodeRecordList.ToString,
+												 nodeInformationstruct.rosterInstanceNumber.ToString,
+												 nodeInformationstruct.nodesAdded.ToString,
+												 nodeInformationstruct.nodesRemoved.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	switch (ExtensionBit)
+	{
+		case 1 : 
+			_struct ExtensionChoice
+			{
+				[Post.nodeRecordListChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue;
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			};
+		default:
+			_struct nodeInformationstruct
+			{
+				T124nodeRecordList nodeRecordList;
+				AsnPerConstrainedInteger(0, 65535) rosterInstanceNumber;
+				AsnPerBoolean(0) nodesAdded;
+				AsnPerBoolean(0) nodesRemoved; 
+			};
+	} 
+}
+
+[DataTypeBitAlign]
+struct T124applicationInformationRefreshSequence = FormatString("nodeID = %s, entityID = %s, %s",
+																							nodeID.ToString, entityID.ToString, applicationRecord.ToString)//Sequence
+{
+	T124UserID nodeID;
+	T124EntityID entityID;
+	T124ApplicationRecord applicationRecord;   
+}
+
+[DataTypeBitAlign]
+struct T124applicationInformationrefresh = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 65535) Size;
+	T124applicationInformationRefreshSequence applicationInformationrefresh[PERArraySize];
+}
+
+Table T124applicationUpdateTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "addRecord";
+		case (ExtensionBit == 0) && (Choice== 1): "replaceRecord";
+		case (ExtensionBit == 0) && (Choice== 2): "removeRecord";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationUpdate = ExtensionBit ? "" : FormatString("%s %s%s", 
+																								T124applicationUpdateTable(ExtensionBit, applicationUpdateChoice), 
+																								applicationUpdateChoice == 0 ? NoneExtension.addRecord.ToString : "", 
+																								applicationUpdateChoice == 1 ? NoneExtension.replaceRecord.ToString : "")	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.applicationUpdateChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124applicationUpdateTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.applicationUpdateChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124applicationUpdateTable(ExtensionBit, ConstrainedValue);
+				switch (applicationUpdateChoice)
+				{
+					case 0: T124ApplicationRecord addRecord;
+					case 1: T124ApplicationRecord replaceRecord;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationInformationUpdateSequence	= FormatString("nodeID = %s, entityID = %s, %s", nodeID.ToString, entityID.ToString, applicationUpdate.ToString)//Sequence
+{
+	T124UserID nodeID;
+	T124EntityID entityID;
+	T124applicationUpdate applicationUpdate;   
+}
+
+[DataTypeBitAlign]
+struct T124applicationRecordListupdate = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124applicationInformationUpdateSequence applicationRecordListupdate[PERArraySize];
+}
+
+Table T124applicationRecordListTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "noChange";
+		case (ExtensionBit == 0) && (Choice== 1): "applicationInformationrefresh";
+		case (ExtensionBit == 0) && (Choice== 2): "applicationRecordListupdate";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationRecordList = ExtensionBit ? "" : FormatString("%s%s%s",
+															T124applicationRecordListTable(ExtensionBit, applicationRecordListChoice),
+															applicationRecordListChoice == 1 ? ", " + T124applicationInformationrefresh.ToString : "",
+															applicationRecordListChoice == 2 ? ", " + T124applicationRecordListupdate.ToString : "")// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.applicationRecordListChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124applicationRecordListTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.applicationRecordListChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 2) ChoiceValue = T124applicationRecordListTable(ExtensionBit, ConstrainedValue);
+				switch (applicationRecordListChoice)
+				{
+					case 1: T124applicationInformationrefresh applicationInformationrefresh;
+					case 2: T124applicationRecordListupdate applicationRecordListupdate;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124appCapaListRefreshSequence	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124CapabilityID capabilityID;
+	T124CapabilityClass capabilityClass;
+	AsnPerConstrainedInteger(1, 65536) numberOfEntities;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationCapabilitiesListrefresh
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124appCapaListRefreshSequence applicationCapabilitiesListrefresh[PERArraySize];
+}
+
+Table T124applicationCapabilitiesListTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "noChange";
+		case (ExtensionBit == 0) && (Choice== 1): "applicationCapabilitiesListrefresh";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationCapabilitiesList = T124applicationCapabilitiesListTable(ExtensionBit, applicationCapabilitiesListChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.applicationCapabilitiesListChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124applicationCapabilitiesListTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.applicationCapabilitiesListChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 1) ChoiceValue = T124applicationCapabilitiesListTable(ExtensionBit, ConstrainedValue);
+				switch (applicationCapabilitiesListChoice)
+				{
+					case 1: T124applicationCapabilitiesListrefresh applicationCapabilitiesListrefresh;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationInformationSequence	= FormatString("rosterInstanceNumber = %s", rosterInstanceNumber.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	[Post.T120ProtocolKey = T124Identifier]
+	T124SessionKey sessionKey;
+	T124applicationRecordList applicationRecordList;
+	T124applicationCapabilitiesList applicationCapabilitiesList;
+	AsnPerConstrainedInteger(0, 65535) rosterInstanceNumber;
+	AsnPerBoolean(0) peerEntitiesAdded;
+	AsnPerBoolean(0) peerEntitiesRemoved;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124applicationInformation
+{
+	[Post.PERArraySize = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 65535) Size;
+	T124applicationInformationSequence applicationInformation[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124RosterUpdateIndication	= FormatString("fullRefresh=%s, NodeInfomation: %s",
+																fullRefresh.ToString, nodeInformation.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	AsnPerBoolean(0) fullRefresh;
+	T124nodeInformation nodeInformation;
+	T124applicationInformation applicationInformation;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124nonCollapsingCapabilitiesSeq	= FormatString("CapabilityID = %s", capabilityID.ToString)//Sequence
+{
+	
+	UINT8 applicationDataPresent:1;
+	
+	T124CapabilityID capabilityID;
+	switch
+	{
+		case applicationDataPresent : AsnPerOctetString(-1, -1) applicationData;
+	}   
+}
+
+[DataTypeBitAlign]
+struct T124nonCollapsingCapabilities = FormatString("Size = %d", property.PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	T124nonCollapsingCapabilitiesSeq nonCollapsingCapabilities[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124ApplicationRecord = FormatString("%s %s %s", 
+													startupChannelPresent?("StartupChannel="+startupChannel.ToString):"",
+													applicationUserIDPresent?("applicationUserID="+applicationUserID.ToString):"",
+													nonCollapsingCapabilitiesPresent?nonCollapsingCapabilities.ToString:"")//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 startupChannelPresent:1;
+	UINT8 applicationUserIDPresent:1;
+	UINT8 nonCollapsingCapabilitiesPresent:1;
+	
+	AsnPerBoolean(0) applicationActive;
+	AsnPerBoolean(0) conductingOperationCapable;
+	switch
+	{
+		case startupChannelPresent : AsnPerEnumerated(3, 0) startupChannel = T124ChannelTypeTable(EnumeratedExt, EnumeratedIndex);
+	}
+	
+	switch
+	{
+		case applicationUserIDPresent :
+			[Post.Global.T124DynamicUserID$[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, UserIDValue) 
+																																																		: MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, UserIDValue)] 
+				= T120ProtocolKey, 
+			Post.Global.T124DynamicChannelOwner$[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, UserIDValue)
+																																																				: MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, UserIDValue)]
+				 = UserIDValue]
+			T124UserID applicationUserID;
+	}
+	
+	switch
+	{
+		case nonCollapsingCapabilitiesPresent : T124nonCollapsingCapabilities nonCollapsingCapabilities;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124ConnectGCCPDUTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "conferenceCreateRequest";
+		case (ExtensionBit == 0) && (Choice== 1): "conferenceCreateResponse";
+		case (ExtensionBit == 0) && (Choice== 2): "conferenceQueryRequest";
+		case (ExtensionBit == 0) && (Choice== 3): "conferenceQueryResponse";
+		case (ExtensionBit == 0) && (Choice== 4): "conferenceJoinRequest";
+		case (ExtensionBit == 0) && (Choice== 5): "conferenceJoinResponse";
+		case (ExtensionBit == 0) && (Choice== 6): "conferenceInviteRequest";
+		case (ExtensionBit == 0) && (Choice== 7): "conferenceInviteResponse";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConnectGCCPDU = T124ConnectGCCPDUTable(ExtensionBit, ConnectGCCPDUChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.ConnectGCCPDUChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124ConnectGCCPDUTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.ConnectGCCPDUChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 7) ChoiceValue = T124ConnectGCCPDUTable(ExtensionBit, ConstrainedValue);
+				switch (ConnectGCCPDUChoice)
+				{
+					case 0: T124ConferenceCreateRequest conferenceCreateRequest;
+					case 1: T124ConferenceCreateResponse conferenceCreateResponse;
+					case 2: T124ConferenceQueryRequest conferenceQueryRequest;
+					case 3: T124ConferenceQueryResponse conferenceQueryResponse;
+					case 4: T124ConferenceJoinRequest conferenceJoinRequest;
+					case 5: T124ConferenceJoinResponse conferenceJoinResponse;
+					case 6: T124ConferenceInviteRequest conferenceInviteRequest;
+					case 7: T124ConferenceInviteResponse conferenceInviteResponse;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ConnectData	//Sequence
+{
+	AsnPerOctetString(-1, -1) connectPDU;
+}
+
+
+/*[DataTypeBitAlign]
+//  The struct RosterRefreshRequest is defined in the document ,but is not quoted.
+struct applicationKeyListSeq	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 nonStandardParameterPresent:1;
+	
+	Key applicationProtocolKey;
+	switch
+	{
+		case nonStandardParameterPresent : T124NonStandardParameter T124NonStandardParameter;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct applicationKeyList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	applicationKeyListSeq applicationKeyList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct applicationList	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 nonStandardParameterPresent:1;
+	
+	applicationKeyList applicationKeyList;
+	switch
+	{
+		case nonStandardParameterPresent : T124NonStandardParameter T124NonStandardParameter;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct sessionKeyListSeq	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 nonStandardParameterPresent:1;
+	
+	SessionKey sessionKey;
+	switch
+	{
+		case nonStandardParameterPresent : T124NonStandardParameter T124NonStandardParameter;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct sessionKeyList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	sessionKeyListSeq sessionKeyList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct sessionList	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 nonStandardParameterPresent:1;
+	
+	sessionKeyList sessionKeyList;
+	switch
+	{
+		case nonStandardParameterPresent : T124NonStandardParameter T124NonStandardParameter;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct RosterRefreshRequest	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 sendConferenceRosterPresent:1;
+	UINT8 applicationListPresent:1;
+	UINT8 sessionListPresent:1;
+	UINT8 nonStandardParameterPresent:1;
+	
+	T124UserID nodeID;
+	NodeCategory nodeCategory;
+	AsnPerBoolean(0) fullRefresh;
+	switch
+	{
+		case sendConferenceRosterPresent : AsnPerBoolean(0) sendConferenceRoster;
+	}
+	switch
+	{
+		case applicationListPresent : applicationList applicationList;
+	}
+	switch
+	{
+		case sessionListPresent : sessionList sessionList;
+	}
+	switch
+	{
+		case nonStandardParameterPresent : T124NonStandardParameter T124NonStandardParameter;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}*/
+
+Table T124AlternativeNodeIDTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "h243NodeID";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124AlternativeNodeID = T124AlternativeNodeIDTable(ExtensionBit, AlternativeNodeIDChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.AlternativeNodeIDChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124AlternativeNodeIDTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.AlternativeNodeIDChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 0) ChoiceValue = T124AlternativeNodeIDTable(ExtensionBit, ConstrainedValue);
+				switch (AlternativeNodeIDChoice)
+				{
+					case 0: AsnPerOctetString(2, 2) h243NodeID;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NodeProperties	= FormatString("managementDevice = %s, peripheralDevice = %s",managementDevice.ToString, peripheralDevice.ToString)//Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	AsnPerBoolean(0) managementDevice;
+	AsnPerBoolean(0) peripheralDevice;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}
+
+Table T124ATMConnectionnetworkAddressTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "extendedE164";
+		case (ExtensionBit == 0) && (Choice== 1): "nsapAddress";
+		case (ExtensionBit == 0) && (Choice== 2): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ATMConnectionnetworkAddress = T124ATMConnectionnetworkAddressTable(0, Property.networkAddressChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.networkAddressChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 2) ChoiceValue = T124ATMConnectionnetworkAddressTable(0, ConstrainedValue);
+		switch (networkAddressChoice)
+		{
+			case 0: T124ExtendedE164NetworkAddress extendedE164;
+			case 1: T124TransportAddress nsapAddress;
+			case 2: T124NonStandardParameter nonStandard;
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124ATMConnection = "Address = " + networkAddressValue.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	UINT8 maxTransferRatePresent:1;
+	
+	T124ATMConnectionnetworkAddress networkAddressValue;
+	switch
+	{
+		case maxTransferRatePresent : AsnPerSemiConstrainedInteger(0) maxTransferRate;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+			}
+	}
+}
+
+Table T124PSDNConnectionnetworkAddressTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "extendedE164NetworkAddress";
+		case (ExtensionBit == 0) && (Choice== 1): "T124TransportAddress";
+		case (ExtensionBit == 0) && (Choice== 2): "nonStandard";
+
+	}
+}
+
+[DataTypeBitAlign]
+struct T124PSDNConnectionnetworkAddress  = T124PSDNConnectionnetworkAddressTable(0, Property.PSDNConnectionnetworkAddressChoice)		// CHOICE
+{
+	_struct NoneExtension
+	{
+		[Post.PSDNConnectionnetworkAddressChoice = ConstrainedValue]
+		AsnPerConstrainedInteger(0, 2) ChoiceValue = T124PSDNConnectionnetworkAddressTable(0, ConstrainedValue);
+		switch (PSDNConnectionnetworkAddressChoice)
+		{
+								case 0: T124ExtendedE164NetworkAddress extendedE164NetworkAddress;
+					case 1: T124TransportAddress T124TransportAddress;
+					case 2: T124NonStandardParameter nonStandard;
+
+		}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124PSDNConnection	= "Address = " + PSDNConnectionnetworkAddress.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	
+	T124PSDNConnectionnetworkAddress PSDNConnectionnetworkAddress;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+				
+				
+			}
+	}
+}
+
+
+
+
+[DataTypeBitAlign]
+struct T124GSTNConnection	= "Address = " + T124PSDNConnectionnetworkAddress.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	
+	T124ExtendedE164NetworkAddress networkAddressValue;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+				
+				
+			}
+	}
+}
+
+Table T124NetworkConnectionChoiceTable(ExtensionBit, Choice)
+{
+	switch 
+	{
+		case (ExtensionBit == 0) && (Choice== 0): "gstnConnection";
+		case (ExtensionBit == 0) && (Choice== 1): "isdnConnection";
+		case (ExtensionBit == 0) && (Choice== 2): "csdnConnection";
+		case (ExtensionBit == 0) && (Choice== 3): "psdnConnection";
+		case (ExtensionBit == 0) && (Choice== 4): "atmConnection";
+		case (ExtensionBit == 0) && (Choice== 5): "extendedE164NetworkAddress";
+		case (ExtensionBit == 0) && (Choice== 6): "transportAddress";
+		case (ExtensionBit == 0) && (Choice== 7): "nonStandard";
+	}
+}
+
+[DataTypeBitAlign]
+struct T124NetworkConnection = T124NetworkConnectionChoiceTable(ExtensionBit, NetworkConnectionChoiceChoice)	// CHOICE
+{
+	UINT8 ExtensionBit:1;
+	switch
+	{
+		case ExtensionBit:
+			_struct ExtensionChoice
+			{
+				[Post.NetworkConnectionChoiceChoice = PERSmallNumber]
+				AsnPerNormallySmallNonnegativeWholeNumber ChoiceValue = T124NetworkConnectionChoiceTable(ExtensionBit, PERSmallNumber);
+				AsnPerLengthDeterminant Length;
+				[ExtensionEndoffset = FrameOffset + PERLengthValue]
+
+				switch
+				{
+					case FrameBitOffset < ExtensionEndoffset * 8: AsnPerPadding(ExtensionEndoffset * 8 - FrameBitOffset) padding;
+				}
+			}
+		default:
+			_struct NoneExtension
+			{
+				[Post.NetworkConnectionChoiceChoice = ConstrainedValue]
+				AsnPerConstrainedInteger(0, 7) ChoiceValue = T124NetworkConnectionChoiceTable(ExtensionBit, ConstrainedValue);
+				switch (NetworkConnectionChoiceChoice)
+				{
+					case 0: T124GSTNConnection gstnConnection;
+					case 1: T124ISDNConnection isdnConnection;
+					case 2: T124CSDNConnection csdnConnection;
+					case 3: T124PSDNConnection psdnConnection;
+					case 4: T124ATMConnection atmConnection;
+					case 5: T124ExtendedE164NetworkAddress extendedE164NetworkAddress;
+					case 6: T124TransportAddress transportAddress;
+					case 7: T124NonStandardParameter nonStandard;
+
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124TransportAddress	= "NaspAddress = " + nsapAddress.ToString //Sequence
+{	
+	UINT8 transportSelectorPresent:1;
+
+	AsnPerOctetString(1, 20) nsapAddress;
+	switch
+	{
+		case transportSelectorPresent : AsnPerOctetString(-1, -1) transportSelector;
+	}   
+}
+
+[DataTypeBitAlign]
+struct H221NonStandardIdentifier	= H221NonStandardIdentifier.ToString //Sequence
+{
+	AsnPerOctetString(4, 255) H221NonStandardIdentifier;   
+}
+
+[DataTypeBitAlign]
+struct T124ExtraDiallingString	= ExtraDiallingString.ToString //Sequence
+{
+	AsnPerTextString(1, 255) ExtraDiallingString;   
+}
+
+[DataTypeBitAlign]
+struct T124participantsList = FormatString("Size = %u", PERArraySize)
+{
+	[Post.PERArraySize = PERLengthValue]
+	AsnPerLengthDeterminant Size;
+	AsnPerTextString(-1, -1) participantsList[PERArraySize];
+}
+
+[DataTypeBitAlign]
+struct T124NodeRecord	//Sequence
+{
+	UINT8 ExtensionBit:1;
+	UINT8 superiorNodePresent:1;
+	UINT8 nodeNamePresent:1;
+	UINT8 participantsListPresent:1;
+	UINT8 siteInformationPresent:1;
+	UINT8 networkAddressPresent:1;
+	UINT8 alternativeNodeIDPresent:1;
+	UINT8 userDataPresent:1;
+	
+	switch
+	{
+		case superiorNodePresent : T124UserID superiorNode;
+	}
+	AsnPerEnumerated(2, 1) NodeType = T124NodeTypeTable(EnumeratedExt, EnumeratedIndex);
+	T124NodeProperties nodeProperties;
+	switch
+	{
+		case nodeNamePresent : AsnPerTextString(-1, -1) nodeName;
+	}
+	switch
+	{
+		case participantsListPresent : T124participantsList participantsList;
+	}
+	switch
+	{
+		case siteInformationPresent : AsnPerTextString(-1, -1) siteInformation;
+	}
+	switch
+	{
+		case networkAddressPresent : T124NetworkAddress networkAddressValue;
+	}
+	switch
+	{
+		case alternativeNodeIDPresent : T124AlternativeNodeID alternativeNodeID;
+	}
+	switch
+	{
+		case userDataPresent : T124UserData userData;
+	}
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;
+				
+				switch
+				{
+					case PERSmallNumber >= 0 : UINT8 nodeCategoryPresent:1;
+				}
+				switch
+				{
+					case PERSmallNumber >= 1 : UINT8 networkAddressV2Present:1;
+				}
+				
+				switch
+				{
+					case nodeCategoryPresent :
+						struct nodeCategory = nodeCategory.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[nodeCategoryEndOffset = FrameOffset + PERLengthValue]
+							T124NodeCategory nodeCategory;
+							switch
+							{
+								case FrameBitOffset < nodeCategoryEndOffset * 8: 
+									AsnPerPadding(nodeCategoryEndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+				switch
+				{
+					case networkAddressV2Present :
+						struct networkAddressV2 = networkAddressV2.ToString
+						{
+							AsnPerLengthDeterminant length;
+							[networkAddressV2EndOffset = FrameOffset + PERLengthValue]
+							T124NetworkAddressV2 networkAddressV2;
+							switch
+							{
+								case FrameBitOffset < networkAddressV2EndOffset * 8: 
+									AsnPerPadding(networkAddressV2EndOffset * 8 - FrameBitOffset) Padding;
+							}
+						}
+				}
+			}
+	}
+}
+
+[DataTypeBitAlign]
+struct T124TextMessageIndication	= "Message = " + message.ToString //Sequence
+{
+	UINT8 ExtensionBit:1;
+	AsnPerTextString(-1, -1) message;
+	switch
+	{
+		case ExtensionBit: 
+			_struct Extension
+			{
+				AsnPerNormallySmallNonnegativeWholeNumber ExtensionNumber;                                        
+			}
+	}
+}

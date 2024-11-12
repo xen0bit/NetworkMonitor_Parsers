@@ -1,0 +1,84 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Microsoft Session Multiplex Protocol (SMP)
+//#
+//#  Details:                Microsoft Session Multiplex Protocol is used by
+//#
+//#                          the Microsoft SQL Server's Multiple Active Recordsets (MARS) feature
+//#
+//#                          to multiplex multiple logical connections over one physical connection
+//#
+//#  Microsoft References:      [MC-SMP]: Session Multiplex Protocol Specification (1.0.2)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 2/3/2009
+//#                          Minor, 3/23/2009
+//#
+//####
+
+// Smux related constants
+const SMUX_SMID = 0x53;
+
+const SMUX_DATA	= 0x08;
+const SMUX_FIN	= 0x04;
+const SMUX_ACK	= 0x02;
+const SMUX_SYN	= 0x01;
+
+const SMUX_DATA_STR	= "DATA";
+const SMUX_FIN_STR	= "FIN";
+const SMUX_ACK_STR	= "ACK";
+const SMUX_SYN_STR	= "SYN";
+const SMUX_INVALID_FLAGS_STR = "ERROR: Invalid Flags";
+
+[RegisterBefore(SMB2ResponseRead.PipePayload, SMP, UINT8(Framedata, FrameOffset) == 0x53)]
+[RegisterBefore(SMB2RequestWrite.PipePayload, SMP, UINT8(Framedata, FrameOffset) == 0x53)]
+[RegisterBefore(SMBComWriteRequestAndXRequest.PipePayload, SMP, UINT8(Framedata, FrameOffset) == 0x53)]
+[RegisterBefore(SMBComReadResp.PipePayload, SMP, UINT8(Framedata, FrameOffset) == 0x53)]
+[RegisterBefore(SMBComReadAndXResp.PipePayload, SMP, UINT8(Framedata, FrameOffset) == 0x53)]
+[DataTypeByteOrder = LittleEndian]
+Protocol SMP = FormatString("%s, Sid = %d, Length = %d, SeqNum = %d, Wndw = %d", SMPFlagsTable(Flags), Sid, Length, SeqNum, Wndw)
+{
+	UINT8 Smid = FormatString("%d (0x%02X)", this, this);
+	UINT8 Flags = FormatString("%s. %d (0x%02X)", SMPFlagsTable(this), this, this);
+	[Property.SMPSid]
+	[BuildConversationWithParent(Sid)]
+	[Conversation.ConversationDescription = FormatString("(SessionId:%u) ConvID = %d", Sid, ConvID)]
+	UINT16 Sid;
+	UINT32 Length;
+	[Property.SMPSeqNum]
+	UINT32 SeqNum;
+	UINT32 Wndw;
+	switch(Flags)
+	{
+		case SMUX_DATA:
+			switch
+			{
+				case TCP.Port == 1433:
+				case ProtocolBlock.Port == 1433:
+					[DataFieldByteOrder = BigEndian]
+					TDS Tds;
+			}
+	}
+}
+
+
+
+// Convert smux flags into names
+Table SMPFlagsTable( value )
+{
+	switch( value )
+	{
+		case SMUX_DATA:
+			SMUX_DATA_STR;
+		case SMUX_FIN:
+			SMUX_FIN_STR;
+		case SMUX_ACK:
+			SMUX_ACK_STR;
+		case SMUX_SYN:
+			SMUX_SYN_STR;
+		default:
+			SMUX_INVALID_FLAGS_STR;
+	}
+}
+

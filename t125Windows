@@ -1,0 +1,763 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  T.125 Protocol
+//#
+//#  Details:                www.ITU.org specification
+//#
+//#  OEM References:         T.125 Multipoint Communication Service Protocol Specification.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 7/10/2009
+//#
+//####
+
+[BuildConversationWithParent, DataTypeByteOrder = BigEndian, DataTypeBitAlign]
+Protocol T125 = FormatString ("%s%s", T125PacketType, T125FrameSummary)
+{
+	[Post.Conversation.ConversationDescription = 
+			( Conversation.T125ObjectID ? FormatString("(UserDataObjectID: %s) ", Conversation.T125ObjectID) : "" ) +
+			( FormatString("ConvID = %d", ConvID) )
+	]
+	switch (UINT16(FrameData, FrameOffset))
+	{
+		case 0x7F65:
+			T125ConnectInitial MCSConnectInitial;
+		case 0x7F66:
+			T125ConnectResponse MCSConnectResponse;
+		case 0x7F67:
+			T125ConnectAdditional MCSConnectAdditional;
+		case 0x7F68:
+			T125ConnectResult MCSConnectResult;
+		default:
+			_struct DomainPDU
+			{
+				T125Header MCSHeader;
+				switch (T125DomainPDUType)
+				{
+					case 0:  T125PlumbDomainIndication MCSPlumbDomainIndication;
+					case 1:  T125ErectDomainRequest MCSErectDomainRequest;
+					case 8:  T125DisconnectProviderUltimatum MCSDisconnectProviderUltimatum;
+					case 10: T125AttachUserRequest T125AttachUserRequest;
+					case 11: T125AttachUserConfirm MCSAttachUserConfirm;
+					case 12: T125DetachUserRequest MCSDetachUserRequest;
+					case 13: T125DetachUserIndication MCSDetachUserIndication;
+					case 14: T125ChannelJoinRequest MCSChannelJoinRequest;
+					case 15: T125ChannelJoinConfirm MCSChannelJoinConfirm;
+					case 16: T125ChannelLeaveRequest MCSChannelLeaveRequest;
+					case 17: T125ChannelConveneRequest MCSChannelConveneRequest;
+					case 18: T125ChannelConveneConfirm MCSChannelConveneConfirm;
+					case 19: T125ChannelDisbandRequest MCSChannelDisbandRequest;
+					case 20: T125ChannelDisbandIndication MCSChannelDisbandIndication;
+					case 21: T125ChannelAdmitRequest MCSChannelAdmitRequest;
+					case 22: T125ChannelAdmitIndication MCSChannelAdmitIndication;
+					case 23: T125ChannelExpelRequest MCSChannelExpelRequest;
+					case 24: T125ChannelExpelIndication MCSChannelExpelIndication;
+					case 29: T125TokenGrabRequest MCSTokenGrabRequest;
+					case 30: T125TokenGrabConfirm MCSTokenGrabConfirm;
+					case 31: T125TokenInhibitRequest MCSTokenInhibitRequest;
+					case 32: T125TokenInhibitConfirm MCSTokenInhibitConfirm;
+					case 33: T125TokenGiveRequest MCSTokenGiveRequest;
+					case 34: T125TokenGiveIndication MCSTokenGiveIndication;
+					case 35: T125TokenGiveResponse MCSTokenGiveResponse;
+					case 36: T125TokenGiveConfirm MCSTokenGiveConfirm;
+					case 37: T125TokenPleaseRequest MCSTokenPleaseRequest;
+					case 38: T125TokenPleaseIndication MCSTokenPleaseIndication;
+					case 39: T125TokenReleaseRequest MCSTokenReleaseRequest;
+					case 40: T125TokenReleaseConfirm MCSTokenReleaseConfirm;
+					case 41: T125TokenTestRequest MCSTokenTestRequest;
+					case 42: T125TokenTestConfirm MCSTokenTestConfirm;
+					
+					case 25: // SendDataRequest
+					case 26: // SendDataIndication
+					case 27: // Uniform SendDataRequest
+					case 28: // Uniform SendDataIndication
+					
+						switch
+						{
+							case Property.T125SegmentBegin:
+								[T125PacketType = "Data Packet"]
+								switch 
+								{
+									case SourcePort == 3389 || DestinationPort == 3389:
+									case TSGURDPPayload:
+										//
+										// Notes: Assume RDP will never be fragmented at T125 layer
+										// This is used for RDP reassembly
+										//
+										[
+										 	RDPOnTcp = TRUE,
+										 	PayloadStart(
+												NetworkDirection, /* direction */
+												0, /* id */
+												0, /* sequence token */
+												0, /* next sequence token */
+												0, /* total payload length */
+												property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentBegin, /* is first */
+												property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentEnd, /* is last */
+		                                        RssmblyIndStartBit+RssmblyIndEndBit, 		//has start and end indication
+												0x0000,
+												MCSChannel
+												)
+                                        ]
+										RDP RDP;
+									case SourcePort == 1503 || DestinationPort == 1503:
+										//
+										// Notes: In one frame, there may be a set of T125 packages.
+										// Assume only the last T125 package can be "Not End" and need to be reassembled.
+										//
+										switch
+										{
+											case !Property.T125SegmentEnd:
+												[
+												 	PayloadStart(
+														NetworkDirection, /* direction */
+														0, /* id */
+														0, /* sequence token */
+														0, /* next sequence token */
+														0, /* total payload length */
+														property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentBegin, /* is first */
+														property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentEnd, /* is last */
+		                                                RssmblyIndStartBit+RssmblyIndEndBit, 		//has start and end indication
+														0x0000,
+														MCSChannel
+														)
+												]
+												Netmeeting Netmeeting;
+											default:
+												_struct NotFragmentedNetMeeting
+												{
+													Netmeeting Netmeeting;
+												}
+										}
+								} // The First Segments
+							default:
+								[
+									T125PacketType = "Fragment Data Packet",
+								 	PayloadStart(
+										NetworkDirection, /* direction */
+										0, /* id */
+										0, /* sequence token */
+										0, /* next sequence token */
+										0, /* total payload length */
+										property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentBegin, /* is first */
+										property.IsMoreThanOneTPKT ? 1 : Property.T125SegmentEnd, /* is last */
+		                                RssmblyIndStartBit + RssmblyIndEndBit, 		//has start and end indication
+										0x0000,
+										MCSChannel
+										)
+								]
+								BLOB(FrameLength - FrameOffset) Fragment;
+						} // T125DomainPDUType = 25~28
+				} // switch (T125DomainPDUType)
+			} // _struct DomainPDU
+	}
+}
+
+// MCS
+Table T125PDUTYPETable(code)
+{
+	switch (code)
+	{
+		case 0 : "Plumb Domain Indication";
+		case 1 : "Erect Domain Request";
+		case 2 : "Merge Channels Request";
+		case 3 : "Merge Channels Confirm";
+		case 4 : "Purge Channels Indication";
+		case 5 : "Merge Tokens Request";
+		case 6 : "Merge Tokens Confirm";
+		case 7 : "Purge Tokens Indication";
+		case 8 : "Disconnect Provider Ultimatum";
+		case 9 : "Reject MCS PDU Ultimatum";
+		case 10: "Attach User Request";
+		case 11: "Attach User Confirm";
+		case 12: "Detach User Request";
+		case 13: "Detach User Indication";
+		case 14: "Channel Join Request";
+		case 15: "Channel Join Confirm";
+		case 16: "Channel Leave Request";
+		case 17: "Channel Convene Request";
+		case 18: "Channel Convene Confirm";
+		case 19: "Channel Disband Request";
+		case 20: "Channel Disband Indication";
+		case 21: "Channel Admit Request";
+		case 22: "Channel Admit Indication";
+		case 23: "Channel ExpelRequest";
+		case 24: "Channel ExpelIndication";
+		case 25: "Send Data Request";
+		case 26: "Send Data Indication";
+		case 27: "Uniform Send Data Request";
+		case 28: "Uniform Send Data Indication";
+		case 29: "Token Grab Request";
+		case 30: "Token Grab Confirm";
+		case 31: "Token Inhibit Request";
+		case 32: "Token Inhibit Confirm";
+		case 33: "Token Give Request";
+		case 34: "Token Give Indication";
+		case 35: "Token Give Response";
+		case 36: "Token Give Confirm";
+		case 37: "Token Please Request";
+		case 38: "Token Please Indication";
+		case 39: "Token Release Request";
+		case 40: "Token Release Confirm";
+		case 41: "Token Test Request";
+		case 42: "Token Test Confirm";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table T125ReasonTable (code)
+{
+	switch (code)
+	{
+		case 0: "rn-domain-disconnected";
+		case 1: "rn-provider-initiated";
+		case 2: "rn-token-purged";
+		case 3: "rn-user-requested";
+		case 4: "rn-channel-purged";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table T125ResultTable(code)
+{
+	switch (code)
+	{
+		case 0: "rt-successful";
+		case 1: "rt-domain-merging";
+		case 2: "rt-domain-not-hierarchical";
+		case 3: "rt-no-such-channel";
+		case 4: "rt-no-such-domain";
+		case 5: "rt-no-such-user";
+		case 6: "rt-not-admitted";
+		case 7: "rt-other-user-id";
+		case 8: "rt-parameters-unacceptable";
+		case 9: "rt-token-not-available";
+		case 10: "rt-token-not-possessed";
+		case 11: "rt-too-many-channels";
+		case 12: "rt-too-many-tokens";
+		case 13: "rt-too-many-users";
+		case 14: "rt-unspecified-failure";
+		case 15: "rt-user-rejected";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table T125DataPriorityTable(code)
+{
+	switch (code)
+	{
+		case 0: "top";
+		case 1: "high";
+		case 2: "medium";
+		case 3: "low";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+Table T125TokenStatusTable(code)
+{
+	switch (code)
+	{
+		case 0: "notInUse";
+		case 1: "selfGrabbed";
+		case 2: "otherGrabbed";
+		case 3: "selfInhibited";
+		case 4: "otherInhibited";
+		case 5: "selfRecipient";
+		case 6: "selfGiving";
+		case 7: "otherGiving";
+		default: "Undefined value: " + FormatString("%d", code);
+	}
+}
+
+
+// ConnectMCSPDU - BER
+[DataTypeBitAlign]
+struct T125DomainParameters = DomainParametersHeader.asnLen.ToString
+{
+	AsnBerInfo DomainParametersHeader;
+	AsnBerInteger ChannelIds;	
+	AsnBerInteger UserIDs;	   
+	AsnBerInteger TokenIds;	 
+	AsnBerInteger NumPriorities;	
+	AsnBerInteger MinThroughput;	
+	AsnBerInteger Height;		
+	AsnBerInteger MCSPDUsize;	
+	AsnBerInteger protocolVersion;  	
+}
+
+[DataTypeByteOrder=BigEndian]
+struct T125AsnOctetString = FormatString("0x%I64X", OctetStream)
+{
+	AsnBerInfo AsnOctetStringHeader;
+	BLOB(Property.LengthValue) OctetStream = FormatString("0x%I64X", this);
+}
+
+[DataTypeBitAlign, T125PacketType = "MCSConnect Initial"]
+struct T125ConnectInitial = Userdata.ToString
+{
+	AsnBerInfo ConnectInitialHeader;
+
+	T125AsnOctetString CallingDomainSelector;
+	T125AsnOctetString CalledDomainSelector;
+	AsnBerBoolean UpwardFlag;
+	T125DomainParameters TargetParameters;
+	T125DomainParameters MinimumParameters;
+	T125DomainParameters MaximumParameters;
+	struct UserData = FormatString("Identifier=%s, ConnectPDULength=%s",AsnBerObjectIdentifier.ToString,ConnectPDULength.ToString)
+	{
+		AsnBerInfo UserDataHeader;
+		[Conversation.T125ObjectID = this.ToString]
+		AsnBerObjectIdentifier AsnBerObjectIdentifier;
+		AsnPerLengthDeterminant ConnectPDULength;
+		T124ConnectGCCPDU ConnectGCCPDU;
+	}
+}
+
+[DataTypeBitAlign, T125PacketType = "MCSConnect Response"]
+struct T125ConnectResponse = "Result = " + Result.ToString
+{
+	AsnBerInfo ConnectResponseHeader;
+
+	AsnBerEnumerated Result = T125ResultTable(AsnIntValue);
+	AsnBerInteger CalledConnectId;
+	T125DomainParameters DomainParameters;
+	struct UserData = "Identifier = " + AsnBerObjectIdentifier.ToString
+	{
+		AsnBerInfo UserDataHeader;
+		AsnBerObjectIdentifier AsnBerObjectIdentifier;
+		AsnPerLengthDeterminant ConnectPDULength;
+		T124ConnectGCCPDU ConnectGCCPDU;
+	}
+}
+
+[DataTypeBitAlign, T125PacketType = "X224 Connect Aditional"]
+struct T125ConnectAdditional
+{
+	AsnBerInfo ConnectAdditionalHeader;
+	
+	AsnBerInteger CalledConnectId;
+	AsnBerEnumerated DataPriority = T125DataPriorityTable(AsnIntValue);
+}
+
+[DataTypeBitAlign, T125PacketType = "x224 Connect Result"]
+struct T125ConnectResult
+{
+	AsnBerInfo ConnectResultHeader;
+	AsnBerEnumerated Result = T125ResultTable(AsnIntValue);
+}
+
+// DomainMCSPDU - PER
+[DataTypeBitAlign]
+struct T125ChannelId = ChannelIdValue
+{
+	[Post.ChannelIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(0, 65535) ChannelId;
+}
+
+[DataTypeBitAlign]
+struct T125StaticChannelId = ChannelIdValue
+{
+	[Post.ChannelIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 1000) ChannelId;
+}
+
+[DataTypeBitAlign]
+struct T125DynamicChannelId = ChannelIdValue
+{
+	[Post.ChannelIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1001, 65535) ChannelId;
+}
+
+[DataTypeBitAlign]
+struct T125UserID = UserIDValue
+{
+	[Post.UserIDValue = ConstrainedValue]
+	T125DynamicChannelId UserID;
+}
+
+[DataTypeBitAlign]
+struct T125TokenId = TokenIdValue
+{
+	[Post.TokenIdValue = ConstrainedValue]
+	AsnPerConstrainedInteger(1, 65535) TokenId;
+}
+
+[DataTypeBitAlign]
+struct T125PerReason = T125ReasonTable(ReasonValue)
+{
+	[Post.ReasonValue = EnumeratedIndex]
+	AsnPerEnumerated(4, 0) Reason = T125ReasonTable(EnumeratedIndex);
+}
+
+[DataTypeBitAlign]
+struct T125PerResult = T125ResultTable(ResultValue)
+{
+	[Post.ResultValue = EnumeratedIndex]
+	AsnPerEnumerated(15, 0) Result = T125ResultTable(EnumeratedIndex);
+}
+
+[DataTypeBitAlign]
+struct T125PerTokenStatus = T125TokenStatusTable(TokenStatusValue)
+{
+	[Post.TokenStatusValue = EnumeratedIndex]
+	AsnPerEnumerated(7, 0) TokenStatus = T125TokenStatusTable(EnumeratedIndex);
+}
+
+[DataTypeBitAlign]
+struct T125PerDataPriority = T125DataPriorityTable(DataPriorityValue)
+{
+	[Post.DataPriorityValue = EnumeratedIndex]
+	AsnPerEnumerated(3, 0) DataPriority = T125DataPriorityTable(EnumeratedIndex);
+}
+
+[DataTypeBitAlign]
+struct T125PerSegmentation = (Begin ? "Begin " : "NotBegin ") +
+														 (End ? "End" : "NotEnd")
+{
+	[T125SegmentBegin]
+	UINT8 Begin:1 = FormatString("(%s) %s", this.ToBitString, this ? "Begin" : "Not Begin");
+	[T125SegmentEnd]
+	UINT8 End:1 = FormatString("  (%s) %s", this.ToBitString, this ? "End" : "Not End");
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125PlumbDomainIndication.ToString]
+struct T125PlumbDomainIndication = "HeightLimit = " + HeightLimitValue
+{
+	[Post.HeightLimitValue = PERSemiConstrainedInteger]
+	AsnPerSemiConstrainedInteger(0) HeightLimit;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ErectDomainRequest.ToString]
+struct T125ErectDomainRequest = FormatString("SubHeight = %u, SubInterval = %u", 
+											  SubHeightValue, 
+											  SubIntervalValue)
+{
+	[Post.SubHeightValue = PERSemiConstrainedInteger]
+	AsnPerSemiConstrainedInteger(0) SubHeight;
+	[Post.SubIntervalValue = PERSemiConstrainedInteger]
+	AsnPerSemiConstrainedInteger(0) SubInterval;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125DisconnectProviderUltimatum.ToString]
+struct T125DisconnectProviderUltimatum = Reason.ToString
+{
+	T125PerReason Reason;
+}
+
+[DataTypeBitAlign]
+struct T125AttachUserRequest = "MCSAttachUser"
+{
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125AttachUserConfirm.ToString]
+struct T125AttachUserConfirm = FormatString("Result = %s, Indicator = %s", 
+											  Result.ToString, 
+											  Initiator.ToString)
+{
+	UINT8 InitiatorPresent:1;
+	T125PerResult Result;
+	switch
+	{
+		case InitiatorPresent:
+			T125UserID Initiator;
+	}
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125DetachUserRequest.ToString]
+struct T125DetachUserRequest = "Reason = " + Reason.ToString
+{
+	T125PerReason Reason;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125DetachUserIndication.ToString]
+struct T125DetachUserIndication = "Reason = " + Reason.ToString
+{
+	T125PerReason Reason;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelJoinRequest.ToString]
+struct T125ChannelJoinRequest = "UserID = " + Initiator.ToString + "," + "ChannelId = " + ChannelId.ToString
+{
+	[Post.MCSUserID = UserIDValue]
+	T125UserID Initiator;
+	T125ChannelId ChannelId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelJoinConfirm.ToString]
+struct T125ChannelJoinConfirm = FormatString("ChannelId = %u, Result = %s", 
+											ChannelIdValue, 
+											Result.ToString)
+{
+	UINT8 ChannelIdPresent:1;
+	T125PerResult Result;
+	[Post.MCSUserID = UserIDValue]
+	T125UserID Initiator;
+	[Post.Global.T124DynamicChannelOwner$[
+		SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, ChannelIdValue)  
+																										:	MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, ChannelIdValue)] 
+		= MCSUserID]
+	T125ChannelId Requested;
+	switch
+	{
+		 case ChannelIdPresent:
+		 	[Post.Global.T124DynamicChannelOwner$[
+		 		SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, ChannelIdValue) 
+		 																										: MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, ChannelIdValue)] 
+		 	= MCSUserID]
+		 	T125ChannelId ChannelId;
+	}
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary + T125ChannelLeaveRequest.ToString]
+struct T125ChannelLeaveRequest = "ChannelCount = " + ChannelCount.ToString
+{
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant ChannelCount;
+	T125ChannelId ChannelId[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary + T125ChannelConveneRequest.ToString]
+struct T125ChannelConveneRequest = "Initiator = " + Initiator.ToString
+{
+	T125UserID Initiator;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary + T125ChannelConveneConfirm.ToString]
+struct T125ChannelConveneConfirm = "Result = " + Result.ToString
+{
+	UINT8 ChannelIdPresent:1;
+	T125PerResult Result;
+	T125UserID Initiator;
+	switch
+	{
+		 case ChannelIdPresent: T125ChannelId ChannelId;
+	}
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelDisbandRequest.ToString]
+struct T125ChannelDisbandRequest = FormatString("UserID = %s, ChannelId = %s", 
+												Initiator.ToString, 
+												ChannelId.ToString)
+{
+	T125UserID Initiator;
+	T125ChannelId ChannelId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelDisbandIndication.ToString]
+struct T125ChannelDisbandIndication = "ChannelId = " + ChannelId.ToString
+{
+	T125ChannelId ChannelId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelAdmitRequest.ToString]
+struct T125ChannelAdmitRequest = FormatString("UserID = %s, ChannelId = %s", 
+												Initiator.ToString, 
+												ChannelId.ToString)
+{
+	T125UserID Initiator;
+	T125ChannelId ChannelId;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelAdmitIndication.ToString]
+struct T125ChannelAdmitIndication = FormatString("UserID = %s, ChannelId = %s", 
+												Initiator.ToString, 
+												ChannelId.ToString)
+{
+	T125UserID Initiator;
+	T125ChannelId ChannelId;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelExpelRequest.ToString]
+struct T125ChannelExpelRequest = FormatString("UserID = %s, ChannelId = %s", 
+												Initiator.ToString, 
+												ChannelId.ToString)
+{
+	T125UserID Initiator;
+	T125ChannelId ChannelId;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125ChannelExpelIndication.ToString]
+struct T125ChannelExpelIndication = "ChannelId = " + ChannelId.ToString
+{
+	T125ChannelId ChannelId;
+	[Post.Size = PERLengthValue]
+	AsnPerLengthDeterminant UserCount;
+	T125UserID UserID[Size];
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGrabRequest.ToString]
+struct T125TokenGrabRequest = FormatString("UserID=%s,TokenId=%s",Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGrabConfirm.ToString]
+struct T125TokenGrabConfirm = FormatString("Result=%s,UserID=%s,TokenId=%s,Status=%s",
+																					Result.tostring,Initiator.tostring,TokenId.tostring,TokenStatus.tostring)
+{
+	T125PerResult Result;
+	T125UserID Initiator;
+	[
+	Post.Global.T124DynamicChannel$
+		[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, UserIDValue): 
+															MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, UserIDValue)] 
+		= Global.T124DynamicToken$
+			[SourceNetworkAddress < DestinationNetworkAddress ? MakeByteArray(SourceNetworkAddress, DestinationNetworkAddress, TokenIdValue): 
+																MakeByteArray(DestinationNetworkAddress, SourceNetworkAddress, TokenIdValue)]
+	]
+	T125TokenId TokenId;
+	T125PerTokenStatus TokenStatus;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenInhibitRequest.ToString]
+struct T125TokenInhibitRequest = FormatString("UserID=%s,TokenId=%s",Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenInhibitConfirm.ToString]
+struct T125TokenInhibitConfirm = FormatString("Result=%s,UserID=%s,TokenId=%s,Status=%s",
+																					Result.tostring,Initiator.tostring,TokenId.tostring,TokenStatus.tostring)
+{
+	T125PerResult Result;
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125PerTokenStatus TokenStatus;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGiveRequest.ToString]
+struct T125TokenGiveRequest = FormatString("Initiator=%s,TokenId=%s,Recipient=%s",
+																					Initiator.tostring,TokenId.tostring,Recipient.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125UserID Recipient;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGiveIndication.ToString]
+struct T125TokenGiveIndication = FormatString("Initiator=%s,TokenId=%s,Recipient=%s",
+																					Initiator.tostring,TokenId.tostring,Recipient.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125UserID Recipient;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGiveResponse.ToString]
+struct T125TokenGiveResponse = FormatString("Initiator=%s,TokenId=%s,Recipient=%s",
+																					Initiator.tostring,TokenId.tostring,Recipient.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125UserID Recipient;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenGiveConfirm.ToString]
+struct T125TokenGiveConfirm = FormatString("Initiator=%s,TokenId=%s,Recipient=%s,TokenStatus=%s",
+																					Initiator.tostring,TokenId.tostring,Recipient.tostring,TokenStatus.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125UserID Recipient;
+	T125PerTokenStatus TokenStatus;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenPleaseRequest.ToString]
+struct T125TokenPleaseRequest = FormatString("Initiator=%s,TokenId=%s",
+																					Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenPleaseIndication.ToString]
+struct T125TokenPleaseIndication = FormatString("Initiator=%s,TokenId=%s",
+																					Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenReleaseRequest.ToString]
+struct T125TokenReleaseRequest = FormatString("Initiator=%s,TokenId=%s",
+																					Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenReleaseConfirm.ToString]
+struct T125TokenReleaseConfirm = FormatString("Result=%s,UserID=%s,TokenId=%s,Status=%s",
+																					Result.tostring,Initiator.tostring,TokenId.tostring,TokenStatus.tostring)
+{
+	T125PerResult Result;
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125PerTokenStatus TokenStatus;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenTestRequest.ToString]
+struct T125TokenTestRequest = FormatString("Initiator=%s,TokenId=%s",
+																					Initiator.tostring,TokenId.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+}
+
+[DataTypeBitAlign, T125FrameSummary = T125FrameSummary +  ", " + T125TokenTestConfirm.ToString]
+struct T125TokenTestConfirm = FormatString("Initiator=%s,TokenId=%s,TokenStatus=%s",
+																					Initiator.tostring,TokenId.tostring,TokenStatus.tostring)
+{
+	T125UserID Initiator;
+	T125TokenId TokenId;
+	T125PerTokenStatus TokenStatus;
+}
+
+[DataTypeBitAlign]
+struct T125Header = FormatString("Type=%s%s%s",
+										T125PDUTypeTable(T125DomainPDUType),
+										MCSUserID ? Formatstring(", UserID=%u", MCSUserID) : "",
+										MCSChannel ? Formatstring(", ChannelID=%u", MCSChannel) : "")
+{
+	[Post.T125DomainPDUType = EnumeratedIndex, Post.T125PacketType = T125PDUTypeTable(EnumeratedIndex)]
+	AsnPerEnumerated(42, 0) Type = T125PDUTypeTable(EnumeratedIndex);
+	switch (T125DomainPDUType)
+	{
+		case 25:
+		case 26:
+		case 27:
+		case 28:
+			_struct HeaderInfo
+			{
+				[Post.MCSUserID = UserIDValue]
+				T125UserID UserID;
+				[Post.MCSChannel = ChannelIdValue]
+				T125ChannelId Channel;
+				[Post.T125DataPriority = DataPriorityValue]
+				T125PerDataPriority DataPriority;
+				T125PerSegmentation Segmentation;
+				[Post.T125DataLength = PERLengthValue]
+				AsnPerLengthDeterminant Length;
+			}
+	}
+}
+

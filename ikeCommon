@@ -1,0 +1,2803 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Internet Key Exchange
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2407, 2408, 2409
+//#                          http://www.iana.org/assignments/isakmp-registry
+//#                          http://cipherica.com/libike/files/vendorid.txt
+//#                          http://lists.openswan.org/pipermail/dev/2004-October/000650.html
+//#                          http://msdn.microsoft.com/library/default.asp?url=/library/en-us/randz/protocol/ike_protocol_with_private_error_status_notification.asp
+//#                          http://msdn.microsoft.com/library/default.asp?url=/library/en-us/randz/protocol/gss-api_token_payload.asp
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 2/17/2009
+//#                          Minor, 4/28/2009
+//#
+//####
+
+Const IKE_NONE     = 0x000000001; //None
+Const IKE_SA       = 0x000000002; //Security Association
+Const IKE_P        = 0x000000004; //Proposal
+Const IKE_T        = 0x000000008; //Transform
+Const IKE_KE       = 0x000000010; //Key Exchange
+Const IKE_IDi_IDr  = 0x000000020; //Identification
+Const IKE_IDi      = 0x000000040; //Identification - Initiator
+Const IKE_IDr      = 0x000000080; //Identification - Responder
+Const IKE_CERT     = 0x000000100; //Certificate
+Const IKE_CR       = 0x000000200; //Certificate Request
+Const IKE_HASH     = 0x000000400; //Hash
+Const IKE_SIG      = 0x000000800; //Signature
+Const IKE_Ni_Nr    = 0x000001000; //Nonce (Ni, Nr)
+Const IKE_N        = 0x000002000; //Notification
+Const IKE_D        = 0x000004000; //Delete
+Const IKE_VID      = 0x000008000; //Vendor ID
+Const IKE_SAK      = 0x000010000; //SA KEK Payload
+Const IKE_SAT      = 0x000020000; //SA TEK Payload
+Const IKE_KD       = 0x000040000; //Key Download
+Const IKE_SEQ      = 0x000080000; //Sequence Number
+Const IKE_POP      = 0x000100000; //Proof of Possession
+Const IKE_NAT_D    = 0x000200000; //NAT Discovery
+Const IKE_NAT_OA   = 0x000400000; //NAT Original Address
+Const IKE_CERTREQ  = 0x000800000; //Certificate Request
+Const IKE_AUTH     = 0x001000000; //Authentication
+Const IKE_TSi      = 0x002000000; //Traffic Selector - Initiator
+Const IKE_TSr      = 0x004000000; //Traffic Selector - Responder
+Const IKE_E        = 0x008000000; //Encrypted
+Const IKE_CP       = 0x010000000; //Configuration
+Const IKE_EAP      = 0x020000000; //Extensible Authentication
+Const IKE_GSS_API  = 0x040000000; //Security Service Provider Interface Token
+Const IKE_FRAGMENT = 0x080000000; //Fragment (MS Extension)
+Const IKE_CRYPTO   = 0x100000000; //Crypto Payload (CRYPTO)
+Const IKE_GSS_ID   = 0x200000000; //GSS-API Endpoint Name (GSS_ID)
+[Property.IKEPayloads = IKE_NONE]
+[DefaultTimeOut = IKEConversationTimeout]
+Protocol IKE = FormatString("version %d.%d, %s, Payloads = %s, Flags = %s, Length = %d",
+							   Version.MajorVersion,
+							   Version.MinorVersion,
+							   IKEExchangeTypeTable(ExchangeType),
+							   Property.IKESummaryLine,
+							   property.IKEFlags,
+							   Length
+							  )
+{
+	[IKEInitiatorCookie]
+	Cookie InitiatorCookie;
+	[IKEResponderCookie]
+	Cookie ResponderCookie;
+	switch
+	{
+		case !conversation.IKE.ID:
+			[
+				BuildConversationWithParent(InitiatorCookie),
+				conversation.ConversationDescription = FormatString("(InitCookie: %s) ConvID = %d", InitiatorCookie.ToDataTypeString, ConvID)
+			]
+			_struct BuildIkeConversation{};
+	}
+	[
+		Conversation.InitiatorAddress = (ResponderCookie == 0x0000000000000000) ? Property.SourceNetworkAddress : Conversation.InitiatorAddress,
+		Property.IKEInitiator = (Property.SourceNetworkAddress == Conversation.InitiatorAddress) ? true : false,
+		property.IKENextPayload
+	]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Version = FormatString("%d.%d", MajorVersion, MinorVersion)
+	{
+		UINT8 MajorVersion:4 = FormatString("(%s) %d", this.ToBitString, this);
+		UINT8 MinorVersion:4 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	
+	[IKEExchangeType]
+	UINT8 ExchangeType = FormatString("%s, %d(0x%02X)", IKEExchangeTypeTable(this), this, this);
+	
+	switch(Version)
+	{
+		case 0x10:
+			// version 1
+			[property.IKEFlags = FlagsVer1.ToString]
+			UINT8 FlagsVer1 = FormatString("%s%s%s", A ? "A" : ".", C ? "C" : ".",E ? "E" : ".")
+			{
+				UINT8 Reserved:5 = FormatString("(%s)",this.ToBitString);
+				UINT8 A:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Authentication only " : "Not Authentication only");
+				UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Commit, key exchange synchronized" : "Commit, key exchange not synchronized");
+				[property.KSAKMPEncrypted]
+				UINT8 E:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Encryption, Following payloads Encrypted" : "Encryption, Following payloads not Encrypted");
+			};
+		case 0x20:
+			// version 2
+			[property.IKEFlags = FlagsVer2.ToString]
+			UINT8 FlagsVer2 = FormatString("%s%s", I?"Initiator ": "", R?"Responder ": "")
+			{
+				UINT8 Reserved3:2 = FormatString("(%s)", this.ToBitString);
+				UINT8 R:1 = FormatString("        (%s) %s", this.ToBitString, this? "Responder": "Not Responder");
+				UINT8 Reserved2:1 = FormatString("(%s)", this.ToBitString);		
+				UINT8 I:1 = FormatString("        (%s) %s", this.ToBitString, this? "Initiator": "Not Initiator");			
+				UINT8 Reserved1:3 = FormatString("(%s)", this.ToBitString);
+			};
+	}
+	
+	UINT32 MessageID;
+	UINT32 Length;
+	
+	[Post.Property.IKESummaryLine = IKESummaryTable(Property.IKEPayloads, Property.IKEInitiator, Property.KSAKMPEncrypted)]
+	switch
+	{
+		case KSAKMPEncrypted:
+			struct IKEPayload = FormatString("Encrypted Payloads, Length = %d",Length - 28)
+			{
+				[Property.IKEPayloads = Property.IKEPayloads | IKEPayloadtoEnum(property.IKENextPayload)]
+				Blob(Length - 28 > frameLength - frameOffset ? frameLength - frameOffset : Length - 28) PayloadData;
+			}
+		default:
+			while Payloads[offset < frameLength ]
+			{
+				switch
+				{
+					case property.IKENextPayload == 0x01: IKESecurityAssociationPayload SecurityAssociation;
+					case property.IKENextPayload == 0x02: IKEProposalPayload Proposal;
+					case property.IKENextPayload == 0x03: IKETransformPayload Transform;
+					case property.IKENextPayload == 0x04: IKEKeyExchangePayload KeyExchange;
+					case property.IKENextPayload == 0x05: IKEIdentificationPayload Identification;
+					case property.IKENextPayload == 0x06: IKECertificatePayload Certificate;
+					case property.IKENextPayload == 0x07: IKECertificateRequestPayload CertificateRequest;
+					case property.IKENextPayload == 0x08: IKEHashPayload Hash;
+					case property.IKENextPayload == 0x09: IKESignaturePayload Signature;
+					case property.IKENextPayload == 0x0A: IKENoncePayload Nonce;
+					case property.IKENextPayload == 0x0B: IKENotificationPayload Notification;
+					case property.IKENextPayload == 0x0C: IKEDeletePayload Delete;
+					case property.IKENextPayload == 0x0D: IKEVendorIDPayload VendorID;
+					case property.IKENextPayload == 0x0F: IKESAKEKPayload SAKEKPayload;
+					case property.IKENextPayload == 0x10: IKESATEKPayload SATEKPayload;
+					case property.IKENextPayload == 0x11: IKEKeyDownload KeyDownload;
+					case property.IKENextPayload == 0x12: IKESequenceNumber SequenceNumber;
+					case property.IKENextPayload == 0x13: IKEProofOfPossession ProofOfPossession;
+					case property.IKENextPayload == 0x82:
+					case property.IKENextPayload == 0x14: IKENATDiscoveryPayload NATD;
+					case property.IKENextPayload == 0x83:
+					case property.IKENextPayload == 0x15: IKENATOriginalAddressPayload NATOA;
+
+					// ----- IKEv2 ----------
+					case property.IKENextPayload == 0x21: IKEv2SecurityAssociationPayload SecurityAssociationPayload;
+					case property.IKENextPayload == 0x22: IKEv2KeyExchangePayload KeyExchangePayload;
+					case property.IKENextPayload == 0x23: IKEv2IdentificationPayload IdentificationPayloadTDi;
+					case property.IKENextPayload == 0x24: IKEv2IdentificationPayload IdentificationPayloadTDr;
+					case property.IKENextPayload == 0x25: IKEv2CertificatePayload CertificatePayload;
+					case property.IKENextPayload == 0x26: IKEv2CertificateRequestPayload CertificateRequestPayload;
+					case property.IKENextPayload == 0x27: IKEv2AuthenticationPayload AuthenticationPayload;
+					case property.IKENextPayload == 0x28: IKEv2NoncePayload NoncePayload;
+					case property.IKENextPayload == 0x29: IKEv2NotifyPayload NotifyPayload;
+					case property.IKENextPayload == 0x2A: IKEv2DeletePayload DeletePayload;
+					case property.IKENextPayload == 0x2B: IKEv2VendorIDPayload VendorIDPayload;
+					case property.IKENextPayload == 0x2C:
+					case property.IKENextPayload == 0x2D: IKEv2TrafficSelectorPayload TrafficSelectorPayload;
+					case property.IKENextPayload == 0x2E: IKEv4EncryptedPayload EncryptedPayload;
+					case property.IKENextPayload == 0x2F: IKEv2ConfigurationPayload ConfigurationPayload;
+					case property.IKENextPayload == 0x30: IKEv2EAPPayload EAPPayload;
+					// ----------------------
+										
+					case property.IKENextPayload >= 0x0E &&
+						 property.IKENextPayload <= 0x7F: IKEReservedPayload ReservedPayload;
+					case property.IKENextPayload == 0x81: IKEGSSAPITokenPayload GSSAPIToken;
+					case property.IKENextPayload >= 0x80 &&
+						 property.IKENextPayload <= 0xFF: IKEPrivateUsePayload PrivateUse;   					 
+					
+				}
+			}
+	}
+}
+
+
+Table IKESummaryTable(Payloads, Initiator, Encrypted)
+{
+	switch
+	{
+		default:
+			FormatString("HDR%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+				Encrypted ? "*" : "",
+				(Payloads & IKE_CRYPTO  ) ? ", CRYPTO"  : "",
+				(Payloads & IKE_HASH    ) ? ", HASH"    : "",
+				(Payloads & IKE_IDi_IDr ) ? (Initiator ? ", IDi":", IDr"): "",
+				(Payloads & IKE_IDi     ) ? ", IDi"     : "",
+				(Payloads & IKE_IDr     ) ? ", IDr"     : "",
+				(Payloads & IKE_SA      ) ? ", SA"      : "",
+				"", //(Payloads & IKE_P       ) ? ", P"       : "",
+				"", //(Payloads & IKE_T       ) ? ", T"       : "",
+				(Payloads & IKE_AUTH    ) ? ", AUTH"    : "",
+				(Payloads & IKE_Ni_Nr   ) ? (Initiator ? ", Ni":", Nr") : "",
+				(Payloads & IKE_GSS_API ) ? ", GSS-API" : "",
+				(Payloads & IKE_VID     ) ? ", VID"     : "",
+				(Payloads & IKE_GSS_ID  ) ? ", GSS_ID"  : "",
+				(Payloads & IKE_KE      ) ? ", KE"      : "",
+				(Payloads & IKE_CERT    ) ? ", CERT"    : "",
+				(Payloads & IKE_CR      ) ? ", CR"      : "",
+				(Payloads & IKE_SIG     ) ? ", SIG"     : "",
+				(Payloads & IKE_N       ) ? ", N"       : "",
+				(Payloads & IKE_D       ) ? ", D"       : "",
+				(Payloads & IKE_SAK     ) ? ", SAK"     : "",
+				(Payloads & IKE_SAT     ) ? ", SAT"     : "",
+				(Payloads & IKE_KD      ) ? ", KD"      : "",
+				(Payloads & IKE_SEQ     ) ? ", SEQ"     : "",
+				(Payloads & IKE_POP     ) ? ", POP"     : "",
+				(Payloads & IKE_NAT_D   ) ? ", NAT-D"   : "",
+				(Payloads & IKE_NAT_OA  ) ? ", NAT-OA"  : "",
+				(Payloads & IKE_CERTREQ ) ? ", CERTREQ" : "",
+				(Payloads & IKE_TSi     ) ? ", TSi"     : "",
+				(Payloads & IKE_TSr     ) ? ", TSr"     : "",
+				(Payloads & IKE_E       ) ? ", E"       : "",
+				(Payloads & IKE_CP      ) ? ", CP"      : "",
+				(Payloads & IKE_EAP     ) ? ", EAP"     : "",
+				(Payloads & IKE_FRAGMENT) ? ", FRAGMENT": ""
+			);
+	}
+}
+
+UnsignedNumber Cookie
+{
+	size = 8,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+}
+
+Table IKEPayloadTable(value)
+{
+	switch
+	{
+		//IKE
+		case  value == 0x00: "None";
+		case  value == 0x01: "Security Association (SA)";
+		case  value == 0x02: "Proposal (P)";
+		case  value == 0x03: "Transform (T)";
+		case  value == 0x04: "Key Exchange (KE)";
+		case  value == 0x05: "Identification (ID)";
+		case  value == 0x06: "Certificate (CERT)";
+		case  value == 0x07: "Certificate Request (CR)";
+		case  value == 0x08: "Hash (HASH)";
+		case  value == 0x09: "Signature (SIG)";
+		case  value == 0x0A: "Nonce (NONCE)";
+		case  value == 0x0B: "Notification (N)";
+		case  value == 0x0C: "Delete (D)";
+		case  value == 0x0D: "Vendor ID (VID)";
+		case  value == 0x0E: "Reserved, not to be used";
+		case  value == 0x0F: "SA KEK Payload (SAK)";
+		case  value == 0x10: "SA TEK Payload (SAT)";
+		case  value == 0x11: "Key Download (KD)";
+		case  value == 0x12: "Sequence Number (SEQ)";
+		case  value == 0x13: "Proof of Possession (POP)";
+		case  value == 0x14: "NAT Discovery (NAT-D)";
+		case  value == 0x15: "NAT Original Address (NAT-OA)";
+		//IKEv2 - rfc4306
+		case  value == 0x21: "Security Association (SA)";
+		case  value == 0x22: "Key Exchange (KE)";
+		case  value == 0x23: "Identification - Initiator (IDi)";
+		case  value == 0x24: "Identification - Responder (IDr)";
+		case  value == 0x25: "Certificate (CERT)";
+		case  value == 0x26: "Certificate Request (CERTREQ)";
+		case  value == 0x27: "Authentication (AUTH)";
+		case  value == 0x28: "Nonce (Ni, Nr)";
+		case  value == 0x29: "Notify (N)";
+		case  value == 0x2A: "Delete (D)";
+		case  value == 0x2B: "Vendor ID (V)";
+		case  value == 0x2C: "Traffic Selector - Initiator (TSi)";
+		case  value == 0x2D: "Traffic Selector - Responder (TSr)";
+		case  value == 0x2E: "Encrypted (E)";
+		case  value == 0x2F: "Configuration (CP)";
+		case  value == 0x30: "Extensible Authentication (EAP)";
+		
+		case  value == 0x81: "Security Service Provider Interface Token (GSS-API)";
+		//Microsoft implementation of NAT-T
+		case  value == 0x82: "NAT Discovery (NAT-D)";
+		case  value == 0x83: "NAT Original Address (NAT-OA)";
+		//IPSEC Extentions - IKE Protocol with Fragmentation Support
+		case  value == 0x84: "Fragment (MS Extension)";
+		case  value == 0x85: "Crypto Payload (CRYPTO)";
+		case  value == 0x86: "GSS-API Endpoint Name (GSS_ID)";
+		case  value == 0x87: "Authentication (Auth)";
+	case  value >= 0x80 &&
+		  value <= 0xFF: "Private use";
+	default            : FormatString("Unknown Payload Type (%d)", value);
+
+	}
+}
+
+Table IKEPayloadtoEnum(value)
+{
+	switch(value)
+	{
+		//IKE
+		case  0x00: IKE_NONE;
+		case  0x01: IKE_SA;
+		case  0x02: IKE_P;
+		case  0x03: IKE_T;
+		case  0x04: IKE_KE;
+		case  0x05: IKE_IDi_IDr;
+		case  0x06: IKE_CERT;
+		case  0x07: IKE_CR;
+		case  0x08: IKE_HASH;
+		case  0x09: IKE_SIG;
+		case  0x0A: IKE_Ni_Nr;
+		case  0x0B: IKE_N;
+		case  0x0C: IKE_D;
+		case  0x0D: IKE_VID;
+		case  0x0F: IKE_SAK;
+		case  0x10: IKE_SAT;
+		case  0x11: IKE_KD;
+		case  0x12: IKE_SEQ;
+		case  0x13: IKE_POP;
+		case  0x14: IKE_NAT_D;
+		case  0x15: IKE_NAT_OA;
+		//IKEv2 - rfc4306
+		case  0x21: IKE_SA;
+		case  0x22: IKE_KE;
+		case  0x23: IKE_IDi;
+		case  0x24: IKE_IDr;
+		case  0x25: IKE_CERT;
+		case  0x26: IKE_CERTREQ;
+		case  0x27: IKE_AUTH;
+		case  0x28: IKE_Ni_Nr;
+		case  0x29: IKE_N;
+		case  0x2A: IKE_D;
+		case  0x2B: IKE_VID;
+		case  0x2C: IKE_TSi;
+		case  0x2D: IKE_TSr;
+		case  0x2E: IKE_E;
+		case  0x2F: IKE_CP;
+		case  0x30: IKE_EAP;
+		
+		case  0x81: IKE_GSS_API;
+		//Microsoft implementation of NAT-T
+		case 0x82: IKE_NAT_D;
+		case 0x83: IKE_NAT_OA;
+		//IPSEC Extentions - IKE Protocol with Fragmentation Support
+		case 0x84: IKE_FRAGMENT;
+		case 0x85: IKE_CRYPTO;
+		case 0x86: IKE_GSS_ID;
+		case 0x87: IKE_AUTH;
+	default : IKE_NONE;
+
+	}
+}
+
+Table IKEPayloadDOITable(value, reserved)
+{
+	switch
+	{
+		case value == 0: "ISAKMP(0)";
+		case value == 1: "IPSEC(1)";
+		case value == 2: "GDOI(2)";
+		case reserved: FormatString("Reserved to IANA(%u)", value);
+		default: FormatString("User Defined(%u)", value);
+	}
+}
+
+Table IKEExchangeTypeTable(value)
+{
+	switch
+	{
+		//ISAKMP - RFC 2408
+		case  value == 0x00: "None";
+		case  value == 0x01: "Base";
+		case  value == 0x02: "Identity protection (Main Mode)";
+		case  value == 0x03: "Authentication only";
+		case  value == 0x04: "Aggressive Mode";
+		case  value == 0x05: "Informational";
+		case  value == 0x06: "Transaction (Config Mode)";
+		case  value == 0x20: "Quick Mode";
+		case  value == 0x21: "New Group Mode";
+		
+		//IKEv2 - RFC 4306
+		case  value == 0x22: "IKE_SA_INIT";
+		case  value == 0x23: "IKE_AUTH";
+		case  value == 0x24: "CREATE_CHILD_SA";
+		case  value == 0x25: "INFORMATIONAL";
+		
+		//Authenticated IP
+		case  value == 0xF3: "Main Mode";  //-13
+		case  value == 0xF4: "Quick Mode";  //-12
+		case  value == 0xF5: "Extended Mode";  //-11
+		case  value == 0xF6: "Notify";  //-10
+		
+		case  value >  0x06 &&
+			  value <= 0x1F: FormatString("ISAKMP future use (%d)", value);
+		case  value >  0x20 &&
+			  value <= 0xEF: FormatString("DOI specific use (%d)", value);
+		case  value >= 0xF0 &&
+			  value <= 0xFF: FormatString("Private use (%d)", value);
+		default            : FormatString("Unknown Exchange Type (%d)", value);
+    	
+	}
+}
+
+//RFC 2407, page 6, 4.4.1 IPSEC Security Protocol Identifier
+Table IPSECDOITable(protocolID)
+{
+	switch(protocolID)
+	{
+		case  0: "Reserved";
+		case  1: "ISAKMP";
+		case  2: "IPSEC_AH";
+		case  3: "IPSEC_ESP";
+		case  4: "IPCOMP";
+		default: FormatString("Unknown DOI (%d)", protocolID);
+	}
+}
+
+Table IPSECIKETransformIdTable(TransformId)
+{
+	switch(TransformId)
+	{
+		case  0: "RESERVED";
+		case  1: "KEY_IKE";
+		default: FormatString("Unknown ISAKMP Transform ID (%d)", TransformId);
+	}
+}
+
+Table IPSECAHTransformIdTable(TransformId)
+{
+	switch(TransformId)
+	{
+		case  0: "RESERVED";
+		case  1: "RESERVED";
+		case  2: "AH_MD5";
+		case  3: "AH_SHA";
+		case  4: "AH_DES";
+		case  5: "AH_SHA2-256";
+		case  6: "AH_SHA2-384";
+		case  7: "AH_SHA2-512";
+		case  8: "AH_RIPEMD";
+		case  9: "AH_AES-XCBC-MAC";
+		case 10: "AH_RSA";
+		default: FormatString("Unknown AH Transform ID (%d)", TransformId);
+	}
+}
+
+Table IPSECESPTransformIdTable(TransformId)
+{
+	switch(TransformId)
+	{
+		case  0: "RESERVED";
+		case  1: "ESP_DES_IV64";
+		case  2: "ESP_DES";
+		case  3: "ESP_3DES";
+		case  4: "ESP_RC5";
+		case  5: "ESP_IDEA";
+		case  6: "ESP_CAST";
+		case  7: "ESP_BLOWFISH";
+		case  8: "ESP_3IDEA";
+		case  9: "ESP_DES_IV32";
+		case 10: "ESP_RC4";
+		case 11: "ESP_NULL";
+		case 12: "ESP_AES-CBC";
+		case 13: "ESP_AES-CTR";
+		case 14: "ESP_AES-CCM_8";
+		case 15: "ESP_AES-CCM_12";
+		case 16: "ESP_AES-CCM_16";
+		case 17: "Unassigned";
+		case 18: "ESP_AES-GCM_8";
+		case 19: "ESP_AES-GCM_12";
+		case 20: "ESP_AES-GCM_16";
+		case 21: "ESP_SEED_CBC";
+		case 22: "ESP_CAMELLIA";
+		default: FormatString("Unknown ESP Transform ID (%d)", TransformId);
+	}
+}
+
+Table IPSECIPCOMPTransformIdTable(TransformId)
+{
+	switch(TransformId)
+	{
+		case  0: "RESERVED";
+		case  1: "IPCOMP_OUI";
+		case  2: "IPCOMP_DEFLATE";
+		case  3: "IPCOMP_LZS";
+		default: FormatString("Unknown IPCom Transform ID (%d)", TransformId);
+	}
+}
+Table IKETransformIDTable(protocolID, TransformId)
+{
+	switch(protocolID)
+	{
+		case  0: "RESERVED";
+		case  1: IPSECIKETransformIdTable(TransformId);
+		case  2: IPSECAHTransformIdTable(TransformId);
+		case  3: IPSECESPTransformIdTable(TransformId);
+		case  4: IPSECIPCOMPTransformIdTable(TransformId);
+		default: FormatString("Unknown Transform ID (%d)", TransformId);
+	}
+}
+
+//RFC 2407 page 13  Attribute Types
+//http://www.iana.org/assignments/isakmp-registry
+Table IPSECAttributeTypeTable(type)
+{
+	switch(type)
+	{
+		case  1: "SA Life Type";
+		case  2: "SA Life Duration";
+		case  3: "Group Description";
+		case  4: "Encapsulation Mode";
+		case  5: "Authentication Algorithm";
+		case  6: "Key Length";
+		case  7: "Key Rounds";
+		case  8: "Compress Dictionary Size";
+		case  9: "Compress Private Algorithm";
+		case 10: "ECN Tunnel";
+		case 11: "Extended (64-bit) Sequence Number";
+		case 12: "Authentication Key Length";
+		case 13: "Signature Encoding Algorithm";
+		default: FormatString("Unknown Attribute Type (%d)", type);
+	}
+}
+
+//RFC 2409 page 34
+//http://www.networksorcery.com/enp/rfc/rfc2409.txt
+Table IKEAttributeClassesTable(type)
+{
+	switch
+	{
+		case type == 0: "Reserved";
+		case type == 1:  "basic Encryption algorithm";
+		case type == 2:  "basic Hash algorithm";
+		case type == 3:  "basic Authentication method";
+		case type == 4:  "basic Group description";
+		case type == 5:  "basic Group type";
+		case type == 6:  "variable Group prime/irreducible polynomial";
+		case type == 7:  "variable Group generator one";
+		case type == 8:  "variable Group generator two";
+		case type == 9:  "variable Group curve A";
+		case type == 10: "variable Group curve B";
+		case type == 11: "basic Life type";
+		case type == 12: "variable Life duration";
+		case type == 13: "basic PRF";
+		case type == 14: "basic Key length";
+		case type == 15: "basic Field size";
+		case type == 16: "variable Group order";
+		case type == 16384: "GSS Identity Name";
+		case type >= 17 && type <= 16383: "Reserved to IANA";
+		case type >= 16384 && type <= 32767: "Private use among mutually consenting parties";
+		default: FormatString("Unknown Attribute Type (%d)", type);
+	}
+}
+
+Table SAIKEEncryptionAlgorithmTable(value)
+{
+	switch
+	{
+		case value == 0: "Reserved";
+		case value == 1: "DES-CBC";
+		case value == 2: "IDEA-CBC";
+		case value == 3: "Blowfish-CBC";
+		case value == 4: "RC5-R16-B64-CBC";
+		case value == 5: "3DES-CBC";
+		case value == 6: "CAST-CBC";
+		case value == 7: "AES-CBC";
+		case value >= 7 && value <= 65000: "Reserved to IANA";
+		case value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Algorithm Type (%d)", value);
+	}
+}
+
+Table SAIKEHashAlgorithmTable(value)
+{
+	switch
+	{
+		case value == 1: "MD5";
+		case value == 2: "SHA";
+		case value == 3: "Tiger";
+		case value == 4: "SHA-256";
+		case value == 5: "SHA-384";
+		case value == 6: "SHA-512";
+		case value >= 4 && value <= 65000: "Reserved to IANA";
+		case value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Algorithm Type (%d)", value);
+	}
+}
+
+Table SAIKEAuthenticationMethodTable(value)
+{
+	switch
+	{
+		case value == 0: "Reserved";
+		case value == 1: "Pre-shared key (PSK)";
+		case value == 2: "DSS signatures (DSS-SIG)";
+		case value == 3: "RSA signatures (RSA-SIG)";
+		case value == 4: "Encryption with RSA (RSA-ENC)";
+		case value == 5: "Revised encryption with RSA (RSA-Revised-ENC)";
+		case value == 6: "Encryption with El-Gamal";
+		case value == 7: "Revised encryption with El-Gamal";
+		case value == 8: "ECDSA signatures";
+		case value == 9: "AES-XCBC-MAC";
+
+		// http://www3.ietf.org/proceedings/99nov/I-D/draft-ietf-ipsec-isakmp-hybrid-auth-02.txt
+		case value == 64221: "HybridInitRSA";
+		case value == 64222: "HybridRespRSA";
+		case value == 64223: "HybridInitDSS";
+		case value == 64224: "HybridRespDSS";
+		
+		// http://www.drizzle.com/~aboba/IEEE/draft-beaulieu-ike-xauth-02.txt
+		case  value == 65001: "GSS-API using Kerberos";
+		case value == 65002: "XAUTHRespPreShared";
+		case value == 65003: "XAUTHInitDSS";
+		case value == 65004: "XAUTHRespDSS";
+		case value == 65005: "XAUTHInitRSA";
+		case value == 65006: "XAUTHRespRSA";
+		case value == 65007: "XAUTHInitRSAEncryption";
+		case value == 65008: "XAUTHRespRSAEncryption";
+		case value == 65009: "XAUTHInitRSARevisedEncryption";
+		case value == 65010: "XAUTHRespRSARevisedEncryption";
+		case value >= 6 && value <= 65000: "Reserved to IANA";
+		case value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Authentication Method (%d)", value);
+	}
+}
+
+Table SAIKEGroupDescriptionTable(value)
+{
+	switch
+	{
+		case value ==  0: "Reserved";
+		case value ==  1: "Default 768-bit MODP group";
+		case value ==  2: "Alternate 1024-bit MODP group";
+		case value ==  3: "EC2N group on GP[2^155]";
+		case value ==  4: "EC2N group on GP[2^185]";
+		case value ==  5: "1536-bit MODP group";
+		case value ==  6: "EC2N group over GF[2^163]";
+		case value ==  7: "EC2N group over GF[2^163]";
+		case value ==  8: "EC2N group over GF[2^283]";
+		case value ==  9: "EC2N group over GF[2^283]";
+		case value == 10: "EC2N group over GF[2^409]";
+		case value == 11: "EC2N group over GF[2^409]";
+		case value == 12: "EC2N group over GF[2^571]";
+		case value == 13: "EC2N group over GF[2^571]";
+		case value == 14: "2048-bit MODP group";
+		case value == 15: "3072-bit MODP group";
+		case value == 16: "4096-bit MODP group";
+		case value == 17: "6144-bit MODP group";
+		case value == 18: "8192-bit MODP group";
+		case value == 19: "256-bit random ECP group";
+		case value == 20: "384-bit random ECP group";
+		case value == 21: "521-bit random ECP group";
+		case value >= 5 && value <= 65000: "Reserved to IANA";
+		case value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Group Description (%d)", value);
+	}
+}
+
+Table SAIKEGroupTypeTable(value)
+{
+	switch
+	{
+		case  value == 1: "MODP";
+		case  value == 2: "ECP";
+		case  value == 3: "EC2N";
+		case  value >= 4 && value <= 65000: "Reserved to IANA";
+		case  value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Group Type (%d)", value);
+	}
+}
+
+Table SAIKELifeTypeTable(value)
+{
+	switch
+	{
+		case  Value == 1: "seconds";
+		case  Value == 2: "kilobytes";
+		case  value >= 3 && value <= 65000: "Reserved to IANA";
+		case  value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown Life Type (%d)", value);
+	}
+}
+
+Table SAIKERPFTable(value)
+{
+	switch
+	{
+		case  value >= 1 && value <= 65000: "Reserved to IANA";
+		case  value >= 65001 && value <= 65535: "Private use";
+		default: FormatString("Unknown RPF (%d)", value);
+	}
+}
+
+Table SALifeTypeTable(value)
+{
+	switch
+	{
+		case  value == 0: "RESERVED";
+		case  Value == 1: "seconds";
+		case  Value == 2: "kilobytes";
+		case  Value >= 3 &&
+			  Value <= 61439: "Reserved to IANA";
+		case  Value >= 61440 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+//RFC 2409 page 35  - Group Description
+Table SAGroupDescriptionTable(value)
+{
+	switch
+	{
+		case  value == 1: "Default 768-bit MODP group";
+		case  value == 2: "Alternate 1024-bit MODP group";
+		case  value == 3: "EC2N group on GP[2^155]";
+		case  value == 4: "EC2N group on GP[2^185]";
+		case  Value >= 5 &&
+			  Value <= 32767: "Reserved to IANA";
+		case  Value >= 32768 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+Table SAEncapsulationModeTable(value)
+{
+	switch
+	{
+		case  value == 0: "RESERVED";
+		case  Value == 1: "Tunnel";
+		case  Value == 2: "Transport";
+		case  Value == 3: "UDP-Encapsulated-Tunnel";
+		case  Value == 4: "UDP-Encapsulated-Transport";
+		case  Value == 0xF003: "UDP-Encapsulated-Tunnel";
+		case  Value == 0xF004: "UDP-Encapsulated-Transport";
+		case  Value >= 3 &&
+			  Value <= 61439: "Reserved to IANA";
+		case  Value >= 61440 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+Table SAAuthenticationAlgorithmTable(value)
+{
+	switch
+	{
+		case  value == 0: "RESERVED";
+		case  Value == 1: "HMAC-MD5";
+		case  Value == 2: "HMAC-SHA";
+		case  Value == 3: "DES-MAC";
+		case  Value == 4: "KPDK";
+		case  Value == 5: "HMAC-SHA2-256";
+		case  Value == 6: "HMAC-SHA2-384";
+		case  Value == 7: "HMAC-SHA2-512";
+		case  Value == 8: "HMAC-RIPEMD";
+		case  Value == 9: "AES-XCBC-MAC";
+		case  Value ==10: "SIG-RSA";
+		case  Value >= 5 &&
+			  Value <= 61439: "Reserved to IANA";
+		case  Value >= 61440 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+Table SAECNTunnelTable(value)
+{
+	switch
+	{
+		case  value == 0: "RESERVED";
+		case  Value == 1: "Allowed";
+		case  Value == 2: "Forbidde";
+		case  Value >= 3 &&
+			  Value <= 61439: "Reserved to IANA";
+		case  Value >= 61440 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+Table SASignatureEncodingAlgorithmTable(value)
+{
+	switch
+	{
+		case  value == 0: "RESERVED";
+		case  Value == 1: "RSASSA-PKCS1-v1_5";
+		case  Value == 2: "RSASSA-PSS";
+		case  Value >= 3 &&
+			  Value <= 61439: "Reserved to IANA";
+		case  Value >= 61440 &&
+			  Value <= 65535: "Private Use";
+	}
+}
+
+struct SAAttribute = FormatString("%s: %s = %s", AttributeType.AF ? "TV" : "TLV", AttributeType.ToString, SAAttibuteValue)
+{
+	UINT16 AttributeType = (IKEProtocolID == 1 && IKETransformID == 1) ? IKEAttributeClassesTable(Type) : IPSECAttributeTypeTable(Type)
+	{
+		UINT16 AF:1  = FormatString("  (%s) %s", this.ToBitString, this ? "SA Attributes are of the Type-Value format" : "SA Attributes are of the Type-Length-Value (TLV) format");
+		UINT16 Type:15 = FormatString("(%s) %s", this.ToBitString, (IKEProtocolID == 1 && IKETransformID == 1) ? IKEAttributeClassesTable(this) : IPSECAttributeTypeTable(this));
+	};
+	switch(AttributeType.AF)
+	{
+		case 0:
+			UINT16 AttributeLength;
+	}
+	switch
+	{
+		case IKEProtocolID == 1 && IKETransformID == 1:
+			_struct IKEP1
+			{
+				switch (AttributeType.AF)
+				{
+					case 1:
+						switch (AttributeType.Type)
+						{
+							case 1:
+								[SAAttibuteValue = SAIKEEncryptionAlgorithmTable(this)]
+								UINT16 EncryptionAlgorithm = FormatString("%s, %d(0x%02X)", SAIKEEncryptionAlgorithmTable(this), this, this);
+							case 2:
+								[SAAttibuteValue = SAIKEHashAlgorithmTable(this),
+								Conversation.Parent.AuthenticationHashAlgorithm
+									= (IKEInitiatorCookie && IKEResponderCookie) ? HashAlgorithm : Conversation.Parent.AuthenticationHashAlgorithm]
+								UINT16 HashAlgorithm = FormatString("%s, %d(0x%02X)", SAIKEHashAlgorithmTable(this), this, this);
+							case 3:
+								[SAAttibuteValue = SAIKEAuthenticationMethodTable(this)]
+								UINT16 AuthenticationMethod = FormatString("%s, %d(0x%02X)", SAIKEAuthenticationMethodTable(this), this, this);
+							case 4:
+								[SAAttibuteValue = SAIKEGroupDescriptionTable(this)]
+								UINT16 GroupDescription = FormatString("%s, %d(0x%02X)", SAIKEGroupDescriptionTable(this), this, this);
+							case 5:
+								[SAAttibuteValue = SAIKEGroupTypeTable(this)]
+								UINT16 GroupType = FormatString("%s, %d(0x%02X)", SAIKEGroupTypeTable(this), this, this);
+							case 11:
+								[SAAttibuteValue = SAIKELifeTypeTable(this)]
+								UINT16 LifeType = FormatString("%s, %d(0x%02X)", SAIKELifeTypeTable(this), this, this);
+							case 13:
+								[SAAttibuteValue = SAIKERPFTable(this)]
+								UINT16 PRF = FormatString("%s, %d(0x%02X)", SAIKERPFTable(this), this, this);
+							case 14:
+								[SAAttibuteValue = this.ToString]
+								UINT16 KeyLength;
+							case 15:
+								[SAAttibuteValue = this.ToString]
+								UINT16 FieldSize;
+							default:
+								BLOB(2) AttributeData;
+						}
+					case 0:
+						switch (AttributeType.Type)
+						{
+							case 16384:
+								[SAAttibuteValue = this.ToString]
+								[DataFieldByteOrder = LittleEndian]
+								UnicodeString(AttributeLength/2) GSSIdentityName;
+							default:
+								BLOB(AttributeLength) AttributeData;
+						}
+				}
+			}
+		default:
+			_struct NormalIKE
+			{
+				switch (AttributeType.AF)
+				{
+					case 1:
+						switch(AttributeType.Type)
+						{
+							case 1:
+								[SAAttibuteValue = SALifeTypeTable(this)]
+								UINT16 LifeType = FormatString("%s, %d(0x%02X)", SALifeTypeTable(this), this, this);
+							case 3:
+								[SAAttibuteValue = SAGroupDescriptionTable(this)]
+								UINT16 GroupDescription = FormatString("%s, %d(0x%02X)", SAGroupDescriptionTable(this), this, this);
+							case 4:
+								[SAAttibuteValue = SAEncapsulationModeTable(this)]
+								UINT16 EncapsulationMode = FormatString("%s, %d(0x%02X)", SAEncapsulationModeTable(this), this, this);
+							case 5:
+								[SAAttibuteValue = SAAuthenticationAlgorithmTable(this)]
+								uint16 AuthenticationAlgorithm = FormatString("%s, %d(0x%02X)", SAAuthenticationAlgorithmTable(this), this, this);
+							case 6:
+								[SAAttibuteValue = this.ToString]
+								UINT16 KeyLength;
+							case 7:
+								[SAAttibuteValue = this.ToString]
+								UINT16 KeyBounds;
+							case 8:
+								[SAAttibuteValue = this.ToString]
+								UINT16 CompressDictionarySize;
+							case 10:
+								[SAAttibuteValue = SAECNTunnelTable(this)]
+								UINT16 ECNTunnel = FormatString("%s, %d(0x%02X)", SAECNTunnelTable(this), this, this);
+							case 11:
+								[SAAttibuteValue = this.ToString]
+								UINT16 ExtendedSequenceNumber;
+							case 13:
+								[SAAttibuteValue = SASignatureEncodingAlgorithmTable(this)]
+								UINT16 SignatureEncodingAlgorithm = FormatString("%s, %d(0x%02X)", SASignatureEncodingAlgorithmTable(this), this, this);
+							default:
+								BLOB(2) AttributeData;
+						}
+					case 0:
+						BLOB(AttributeLength) AttributeValue;
+				}
+			}
+	}
+	
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_SA]
+[Property.InsideSAPayload = true, Post.Property.InsideSAPayload = false]
+struct IKESecurityAssociationPayload = FormatString("Next Payload = %s, Length = %d",
+														IKEPayloadTable(NextPayload),
+														PayloadLength
+														)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	[Conversation.IKESADOI]
+	UINT32 DOI = IKEPayloadDOITable(this, 1);
+	UINT32 Situation = FormatString("%s%s %s", Identity?"SIT_IDENTITY_ONLY":"", Secrecy ? "SIT_SECRECY":"", Integrity ? "SIT_INTEGRITY":"")
+	{
+		UINT32 Reserved:29 = FormatString(" (%s) Reserved", this.ToBitString);
+		UINT32 Integrity:1  = FormatString("(%s) SIT_INTEGRITY: %s", this.ToBitString,
+								this ? "Followed by variable-length data that includes an integrity level and compartment bitmask"
+									 : "No integrity level or category bitmaps shall be included");
+		UINT32 Secrecy:1  = FormatString("  (%s) SIT_SECRECY: %s", this.ToBitString,
+								this ? "Followed by variable-length data that includes a sensitivity level and compartment bitmask"
+									 : "No secrecy level or category bitmaps shall be included");
+		UINT32 Identity:1  = FormatString(" (%s) SIT_IDENTITY_ONLY: %s", this.ToBitString,
+								this ? "The security association will be identified by source identity information present in an associated Identification Payload"
+									 : "The security association will NOT be identified by source identity information present in an associated Identification Payload");
+	};
+	//RFC 2408, page 27, 3.4
+	IKEProposalPayload ProposalPayload;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_P]
+[Property.InsideProposalPayload = true, Post.Property.InsideProposalPayload = false]
+struct IKEProposalPayload = FormatString("Next Payload = %s, ProtocolID = %s, NumberOfTransforms = %d, Length = %d",
+											IKEPayloadTable(NextPayload),
+											IPSECDOITable(ProtocolID),
+											NumberOfTransforms,
+											PayloadLength
+											)
+{
+	[property.IKENextPayload = Property.InsideSAPayload ? property.IKENextPayload : this]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 Proposal;
+	[IKEProtocolID]
+	UINT8 ProtocolID = FormatString("%s, %d(0x%02X)", IPSECDOITable(this), this, this);
+	UINT8 SPISize;
+	UINT8 NumberOfTransforms;
+	switch
+	{
+		case SPISize > 0:
+			BLOB(SPISize) SPI;
+	}
+	IKETransformPayload TransformPayload[ NumberOfTransforms ];
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_T]
+struct IKETransformPayload = FormatString("Next Payload = %s, TransformID = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											IKETransformIDTable(IKEProtocolID, TransformId),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload = Property.InsideProposalPayload ? property.IKENextPayload : this]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	[TransformEndOffset = offset + this - 2]
+	UINT16 PayloadLength;
+	UINT8 Transform;
+	[IKETransformID]
+	UINT8 TransformId = FormatString("%s %d(0x%02X)", IKETransformIDTable(IKEProtocolID, this), this, this);
+	UINT16 RESERVED2;
+	while Attributes[offset < Property.TransformEndOffset]
+	{
+		SAAttribute Attribute;
+	};
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_KE]
+struct IKEKeyExchangePayload = FormatString("Next Payload = %s, Length = %d",
+											   IKEPayloadTable(NextPayload),
+											   PayloadLength
+											  )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset
+														: PayloadLength - 4) KeyExchangeData;
+}
+
+//http://www.iana.org/assignments/isakmp-registry
+Table IKEIdentificationTypeTable(type)
+{
+	switch(type)
+	{
+		case  0: "RESERVED";
+		case  1: "ID_IPV4_ADDR";
+		case  2: "ID_FQDN";
+		case  3: "ID_USER_FQDN";
+		case  4: "ID_IPV4_ADDR_SUBNET";
+		case  5: "ID_IPV6_ADDR";
+		case  6: "ID_IPV6_ADDR_SUBNET";
+		case  7: "ID_IPV4_ADDR_RANGE";
+		case  8: "ID_IPV6_ADDR_RANGE";
+		case  9: "ID_DER_ASN1_DN";
+		case 10: "ID_DER_ASN1_GN";
+		case 11: "ID_KEY_ID";
+		case 12: "ID_LIST";
+		default: "Unknown Type";
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_IDi_IDr]
+struct IKEIdentificationPayload = FormatString("Next Payload = %s, Length = %d",
+												  IKEPayloadTable(NextPayload),
+												  PayloadLength
+												 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 IDType = FormatString("%s %d(0x%02X)", IKEIdentificationTypeTable(this), this, this);
+	switch (Conversation.IKESADOI)
+	{
+		case 2:
+			UINT24 Reserved2;
+		default:
+			UINT24 DOISpecificIDData;
+	}
+	switch (Conversation.IKESADOI)
+	{
+		case 2:
+			switch (IDType)
+			{
+				case 11:
+					struct IDKEYID = GroupIdentifier.ToString
+					{
+						UINT32 GroupIdentifier;
+					}
+			}
+		default:
+			switch(IDType)
+			{
+				case  1:
+					IPv4Address IPv4Address;
+				case  2:
+					AsciiString(PayloadLength - 8) DomainName;
+				case  3:
+					AsciiString(PayloadLength - 8) UserName;
+				case  4:
+					_struct ID_IPV4_ADDR_SUBNET
+					{
+						IPv4Address IPv4Address;
+						IPv4Address NetworkMask;
+					};
+				case  5:
+					IPv6Address IPv6Address;
+				case  6:
+					_struct ID_IPV6_ADDR_SUBNET
+					{
+						IPv6Address IPv6Address;
+						IPv6Address NetworkMask;
+					};
+				case  7:
+					_struct ID_IPV4_ADDR_RANGE
+					{
+						IPv4Address BeginningAddress;
+						IPv4Address EndingAddress;
+					};
+				case  8:
+					_struct ID_IPV6_ADDR_RANGE
+					{
+						IPv6Address BeginningAddress;
+						IPv6Address EndingAddress;
+					};
+				case  9:
+					AsciiString(PayloadLength - 8) DistinguishedName;
+				case 10:
+					AsciiString(PayloadLength - 8) GeneralName;
+				case 11:
+					AsciiString(PayloadLength - 8) VendorSpecificInformation;
+				default:
+					AsciiString(PayloadLength - 8) IdentificationData;
+			}
+	}
+}
+
+Table IKECertEncodingTable(value)
+{
+	switch(value)
+	{
+		case  0: FormatString("NONE (%d)", value);
+		case  1: FormatString("PKCS #7 wrapped X.509 certificate (%d)", value);
+		case  2: FormatString("PGP Certificate (%d)", value);
+		case  3: FormatString("DNS Signed Key (%d)", value);
+		case  4: FormatString("X.509 Certificate - Signature (%d)", value);
+		case  5: FormatString("X.509 Certificate - Key Exchange (%d)", value);
+		case  6: FormatString("Kerberos Tokens (%d)", value);
+		case  7: FormatString("Certificate Revocation List (CRL) (%d)", value);
+		case  8: FormatString("Authority Revocation List (ARL) (%d)", value);
+		case  9: FormatString("SPKI Certificate (%d)", value);
+		case 10: FormatString("X.509 Certificate - Attribute (%d)", value);
+		default: FormatString("RESERVED value (%d)", value);
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_CERT]
+struct IKECertificatePayload = FormatString("Next Payload = %s, Length = %d",
+												IKEPayloadTable(NextPayload),
+												PayloadLength
+												)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 CertEncoding = IKECertEncodingTable(this);
+	Blob(PayloadLength - 5 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 5) CertificateData;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_CR]
+struct IKECertificateRequestPayload = FormatString("Next Payload = %s, Length = %d",
+													  IKEPayloadTable(NextPayload),
+													  PayloadLength
+													 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 CertType = IKECertEncodingTable(this);
+	switch (CertType)
+	{
+		case 4:
+			X509RdnSequence X509RdnSequence;
+		default:
+			Blob(PayloadLength - 5 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 5) CertificateAuthority;		
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_HASH]
+struct IKEHashPayload = FormatString("Next Payload = %s, Length = %d",
+										IKEPayloadTable(NextPayload),
+										PayloadLength
+										)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 4) HashData;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_SIG]
+struct IKESignaturePayload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset
+														: PayloadLength - 4) SignatureData;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_Ni_Nr]
+struct IKENoncePayload = FormatString("Next Payload = %s, Length = %d",
+										 IKEPayloadTable(NextPayload),
+										 PayloadLength
+										)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 4) NonceData;
+}
+
+
+Table IKENotifyMessageTypeTable(value)
+{
+	switch
+	{
+		case  value == 0x0001: FormatString("INVALID-PAYLOAD-TYPE (%d)", value);
+		case  value == 0x0002: FormatString("DOI-NOT-SUPPORTED (%d)", value);
+		case  value == 0x0003: FormatString("SITUATION-NOT-SUPPORTED (%d)", value);
+		case  value == 0x0004: FormatString("INVALID-COOKIE (%d)", value);
+		case  value == 0x0005: FormatString("INVALID-MAJOR-VERSION (%d)", value);
+		case  value == 0x0006: FormatString("INVALID-MINOR-VERSION (%d)", value);
+		case  value == 0x0007: FormatString("INVALID-EXCHANGE-TYPE (%d)", value);
+		case  value == 0x0008: FormatString("INVALID-FLAGS (%d)", value);
+		case  value == 0x0009: FormatString("INVALID-MESSAGE-ID (%d)", value);
+		case  value == 0x000A: FormatString("INVALID-PROTOCOL-ID (%d)", value);
+		case  value == 0x000B: FormatString("INVALID-SPI (%d)", value);
+		case  value == 0x000C: FormatString("INVALID-TRANSFORM-ID (%d)", value);
+		case  value == 0x000D: FormatString("ATTRIBUTES-NOT-SUPPORTED (%d)", value);
+		case  value == 0x000E: FormatString("NO-PROPOSAL-CHOSEN (%d)", value);
+		case  value == 0x000F: FormatString("BAD-PROPOSAL-SYNTAX  (%d)", value);
+		case  value == 0x0010: FormatString("PAYLOAD-MALFORMED (%d)", value);
+		case  value == 0x0011: FormatString("INVALID-KEY-INFORMATION (%d)", value);
+		case  value == 0x0012: FormatString("INVALID-ID-INFORMATION (%d)", value);
+		case  value == 0x0013: FormatString("INVALID-CERT-ENCODING (%d)", value);
+		case  value == 0x0014: FormatString("INVALID-CERTIFICATE (%d)", value);
+		case  value == 0x0015: FormatString("CERT-TYPE-UNSUPPORTED (%d)", value);
+		case  value == 0x0016: FormatString("INVALID-CERT-AUTHORITY (%d)", value);
+		case  value == 0x0017: FormatString("INVALID-HASH-INFORMATION (%d)", value);
+		case  value == 0x0018: FormatString("AUTHENTICATION-FAILED (%d)", value);
+		case  value == 0x0019: FormatString("INVALID-SIGNATURE (%d)", value);
+		case  value == 0x001A: FormatString("ADDRESS-NOTIFICATION (%d)", value);
+		case  value == 0x001B: FormatString("NOTIFY-SA-LIFETIME (%d)", value);
+		case  value == 0x001C: FormatString("CERTIFICATE-UNAVAILABLE (%d)", value);
+		case  value == 0x001D: FormatString("UNSUPPORTED-EXCHANGE-TYPE (%d)", value);
+		case  value == 0x001E: FormatString("UNEQUAL-PAYLOAD-LENGTHS (%d)", value);
+		case  value == 0x4000: FormatString("CONNECTED (%d)", value);
+		case  value == 0x6000: FormatString("RESPONDER-LIFETIME (%d)", value);
+		case  value == 0x6001: FormatString("REPLAY-STATUS (%d)", value);
+		case  value == 0x6002: FormatString("INITIAL-CONTACT (%d)", value);
+		case  value == 0x3E81: FormatString("ACK notification (%d)", value);
+		case  value == 0x9C43: FormatString("NOTIFY_STATUS (%d)", value);
+		case  value == 0x9C44: FormatString("NOTIFY_DOS_COOKIE (%d)", value);
+		case  value == 0x9C45: FormatString("EXCHANGE_INFO (%d)", value);
+		case  value == 0x9C54: FormatString("IKE_NOTIFY_MS_STATUS (%d)", value);
+		case  value == 0x9C55: FormatString("IKE_NOTIFY_DOS_COOKIE (%d)", value);
+		case  value == 0x9C56: FormatString("IKE_NOTIFY_ACK (%d)", value);
+		case  value == 0x9C57: FormatString("IKE_NOTIFY_QM_SYNCHRONIZE (%d)", value);
+		case  value == 0x9C58: FormatString("IKE_NOTIFY_MS_ACQUIRE_NOTIFY (%d)", value);
+		case  value >=    31 && value <=  8191: FormatString("RESERVED (Future Use) (%d)", value);
+		case  value >=  8192 && value <= 16383: FormatString("Private Use (%d)", value);
+		case  value >= 16385 && value <= 24575: FormatString("RESERVED (Future Use) (%d)", value);
+		case  value >= 24576 && value <= 32767: FormatString("DOI-specific codes (%d)", value);
+		case  value >= 32768 && value <= 40959: FormatString("Private Use (%d)", value);
+		case  value >= 40960 && value <= 65535: FormatString("RESERVED (Future Use) (%d)", value);
+		default:FormatString("Unknown value (%d)", value);
+	
+	}
+}
+//# RFC 2407 page 23 4.6.3.2 REPLAY-STATUS
+Table IKENotificationStatusTable(status)
+{
+	switch(status)
+	{
+		case  0:"replay detection disabled";
+		case  1:"replay detection enabled";
+		default:"Unknown value";
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_N]
+struct IKENotificationPayload = FormatString("%sNext Payload = %s, Length = %d",
+												NotifyMessageType == 0x9C43 ? "MS Private Error Notify, " : "",
+												IKEPayloadTable(NextPayload),
+												PayloadLength
+												)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT32 DOI = IKEPayloadDOITable(this, 0);
+	[IKEProtocolID]
+	UINT8 ProtocolID = FormatString("%s, %d(0x%02X)", IPSECDOITable(this), this, this);
+	UINT8 SPISize;
+	UINT16 NotifyMessageType = IKENotifyMessageTypeTable(this);
+	switch(SPISize)
+	{
+		case 16:
+			_struct ACKSPIndex
+			{
+				Blob(16) SecurityParameterIndex = formatString("%X", this);
+			};
+		default:
+			Blob(SPISize) SecurityParameterIndex;
+	}
+	switch(NotifyMessageType)
+	{
+		case 0x9C54: // NOTIFY_STATUS
+			UINT32 StatusCode;
+		case 0x9C55: // NOTIFY_DOS_COOKIE
+			Cookie ResponderCookie;
+		case 0x9C56: // NOTIFY_ACK 
+			UINT32 SequenceNumber;
+		case 0x9C58: //	NOTIFY_ACQUIRE
+			struct NotifyAcquire
+			{
+				UINT32 EncapsulationMode;
+				UINT32 Flags
+				{
+					UINT32 Reserved:31 = FormatString("           (%s) Unused", this.toBitString);
+					UINT32 GuaranteeEncryption:1  = FormatString("(%s) IPSEC_ACQUIRE_FLAG_GUARANTEE_ENCRYPTION %s", this.toBitString, this ? "set" : "NOT set");
+				};
+			}
+		case 0x3E81:
+			_struct ACKNotification
+			{
+				UINT8 Count;
+				UINT16 FragmentID;
+				UINT8 FragmentNumbers[Count];
+			};
+		case 0x6001:
+			UINT32 NotificationStatus = IKENotificationStatusTable(this);
+		default:
+			Blob(PayloadLength - SPISize -12 > frameLength - frameOffset ? frameLength - frameOffset : PayloadLength - SPISize -12) NotificationData;
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_D]
+struct IKEDeletePayload = FormatString("Next Payload = %s, Length = %d",
+										  IKEPayloadTable(NextPayload),
+										  PayloadLength
+										 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT32 DOI = IKEPayloadDOITable(this, 0);
+	[IKEProtocolID]
+	UINT8 ProtocolID = FormatString("%s, %d(0x%02X)", IPSECDOITable(this), this, this);
+	UINT8 SPISize;
+	UINT16 NumberofSPIs;
+	Blob(SPISize) SecurityParameterIndex[NumberofSPIs] ;
+}
+
+UnsignedNumber IKEVendorID28
+{
+	size = 28,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[27],this[26],this[25],this[24],this[23],this[22],this[21],this[20],this[19],this[18],this[17],this[16],this[15],this[14],this[13],this[12],this[11],this[10],this[9],this[8],this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								 ),
+}
+
+UnsignedNumber IKEVendorID20
+{
+	size = 20,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[19],this[18],this[17],this[16],this[15],this[14],this[13],this[12],this[11],this[10],this[9],this[8],this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+}
+
+UnsignedNumber IKEVendorID12
+{
+	size = 12,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[11],this[10],this[9],this[8],this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+}
+
+UnsignedNumber IKEVendorID16
+{
+	size = 16,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[15],this[14],this[13],this[12],this[11],this[10],this[9],this[8],this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+}
+
+UnsignedNumber IKEVendorID8
+{
+	size = 8,
+	DisplayFormat = FormatString("%02X %02X %02X %02X %02X %02X %02X %02X",
+								 this[7],this[6],this[5],this[4],this[3],this[2],this[1],this[0]
+								),
+}
+
+Table IKEVendorID20Table(id)
+{
+	switch
+	{
+		case id == 0xf4ed19e0c114eb516faaac0ee37daf2897b4381f: "Check Point Device";
+		case id == 0x9b096d9ac3275a7d6fe8b91c583111b09efed1a0: "NetScreen Device";
+		case id == 0x1e2b516905991c7d7c96fcbfb587e46100000002: "MS NT5 ISAKMPOAKLEY, Windows 2000";
+		case id == 0x1e2b516905991c7d7c96fcbfb587e46100000003: "MS NT5 ISAKMPOAKLEY, Windows XP";
+		case id == 0x1e2b516905991c7d7c96fcbfb587e46100000004: "MS NT5 ISAKMPOAKLEY, Windows Server 2003 family";
+		case id == 0x1e2b516905991c7d7c96fcbfb587e46100000005: "MS NT5 ISAKMPOAKLEY, Version 5";
+		default: FormatString("%I64X", id);
+	}
+}
+
+//http://msdn.microsoft.com/library/default.asp?url=/library/en-us/randz/protocol/ike_protocol_with_private_error_status_notification.asp
+Table IKEVendorIDMSVersionTable(version)
+{
+	switch(version)
+	{
+		case  2: "Windows 2000";
+		case  3: "Windows XP";
+		case  4: "Windows Server 2003 family";
+		default: FormatString("Version %d", version);
+	}
+}
+
+Table IKEMSVendorCPProductTable(Product)
+{
+	switch(Product)
+	{
+		case  1: "VPN-1";
+		case  2: "SecuRemote/SecureClient";
+		default: "Unknown CP product!";
+	}
+}
+
+Table IKEMSVendorCPVersionTable(version)
+{
+	switch(version)
+	{
+		case    2: "4.1";
+		case    3: "4.1 SP-1";
+		case 4002: "4.1 (SP-2 or above)";
+		case 5000: "NG";
+		case 5001: "NG Feature Pack 1";
+		case 5002: "NG Feature Pack 2";
+		case 5003: "NG Feature Pack 3";
+		case 5004: "NG with Application Intelligence";
+		case 5005: "NG with Application Intelligence R55";
+		default  : "Unknown CP version!";
+	}
+}
+
+//http://cipherica.com/libike/files/vendorid.txt
+Table IKEVendorID16Table(id)
+{
+	switch(id)
+	{
+		case 0xfBF47614984031FA8E3BB6198089B223: "Ssh Communications Security IPSEC Express version 1.1.0";
+		case 0x1952DC91AC20F646FB01CF42A33AEE30: "Ssh Communications Security IPSEC Express version 1.1.1";
+		case 0xE8BFFA643E5C8F2CD10FDA7370B6EBE5: "Ssh Communications Security IPSEC Express version 1.1.2";
+		case 0xC1111B2DEE8CBC3D620573EC57AAB9CB: "Ssh Communications Security IPSEC Express version 1.2.1";
+		case 0x09EC27BFBC09C75823CFECBFFE565A2E: "Ssh Communications Security IPSEC Express version 1.2.2";
+		case 0x7F21A596E4E318F0B2F4944C2384CB84: "SSH Communications Security IPSEC Express version 2.0.0";
+		case 0x2836D1FD2807BC9E5AE30786320451EC: "SSH Communications Security IPSEC Express version 2.1.0";
+		case 0xA68DE756A9C5229BAE66498040951AD5: "SSH Communications Security IPSEC Express version 2.1.1";
+		case 0x3F2372867E237C1CD8250A75559CAE20: "SSH Communications Security IPSEC Express version 2.1.2";
+		case 0x0E58D5774DF602007D0B02443660F7EB: "SSH Communications Security IPSEC Express version 3.0.0";
+		case 0xF5CE31EBC210F44350CF71265B57380F: "SSH Communications Security IPSEC Express version 3.0.1";
+		case 0xF64260AF2E2742DADDD56987068A99A0: "SSH Communications Security IPSEC Express version 4.0.0";
+		case 0x7A54D3BDB3B1E6D923892064BE2D981C: "SSH Communications Security IPSEC Express version 4.0.1";
+		case 0x9AA1F3B43472A45D5F506AEB260CF214: "SSH Communications Security IPSEC Express version 4.1.0, Cyber Guard";
+		case 0x89F7B760D86B012ACF263382394D962F: "SSH Communications Security IPSEC Express version 4.1.1";
+		case 0x6880c7d026099114e486c55430e7abee: "SSH Communications Security IPSEC Express version 4.2.0";
+		case 0xB037A21ACECCB5570F602546F97BDE8C: "SSH Communications Security IPSEC Express version 5.0";
+		case 0x2B2DAD97C4D140930053287F996850B0: "SSH Communications Security IPSEC Express version 5.0.0"; //#? [vendorid.txt]"Returned by SSH interop test host at 195.20.116.69"
+		case 0x45E17F3ABE93944CB202910C59EF806B: "SSH Communications Security IPSEC Express version 5.1.0";
+		case 0x5925859F7377ED7816D2FB81C01FA551: "SSH Communications Security IPSEC Express version 5.1.1";
+		case 0x054182A07C7AE206F9D2CF9D2432C482: "SSH Sentinel";
+		case 0xB91623E693CA18A54C6A2778552305E8: "SSH Sentinel 1.1";
+		case 0x5430888DE01A31A6FA8F60224E449958: "SSH Sentinel 1.2";
+		case 0x7EE5CB85F71CE259C94A5C731EE4E752: "SSH Sentinel 1.3";
+		case 0x63d9a1a7009491b5a0a6fdeb2a8284f0: "SSH Sentinel 1.4";
+		case 0xeb4b0d96276b4e220ad16221a7b2a5e6: "SSH Sentinel 1.4.1";
+		case 0x37EBA0C4136184E7DAF8562A77060B4A: "SSH Communications Security QuickSec 0.9.0";
+		case 0x5D72925E55948A9661A7FC48FDEC7FF9: "SSH Communications Security QuickSec 1.1.0";
+		case 0x777FBF4C5AF6D1CDD4B895A05BF82594: "SSH Communications Security QuickSec 1.1.1";
+		case 0x2CDF08E712EDE8A5978761267CD19B91: "SSH Communications Security QuickSec 1.1.2";
+		case 0x59E454A8C2CF02A34959121F1890BC87: "SSH Communications Security QuickSec 1.1.3";
+		case 0x6a7434c19d7e36348090a02334c9c805: "draft-huttunen-ipsec-esp-in-udp-00";
+		case 0x50760F624C63E5C53EEA386C685CA083: "ESPThruNAT, draft-huttunen-ipsec-esp-in-udp-01";
+		case 0x27BAB5DC01EA0760EA4E3190AC27C0D0: "draft-stenberg-ipsec-nat-traversal-01";
+		case 0x6105C422E76847E43F9684801292AECD: "draft-stenberg-ipsec-nat-traversal-02";
+		case 0x4485152D18B6BBCD0BE8A8469579DDCC: "draft-ietf-ipsec-nat-t-ike-00";
+		case 0xCD60464335DF21F87CFDB2FC68B6A448: "draft-ietf-ipsec-nat-t-ike-02";
+		case 0x90CB80913EBB696E086381B5EC427B1F: "draft-ietf-ipsec-nat-t-ike-02";
+		case 0x7D9419A65310CA6F2C179D9215529d56: "draft-ietf-ipsec-nat-t-ike-03";
+		case 0x09002689DFD6B71280A224DEC33B81E5: "draft-beaulieu-ike-xauth-02";
+		case 0xAFCAD71368A1F1C96B8696FC77570100: "RFC 3706 Detecting Dead IKE Peers (DPD)";
+		case 0xBA290499C24E84E53A1D83A05E5F00C9: "IKE Challenge/Response for Authenticated Cryptographic Keys";
+		case 0x0D33611A5D521B5E3C9C03D2FC107E12: "IKE Challenge/Response for Authenticated Cryptographic Keys";
+		case 0xAD3251042CDC4652C9E0734CE5DE4C7D: "IKE Challenge/Response for Authenticated Cryptographic Keys (Revised)";
+		case 0x013F11823F966FA91900F024BA66A86B: "IKE Challenge/Response for Authenticated Cryptographic Keys (Revised)";
+		case 0xB46D8914F3AAA3F2FEDEB7C7DB2943CA: "A GSS-API Authentication Method for IKE";
+		case 0xAD2C0DD0B9C32083CCBA25B8861EC455: "A GSS-API Authentication Method for IKE";
+		case 0x4048B7D56EBCE88525E7DE7F00D6C2D3: "FRAGMENTATION";
+		case 0x1E2B516905991C7D7C96FCBFB587E461: "MS NT5 ISAKMPOAKLEY";
+		case 0x12F5F28C457168A9702D9FE274CC02D4: "CISCO-UNITY";
+		case 0x12f5f28c457168a9702d9fe274cc0100: "Cisco-Unity";
+		case 0x7003cbc1097dbe9c2600ba6983bc8b35: "KAME/racoon";
+		case 0xc40fee00d5d39ddb1fc762e09b7cfea7: "Testing NAT-T RFC";
+		case 0x621B04BB09882AC1E15935FEFA24AEEE: "GSSAPI";
+		case 0x47bbe7c993f1fc13b4e6d0db565c68e5: "SafeNet SoftRemote LT 10.0.0 (Build 10)";
+		case 0x4865617274426561745f4e6f74696679: "HeartBeat Notify";
+		case 0x26244d38eddb61b3172a36e3d0cfb819: "Vid-Initial-Contact";//# http://lists.openswan.org/pipermail/dev/2004-October/000650.html
+		case 0x4a131c81070358455c5728f20e95452f: "RFC 3947 (NAT-T supported)";
+		case 0x72872b95fcda2eb708efe322119b4971: "NLBS_PRESENT";//IKE Protocol with Fast Failover
+		case 0xE3A5966A76379FE707228231E5CE8652: "IKE CGA version 1";
+		case 0xFB1DE3CDF341B7EA16B7E5BE0855F120: "MS-Negotiation Discovery Capable";
+		case 0x214CA4FAFFA7F32D6748E5303395AE83: "MS-MamieExists (Supports both IKEv1 and AuthIP)"; 
+		default: FormatString("%I64X", id);
+	}
+}
+
+Table IKEVendorID12Table(id)
+{
+	switch(id)
+	{
+		case 0x4f70656e5047503130313731: "OpenPGP";
+		default: FormatString("%I64X", id);
+	}
+}
+
+Table IKEVendorID8Table(id)
+{
+	switch(id)
+	{
+		case 0x325DF29A2319F2DD: "draft-ietf-ipsec-antireplay-00.txt";
+		case 0x8DB7A41811221660: "draft-ietf-ipsec-heartbeats-00.txt";
+		case 0x09002689dfd6b712: "XAUTH";
+		case 0xda8e937880010000: "Comes from SafeNet and Watchgaurd Firebox";
+		case 0x54494d4553544550: "TIMESTEP";
+		default: FormatString("%I64X", id);
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_VID]
+struct IKEVendorIDPayload = FormatString("%sNext Payload = %s, %sLength = %d",
+											IKEVendorID + ", ",
+											IKEPayloadTable(NextPayload),
+								FragmentationFlags ? FragmentationFlags + ", " : "",
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	switch(PayloadLength - 4)
+	{
+		case  8:
+			[IKEVendorID = this.ToString]
+			IKEVendorID8 VendorID8 = IKEVendorID8Table(this);
+		case 12:
+			[IKEVendorID = this.ToString]
+			IKEVendorID12 VendorID12 = IKEVendorID12Table(this);
+		case 16:
+			[IKEVendorID = this.ToString]
+			IKEVendorID16 VendorID16 = IKEVendorID16Table(this);
+		case 20:
+			switch (IKEVendorID16(FrameData, FrameOffset))
+			{
+				case 0x47bbe7c993f1fc13b4e6d0db565c68e5:
+				case 0x4865617274426561745f4e6f74696679:
+					[IKEVendorID = this.ToString]
+					IKEVendorID20 VendorID20 = VendorID.ToString
+					{
+						IKEVendorID16 VendorID = IKEVendorID16Table(this);
+						UINT32 Optional;
+					};
+				case  0x1e2b516905991c7d7c96fcbfb587e461:
+					[IKEVendorID = this.ToString]
+					IKEVendorID20 VendorIDMS = VendorID.ToString + ", " + IKEVendorIDMSVersionTable(Version)
+					{
+						IKEVendorID16 VendorID = IKEVendorID16Table(this);
+						UINT32 Version = FormatString("%s, %u(0x%08X)",IKEVendorIDMSVersionTable(this),this,this);
+					};
+				//# MCPP Doc
+				//# Internet Protocol Security Protocols Extensions
+				//# Internet Key Exchange Protocol Extensions
+				//# IKE Protocol with Fragmentation Support
+				//# Fragmentation VID
+				case 0x4048B7D56EBCE88525E7DE7F00D6C2D3:
+					[IKEVendorID = this.ToString]
+					 IKEVendorID20 VendorFragment = VendorID.ToString
+					{
+						IKEVendorID16 VendorID = IKEVendorID16Table(this);
+						[Post.FragmentationFlags = Flags.ToString]
+						UINT8 Flags = FormatString("FragmentationFlags:%s%s%s%s", ACK ? " ACK":"", QM ? " QM":"", AM ? " AM":"", MM ? " MM":"" )
+						{
+							UINT8 Reserved1:3  = FormatString("(%s)",this.ToBitString);
+							UINT8 ACK:1 = FormatString("      (%s) %s",this.ToBitString,this ? "ACK payloads are supported"
+											  : "ACK payloads are NOT supported");
+							UINT8 QM:1  = FormatString("       (%s) %s",this.ToBitString,this ? "Fragmentation is completely supported in IKE Quick Mode"
+											  : "Fragmentation is NOT supported in IKE Quick Mode");
+							UINT8 Reserved:1   = FormatString("(%s)",this.ToBitString);
+							UINT8 AM:1  = FormatString("       (%s) %s",this.ToBitString,this ? "Fragmentation is completely supported in IKE Aggressive Mode"
+											  : "Fragmentation is NOT supported in IKE Aggressive Mode");
+							UINT8 MM:1  = FormatString("       (%s) %s",this.ToBitString,this ? "Fragmentation is completely supported in IKE Main Mode"
+											  : "Fragmentation is NOT supported in IKE Main Mode");
+						};
+						UINT24 Reserved;
+					};
+				default:
+					[IKEVendorID = this.ToString]
+					IKEVendorID20 VendorID20Def = IKEVendorID20Table(this);
+			}
+		case 28:
+			switch (IKEVendorID20(FrameData, FrameOffset))
+			{
+				case 0xf4ed19e0c114eb516faaac0ee37daf2897b4381f:
+					[IKEVendorID = this.ToString]
+					 IKEVendorID28 VendorIDCP = VendorID.ToString + " " + IKEMSVendorCPProductTable(ProductType) + " " + IKEMSVendorCPVersionTable(ProductVersion)
+					{
+						IKEVendorID20 VendorID = IKEVendorID20Table(this);
+						UINT32 ProductType = FormatString("%s, %u(0x%08X)",IKEMSVendorCPProductTable(this),this,this);
+						UINT32 ProductVersion = FormatString("%s, %u(0x%08X)",IKEMSVendorCPVersionTable(this),this,this);
+					};
+				case 0x9b096d9ac3275a7d6fe8b91c583111b09efed1a0:
+					[IKEVendorID = this.ToString]
+					 IKEVendorID28 VendorIDND = VendorID.ToString
+					{
+						IKEVendorID20 VendorID = IKEVendorID20Table(this);
+						UINT32 XX;
+						UINT32 YY;
+					};
+				default:
+					[IKEVendorID = this.ToString]
+					Blob(28) VendorID28 = "Unknown VendorID";
+			}
+		default:
+			[IKEVendorID = this.ToString]
+			Blob(PayloadLength - 4) VendorID = "Unknown VendorID";
+	}
+}
+
+Table IKESAKEKPayloadPOPAlgorithmTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "POP_ALG_RSA";
+		case code == 2: "POP_ALG_DSS";
+		case code == 3: "POP_ALG_ECDSS";
+		case code >= 4 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+Table KEKAttributesKekManagementAlgorithmTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "LKH";
+		case code >= 2 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+Table KEKAttributesKekAlgorithmTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "KEK_ALG_DES";
+		case code == 2: "KEK_ALG_3DES";
+		case code == 3: "KEK_ALG_AES";
+		case code >= 4 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+Table KEKAttributesSigHashAlgorithmTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "SIG_HASH_MD5";
+		case code == 2: "SIG_HASH_SHA1";
+		case code >= 3 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+Table KEKAttributesSigAlgorithmTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "SIG_ALG_RSA";
+		case code == 2: "SIG_ALG_DSS";
+		case code == 3: "SIG_ALG_ECDSS";
+		case code >= 4 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+Table KEKAttributesTable(code)
+{
+	switch (code)
+	{
+		case 1: "KEK_MANAGEMENT_ALGORITHM";
+		case 2: "KEK_ALGORITHM";
+		case 3: "KEK_KEY_LENGTH";
+		case 4: "KEK_KEY_LIFETIME";
+		case 5: "SIG_HASH_ALGORITHM";
+		case 6: "SIG_ALGORITHM";
+		case 7: "SIG_KEY_LENGTH";
+		case 8: "KE_OAKLEY_GROUP";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+struct KEKAttribute = FormatString("%s: %s = %s", AttributeType.AF ? "TV" : "TLV", AttributeType.ToString, SAAttibuteValue)
+{
+	UINT16 AttributeType = KEKAttributesTable(Type)
+	{
+		UINT16 AF:1 = FormatString("  (%s) %s",this.ToBitString,this ? "KEK Attributes are of the Type-Value format"
+						 : "KEK Attributes are of the Type-Length-Value (TLV) format");
+		UINT16 Type:15 = FormatString("(%s) %s",this.ToBitString, KEKAttributesTable(this));
+	};
+	switch(AttributeType.AF)
+	{
+		case 0:
+			UINT16 AttributeLength;
+	}
+	
+	switch(AttributeType.Type)
+	{
+		case 1:
+			[SAAttibuteValue = KEKAttributesKekManagementAlgorithmTable(this)]
+			UINT16 KekManagementAlgorithm = KEKAttributesKekManagementAlgorithmTable(this);
+		case 2:
+			[SAAttibuteValue = KEKAttributesKekAlgorithmTable(this)]
+			UINT16 KekAlgorithm = KEKAttributesKekAlgorithmTable(this);
+		case 3:
+			[SAAttibuteValue = this.ToString]
+			UINT16 KekKeyLength;
+		case 4:
+			[SAAttibuteValue = this.ToString]
+			UINT32 KekKeyLifetime;
+		case 5:
+			[SAAttibuteValue = KEKAttributesSigHashAlgorithmTable(this)]
+			uint16 SigHashAlgorithm = KEKAttributesSigHashAlgorithmTable(this);
+		case 6:
+			[SAAttibuteValue = KEKAttributesSigAlgorithmTable(this)]
+			UINT16 SigAlgorithm = KEKAttributesSigAlgorithmTable(this);
+		case 7:
+			[SAAttibuteValue = this.ToString]
+			UINT16 SigKeyLength;
+		case 8:
+			[SAAttibuteValue = SAIKEGroupDescriptionTable(KeOakleyGroup)]
+			UINT16 KeOakleyGroup = FormatString("%s, %d(0x%02X)", SAIKEGroupDescriptionTable(this), this, this);
+		default:
+			switch (AttributeType.AF)
+			{
+				case 0:
+					_struct BLOBValue
+					{
+						[SAAttibuteValue = this.ToString]
+						BLOB(AttributeLength) AttributeValue;
+					}
+				case 1:
+					_struct UINT16Value
+					{
+						[SAAttibuteValue = this.ToString]
+						UINT16 AttributeValue;
+					}
+			}
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_SAK]
+struct IKESAKEKPayload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 Protocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+	UINT8 SRCIDType = IKEIdentificationTypeTable(this);
+	UINT16 SRCIDPort;
+	UINT8 SRCIDDataLen;
+	BLOB(SRCIDDataLen) SRCIdentificationData;
+	UINT8 DSTIDType = IKEIdentificationTypeTable(this);
+	UINT16 DSTIDPort;
+	UINT8 DSTIDDataLen;
+	BLOB(DSTIDDataLen) DSTIdentificationData;
+	BLOB(16) SPI;
+	UINT16 POPAlgorithm = IKESAKEKPayloadPOPAlgorithmTable(this);
+	UINT16 POPKeyLength;
+	[POPKeyStartOffset = FrameOffset]
+	switch
+	{
+		case POPKeyLength:
+			while [FrameOffset - POPKeyStartOffset < POPKeyLength]
+			{
+				KEKAttribute KEKAttribute;
+			}
+	}
+}
+
+Table IKESATEKPayloadProtocolIDTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "GDOI_PROTO_IPSEC_ESP";
+		case code >= 2 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_SAT]
+struct IKESATEKPayload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload, IKESATEKPayloadStartOffset = FrameOffset]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 ProtocolID = IKESATEKPayloadProtocolIDTable(this);
+	switch (ProtocolID)
+	{
+		case 1:
+			struct PROTOIPSECESP
+			{
+				UINT8 Protocol = FormatString("%s, %d(%#x)", ProtocolTypeTable(this), this, this);
+				UINT8 SRCIDType = IKEIdentificationTypeTable(this);
+				UINT16 SRCIDPort;
+				UINT8 SRCIDDataLen;
+				BLOB(SRCIDDataLen) SRCIdentificationData;
+				UINT8 DSTIDType = IKEIdentificationTypeTable(this);
+				UINT16 DSTIDPort;
+				UINT8 DSTIDDataLen;
+				BLOB(DSTIDDataLen) DSTIdentificationData;
+				UINT8 TransformID = IPSECIKETransformIdTable(this);
+				BLOB(4) SPI;
+				while [FrameOffset - IKESATEKPayloadStartOffset < PayloadLength]
+				{
+					SAAttribute SAAttribute;
+				}
+			}
+	}
+}
+
+Table IKEKeyDownloadKeyPacketKeyDownloadTypeTable(code)
+{
+	switch
+	{
+		case code == 0: "RESERVED";
+		case code == 1: "TEK";
+		case code == 2: "KEK";
+		case code == 3: "LKH";
+		case code >= 4 && code <= 127: "RESERVED";
+		case code >= 128 && code <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", code);
+	}
+}
+
+struct IKEKeyDownloadKeyPacket
+{
+	[IKEKeyDownloadKeyPacketStartOffset = FrameOffset]
+	UINT8 KDType = IKEKeyDownloadKeyPacketKeyDownloadTypeTable(this);
+	UINT8 Reserved;
+	UINT16 KDLength;
+	UINT8 SPISize;
+	BLOB(SPISize) SPI;
+	switch (KDType)
+	{
+		case 1: IKETEKDownloadType(KDLength) TEKDownloadType;
+		case 2: IKEKEKDownloadType(KDLength) KEKDownloadType;
+		case 3: IKELKHDownloadType(KDLength) LEHDownloadType;
+	}
+}
+
+Table IKETEKDownloadTypeAttributeTable(value)
+{
+	switch (value)
+	{
+		case 0: "Reserved";
+		case 1: "TEK_ALGORITHM_KEY";
+		case 2: "TEK_INTEGRITY_KEY";
+		case 3: "TEK_SOURCE_AUTH_KEY";
+		default: FormatString("Undefined value(%u)", value);
+	}
+}
+
+struct IKETEKDownloadTypeAttribute = FormatString("%s: %s = %s", AttributeType.AF ? "TV" : "TLV", AttributeType.ToString, SAAttibuteValue)
+{
+	UINT16 AttributeType = IKETEKDownloadTypeAttributeTable(Type)
+	{
+		UINT16 AF:1 = FormatString("  (%s) %s",this.ToBitString,this ? "TEKDownloadType Attributes are of the Type-Value format"
+						 : "TEKDownloadType Attributes are of the Type-Length-Value (TLV) format");
+		UINT16 Type:15 = FormatString("(%s) %s",this.ToBitString, IKETEKDownloadTypeAttributeTable(this));
+	};
+	switch(AttributeType.AF)
+	{
+		case 0:
+			UINT16 AttributeLength;
+	}
+	
+	switch(AttributeType.Type)
+	{
+		case 1:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) TEKAlgorithmKey;
+		case 2:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) TEKIntegrityKey;
+		case 3:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) TEKSourceAuthKey;
+		default:
+			switch (AttributeType.AF)
+			{
+				case 0:
+					_struct BLOBValue
+					{
+						[SAAttibuteValue = this.ToString]
+						BLOB(AttributeLength) AttributeValue;
+					}
+				case 1:
+					_struct UINT16Value
+					{
+						[SAAttibuteValue = this.ToString]
+						UINT16 AttributeValue;
+					}
+			}
+	}
+}
+
+struct IKETEKDownloadType(Length)
+{
+	while [FrameOffset - IKEKeyDownloadKeyPacketStartOffset < Length]
+	{
+		IKETEKDownloadTypeAttribute TEKAttribute;
+	}
+}
+
+Table IKEKEKDownloadTypeAttributeTable(value)
+{
+	switch (value)
+	{
+		case 0: "Reserved";
+		case 1: "KEK_ALGORITHM_KEY";
+		case 2: "SIG_ALGORITHM_KEY";
+		default: FormatString("Undefined value(%u)", value);
+	}
+}
+
+struct IKEKEKDownloadTypeAttribute = FormatString("%s: %s = %s", AttributeType.AF ? "TV" : "TLV", AttributeType.ToString, SAAttibuteValue)
+{
+	UINT16 AttributeType = IKEKEKDownloadTypeAttributeTable(Type)
+	{
+		UINT16 AF:1 = FormatString("  (%s) %s",this.ToBitString,this ? "KEKDownloadType Attributes are of the Type-Value format"
+						 : "KEKDownloadType Attributes are of the Type-Length-Value (TLV) format");
+		UINT16 Type:15 = FormatString("(%s) %s",this.ToBitString, IKEKEKDownloadTypeAttributeTable(this));
+	};
+	switch(AttributeType.AF)
+	{
+		case 0:
+			UINT16 AttributeLength;
+	}
+	
+	switch(AttributeType.Type)
+	{
+		case 1:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) KEKAlgorithmKey;
+		case 2:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) SIGAlgorithmKey;
+		default:
+			switch (AttributeType.AF)
+			{
+				case 0:
+					_struct BLOBValue
+					{
+						[SAAttibuteValue = this.ToString]
+						BLOB(AttributeLength) AttributeValue;
+					}
+				case 1:
+					_struct UINT16Value
+					{
+						[SAAttibuteValue = this.ToString]
+						UINT16 AttributeValue;
+					}
+			}
+	}
+}
+
+
+struct IKEKEKDownloadType(Length)
+{
+	while [FrameOffset - IKEKeyDownloadKeyPacketStartOffset < Length]
+	{
+		IKEKEKDownloadTypeAttribute KEKAttribute;
+	}
+}
+
+Table IKELKHDownloadTypeAttributeTable(value)
+{
+	switch
+	{
+		case value == 0: "Reserved";
+		case value == 1: "LKH_DOWNLOAD_ARRAY";
+		case value == 2: "LKH_UPDATE_ARRAY";
+		case value == 3: "SIG_ALGORITHM_KEY";
+		case value <= 127: "Reserved";
+		case value <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", value);
+	}
+}
+
+Table KEKAlgrithmTable(value)
+{
+	switch
+	{
+		case value == 0: "Reserved";
+		case value == 1: "KEK_ALG_DES";
+		case value == 2: "KEK_ALG_3DES";
+		case value == 3: "KEK_ALG_AES";
+		case value <= 127: "Reserved";
+		case value <= 255: "Private Use";
+		default: FormatString("Undefined value(%u)", value);
+	}
+}
+
+Table KEKAlgrithmKeyLenTable(type)
+{
+	switch (type)
+	{
+		case 1: 16;
+		case 2: 32;
+		case 3: 32;
+	}
+}
+
+struct IKELKHKey = KEKAlgrithmTable(KeyType)
+{
+	UINT16 LKHID;
+	UINT8 KeyType = KEKAlgrithmTable(this);
+	UINT8 Reserved;
+	UINT32 KeyCreationDate;
+	UINT32 KeyExpirationDate;
+	UINT32 KeyHandle;
+	BLOB(KEKAlgrithmKeyLenTable(KeyType)) KeyData;
+}
+
+struct IKELKHDownloadTypeAttribute = FormatString("%s: %s = %s", AttributeType.AF ? "TV" : "TLV", AttributeType.ToString, SAAttibuteValue)
+{
+	UINT16 AttributeType = IKELKHDownloadTypeAttributeTable(Type)
+	{
+		UINT16 AF:1 = FormatString("  (%s) %s",this.ToBitString,this ? "LKHDownloadType Attributes are of the Type-Value format"
+						 : "LKHDownloadType Attributes are of the Type-Length-Value (TLV) format");
+		UINT16 Type:15 = FormatString("(%s) %s",this.ToBitString, IKELKHDownloadTypeAttributeTable(this));
+	};
+	switch(AttributeType.AF)
+	{
+		case 0:
+			UINT16 AttributeLength;
+	}
+	
+	switch(AttributeType.Type)
+	{
+		case 1:
+			[SAAttibuteValue = "BLOB"]
+			struct LKHDownloadArray = FormatString("Version = %u", LKHversion)
+			{
+				UINT8 LKHversion;
+				UINT16 NumberOfLKHKeys;
+				UINT8 Reserved;
+				IKELKHKey Key[NumberOfLKHKeys];
+			}
+		case 2:
+			[SAAttibuteValue = "BLOB"]
+			struct LKHUpdateArray = FormatString("Version = %u", LKHversion)
+			{
+				UINT8 LKHversion;
+				UINT16 NumberOfLKHKeys;
+				UINT8 Reserved;
+				UINT16 LKHID;
+				UINT16 Reserved2;
+				UINT32 KeyHandle;
+				IKELKHKey Key[NumberOfLKHKeys];
+			}
+		case 3:
+			[SAAttibuteValue = "BLOB"]
+			BLOB(AttributeLength) SIGAlgorithmKey;
+		default:
+			switch (AttributeType.AF)
+			{
+				case 0:
+					_struct BLOBValue
+					{
+						[SAAttibuteValue = this.ToString]
+						BLOB(AttributeLength) AttributeValue;
+					}
+				case 1:
+					_struct UINT16Value
+					{
+						[SAAttibuteValue = this.ToString]
+						UINT16 AttributeValue;
+					}
+			}
+	}
+}
+
+struct IKELKHDownloadType(Length)
+{
+	while [FrameOffset - IKEKeyDownloadKeyPacketStartOffset < Length]
+	{
+		IKELKHDownloadTypeAttribute LKHAttribute;
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_KD]
+struct IKEKeyDownload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT16 NumberOfKeyPackets;
+	IKEKeyDownloadKeyPacket KeyPackets[NumberOfKeyPackets];
+}
+
+struct IKESequenceNumber = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT32 SequenceNumber;
+}
+
+struct IKEProofOfPossession = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	
+}
+
+struct IKEReservedPayload=FormatString("Next Payload = %s, Length = %d",
+										  IKEPayloadTable(NextPayload),
+										  PayloadLength
+										 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 4) ReservedPayload;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_NAT_D]
+struct IKENATDiscoveryPayload=FormatString("Next Payload = %s, Length = %d",
+											  IKEPayloadTable(NextPayload),
+											  PayloadLength
+											 )
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 4) HASHofAddressAndPort;
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_NAT_OA]
+struct IKENATOriginalAddressPayload=FormatString("Next Payload = %s, Length = %d",
+													IKEPayloadTable(NextPayload),
+													PayloadLength
+													)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 IDType;
+	UINT24 Reserved1;
+	switch(PayloadLength)
+	{
+		case 12:
+			IPv4Address OriginalIPv4Address;
+		case 24:
+			IPv6Address OriginalIPv6Address;
+		default:
+			Blob(PayloadLength - 8) OriginalAddress;
+	}
+}
+
+struct IKEPrivateUsePayload=FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	Blob(PayloadLength - 4 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 4) PrivateUsePayload;
+}
+
+//
+//http://msdn.microsoft.com/library/default.asp?url=/library/en-us/randz/protocol/gss-api_token_payload.asp
+//
+[Property.IKEPayloads = Property.IKEPayloads | IKE_GSS_API]
+struct IKEGSSAPITokenPayload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT8 VendorEncoding;
+	[DataFieldFrameLength = Frameoffset + PayloadLength]
+	GssAPI GSSAPIToken;
+}
+
+
+
+
+table IKEv2PayloadHeaderPayLoadTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "None";
+		case 33: "SecurityAssociationPayload";
+		case 34: "KeyExchangePayload";
+		case 35: "IdentificationPayloadTDi";
+		case 36: "IdentificationPayloadTDr";
+		case 37: "CertificatePayload";
+		case 38: "CertificateRequestPayload";
+		case 39: "AuthenticationPayload";
+		case 40: "NoncePayload";
+		case 41: "NotifyPayload";
+		case 42: "DeletePayload";
+		case 43: "VendorIDPayload";
+		case 44:
+		case 45: "TrafficSelectorPayload";
+		case 46: "EncryptedPayload";
+		case 47: "ConfigurationPayload";
+		case 48: "EAPPayload";
+		default:
+			"Unknwon value";
+	}
+}
+
+struct IKEv2PayloadHeader = FormatString("NextPayload = %s, Length = %u", NextPayload.ToString, PayloadLength)
+{
+	[property.IKENextPayload]
+	UINT8 NextPayload = IKEv2PayloadHeaderPayLoadTypeTable(this);
+	UINT8 IKEv2Flag = FormatSTring("%s", Critical? "Critical":"")
+	{
+		UINT8 Critical:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+	}
+	UINT16 PayloadLength;
+}
+
+struct IKEv2KeyExchangePayload = FormatString("DHGroup = %u, Length = %u", DHGroup, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT16 DHGroup;
+	UINT16 Reserved;
+	BLOB(PayloadHeader.PayloadLength - 8) KeyExchangeData;
+}
+
+table IKEv2SecurityAssociationPayloadProposalIDTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "IKE";
+		case 2: "AH";
+		case 3: "ESP";
+		default:
+			"Unknown value";
+	}
+}
+
+struct IKEv2SecurityAssociationPayload = FormatString("SA")
+{
+
+	[local.MarkStart = FrameOffset]
+	IKEv2PayloadHeader PayloadHeader;
+	while[FrameOffset < local.MarkStart + PayloadHeader.PayloadLength]
+	{
+ 	   IKEv2ProposalPayload Proposal;
+	}
+}
+
+struct IKEv2ProposalPayload = FormatString("ProposalID = %s, Length = %u, Count = %u",
+											 ProposalID.ToString, PayloadHeader.PayloadLength, TransformsCount)
+{
+	UINT8 LastOrMore;
+	UINT8 Reserved;
+	UINT16 ProposalLength;
+	UINT8 ProposalNum;
+	UINT8 ProposalID = IKEv2SecurityAssociationPayloadProposalIDTable(this);
+	UINT8 SPISize;
+	UINT8 TransformsCount;
+	switch
+	{
+		case SPISize: BLOB(SPISize) SPI;
+	}
+
+	IKEv2TransformSubstructure TransformSubstructure[TransformsCount];
+}
+
+
+table IKEv2TransformSubstructureTransformTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "Encryption Algorithm (ENCR)";
+		case 2: "Pseudo-random Function (PRF)";
+		case 3: "Integrity Algorithm (INTEG)";
+		case 4: "Diffie-Hellman Group (D-H)";
+		case 5: "Extended Sequence Numbers (ESN)";
+		default:
+			"Unknown value";
+	}
+}
+
+table IKEv2IKEv2TransformSubstructureTransformIDTable(type, id)
+{
+	switch
+	{
+		case type == 1  && id == 0: "RESERVED";
+		case type == 1  && id == 1: "ENCR_DES_IV64";
+		case type == 1  && id == 2: "ENCR_DES";
+		case type == 1  && id == 3: "ENCR_3DES";
+		case type == 1  && id == 4: "ENCR_RC5";
+		case type == 1  && id == 5: "ENCR_IDEA";
+		case type == 1  && id == 6: "ENCR_CAST";
+		case type == 1  && id == 7: "ENCR_BLOWFISH";
+		case type == 1  && id == 8: "ENCR_3IDEA";
+		case type == 1  && id == 9: "ENCR_DES_IV32";
+		case type == 1  && id == 10 : "RESERVED";
+		case type == 1  && id == 11 : "ENCR_NULL";
+		case type == 1  && id == 12 : "ENCR_AES_CBC";
+		case type == 1  && id == 13 : "ENCR_AES_CTR";
+		case type == 2  && id == 0: "RESERVED";
+		case type == 2  && id == 1: "PRF_HMAC_MD5";
+		case type == 2  && id == 2: "PRF_HMAC_SHA1";
+		case type == 2  && id == 3: "PRF_HMAC_TIGER";
+		case type == 2  && id == 4: "PRF_AES128_XCBC";
+		case type == 3  && id == 0: "NONE";
+		case type == 3  && id == 1: "AUTH_HMAC_MD5_96";
+		case type == 3  && id == 2: "AUTH_HMAC_SHA1_96";
+		case type == 3  && id == 3: "AUTH_DES_MAC";
+		case type == 3  && id == 4: "AUTH_KPDK_MD5";
+		case type == 3  && id == 5: "AUTH_AES_XCBC_96";
+		// some defined in [ADDGROUP]
+		case type == 4  && id == 0: "NONE";
+
+		case type == 5  && id == 0: "No Extended Sequence Numbers";
+		case type == 5  && id == 1: "Extended Sequence Numbers";
+		default:
+			"Unknown value";
+	}
+}
+
+struct IKEv2TransformSubstructure = FormatString("Type = %s, ID = %s", TransformType.ToString, TransformID.ToString)
+{
+	[local.MarkStart = FrameOffset]
+	UINT8 LastOrMore;
+	UINT8 Reserved1;
+	UINT16 TransformLength;
+	UINT8 TransformType = IKEv2TransformSubstructureTransformTypeTable(this);
+	UINT16 TransformID = IKEv2IKEv2TransformSubstructureTransformIDTable(TransformType, this);
+	switch(TransformID)
+	{
+		case 0: BLOB(local.MarkStart + TransformLength - FrameOffset) Pad;
+		default:
+			while[FrameOffset < local.MarkStart + TransformLength]
+			{
+				IKEv2TransformAttribute TransformAttribute;
+			}
+	}
+}
+
+struct IKEv2TransformAttribute
+{
+	UINT16 AttributeType;
+	switch(AttributeType & 0x0001)
+	{
+		case 0x0000:
+			_struct TypeLengthValue
+			{
+				UINT16 AttributeLength;
+				BLOB(AttributeLength) Attribute;
+			}
+		case 0x0001:
+			_struct TypeValue
+			{
+				UINT16 Attribute;
+			}
+	}
+}
+
+table IKEv2IdentificationPayloadIDTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "ID_IPV4_ADDR";
+		case 2: "ID_FQDN";
+		case 3: "ID_RFC822_ADDR";
+		case 5: "ID_IPV6_ADDR";
+		case 9: "ID_DER_ASN1_DN";
+		case 10: "ID_DER_ASN1_GN";
+		case 11: "ID_KEY_ID";
+	}
+}
+
+struct IKEv2IdentificationPayload = FormatString("Type = %s, Length = %u", IDType.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 IDType = IKEv2IdentificationPayloadIDTypeTable(this);
+	UINT24 Reserved;
+	switch(IDType)
+	{
+		case 1: IPv4Address IPv4;
+		case 2: AsciiString(PayloadHeader.PayloadLength - 8) DomainName;
+		case 3: AsciiString(PayloadHeader.PayloadLength - 8) MailAddress;
+		case 5: IPv6Address IPv6;
+		// X.500 Distinguished Name
+		case 9: BLOB(PayloadHeader.PayloadLength - 8) X500DistinguishedName ;
+		case 10: BLOB(PayloadHeader.PayloadLength - 8) X500GeneralName;
+		case 11: BLOB(PayloadHeader.PayloadLength - 8) ID;
+		default: BLOB(PayloadHeader.PayloadLength - 8) UnknownBLOB;
+	}
+}
+
+table IKEv2CertificatePayloadCertEncodingTable(value)
+{
+	switch(value)
+	{
+		case 0: "RESERVED";
+		case 1: "PKCS #7 wrapped X.509 certificate";
+		case 2: "PGP Certificate";
+		case 3: "DNS Signed Key";
+		case 4: "X.509 Certificate - Signature";
+		case 6: "Kerberos Token";
+		case 7: "Certificate Revocation List (CRL)";
+		case 8: "Authority Revocation List (ARL)";
+		case 9: "SPKI Certificate";
+		case 10: "X.509 Certificate - Attribute";
+		case 11: "Raw RSA Key";
+		case 12: "Hash and URL of X.509 certificate";
+		case 13: "Hash and URL of X.509 bundle";
+		default:
+			"Unknwon value";
+	}
+}
+
+struct IKEv2CertificatePayload = FormatString("CertEncode = %s, Length = %u", CertEncoding.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 CertEncoding = IKEv2CertificatePayloadCertEncodingTable(this);
+	switch(CertEncoding)
+	{
+		case 4: BLOB(PayloadHeader.PayloadLength - 5) X509Certificate;
+		case 7: BLOB(PayloadHeader.PayloadLength - 5) X509CertificateRevocationlist;
+		case 11: BLOB(PayloadHeader.PayloadLength - 5) PKCSEncodedRSAkey;
+		case 12:
+		case 13: BLOB(20) Sha1Hash;
+		default:
+			BLOB(PayloadHeader.PayloadLength - 5) CertificateData;
+	}
+}
+
+struct IKEv2CertificateRequestPayload = FormatString("CertEncode = %s, Length = %u", CertEncoding.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 CertEncoding = IKEv2CertificatePayloadCertEncodingTable(this);
+	// should be 20 bytes SHA1 Hash?
+	BLOB(PayloadHeader.PayloadLength - 5) CertificationAuthority;
+}
+
+table IKEv2AuthenticationPayloadAuthMethodTable(value)
+{
+	switch(value)
+	{
+		case 1: "RSA Digital Signature";
+		case 2: "Shared Key Message Integrity Code";
+		case 3: "DSS Digital Signature";
+		default:
+			"Unknown value";
+	}
+}
+
+struct IKEv2AuthenticationPayload = FormatString("AuthMethod = %s, Length = %u", AuthMethod.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 AuthMethod = IKEv2AuthenticationPayloadAuthMethodTable(this);
+	UINT24 Reserved;
+	BLOB(PayloadHeader.PayloadLength - 8) AuthenticationData;
+}
+
+struct IKEv2NoncePayload = FormatString("Length = %u", PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	BLOB(PayloadHeader.PayloadLength - 4) NonceData;
+}
+
+table IKEv2NotifyPayloadProtocolIDTable(value)
+{
+	switch(value)
+	{
+		case 0: "Ignored";
+		case 1: "IKE_SA notifications";
+		case 2: "IPsec SAs AH";
+		case 3: "IPsec SAs ESP";
+		default:
+			"Unknown value";
+	}
+}
+
+table IKEv2NotifyPayloadNotifyMessageTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "RESERVED";
+		case 1: "UNSUPPORTED_CRITICAL_PAYLOAD";
+		case 4: "INVALID_IKE_SPI";
+		case 5: "INVALID_MAJOR_VERSION";
+		case 7: "INVALID_SYNTAX";
+		case 9: "INVALID_MESSAGE_ID";
+		case 11: "INVALID_SPI";
+		case 14: "NO_PROPOSAL_CHOSEN";
+		case 17: "INVALID_KE_PAYLOAD";
+		case 24: "AUTHENTICATION_FAILED";
+		case 34: "SINGLE_PAIR_REQUIRED";
+		case 35: "NO_ADDITIONAL_SAS";
+		case 36: "INTERNAL_ADDRESS_FAILURE";
+		case 37: "FAILED_CP_REQUIRED";
+		case 38: "TS_UNACCEPTABLE";
+		case 39: "INVALID_SELECTORS";
+		case 8192: "Notify status";
+		case 16384: "INITIAL_CONTACT";
+		case 16385: "SET_WINDOW_SIZE";
+		case 16386: "ADDITIONAL_TS_POSSIBLE";
+		case 16387: "IPCOMP_SUPPORTED";
+		case 16388: "NAT_DETECTION_SOURCE_IP";
+		case 16389: "NAT_DETECTION_DESTINATION_IP";
+		case 16390: "COOKIE";
+		case 16391: "USE_TRANSPORT_MODE";
+		case 16392: "HTTP_CERT_LOOKUP_SUPPORTED";
+		case 16393: "REKEY_SA";
+		case 16394: "ESP_TFC_PADDING_NOT_SUPPORTED";
+		case 16395: "NON_FIRST_FRAGMENTS_ALSO";
+		default:
+			"Unknown value";
+	}
+}
+
+table IKEv2NotifyPayloadTransformIDTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "IPCOMP_OUI";
+		case 2: "IPCOMP_DEFLATE";
+		case 3: "IPCOMP_LZS";
+		case 4: "IPCOMP_LZJH";
+		default:
+			"Unknwon value";
+	}
+}
+
+struct IKEv2NotifyPayload = FormatString("NotifyMessageType = %s, Length = %u", NotifyMessageType.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 ProtocolID = IKEv2NotifyPayloadProtocolIDTable(this);
+	UINT8 SPISize;
+	UINT16 NotifyMessageType = IKEv2NotifyPayloadNotifyMessageTypeTable(this);
+	switch
+	{
+		case SPISize: BLOB(SPISize) SPI;
+	}
+
+	switch(NotifyMessageType)
+	{
+		case 1: UINT8 PayloadType;
+		case 9: UINT32 invalidmessageID;
+		case 17: [DataFieldByteOrder = BigEndian] UINT16 DHGroup;
+		case 39: BLOB(PayloadHeader.PayloadLength - 8 - SPISize) OffendingPacket;
+		case 16385: [DataFieldByteOrder = BigEndian] UINT32 MsgCount;
+		case 16387:
+			_struct IPCOMP
+			{
+				UINT16 IPCompCPI;
+				UINT8 TransformID = IKEv2NotifyPayloadTransformIDTable(this);
+				//#? RFC4306 Page 70
+				BLOB(PayloadHeader.PayloadLength - 8 - SPISize) AttBLOB;
+			}
+		case 16388:
+		case 16389: BLOB(PayloadHeader.PayloadLength - 8 - SPISize) Sha1BLOB;
+		case 16390: BLOB(PayloadHeader.PayloadLength - 8 - SPISize) Cookie;
+		default: BLOB(PayloadHeader.PayloadLength - 8 - SPISize) UnknownBLOB;
+	}
+}
+
+struct IKEv2DeletePayload = FormatString("ProtocolID = %s, Length = %u", ProtocolID.ToString, PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 ProtocolID = IKEv2NotifyPayloadProtocolIDTable(this);
+	UINT8 SPISize;
+	UINT16 SPICount;
+	BLOB(SPISize * SPICount) SPIBlob;
+}
+
+struct IKEv2VendorIDPayload = FormatString("Length = %u", PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	BLOB(PayloadHeader.PayloadLength - 4) VendorID;
+}
+
+struct IKEv2TrafficSelectorPayload = FormatString("Length = %u, Count = %u", PayloadHeader.PayloadLength, TSCount)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 TSCount;
+	UINT24 Reserved;
+	IKEv2TrafficSelector TrafficSelector[TSCount];
+}
+
+table IKEv2TrafficSelectorTSTypeTable(value)
+{
+	switch(value)
+	{
+		case 7: "TS_IPV4_ADDR_RANGE";
+		case 8: "TS_IPV6_ADDR_RANGE";
+		default:
+			"Unknown value";
+	}
+}
+
+struct IKEv2TrafficSelector = FormatString("Type = %s", TSType.ToString)
+{
+	UINT8 TSType = IKEv2TrafficSelectorTSTypeTable(this);
+	switch(TSType)
+	{
+		case 7:
+		case 8: UINT8 IPProtocolID;
+	}
+	UINT16 SelectorLength;
+	switch(TSType)
+	{
+		case 7:
+		case 8:
+			_struct port
+			{
+				UINT16 StartPort;
+				UINT16 EndPort;
+			}
+	}
+	switch(TSType)
+	{
+		case 7:
+			_struct IPv4
+			{
+				IPv4Address StartAddress;
+				IPv4Address EndAddress;
+			}
+		case 8:
+			_struct IPv6
+			{
+				IPv6Address StartAddress;
+				IPv6Address EndAddress;
+			}
+	}
+}
+
+struct IKEv4EncryptedPayload = FormatString("Length = %u", PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	BLOB(PayloadHeader.PayloadLength - 4 > FrameLength - FrameOffset ? FrameLength - FrameOffset : PayloadHeader.PayloadLength - 4) EncryptedData;
+}
+
+table IKEv2ConfigurationPayloadCFGTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "Reserved";
+		case 1: "CFG_REQUEST";
+		case 2: "CFG_REPLY";
+		case 3: "CFG_SET";
+		case 4: "CFG_ACK";
+		default:
+			"Unknown value";
+	}
+}
+
+struct IKEv2ConfigurationPayload = FormatString("CFGType = %s, Length = %u", CFGType.ToString, PayloadHeader.PayloadLength)
+{
+	[local.MarkStart = FrameOffset]
+	IKEv2PayloadHeader PayloadHeader;
+	UINT8 CFGType = IKEv2ConfigurationPayloadCFGTypeTable(this);
+	UINT24 Reserved;
+
+	while[FrameOffset < local.MarkStart + PayloadHeader.PayloadLength]
+	{
+		IKEv2ConfigurationAttribute ConfigurationAttribute;
+	}
+}
+
+table IKEv2ConfigurationAttributeAttributeTypeTable(value)
+{
+	switch(value)
+	{
+		case 0: "RESERVED";
+		case 1: "INTERNAL_IP4_ADDRESS";
+		case 2: "INTERNAL_IP4_NETMASK";
+		case 3: "INTERNAL_IP4_DNS";
+		case 4: "INTERNAL_IP4_NBNS";
+		case 5: "INTERNAL_ADDRESS_EXPIRY";
+		case 6: "INTERNAL_IP4_DHCP";
+		case 7: "APPLICATION_VERSION";
+		case 8: "INTERNAL_IP6_ADDRESS";
+		case 9: "RESERVED";
+		case 10: "INTERNAL_IP6_DNS";
+		case 11: "INTERNAL_IP6_NBNS";
+		case 12: "INTERNAL_IP6_DHCP";
+		case 13: "INTERNAL_IP4_SUBNET";
+		case 14: "SUPPORTED_ATTRIBUTES";
+		case 15: "INTERNAL_IP6_SUBNET";
+		case 0x5BA0: "INTERNAL_IP4_SERVER";
+		case 0x5BA1: "INTERNAL_IP6_SERVER";
+		default:
+			"Unknwon value";
+
+	}
+}
+
+struct IKEv2ConfigurationAttribute = FormatString("Type = %s, Length = %u", Attribute.AttributeType.ToString, AttributeLength)
+{
+	UINT16 Attribute = AttributeType.ToString
+	{
+		UINT16 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT16 AttributeType:15 = IKEv2ConfigurationAttributeAttributeTypeTable(this);
+	}
+	UINT16 AttributeLength;
+
+	switch
+	{
+		case AttributeLength > 0:
+			switch(Attribute.AttributeType)
+			{
+				case 1: IPv4Address IPv4Addr;
+				case 2: IPv4Address IPv4Mask;
+				case 3: IPv4Address IPv4DNS;
+				case 4: IPv4Address IPv4NBNS;
+				case 5: BLOB(AttributeLength) ExpireTime;
+				case 6: IPv4Address IPv4DHCP;
+				case 7: AsciiString(AttributeLength) AppVersion;
+				case 8: IPv6Address IPv6Addr;
+				case 10: IPv6Address IPv6DNS;
+				case 11: IPv6Address IPv6NBNS;
+				case 12: IPv6Address IPv6DHCP;
+				case 13:
+					_struct IPv4Subnet
+					{
+						IPv4Address IPv4Addr;
+						IPv4Address IPv4Mask;
+					}
+				case 14: UINT16 SupportedAttribute[AttributeLength / 2];
+				case 15:
+					_struct IPv6Subnet
+					{
+						IPv6Address IPv6Addr;
+						UINT8 PrefixLength;
+					}
+			}
+	}
+}
+
+struct IKEv2EAPPayload = FormatString("Length = %u", PayloadHeader.PayloadLength)
+{
+	IKEv2PayloadHeader PayloadHeader;
+	EAP Eap;
+}

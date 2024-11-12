@@ -1,0 +1,164 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Post Office Protocol v3
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 1082, 1734, 1939, 2449, 3206
+//#                          http://www.iana.org/assignments/pop3-extension-mechanism
+//#  Microsoft References:   [MS-POP3]: NT LAN Manager (NTLM) Authentication: Post Office Protocol - Version 3 (POP3) Extension
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol POP3 = FormatString("%s", Property.POP3PayloadSummary)
+{
+
+	[Pop3CommandLength = (AsciiString(FrameData, FrameOffset, 4) == "AUTH" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "USER" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "PASS" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "STAT" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "LIST" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "RETR" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "DELE" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "NOOP" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "RSET" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "UIDL" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "QUIT" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "APOP" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "CAPA" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "STLS" ||
+						  AsciiString(FrameData, FrameOffset, 4) == "XTND") ? 4 :
+						 (AsciiString(FrameData, FrameOffset, 3) == "TOP" ) ? 3 :
+						  (AsciiString(FrameData, FrameOffset, 1) == "+" ||
+						  AsciiString(FrameData, FrameOffset, 1) == "-"   ) ? 1 :
+						 -1
+	]
+	switch
+	{
+		// Command
+		case Pop3CommandLength > 1:
+			_struct POP3Command
+			{
+				AsciiString(Pop3CommandLength) Command = POP3CommandTable(this);
+				[Post.POP3PayloadSummary = FormatString("Command: %s %s", Command, CommandParameter)]
+				AsciiStringTerm("\r\n") CommandParameter = FormatString("%s", UINT16(FrameData, FrameOffset) == 0x0D0A ? "CRLF" : this);
+			}
+		// Response
+		case Pop3CommandLength == 1:
+			_struct POP3Response
+			{
+				AsciiStringTerm(UINT16(FrameData, FrameOffset+3)==0x0D0A ? "\r\n" : " ") Response = POP3ResponseTable(this);
+				[Post.POP3PayloadSummary = FormatString("Response: %s%s", Response.toString, POP3ResponseParameter ? ": " + POP3ResponseParameter : "")]
+				switch
+				{
+					case !(UINT16(FrameData, FrameOffset-2) == 0x0D0A):
+						_struct _responseParam
+						{
+							while [UINT8(FrameData, FrameOffset) == 0x20]
+							{
+								CHAR WhiteSpace;
+							};
+							switch(AsciiString(FrameData, FrameOffset, 10))
+							{
+								case "TlRMTVNTUA":
+									[POP3ResponseParameter = "NLMP Authentication"]
+									AsciiStringTerm("\r\n") NLMPAuthentication
+									{
+										[NTLMSSPAuthentication = TRUE]
+										NLMP NLMP;
+									};
+								case "VXNlciBOYW": //Base64:"VXNlciBOYW1lAA=="; Original:"User Name"
+									[POP3ResponseParameter = this.ToString]
+									AsciiStringTerm("\r\n") UserName = "User Name";
+								case "UGFzc3dvcm": //Base64:"UGFzc3dvcmQA"; Original:"Password"
+									[POP3ResponseParameter = this.ToString]
+									AsciiStringTerm("\r\n") Password = "Password";
+								default:
+									[POP3ResponseParameter]
+									AsciiStringTerm("\r\n") ResponseParameter = FormatString("%s", UINT16(FrameData, FrameOffset) == 0x0D0A ? "CRLF" : this);
+							}
+						}
+				};
+				switch
+				{
+					case FrameOffset < frameLength:
+						struct DataPayLoad
+						{
+							While [FrameOffset < frameLength]
+							{
+								AsciiStringTerm("\r\n") Data = FormatString("%s", UINT24(FrameData, FrameOffset) == 0x2E0D0A ? "'.CRLF' - Final Line"
+																															: (UINT16(FrameData, FrameOffset) == 0x0D0A ? "CRLF" : this));
+							}
+						};
+				}
+			}
+		default:
+			_struct POP3Data
+			{
+				while [UINT8(FrameData, FrameOffset) == 0x20]
+				{
+					CHAR WhiteSpace;
+				};				
+				switch(AsciiString(FrameData, FrameOffset, 10))
+				{
+					case "TlRMTVNTUA":
+						[POP3PayloadSummary = FormatString("NLMP Authentication")]
+						AsciiStringTerm("\r\n") NLMPAuthentication
+						{
+							[NTLMSSPAuthentication = TRUE]
+							NLMP NLMP;
+						};
+					default:
+						[POP3PayloadSummary = FormatString("Data Payload, %d bytes", FrameLength - FrameOffset)]
+						struct DataPayLoad
+						{
+							while [FrameOffset < frameLength]
+							{
+								AsciiStringTerm("\r\n") Data = FormatString("%s", UINT24(FrameData, FrameOffset) == 0x2E0D0A ? "'.CRLF' - Final Line"
+																															: (UINT16(FrameData, FrameOffset) == 0x0D0A ? "CRLF" : this));
+							}
+						}
+				}
+			}
+	}
+}
+Table POP3CommandTable(Command)
+{
+	switch
+	{
+		case Command.Contains("AUTH"):"AUTH, Authentication request";//RFC 1374
+		case Command.Contains("USER"):"USER, Mailbox login";
+		case Command.Contains("PASS"):"PASS, Cleartext password entry";
+		case Command.Contains("STAT"):"STAT, Get the drop listing";
+		case Command.Contains("LIST"):"LIST, Get a scan listing of one or all messages";
+		case Command.Contains("RETR"):"RETR, Retrieve the message";
+		case Command.Contains("DELE"):"DELE, Mark the message as deleted";
+		case Command.Contains("NOOP"):"NOOP, Return a +OK reply";
+		case Command.Contains("RSET"):"RSET, Remove the deletion marking from all messages";
+		case Command.Contains("TOP") :"TOP, Get the top n lines of the message";
+		case Command.Contains("UIDL"):"UIDL, Get a unique-id listing for one or all messages";
+		case Command.Contains("QUIT"):"QUIT, Exit session and Remove all deleted messages from the server";
+		case Command.Contains("APOP"):"APOP, Login with MD5 signature";
+		case Command.Contains("CAPA"):"CAPA, Get a list of capabilities supported by the server";//RFC 2449
+		case Command.Contains("STLS"):"STLS, Begin a TLS negotiation";//rfc2595
+		case Command.Contains("XTND"):"XTND, POP3 Extended Command";//rfc1082
+		default:FormatString("%s",Command);
+	}
+}
+
+Table POP3ResponseTable(Command)
+{
+	switch Command
+	{
+		case "+OK" : "+OK";
+		case "-ERR": "-ERR, Error";
+		case "+"   : "+, Auth data";
+		default:    Command;
+	}
+}
+
+

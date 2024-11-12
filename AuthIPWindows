@@ -1,0 +1,324 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Authenticated Internet Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-AIPS]: Authenticated Internet Protocol Specification (13.0)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 3/27/2009
+//#                          Minor, 5/22/2009
+//#
+//####
+
+[Property.IKEPayloads = IKE_NONE]
+[DefaultTimeOut = AuthIPConversationTimeout]
+Protocol AuthIP = FormatString("version %d.%d, %s, %s, %s%s%s%s%s%sPayloads = %s, Flags = %s, Length = %d",
+							   Version.MajorVersion,
+							   Version.MinorVersion,
+							   IKEExchangeTypeTable(ExchangeType),
+							   Property.IKEInitiator ? "Initiator" : "responder",
+							   IKEResponderCookie == 0x0000000000000000 ? 
+									((Property.IKEPayloads & IKE_GSS_ID) ? 
+										("First Exchange with Known peer SPN, SPN = " + Property.AuthIPSPN + ", ") : "First Exchange with Unknown peer SPN, ")
+										: "",
+							   Property.IKEInitiator ? "" : 
+									((Property.IKEPayloads & IKE_GSS_ID) ? 
+										("The responder send the SPN,  SPN = " + Property.AuthIPSPN + ", ") : ""),
+							   (Property.IKEPayloads & IKE_AUTH) ? 
+									(Property.IKEInitiator ? 
+										("Initiator provide proposal " + Property.AuthMethod + " for negotiation ,") 
+										: (property.IsSameFirAuthIPMethod ? "Responder correspond to the first proposal, " : "The responder does not choose the same first authentication method, ")
+									):"",
+								(Property.IKEPayloads & IKE_N) ? 
+									(Property.AuthIPNotifyType.contains("IKE_NOTIFY_MS_STATUS") ? WinErrorCodeTable(property.AuthIPStatusCode) + ", ": "" ): "",
+							   AuthIPGSSAPIPayload.Flags.Exchange  && Property.IKEInitiator ? "Start a new authentication exchange, " : "",
+							   (Property.IKEPayloads & IKE_GSS_API) && !Property.IKEInitiator ?
+									(AuthIPGSSAPIPayload.Flags.Complete ? "Authentication has successfully completed, " : "Current authentication method fails, ") : "",
+							   Property.IKESummaryLine,
+							   Flags.ToString,
+							   Length
+							  )
+{
+	[IKEInitiatorCookie]
+	Cookie InitiatorCookie;
+	switch
+	{
+		case !conversation.AuthIP.ID:
+			[
+				BuildConversationWithParent(InitiatorCookie),
+				conversation.ConversationDescription = FormatString("(InitCookie: %s) ConvID = %d", InitiatorCookie.ToDataTypeString, ConvID)
+			]
+			_struct BuildAuthIPConversation{};
+	}
+	[IKEResponderCookie]
+	Cookie ResponderCookie;
+	[
+		Conversation.InitiatorAddress = (ResponderCookie == 0x0000000000000000) ? Property.SourceNetworkAddress : Conversation.InitiatorAddress,
+		Property.IKEInitiator = (Property.SourceNetworkAddress == Conversation.InitiatorAddress) ? true : false,
+		Property.IKENextPayload
+	]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Version = FormatString("%d.%d", MajorVersion, MinorVersion)
+	{
+		UINT8 MajorVersion:4 = FormatString("(%s) %d", this.ToBitString, this);
+		UINT8 MinorVersion:4 = FormatString("(%s) %d", this.ToBitString, this);
+	};
+	
+	[IKEExchangeType]
+	UINT8 ExchangeType = FormatString("%s, %d(0x%02X)", IKEExchangeTypeTable(this), this, this);
+	
+	UINT8 Flags = FormatString("%s%s%s", A ? "A" : ".", C ? "C" : ".",E ? "E" : ".")
+	{
+		UINT8 Reserved:5 = FormatString("(%s)",this.ToBitString);
+		UINT8 A:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Authentication only " : "Not Authentication only");
+		UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Commit, key exchange synchronized" : "Commit, key exchange not synchronized");
+		[Property.AuthIPEncrypted]
+		UINT8 E:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Encryption, Following payloads Encrypted" : "Encryption, Following payloads not Encrypted");
+	};
+	
+	UINT32 MessageID;
+	UINT32 Length;
+	
+	//Judge whether the first authip method of responder is same with the initiator
+	[Post.Conversation.AuthIPMethodConv = Property.IKEInitiator ? ((Property.IKEPayloads & IKE_AUTH) ? Property.AuthIPMethod : "") : Conversation.AuthIPMethodConv]
+	[Post.Conversation.AuthIPMethodTable$[framenumber] = Conversation.AuthIPMethodConv]
+	[Post.property.IsSameFirAuthIPMethod = Property.IKEInitiator ? 
+		false : ((Property.IKEPayloads & IKE_AUTH) && Property.AuthIPMethod == Conversation.AuthIPMethodTable$[framenumber]) ? true : false]
+		
+	[Post.Property.IKESummaryLine = IKESummaryTable(Property.IKEPayloads, Property.IKEInitiator, Property.AuthIPEncrypted)]
+	switch
+	{
+		case AuthIPEncrypted:
+			switch(Property.IKENextPayload)
+			{
+				case 0x85:
+					AuthIPCryptoPayload Crypto;
+				default:
+					struct IKEPayload = FormatString("Encrypted Payloads, Length = %d",Length - 28)
+					{
+						[Property.IKEPayloads = Property.IKEPayloads | IKEPayloadtoEnum(Property.IKENextPayload)]
+						Blob(Length - 28 > frameLength - frameOffset ? frameLength - frameOffset : Length - 28) PayloadData;
+					}
+			}
+		default:
+			while Payloads[FrameOffset < FrameLength ]
+			{
+				switch
+				{
+					case Property.IKENextPayload == 0x01: IKESecurityAssociationPayload SecurityAssociation;
+					case Property.IKENextPayload == 0x02: IKEProposalPayload Proposal;
+					case Property.IKENextPayload == 0x03: IKETransformPayload Transform;
+					case Property.IKENextPayload == 0x04: IKEKeyExchangePayload KeyExchange;
+					case Property.IKENextPayload == 0x05: IKEIdentificationPayload Identification;
+					case Property.IKENextPayload == 0x06: IKECertificatePayload Certificate;
+					case Property.IKENextPayload == 0x07: IKECertificateRequestPayload CertificateRequest;
+					case Property.IKENextPayload == 0x08: IKEHashPayload Hash;
+					case Property.IKENextPayload == 0x09: IKESignaturePayload Signature;
+					case Property.IKENextPayload == 0x0A: IKENoncePayload Nonce;
+					case Property.IKENextPayload == 0x0B: AuthIPNotificationPayload Notification;
+					case Property.IKENextPayload == 0x0C: IKEDeletePayload Delete;
+					case Property.IKENextPayload == 0x0D: IKEVendorIDPayload VendorID;
+					case Property.IKENextPayload == 0x0F: IKESAKEKPayload SAKEKPayload;
+					case Property.IKENextPayload == 0x10: IKESATEKPayload SATEKPayload;
+					case Property.IKENextPayload == 0x11: IKEKeyDownload KeyDownload;
+					case Property.IKENextPayload == 0x12: IKESequenceNumber SequenceNumber;
+					case Property.IKENextPayload == 0x13: IKEProofOfPossession ProofOfPossession;
+					case Property.IKENextPayload == 0x82:
+					case Property.IKENextPayload == 0x14: IKENATDiscoveryPayload NATD;
+					case Property.IKENextPayload == 0x83:
+					case Property.IKENextPayload == 0x15: IKENATOriginalAddressPayload NATOA;
+					case Property.IKENextPayload >= 0x0E
+						&& Property.IKENextPayload <= 0x7F: IKEReservedPayload ReservedPayload;
+					case Property.IKENextPayload == 0x81: AuthIPGSSAPIPayload GSSAPI;
+					case Property.IKENextPayload == 0x85: AuthIPCryptoPayload Crypto;
+					case Property.IKENextPayload == 0x86: AuthIPGSSIDPayload GSSID;
+					case Property.IKENextPayload == 0x87: AuthIPAuthPayload Auth;
+					case Property.IKENextPayload >= 0x80
+						&& Property.IKENextPayload <= 0xFF: IKEPrivateUsePayload PrivateUse;
+				}
+			}
+	}
+}
+
+Table AuthIPProtocolIDTable(protocolID)
+{
+	switch(protocolID)
+	{
+		case  1: "MM/EM notification";
+		case  2: "QM notification";
+		default: FormatString("Unknown Protocol ID (%d)", protocolID);
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_N]
+struct AuthIPNotificationPayload = FormatString("%sNext Payload = %s, Length = %d",
+												NotifyMessageType == 0x9C43 ? "MS Private Error Notify, " : "",
+												IKEPayloadTable(NextPayload),
+												PayloadLength
+												)
+{
+	[Property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT32 DOI = IKEPayloadDOITable(this, 0);
+	[IKEProtocolID]
+	UINT8 ProtocolID = FormatString("%s, %d(0x%02X)", AuthIPProtocolIDTable(this), this, this);
+	UINT8 Flags
+	{
+		UINT8 Reserved:7 = FormatString("            (%s) Unused", this.ToBitString);
+		UINT8 ReliableNotification:1 = FormatString("(%s) %s (RELIABLE_NOTIFY_FLAG)", this.ToBitString, this ? "Reliable notify message and MUST be acknowledged" : "Not a reliable notify message and MUST NOT be acknowledged");
+	};
+	[Property.AuthIPNotifyType = IsValueNone(Property.AuthIPNotifyType) ? IKENotifyMessageTypeTable(this) : Property.AuthIPNotifyType + "," + IKENotifyMessageTypeTable(this)]
+	UINT16 NotifyMessageType = IKENotifyMessageTypeTable(this);
+	switch(NotifyMessageType)
+	{
+		case 0x9C54: // NOTIFY_STATUS
+			[property.AuthIPStatusCode]
+			UINT32 StatusCode = WinErrorCodeTable(this);
+		case 0x9C55: // NOTIFY_DOS_COOKIE
+			Cookie ResponderCookie;
+		case 0x9C56: // NOTIFY_ACK 
+			UINT32 SequenceNumber;
+		//case 0x9C57: // NOTIFY_QM_SYNCHRONIZE 
+		// This notify message type is used to signal the end of the quick mode (QM) phase.
+		// No notification data.
+		//case 0x9C58: //	NOTIFY_ACQUIRE is encrypted
+		case 0x3E81:
+			_struct ACKNotification
+			{
+				UINT8 Count;
+				UINT16 FragmentID;
+				UINT8 FragmentNumbers[Count];
+			};
+		case 0x6001:
+			UINT32 NotificationStatus = IKENotificationStatusTable(this);
+		default:
+			Blob(PayloadLength - 12 > frameLength - frameOffset ? frameLength - frameOffset : PayloadLength - 12) NotificationData;
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_CRYPTO]
+struct AuthIPCryptoPayload=FormatString("Next Payload = %s, SeqNum = %d, Length = %d",
+										IKEPayloadTable(NextPayload),
+										SeqNum,
+										PayloadLength)
+{
+	[Property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	[IKEPayloadEndOffset = offset + this -2]
+	UINT16 PayloadLength;
+	UINT32 SeqNum;
+	switch(AuthIPEncrypted)
+	{
+		case 1:
+			_struct EncryptedCryptoPayload
+			{
+				BLOB(PayloadLength - 8) InitialVector;
+				BLOB(FrameLength - FrameOffset - 12) EncryptedData;
+				//Encrypted
+				//struct EncryptedData
+				//{
+				//	BLOB(?) EncryptedPayloads;
+				//	BLOB(PaddingLength) Padding;
+				//	UINT8 PaddingLength;
+				//	UINT8 NextHeader = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+				//};
+				switch
+				{
+					case FrameOffset < FrameLength:
+						BLOB(12) IntegrityChecksumData;
+				}
+			}
+		default:
+			switch
+			{
+				case PayloadLength - 8 > 0:
+					Blob(PayloadLength - 8 > frameLength - frameOffset  ? frameLength - frameOffset : PayloadLength - 8) InitializationVector;
+			}
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_GSS_ID]
+struct AuthIPGSSIDPayload=FormatString("Next Payload = %s, Length = %d",
+												IKEPayloadTable(NextPayload),
+												PayloadLength)
+{
+	[Property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	[DataFieldByteOrder = LittleEndian]
+	[Property.AuthIPSPN]
+	UnicodeString((PayloadLength - 4 > frameLength - frameOffset ? frameLength - frameOffset : PayloadLength - 4)/2) SecurityPrincipalName;
+}
+
+Table SSPIAuthMethodTable(value)
+{
+	switch(value)
+	{
+		case 0x0002: "Kerberos authentication is supported";
+		case 0x0003: "Anonymous authentication is supported";
+		case 0x0004: "Transport Layer Security (TLS) authentication is supported";
+		case 0x0005: "NT LAN Manager (NTLM) authentication is supported";
+		default:     "Unhandled SSPI Authentication Method";
+	}
+}
+
+Table AuthIPAuthMethodTable(value)
+{
+	switch(value)
+	{
+		case 0x0002: "Kerberos";
+		case 0x0003: "Anonymous";
+		case 0x0004: "TLS";
+		case 0x0005: "NTLM";
+	}
+}
+
+[Property.IKEPayloads = Property.IKEPayloads | IKE_AUTH]
+struct AuthIPAuthPayload=FormatString("Next Payload = %s, Length = %d",
+										IKEPayloadTable(NextPayload),
+										PayloadLength)
+{
+	[Property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	struct AuthenticationMethods[(PayloadLength - 4) / 4]
+	{
+		[Property.AuthMethod = IsValueNone(Property.AuthMethod) ?  AuthIPAuthMethodTable(this) : (Property.AuthMethod + ", " + AuthIPAuthMethodTable(this))]
+		[Property.AuthIPMethod = IsValueNone(Property.AuthIPMethod) ? this : Property.AuthIPMethod]
+		UINT16 AuthenticationMethod = FormatString("%s, %d(0x%04X)", SSPIAuthMethodTable(this), this, this);
+		UINT16 Flags;
+	};
+}
+[Property.IKEPayloads = Property.IKEPayloads | IKE_GSS_API]
+struct AuthIPGSSAPIPayload = FormatString("Next Payload = %s, Length = %d",
+											IKEPayloadTable(NextPayload),
+											PayloadLength
+											)
+{
+	[Property.IKENextPayload]
+	UINT8 NextPayload = FormatString("%s, %d(0x%02X)", IKEPayloadTable(this), this, this);
+	UINT8 Reserved;
+	UINT16 PayloadLength;
+	UINT32 Status = FormatString("%s %d(0x%04X)", WinErrorCodeTable(this), this, this);
+	UINT8 Flags
+	{
+		UINT8 Reserved:3 = FormatString("(%s) Unused", this.ToBitString);
+		UINT8 Complete:1 = FormatString("(%s) %s (GSS_RESPONDER_AUTH_COMPLETE)", this.ToBitString, this ? "Authentication has successfully completed" : "Authentication has NOT successfully completed yet");
+		UINT8 Explicit:1 = FormatString("(%s) %s (GSS_EXPLICIT_CREDENTIALS)", this.ToBitString, this ? "Explicit credentials are being used for this GSS_API exchange" : "Explicit credentials are NOT being used for this GSS_API exchange");
+		UINT8 Retry:1 = FormatString("   (%s) %s (GSS_RETRY_CURRENT_AUTHENTICATION)", this.ToBitString, this ? "Retry the current authentication exchange with different credentials" : "DOESN'T Retry the current authentication exchange with different credentials");
+		UINT8 Active:1 = FormatString("  (%s) %s (GSS_IMPERSONATION_ACTIVE)", this.ToBitString, this ? "SPN for this exchange should be interpreted as a user SPN" : "SPN for this exchange should NOT be interpreted as a user SPN");
+		UINT8 Exchange:1 = FormatString("(%s) %s (GSS_NEW_GSS_EXCHANGE)", this.ToBitString, this ? "Start a new authentication exchange" : "DOESN'T Start a new authentication exchange");
+	};
+	//UINT8 VendorEncoding;
+	[DataFieldFrameLength = FrameOffset + PayloadLength]
+	GssAPI GSSAPIToken;
+}
+

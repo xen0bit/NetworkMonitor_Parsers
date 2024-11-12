@@ -1,0 +1,139 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Decrypted Payload Header
+//#
+//#  Details:                
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 1/27/2010
+//#
+//####
+
+Protocol DecryptedPayloadHeader = FormatString("FrameCount = %u, ErrorStatus = %s", FrameCount, EncryptionErrorStatus.ToString)
+{
+	UINT16 Version;
+	UINT16 HeaderLength;
+	UINT16 EncryptionErrorStatus = this ? "ERROR" : "SUCCESS";
+	UINT16 FrameCount;
+	UINT16 FrameSource[FrameCount];
+	switch (UINT8(FrameData, FrameOffset))
+	{
+		case 4:
+			[
+				PostAfter.ProxyBuildConversation("IPv4", 
+				(SourceAddress < DestinationAddress ?
+							MakeByteArray(SourceAddress,DestinationAddress) :
+							MakeByteArray(DestinationAddress,SourceAddress)))
+			]
+			struct IPv4 = FormatString("Src = %s, Dest = %s", SourceAddress, DestinationAddress)
+			{
+				UINT8 IPVersion;
+				[
+					Pair = Address, 
+					Property.SourceIPv4Alias = Global.AliasTable$[this],
+					Property.SourceName = Global.NameTable$[this],
+					Property.Source = Property.OverIP ? Property.Source
+							: Property.SourceIPv4Alias ? Property.SourceIPv4Alias
+							: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+							: Property.SourceName ? Property.SourceName
+							: this.ToDataTypeString,
+					Property.SourceNetworkAddress,
+					Property.SourceNetworkAddressString = this.ToDataTypeString
+				]
+				IPv4Address SourceAddress;
+				[
+					Pair = Address,
+					Property.DestinationIPv4Alias = Global.AliasTable$[this],
+					Property.DestinationName = Global.NameTable$[this],
+					Property.Destination = Property.OverIP ? Property.Destination
+							: Property.DestinationIPv4Alias ? Property.DestinationIPv4Alias
+							: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+							: Property.DestinationName ? Property.DestinationName
+							: this.ToDataTypeString, 
+					Property.NetworkDirection = Property.OverIP ? Property.NetworkDirection
+							: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+					Property.DestinationNetworkAddress,
+					Property.DestinationNetworkAddressString = this.ToDataTypeString
+				]
+				IPv4Address DestinationAddress;
+			}
+		case 6:
+			[
+				PostAfter.ProxyBuildConversation("IPv6", 
+				(SourceAddress < DestinationAddress ?
+							MakeByteArray(SourceAddress,DestinationAddress) :
+							MakeByteArray(DestinationAddress,SourceAddress)))
+			]		
+			struct IPv6 = FormatString("Src = %s, Dest = %s", SourceAddress, DestinationAddress)
+			{
+				UINT8 IPVersion;
+				[
+					Pair = Address,
+					Property.SourceName = Global.NameTable$[this], 
+					Property.SourceIPv6Alias = Global.AliasTable$[this],
+					Property.Source = Property.OverIP ? Property.Source
+								: Property.SourceIPv6Alias ? Property.SourceIPv6Alias
+								: Global.MultiIPAddress$[Property.SourceName] ? this.ToDataTypeString
+								: Property.SourceName ?  Property.SourceName
+								: this.ToDataTypeString,
+					Property.SourceNetworkAddress,
+					Property.SourceNetworkAddressString = SourceAddress.ToDataTypeString
+				]
+				IPv6Address SourceAddress;
+				[
+					Pair = Address,
+					Property.DestinationName = Global.NameTable$[this], 
+					Property.DestinationIPv6Alias = Global.AliasTable$[this],
+					Property.Destination = Property.OverIP ? Property.Destination
+								: Property.DestinationIPv6Alias ? Property.DestinationIPv6Alias
+								: Global.MultiIPAddress$[Property.DestinationName] ? this.ToDataTypeString
+								: Property.DestinationName ?  Property.DestinationName
+								: this.ToDataTypeString,
+					Property.NetworkDirection = Property.OverIP ? Property.NetworkDirection
+								: (SourceAddress > DestinationAddress) ? 1 : (SourceAddress == DestinationAddress) ? 0 : 2,
+					Property.DestinationNetworkAddress,
+					Property.DestinationNetworkAddressString = this.ToDataTypeString,
+				]
+				IPv6Address DestinationAddress;
+			}
+		default:
+			struct UnknownIP
+			{
+				// TODO: ReportParserError
+			}
+	}
+	
+	UINT8 ESPPresent;
+	
+	switch 
+	{
+		case ESPPresent:
+			[PostAfter.ProxyBuildConversationWithParent("ESP")]
+			struct {};
+	}
+
+	[
+		PostAfter.ProxyBuildConversationWithParent("TCP", 
+		Property.SourceNetworkAddress < Property.DestinationNetworkAddress ||
+								(Property.SourceNetworkAddress == Property.DestinationNetworkAddress &&
+									Property.SourcePort < Property.DestinationPort
+								) ?
+							MakeByteArray(Property.SourcePort, Property.DestinationPort) :
+							MakeByteArray(Property.DestinationPort, Property.SourcePort))
+	]
+	struct TCP = FormatString("Src = %s, Dest = %s, SeqNO = %s, NextSeqNO = %s", SrcPort, DstPort, SequenceNumber, NextSequenceNumber)
+	{
+		[Pair = Port, Property.SourcePort]
+		UINT64 SrcPort;
+		[Pair = Port, Property.DestinationPort]
+		UINT64 DstPort;
+		[Property.TCPSeqNumber]
+		UINT64 SequenceNumber;
+		[Property.TCPNextSeqNumber]
+		UINT64 NextSequenceNumber;
+
+	}
+	
+	SSLVersionSelector TLSSSLData;
+}

@@ -1,0 +1,210 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Simple and Protected GSS-API Negotiation
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 4178 The Simple and Protected GSS-API Negotiation Mechanism
+//#  Microsoft References:   [MS-SPNG]: Simple and Protected Generic Security Service Application Program Interface Negotiation Mechanism (SPNEGO) Protocol Extensions (7.5.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 11/26/2009
+//#
+//####
+
+[DataTypeByteOrder=BigEndian]
+struct SpnegoNegotiationToken 
+{
+	AsnBerInfo ChoiceTag;
+	switch (Tag)
+	{
+		case 0x00:
+			SpnegoNegTokenInit NegTokenInit;
+		case 0x01:
+			SpnegoNegTokenResp NegTokenResp;
+		default:
+			ReportParserError(ParserErrorProtocolClassPublic, "SPNEGO", "Unknown NegotiationToken.") ParserError;
+	}
+}
+
+struct SpnegoNegTokenInit {
+	AsnBerInfo SequenceHeader;
+	[DataFieldFrameLength = FrameOffset + LengthValue]
+	_struct
+	{
+		switch 
+		{
+			case UINT8( Framedata, Offset ) == 0xA0:
+				struct 
+				{
+					AsnBerInfo Tag0;
+					SpnegoMechTypeList MechTypes;
+				}
+		}
+		switch 
+		{
+			case UINT8( Framedata, Offset ) == 0xA1:
+				struct 
+				{
+					AsnBerInfo Tag1;
+					SpnegoContextFlags ReqFlags;
+				}
+		}
+		switch 
+		{
+			case UINT8( Framedata, Offset ) == 0xA2:
+				struct 
+				{
+					AsnBerInfo Tag2;
+					AsnBerInfo OctetStringHeader;
+					// This recalls the preferred type from SpnegoMechTypeList
+					AsnBerAnyByOid(property.SpnegoPreferredMechType) MechToken;
+				}
+		}
+		switch 
+		{
+			case UINT8( Framedata, Offset ) == 0xA3:
+				struct
+				{
+					AsnBerInfo Tag3;
+					switch 
+					{
+						case UINT8( Framedata, Offset ) == 0x04:
+							AsnBerOctetString MechListMic;
+						case UINT8( Framedata, Offset ) == 0x30:
+							SpnegoNegHints NegHints;
+						default:
+							ReportParserError(ParserErrorProtocolClassPublic, "SPNEGO", "Unknown Token.") ParserError;
+					}
+				}
+		}
+		switch 
+		{
+			case FrameLength > FrameOffset:
+				struct
+				{
+					BLOB(FrameLength - FrameOffset) UnknownExtensions;
+					ReportParserError(ParserErrorProtocolClassPublic, "SPNEGO", "Unknown Extensions.") ParserError;
+				}
+		}
+	}
+}
+
+struct SpnegoNegHints
+{
+	AsnBerInfo SequenceHeader;
+	switch {
+		case UINT8( Framedata, Offset ) == 0xA0:
+		struct {
+			AsnBerInfo Tag0;
+			AsnBerGeneralString hintName;
+		}
+	}
+	switch {
+		case UINT8( Framedata, Offset ) == 0xA1:
+		struct {
+			AsnBerInfo Tag0;
+			AsnBerOctetString hintAddress;
+		}
+	}
+}
+
+struct SpnegoNegTokenResp {
+	AsnBerInfo SequenceHeader;
+	switch {
+		case (UINT8(FrameData,Offset) == 0xa0):
+		struct {
+			AsnBerInfo Tag0;
+			AsnBerEnumerated NegState 
+				= SpnegoNegStateTable(AsnIntValue);
+		}
+	}
+	switch {
+		case (UINT8(FrameData,Offset) == 0xa1):
+		struct {
+			AsnBerInfo Tag1;
+			[Post.Property.GssAPISupportedMech = Property.AsnOid]
+			GSSAPIMechType SupportedMech;
+		}
+	}
+	switch {
+		case (UINT8(FrameData,Offset) == 0xa2):
+		struct 
+		{
+			AsnBerInfo Tag2;
+			struct  
+			{
+				AsnBerInfo OctetStringHeader;
+				switch 
+				{
+					case Property.GssAPISupportedMech:
+						AsnBerAnyByOid(Property.GssAPISupportedMech) ResponseToken;
+					default:
+						GssAPIGuessToken GuessResponseToken;
+				}
+			}
+		}
+	}
+	switch 
+	{
+		case (UINT8(FrameData,Offset) == 0xa3):
+		struct 
+		{
+			AsnBerInfo Tag3;
+			struct  
+			{
+				AsnBerInfo OctetStringHeader;
+				switch 
+				{
+					case Property.GssAPISupportedMech:
+						AsnBerAnyByOid(Property.GssAPISupportedMech) MechListMic;
+					default:
+						GssAPIGuessToken GuessMechListMic;
+				}
+			}
+		}
+	}
+}
+
+Table SpnegoNegStateTable(Enum) {
+	switch(Enum) {
+		case 0:	FormatString("accept-completed (%d)", Enum);
+		case 1: FormatString("accept-incomplete (%d)", Enum);
+		case 2: FormatString("reject (%d)", Enum);
+		case 3: FormatString("request-mic (%d)", Enum);
+		default: FormatString("unknown enum value (%d)", Enum);
+	}
+}
+
+struct SpnegoMechTypeList = "Prefer " + Local.PreferedMechDesc {
+	AsnBerInfo SequenceHeader;
+	// This assumes that there is at least one MechType listed
+	// The first one is saved as the preferred so it can be used in
+	//	SpnegoNegTokenInit 
+	[SpnegoMTLSequenceEnd = Offset + LengthValue,
+	 post.property.SpnegoPreferredMechType = property.AsnOid, 
+	 Local.PreferedMechDesc = MechType.ToString]
+	GSSAPIMechType MechType;
+	while Mechtypes[(Offset<SpnegoMTLSequenceEnd)] {
+		GSSAPIMechType MechType;
+	}
+}
+
+[DataTypeBitAlign]
+struct SpnegoContextFlags {
+	AsnBerInfo AsnBitStringHeader;
+	UINT8 UnusedBitCount;
+	
+	UINT8 DelegFlag:1 = FormatString("   (%s) %s", this.ToBitString,  this ? "Delegation" : "");
+	UINT8 MutualFlag:1 = FormatString("  (%s) %s", this.ToBitString,  this ? "Mutual Authentication" : "");
+	UINT8 ReplayFlag:1 = FormatString("  (%s) %s", this.ToBitString,  this ? "Replay detection" : "");
+	UINT8 SequenceFlag:1 = FormatString("(%s) %s", this.ToBitString,  this ? "Out-of-sequence detection" : "");
+	UINT8 AnonFlag:1 = FormatString("    (%s) %s", this.ToBitString,  this ? "Anonymous authentication" : "");
+	UINT8 ConfFlag:1 = FormatString("    (%s) %s", this.ToBitString,  this ? "Confidentiality" : "");
+	UINT8 IntegFlag:1 = FormatString("   (%s) %s", this.ToBitString,  this ? "Inter-process context transfer" : "");
+	struct[UnusedBitCount]
+	{
+		UINT8 UnusedBit:1 = FormatString("   (%s)", this.ToBitString);
+	}
+}

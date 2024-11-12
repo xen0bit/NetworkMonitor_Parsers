@@ -1,0 +1,2261 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  iSCSI Internet Small Computer Systems Interface
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 3720
+//#                          http://www.t10.org/cgi-bin/ac.pl?t=f&f=sbc3r17.pdf
+//#                          http://www.t10.org/cgi-bin/ac.pl?t=f&f=spc4r17.pdf
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+Protocol iSCSI = FormatString("%s", iSCSISummary)
+{
+	switch
+	{
+		case ! (Conversation.iSCSI.id > 0):
+		[BuildConversationWithParent]struct{}
+	}
+	[Conversation.ConversationDescription = FormatString("(%u - %u) ConvID = %d", Property.SourcePort, Property.DestinationPort, ConvID)]
+	[
+		Post.Property.iSCSIIsFirst = Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpSeqNumber)] || HighestReassembledProtocol == "iSCSI",
+		Post.Property.iSCSIIsLast = Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.TcpNextSeqNumber)] || HighestReassembledProtocol == "iSCSI",
+		Post.PayloadStart(
+											NetworkDirection, /* direction */
+											0, /* id */
+											0, /* sequence token */
+											0, /* next sequence token */
+											0, /* total payload length */
+											Property.iSCSIIsFirst, /* is first */
+											Property.iSCSIIsLast, /* is last */
+											RssmblyIndStartBit + RssmblyIndEndBit + RssmblySelfBit
+										)
+	]
+	
+	[Conversation.iSCSIEndSeq$[Property.TcpSeqNumber] = Conversation.currEndSeq$[Property.NetworkDirection]]
+	[Property.iSCSIEndSeqNumber = Conversation.iSCSIEndSeq$[Property.TCPSeqNumber]]
+	while [ FrameOffset < FrameLength ]
+	{
+		[Property.currSeq = Property.TCPSeqNumber + CurrentProtocolOffset]
+		switch
+		{
+			case CurrentProtocolOffset > 0:
+			// This is a header start
+			case Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.currSeq)]:
+			// this is a header start by look ahead
+			case 
+				// Start of TCP payload data
+				CurrentProtocolOffset == 0
+				&&
+				// Valid Opcode
+				(
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x01 && UINT16(FrameData,FrameOffset + 2) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x21 && UINT64(FrameData,FrameOffset + 8) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x02 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT64(FrameData,FrameOffset + 40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x22 && UINT8 (FrameData,FrameOffset + 3) == 0x0 && Blob(FrameData,FrameOffset + 36,12) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x05 &&(UINT24(FrameData,FrameOffset + 1) == 0x0 ||UINT24(FrameData,FrameOffset + 1) == 0x800000 )&& UINT32(FrameData,FrameOffset + 24) == 0x0 && UINT32(FrameData,FrameOffset + 32) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x25 && ( UINT8( Framedata, Offset + 1 ) & 0x38 ) == 0x0 && UINT8( Framedata, Offset + 2 ) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x31 && UINT24(FrameData,FrameOffset + 1) == 0x800000)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x32 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && UINT32(FrameData,FrameOffset + 16) == 0xffffffff && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x04 && (UINT24(FrameData,FrameOffset + 1) & 0x3FFFFF) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x24 && (UINT24(FrameData,FrameOffset + 1) & 0x3FFFFF) == 0x0 && Blob(FrameData,FrameOffset + 36,12) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x03 && UINT8( Framedata, Offset + 22 ) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x23 && UINT32(FrameData,FrameOffset + 20) == 0x0 && Blob(FrameData,FrameOffset + 38,10) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x06 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT16(FrameData,FrameOffset + 22) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x26 && UINT8( Framedata, Offset + 3 ) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT32(FrameData,FrameOffset + 36) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x10 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT32(FrameData,FrameOffset + 24) == 0x0 && UINT64(FrameData,FrameOffset + 32) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3F && UINT8( Framedata, Offset + 3 ) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT64(FrameData,FrameOffset + 40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x00 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && Blob(FrameData,FrameOffset + 32, 16) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x20 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && Blob(FrameData,FrameOffset + 36, 12) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1C && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1D && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1E && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3C && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3D && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)||
+					(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3E && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)
+				):
+		    	[Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Property.currSeq)] = true]
+				switch(UINT8( Framedata, Offset ) & 0x3F)
+				{
+					case 0x01:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5)
+							: Conversation.currEndSeq$[Property.NetworkDirection],
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSICommand command;
+					case 0x21:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5)
+							: Conversation.currEndSeq$[Property.NetworkDirection],
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSIResponse response;
+					case 0x02:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSITaskManagementFunctionRequest TaskManagementRequest;
+					case 0x22:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSITaskManagementFunctionResponse TaskManagementResponse;
+					case 0x05:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSIDataOut DataOut;
+					case 0x25:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSIDataIn DataIn;
+					case 0x31:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSIReadyToTransfer ReadyToTransfer;
+					case 0x32:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSIAsynchronousMessage AsynchronousMsg;
+					case 0x04:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSITextRequest TextRequest;
+					case 0x24:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSITextResponse TextResponse;
+					case 0x03:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5)
+							: Conversation.currEndSeq$[Property.NetworkDirection],
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSILoginRequest LoginRequest;
+					case 0x23:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5)
+							: Conversation.currEndSeq$[Property.NetworkDirection],
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSILoginResponse LoginResponse;
+					case 0x06:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSILogoutRequest LogoutRequest;
+					case 0x26:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSILogoutResponse LogoutResponse;
+					case 0x10:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4):Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSISNACKRequest SNACKRequest;
+					case 0x3F:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSIReject Reject;
+					case 0x00:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSINOPOUT NOPOUT;
+					case 0x20:
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					] 
+					iSCSINOPIN NOPIN;
+					case 0x1C :
+					case 0x1D :
+					case 0x1E :
+					case 0x3C :
+					case 0x3D :
+					case 0x3E :
+					[
+						Conversation.currEndSeq$[Property.NetworkDirection] = 
+							FrameLength - FrameOffset >= 8
+							? Conversation.currEndSeq$[Property.NetworkDirection] 
+							: Conversation.ISCSIHeaderDigest == "CRC32" && Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 8)
+							: Conversation.ISCSIHeaderDigest == "CRC32" || Conversation.ISCSIDataDigest == "CRC32" ? (Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5) + 4)
+							:Property.currSeq + 48 + UINT8(FrameData, FrameOffset + 4) + UINT24(FrameData, FrameOffset + 5),
+						Conversation.iSCSIIsStartSeq$[MakeByteArray(Property.NetworkDirection, Conversation.currEndSeq$[Property.NetworkDirection])] = true
+					]
+					iSCSIVendorSpecific VendorSpecific;
+				}
+			// There is record, but this is not a header start
+			case CurrentProtocolOffset == 0 &&
+				Property.TCPSeqNumber < Property.iSCSIEndSeqNumber && 
+				Property.iSCSIEndSeqNumber < Property.TCPNextSeqNumber:
+			case CurrentProtocolOffset == 0 &&
+				Property.iSCSIEndSeqNumber > Property.TCPNextSeqNumber:
+				[Local.ContinuationLength = Property.iSCSIEndSeqNumber - Property.TCPSeqNumber > FrameLength - FrameOffset ? FrameLength - FrameOffset : Property.iSCSIEndSeqNumber - Property.TCPSeqNumber]
+				[iSCSISummary = "iSCSI Continuation Data"]
+				Blob(Local.ContinuationLength) ContinuationData;
+			default:
+			struct
+			{
+				struct ContinuationData 
+				{
+					[Post.iSCSISummary = "iSCSI Continuation Data"]
+					while
+					[
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x21 && UINT64(FrameData,FrameOffset + 8) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x02 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT64(FrameData,FrameOffset + 40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x22 && UINT8 (FrameData,FrameOffset + 3) == 0x0 && Blob(FrameData,FrameOffset + 36,12) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x05 &&(UINT24(FrameData,FrameOffset + 1) == 0x0 ||UINT24(FrameData,FrameOffset + 1) == 0x800000 )&& UINT32(FrameData,FrameOffset + 24) == 0x0 && UINT32(FrameData,FrameOffset + 32) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x25 && ( UINT8( Framedata, Offset + 1 ) & 0x38 ) == 0x0 && UINT8( Framedata, Offset + 2 ) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x31 && UINT24(FrameData,FrameOffset + 1) == 0x800000)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x32 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && UINT32(FrameData,FrameOffset + 16) == 0xffffffff && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x04 && (UINT24(FrameData,FrameOffset + 1) & 0x3FFFFF) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x24 && (UINT24(FrameData,FrameOffset + 1) & 0x3FFFFF) == 0x0 && Blob(FrameData,FrameOffset + 36,12) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x03 && UINT8( Framedata, Offset + 22 ) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x23 && UINT32(FrameData,FrameOffset + 20) == 0x0 && Blob(FrameData,FrameOffset + 38,10) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x06 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT16(FrameData,FrameOffset + 22) == 0x0 && Blob(FrameData,FrameOffset + 32,16) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x26 && UINT8( Framedata, Offset + 3 ) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT32(FrameData,FrameOffset + 36) == 0x0 && UINT32(FrameData,FrameOffset + 44) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x10 && UINT16(FrameData,FrameOffset + 2) == 0x0 && UINT32(FrameData,FrameOffset + 24) == 0x0 && UINT64(FrameData,FrameOffset + 32) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3F && UINT8( Framedata, Offset + 3 ) == 0x0 && UINT64(FrameData,FrameOffset + 8) == 0x0 && UINT32(FrameData,FrameOffset + 20) == 0x0 && UINT64(FrameData,FrameOffset + 40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x00 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && Blob(FrameData,FrameOffset + 32, 16) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x20 && UINT24(FrameData,FrameOffset + 1) == 0x800000 && Blob(FrameData,FrameOffset + 36, 12) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1C && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1D && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x1E && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3C && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3D && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)&&
+					!(( UINT8( Framedata, Offset ) & 0x3F ) == 0x3E && UINT24(FrameData,FrameOffset + 1) == 0x0 && Blob(FrameData,FrameOffset + 8,40) == 0x0)
+					]
+					{
+						UINT8 ContinueData;
+					}
+				}
+			}
+		}
+	}
+}
+
+Table iSCSIRejectReasonTable( value )
+{
+	switch( value )
+	{
+		case 0x01: "Reserved";
+		case 0x02: "Data (payload) digest error";
+		case 0x03: "Data SNACK reject";
+		case 0x04: "Protocol error";
+		case 0x05: "Command not supported in this session type";
+		case 0x06: "Immediate command reject (too many immediate commands)";
+		case 0x07: "Task in progress";
+		case 0x08: "Invalid Data Ack";
+		case 0x09: "Invalid PDU field";
+		case 0x0a: "Long operation reject";
+		case 0x0b: "Negotiation reset";
+		case 0x0c: "Waiting for logout";
+		default  : "";
+	}
+}
+
+Table iSCSISnackTypeTable( value )
+{
+	switch( value )
+	{
+		case  0: "Data/R2T";
+		case  1: "Status";
+		case  2: "Data ACK";
+		case  3: "R-Data";
+		default: FormatString("%d",value);
+	}
+}
+
+Table iSCSILogoutResponseTable( value )
+{
+	switch( value )
+	{
+		case  0: "Connection closed successfully";
+		case  1: "CID not found";
+		case  2: "Connection recovery not supported";
+		case  3: "Cleanup failed for various reasons";
+		default: "";
+	}
+}
+
+Table iSCSILoginoutReasonCodeTable( value )
+{
+	switch( value )
+	{
+		case  0: "Close the session";
+		case  1: "Close the connection";
+		case  2: "Remove the connection for recovery";
+		default: FormatString("%d",value);
+	}
+}
+
+Table iSCSILoginStatusTable( value )
+{
+	switch( value )
+	{
+		case 0x0000: "Success";
+		case 0x0101: "Target moved temporarily";
+		case 0x0102: "Target moved permanently";
+		case 0x0200: "Initiator error (miscellaneous error)";
+		case 0x0201: "Authentication failed";
+		case 0x0202: "Authorisation failure";
+		case 0x0203: "Target not found";
+		case 0x0204: "Target removed";
+		case 0x0205: "Unsupported version";
+		case 0x0206: "Too many connections";
+		case 0x0207: "Missing parameter";
+		case 0x0208: "Can't include in session";
+		case 0x0209: "Session type not supported";
+		case 0x020a: "Session does not exist";
+		case 0x020b: "Invalid request during login";
+		case 0x0300: "Target error (miscellaneous error)";
+		case 0x0301: "Service unavailable";
+		case 0x0302: "Out of resources";
+		default    : FormatString("%d",value);
+	}
+}
+
+Table iSCSILoginRequestISIDTable( value )
+{
+	switch( value )
+	{
+		case  0: "OUI-Format";
+		case  1: "EN-Format(IANA Enterprise Number)";
+		case  2: "Random";
+		case  3: "Reserved";
+		default: "Undefined";
+	}
+}
+
+Table iSCSILoginStageTable( value )
+{
+	switch( value )
+	{
+		case 0: "Security negotiation";
+		case 1: "Operational negotiation";
+		case 3: "Full feature phase";
+		default: FormatString("reserved(%d)",value);
+	}
+}
+
+Table iSCSIR2TAsyncEventTable( value )
+{
+	switch( value )
+	{
+		case   0: "A SCSI asynchronous event is reported in the sense data";
+		case   1: "Target requests logout";
+		case   2: "Target indicates it will drop the connection";
+		case   3: "Target indicates it will drop all the connections of this session";
+		case   4: "Target requests parameter negotiation on this connection";
+		case 255: "Vendor specific iSCSI Event";
+		default: "";
+	}
+}
+
+Table iSCSITaskManagementFunctionResponseTable( value )
+{
+	switch( value )
+	{
+		case   0: "Function complete";
+		case   1: "Task does not exist";
+		case   2: "LUN does not exist";
+		case   3: "Task still allegiant";
+		case   4: "Task allegiance reassignment not supported";
+		case   5: "Task management function not supported";
+		case   6: "Function authorization failed";
+		case 255: "Function rejected";
+		default : "Reserved";
+	}
+}
+
+Table iSCSITaskManagementFunctionTable( value )
+{
+	switch( value )
+	{
+		case  1: "Abort Task";
+		case  2: "Abort Task Set";
+		case  3: "Clear ACA";
+		case  4: "Clear Task Set";
+		case  5: "Logical Unit Reset";
+		case  6: "Target Warm Reset";
+		case  7: "Target Cold Reset";
+		case  8: "Task Reassign";
+		default: FormatString("%d",value);
+	}
+}
+
+Table iSCSIResponseCodeTable( value )
+{
+	switch
+	{
+		case value == 0x00: "Command Completed at Target";
+		case value == 0x01:	"Target Failure";
+		case value >= 0x80 && value <= 0xff: "Vendor specific";
+		default: "Reserved";
+	}
+}
+
+Table iSCSIResponseStatusTable( value )
+{
+	switch( value )
+	{
+		case 0x00: "GOOD";
+		case 0x02: "CHECK CONDITION";
+		case 0x08: "BUSY";
+		case 0x18: "RESERVATION CONFLICT";
+		case 0x28: "TASK SET FULL";
+		case 0x30: "ACA ACTIVE";
+		case 0x40: "TASK ABORTED";
+		default  : "";
+	}
+}
+
+Table iSCSIAHSTypeTable( value )
+{
+	switch( value )
+	{
+		case  1: "Extended CDB";
+		case  2: "Expected Bidirectional Read Data Length";
+		default: "Reserved";
+	}
+}
+
+Table iSCSICDBReadBufferModeTable( value )
+{
+	switch( value )
+	{
+		case  0: "Combined header and data";
+		case  1: "Vendor-specific";
+		case  2: "Data";
+		case  3: "Descriptor";
+		default: "Reserved";
+	}
+}
+
+Table iSCSICDBPreventTable( value )
+{
+	switch( value )
+	{
+		case  0: "Medium removal shall be allowed from both the data transport element and the attached medium changer";
+		case  1: "Medium removal shall be prohibited from the data transport element but allowed from the attached medium changer";
+		case  2: "Medium removal shall be allowed for the data transport element but prohibited for the attached medium changer.";
+		case  3: "Medium removal shall be prohibited for both the data transport element and the attached medium changer.";
+		default: "Unknown Value";
+	}
+}
+
+Table iSCSICDBPersistentReserveOutSATable( value )
+{
+	switch
+	{
+		case value == 0x00: "Register";
+		case value == 0x01: "Reserve";
+		case value == 0x02: "Release";
+		case value == 0x03: "Clear";
+		case value == 0x04: "Preempt";
+		case value == 0x05: "Preempt & clear";
+		default: "Reserved";
+	}
+}
+
+Table iSCSICDBPersistentReserveInSATable( value )
+{
+	switch
+	{
+		case value == 0x00: "Read Keys";
+		case value == 0x01: "Read Reservations";
+		default: "Reserved";
+	}
+}
+
+Table iSCSICDBModeSensePageControlTable( value )
+{
+	switch( value )
+	{
+		case  0: "Current values";
+		case  1: "Changeable values";
+		case  2: "Default values";
+		case  3: "Saved values";
+		default: "Undefined";                        
+	}
+}
+
+Table iSCSICDBLogSelectPageControlTable( value )
+{
+	switch(value)
+	{
+		case  0: "Current threshold values";
+		case  1: "Current cumulative values";
+		case  2: "Default threshold values";
+		case  3: "Default cumulative values";
+		default: "Undefined";
+	}
+}
+
+Table iSCSICDBLogSensePageControlTable( value )
+{
+	switch( value )
+	{
+		case  0: "Threshold values";
+		case  1: "Cumulative values";
+		case  2: "Default threshold values";
+		case  3: "Default cumulative values";
+		default: "Undefined";
+	}
+}
+
+Table iSCSICDBDefinitionParamTable( value )
+{
+	switch
+	{
+		case value == 0x00: "Use current operating definition";
+		case value == 0x03: "SCSI-2 operating definition";
+		case value == 0x04: "SCSI-3 operating definition";
+		case value == 0x3F: "Manufacturer default definition";
+		case value == 0x01 || value == 0x02: "Reserved for historical uses";
+		case value >= 0x05 && value <= 0x3E: "Reserved";
+		case value >= 0x40 && value <= 0x7F: "Vendor-specific";
+		default: FormatString("%d",value);
+	}
+}
+
+Table iSCSICDBOperationCodeTable( value )
+{
+	switch( value )
+	{
+		case 0x25: "ReadCapacity_10";
+		case 0x28: "Read_10";
+		case 0x2A: "Write_10";
+		case 0x40: "Change Definition";
+		case 0x39: "Compare";
+		case 0x18: "Copy";
+		case 0x3A: "Copy And Verify";
+		case 0x83: "Extended Copy";
+		case 0x12: "Inquiry";
+		case 0x4C: "Log Select";
+		case 0x4D: "Log Sense";
+		case 0x15: "Mode Select(6)";
+		case 0x55: "Mode Select(10)";
+		case 0x1A: "Mode Sense(6)";
+		case 0x5A: "Mode Sense(10)";
+		case 0x5E: "Persistent Reserve In";
+		case 0x5F: "Persistent Reserve Out";
+		case 0x1E: "Prevent/Allow Medium Removal";
+		case 0x84: "Receive Copy Results";
+		case 0x1C: "Receive Diagnostics Results";
+		case 0x3C: "Read Buffer";
+		case 0x17: "Release(6)";
+		case 0x57: "Release(10)";
+		case 0xA3: "Report Device ID";
+		case 0xA0: "Report LUNs";
+		case 0x03: "Request Sense";
+		case 0x16: "Reserve(6)";
+		case 0x56: "Reserve(10)";
+		case 0x1D: "Send Diagnostic";
+		case 0x00: "Test Unit Ready";
+		case 0x3B: "Write Buffer";
+		case 0x7F: "Variable Length CDB";
+		default: FormatString("%d",value);
+	}
+}
+
+Table iSCSICommandATTRTable( value )
+{
+	switch( value )
+	{
+		case 0: "Untagged";
+		case 1: "Simple";
+		case 2: "Ordered";
+		case 3: "Head of Queue";
+		case 4: "ACA";
+		default: "Resereved";
+	}
+}
+
+Table iSCSIBHSOpcodeTable( value )
+{
+	switch
+	{
+		case value == 0x00: "NOP-Out";
+		case value == 0x01: "SCSI Command";
+		case value == 0x02: "SCSI Task Management Function Request";
+		case value == 0x03: "Login Request";
+		case value == 0x04: "Text Request";
+		case value == 0x05: "SCSI Data-Out (for WRITE operations)";
+		case value == 0x06: "Logout Request";
+		case value == 0x10: "SNACK Request";
+		case ( value >= 0x1C && value <= 0x1E )
+			 || ( value >= 0x3C && value <= 0x3E ): "Vendor Specific";
+		case value == 0x20: "NOP-In";
+		case value == 0x21:	"SCSI Response";
+		case value == 0x22:	"SCSI Task Management Function Response";
+		case value == 0x23:	"Login Response";
+		case value == 0x24:	"Text Response";
+		case value == 0x25:	"SCSI Data-In (for READ operations)";
+		case value == 0x26: "Logout Response";
+		case value == 0x31: "Ready To Transfer (R2T)";
+		case value == 0x32: "Asynchronous Message";
+		case value == 0x3F: "Reject";
+		default: FormatString("%d",value);
+	}
+}
+
+//the reference link is http://www.t10.org/
+//this struct is very complex and i will enriched it in future.
+[Property.TransferLengthFlag = 0]
+struct iSCSICDB = iSCSICDBOperationCodeTable(OperationCode)
+{
+	[property.CDBEndOffset = FrameOffset + 16]
+	UINT8 OperationCode = iSCSICDBOperationCodeTable(this);
+	switch(OperationCode)
+	{
+// *********http://www.t10.org/cgi-bin/ac.pl?t=f&f=sbc3r17.pdf ********
+
+		case 0x25:
+			_struct ReadCapacity_10
+			{
+				UINT8 Reserved1:7;
+				UINT8 Obsolete:1;
+				UINT32 LogicalBlockAddress;
+				UINT16 Reserved2;
+				UINT8 Reserved3:7;
+				UINT8 PMI:1 = FormatString("(%s) %s", this.ToBitString, this ? "":"Pmi is CLEAR.");
+				UINT8 Control;
+			};
+		case 0x28:
+			_struct Read_10
+			{
+				UINT8 Flags
+				{
+					UINT8 RDPROTECT:3 = FormatString(" (%s)", this.ToBitString);
+					UINT8 DPO:1 = FormatString("       (%s) %s", this.ToBitString, this ? "":"Disable page out is DISABLED (cache this data).");
+					UINT8 FUA:1 = FormatString("       (%s) %s", this.ToBitString, this ? "":"Read from cache if possible.");
+					UINT8 Reserved:1 = FormatString("  (%s)", this.ToBitString);
+					UINT8 FUA_NV:1 = FormatString("    (%s) %s", this.ToBitString, this ? "":"Read from volatile or non-volatile cache permitted.");
+					UINT8 Obsolete:1 = FormatString("  (%s)", this.ToBitString);
+				};
+				UINT32 LogicalBlockAddress;
+				UINT8 Reserved:3;
+				UINT8 Group:5;
+				[Property.iSCSIDataTransferLength,Property.TransferLengthFlag = 1]
+				UINT16 TransferLength;
+				UINT8 Control;
+			};
+		case 0x2A:
+			_struct Write_10
+			{
+				UINT8 Flags
+				{
+					UINT8 WRProtect:3;
+					UINT8 DPO:1;
+					UINT8 FUA:1;
+					UINT8 Reserved:1;
+					UINT8 FUA_NV:1;
+					UINT8 Obsolete:1;
+				};
+				UINT32 LogicalBlockAddress;
+				UINT8 Reserved:3;
+				UINT8 GroupNumber:5;
+				[Property.iSCSIDataTransferLength,Property.TransferLengthFlag = 1]
+				UINT16 TransferLength;
+				UINT8 Control;
+			};
+		case 0x1E:
+			_struct PreventAllowMediumRemoval
+			{
+				UINT24 Reserved;
+				UINT8 Prevent
+				{
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+					UINT8 Prevent:2 = FormatString(" (%s) %s", this.ToBitString, iSCSICDBPreventTable(this));
+				};
+				UINT8 Control;
+			};
+		case 0x08:
+			_struct READ_6
+			{
+				UINT24 Reserved:3;
+				UINT24 LogicalBlockAddress:21;
+				[Property.iSCSIDataTransferLength = TransferLength ? TransferLength : 256 ,Property.TransferLengthFlag = 1]
+				UINT8 TransferLength;
+				UINT8 Control;
+			};
+		case 0x0A:
+			_struct WRITE_6
+			{
+				UINT24 Reserved:3;
+				UINT24 LogicalBlockAddress:21;
+				[Property.iSCSIDataTransferLength = TransferLength ? TransferLength : 256 ,Property.TransferLengthFlag = 1]
+				UINT8 TransferLength;
+				UINT8 Control;
+			};
+				
+// *********http://www.t10.org/cgi-bin/ac.pl?t=f&f=spc4r17.pdf ********
+		
+		case 0x12:
+			_struct Inquiry
+			{
+				UINT8 Flag
+				{
+					UINT8 EVPD:1 = FormatString("    (%s) %d", this.ToBitString, this);
+					UINT8 CmdDt:1 = FormatString("   (%s) %d", this.ToBitString, this);
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 PageCode;
+				UINT8 Reserved;
+				UINT16 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x4C:
+			_struct LogSelect
+			{
+				UINT8 Flag
+				{
+					UINT8 SP:1 = FormatString("      (%s) %d", this.ToBitString, this);
+					UINT8 PCR:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 PC
+				{
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+					UINT8 PC:2 = FormatString("      (%s) %s", this.ToBitString, iSCSICDBLogSelectPageControlTable(this));
+				};
+				UINT32 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x4D:
+			_struct LogSense
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+					UINT8 PPC:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 SP:1 = FormatString("      (%s) %d", this.ToBitString, this);
+				};
+				UINT8 PC:2 = FormatString("      (%s) %s", this.ToBitString, iSCSICDBLogSensePageControlTable(this));
+				UINT8 PageCode:6 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT16 Reserved;
+				UINT16 ParameterPointer;
+				UINT16 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x15:
+			_struct ModeSelect6
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved2:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 PF:1 = FormatString("       (%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 SP:1 = FormatString("       (%s) %d", this.ToBitString, this);
+				};
+				UINT16 Reserved;
+				UINT8 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x55:
+			_struct ModeSelect10
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved2:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 PF:1 = FormatString("       (%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 SP:1 = FormatString("       (%s) %d", this.ToBitString, this);
+				};
+				INT40 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x1A:
+			_struct ModeSense6
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved2:4 = FormatString("(%s)", this.ToBitString);
+					UINT8 DBD:1 = FormatString("      (%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:3 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 PC:2 = FormatString("      (%s) %s", this.ToBitString, iSCSICDBModeSensePageControlTable(this));
+				UINT8 PageCode:6 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT8 Reserved;
+				UINT8 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x5A:
+			_struct ModeSense10
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:3 = FormatString(" (%s)", this.ToBitString);
+					UINT8 Reserved2:1 = FormatString("(%s)", this.ToBitString);
+					UINT8 DBD:1 = FormatString("      (%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:3 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 PC:2 = FormatString("      (%s) %d", this.ToBitString, this);
+				UINT8 PageCode:6 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT32 Reserved;
+				UINT16 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x5E:
+			_struct PersistentReserveIn
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:3 = FormatString("     (%s)", this.ToBitString);
+					UINT8 ServiceAction:5 = FormatString("(%s) %s", this.ToBitString, iSCSICDBPersistentReserveInSATable(this));
+				};
+				INT40 Reserved;
+				UINT16 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x5F:
+			struct PersistentReserveOut
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:3 = FormatString("     (%s)", this.ToBitString);
+					UINT8 ServiceAction:5 = FormatString("(%s) %s", this.ToBitString, iSCSICDBPersistentReserveOutSATable(this));
+				};
+				UINT8 Scope:4 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT8 Type:4 = FormatString(" (%s) %d", this.ToBitString, this);
+				UINT32 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x3C:
+			_struct ReadBuffer
+			{
+				UINT8 Mode
+				{
+					UINT8 Reserved:5 = FormatString("(%s)", this.ToBitString);
+					UINT8 Mode:3 = FormatString("    (%s) %s", this.ToBitString, iSCSICDBReadBufferModeTable(this));
+				};
+				UINT8 BufferID;
+				UINT24 BufferOffset;
+				UINT24 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x1C:
+			_struct ReceiveDiagnosticResults
+			{
+				UINT8 PCV
+				{
+					UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+					UINT8 PCV:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 PageCode;
+					UINT16 AllocationLength;
+					UINT8 Control;
+				};
+			};
+		case 0xA0:
+			_struct ReportLuns
+			{
+				UINT16 Reserved1;
+				UINT16 AllocationLength;
+				UINT8 Reserved2;
+				UINT8 Control;
+			};
+		case 0x03:
+			_struct RequestSense
+			{
+				UINT24 Reserved;
+				UINT8 AllocationLength;
+				UINT8 Control;
+			};
+		case 0x1D:
+			_struct SendDiagnostic
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:4 = FormatString("(%s)", this.ToBitString);
+					UINT8 PF:1 = FormatString("      (%s) %d", this.ToBitString, this);
+					UINT8 SelfTest:1 = FormatString("(%s) %d", this.ToBitString, this);
+					UINT8 DevOfL:1 = FormatString("  (%s) %d", this.ToBitString, this);
+					UINT8 UnitOfL:1 = FormatString(" (%s) %d", this.ToBitString, this);
+				};
+				UINT8 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x00:
+			_struct TestUnitReady
+			{
+				UINT32 Reserved;
+				UINT8 Control;
+			};
+		case 0x3B:
+			_struct WriteBuffer
+			{
+				UINT8 Mode
+				{
+					UINT8 Reserved:5 = FormatString("(%s)", this.ToBitString);
+					UINT8 Mode:3 = FormatString("    (%s) %d", this.ToBitString, this);
+				};
+				UINT8 BufferID;
+				UINT24 BufferOffset;
+				UINT24 ParameterListLength;
+				UINT8 Control;
+			};
+			
+// *********http://www.t10.org Still need find the opcode below*******
+		case 0x40:
+			_struct ChangeDefinition
+			{
+				UINT8 Reserved1;
+				UINT8 Flag
+				{
+					UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+					UINT8 Save:1 = FormatString("    (%s) %s", this.ToBitString,
+													this ? "device server shall save the operating definition in non-volatile memory."
+														: "device server shall not save the operating definition.");
+				};
+				UINT8 DefinitionParam
+				{
+					UINT8 Reserved:1 = FormatString("       (%s)", this.ToBitString);
+					UINT8 DefinitionParam:7 = FormatString("(%s) %s", this.ToBitString, iSCSICDBDefinitionParamTable(this));
+				};
+				UINT32 Reserved2;
+				UINT8 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x39:
+			_struct Compare
+			{
+				UINT8 Flag
+				{
+					UINT8 Pad:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 Reserved1;
+				UINT24 ParameterListLength;
+				UINT24 Reserved2;
+				UINT8 Control;
+			};
+// # ? this struct is incomplete, page 39
+		case 0x18:
+			_struct Copy
+			{
+				UINT8 Flag
+				{
+					UINT8 Pad:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 Reserved:7 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT24 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x3A:
+			_struct CopyAndVerify
+			{
+				UINT8 Flag
+				{
+					UINT8 Pad:1 = FormatString("     (%s) %d", this.ToBitString, this);
+					UINT8 BytChk:1 = FormatString("  (%s) %d", this.ToBitString, this);
+					UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				};
+				UINT8 Reserved1;
+				UINT24 ParameterListLength;
+				UINT24 Reserved2;
+				UINT8 Control;
+			};
+		case 0x57:
+			_struct Release10
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved2:3 = FormatString(" (%s)", this.ToBitString);
+					UINT8 ThirdParty:1 = FormatString("(%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:2 = FormatString(" (%s)", this.ToBitString);
+					UINT8 LongID:1 = FormatString("    (%s) %d", this.ToBitString, this);
+					UINT8 Extent:1 = FormatString("    (%s) %d", this.ToBitString, this);
+				};
+				UINT8 ReservationID;
+				UINT8 ThirdPtyDeviceID;
+				UINT24 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x17:
+			_struct Release6
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 Obsolete:4 = FormatString("(%s) %d", this.ToBitString, this);
+					UINT8 Extent:1 = FormatString("  (%s) %d", this.ToBitString, this);
+				};
+				UINT8 ReservationID;
+				UINT16 Reserved;
+				UINT8 Control;
+			};
+		case 0x56:
+			_struct Reserve10
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved2:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 ThirdPty:1 = FormatString(" (%s) %d", this.ToBitString, this);
+					UINT8 Reserved1:2 = FormatString("(%s)", this.ToBitString);
+					UINT8 LongID:1 = FormatString("   (%s) %d", this.ToBitString, this);
+					UINT8 Extent:1 = FormatString("   (%s) %d", this.ToBitString, this);
+				};
+				UINT8 ReservationID;
+				UINT8 ThirdPartyDeviceID;
+				UINT24 Reserved;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+		case 0x16:
+			_struct Reserve6
+			{
+				UINT8 Flag
+				{
+					UINT8 Reserved:3 = FormatString("(%s)", this.ToBitString);
+					UINT8 Obsolete:4 = FormatString("(%s) %d", this.ToBitString, this);
+					UINT8 Extent:1 = FormatString("  (%s) %d", this.ToBitString, this);
+				};
+				UINT8 ReservationID;
+				UINT16 ParameterListLength;
+				UINT8 Control;
+			};
+	}
+	Blob(property.CDBEndOffset - FrameOffset) LeftData;
+}
+
+struct iSCSIAHS
+{
+	UINT16 AHSLength;
+	UINT8  AHSType
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Type:6 = FormatString("    (%s) %s", this.ToBitString, iSCSIAHSTypeTable(this));
+	};
+	switch(AHSType.Type)
+	{
+		case  1:
+			_struct ExtendedCDB
+			{
+				UINT8 Reserved;
+				AsciiString(AHSLength - 4) Padding;
+			};
+		case  2:
+			_struct ExpectedReadDataLength
+			{
+				UINT8 Reserved;
+				UINT32 ExpectedReadDataLength;
+			};
+		default:
+			switch
+			{
+				case AHSLength > 3:
+					_struct UnhandledIscsiahsData
+					{
+						ReportParserError(ParserErrorProtocolClassPublic, "iSCSIAHS", "iSCSIAHS Data Error") iSCSIAHSDataError;
+						BLOB( AHSLength - 3 ) UnknownData;
+					}
+			}
+	}
+}
+
+struct iSCSICommand
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F)  // 0x01
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 F:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Final PDU in sequence":"Not final PDU in sequence");
+		UINT8 R:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Data will be read from target"
+											: "No data will be read from target");
+												
+		UINT8 W:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Data will be written to target"
+											: "No data will be written to target");
+												
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 ATTR:3 = FormatString("    (%s) %s", this.ToBitString, iSCSICommandATTRTable(this));
+	};
+	UINT16 Reserved;
+	UINT8  TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64  LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 ExpectedDataTransferLength;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	[iSCSISummary = iSCSISummary + ", Operation = " + this.Tostring]
+	[Property.iSCSIDataTransferLength = 1]
+	iSCSICDB CDB;
+	[AHSEndOffset = FrameOffset + TotalAHSLength]
+	while option[FrameOffset < Property.AHSEndOffset]
+	{
+		iSCSIAHS AHS;
+	};
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+		struct DataSegment
+		{
+			[Local.iSCSICommandDataLength = ( FrameOffset + DataSegmentLength ) < FrameLength ? DataSegmentLength : ( FrameLength - FrameOffset )]
+			Blob(Local.iSCSICommandDataLength) DataSegment
+			{
+			 	switch(Property.TransferLengthFlag)
+			 	{
+			 		case 1:
+			 		[MaxLoopCount = DataSegmentLength,Property.iSCSICommandDataCount = 0]
+					while [Property.iSCSICommandDataCount < Property.iSCSIDataTransferLength]
+					{
+						[Property.iSCSICommandDataCount = Property.iSCSICommandDataCount + 1]
+						Blob( ( FrameOffset + DataSegmentLength/Property.iSCSIDataTransferLength) < FrameLength ? DataSegmentLength/Property.iSCSIDataTransferLength
+						 : ( FrameLength - FrameOffset )) ContiguousLogicalBlock;
+					}
+			 	}
+			}
+			switch
+			{
+				case FrameOffset < FrameLength && DataSegmentLength % 4 > 0:
+					Blob(4 - DataSegmentLength % 4) DataSegmentPadding;
+			}
+		}
+	}
+
+	switch
+	{
+		case FrameOffset < FrameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+
+struct iSCSIResponse
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) // 0x21
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 Reserved:1 = FormatString(" (%s)", this.ToBitString);
+		UINT8 Reserved2:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 BRRO:1 = FormatString("     (%s) %s", this.ToBitString,
+										this ? "Read part of bi-directional command overflowed"
+											: "No overflow of read part of bi-directional command");
+												
+		UINT8 BRRU:1 = FormatString("     (%s) %s", this.ToBitString,
+										this ? "Read part of bi-directional command underflowed"
+											: "No underflow of read part of bi-directional command");
+												
+		UINT8 RO:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Residual overflow occurred":"No residual overflow occurred");
+		UINT8 RU:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Residual underflow occurred":"No residual underflow occurred");
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 Response = FormatString("%s, %d(0x%X)",iSCSIResponseCodeTable( this),this,this);
+	UINT8 Status = FormatString("%s, %d(0x%X)",iSCSIResponseStatusTable(this),this,this);
+	UINT8 TotalAHSLength;
+	[DataSegmentLength]
+	UINT24 DataSegmentLength;
+	Blob(8) Reserved;
+	UINT32 InitiatorTaskTag;
+	UINT32 SNACKTag;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT32 ExpDataSN;
+	UINT32 BidirectionalReadResidualCount;
+	UINT32 ResidualCount;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+	// this will be enriched in future, page 126
+	switch
+	{
+		case DataSegmentLength > 0:
+			//AsciiString(DataSegmentLength) DataSegment;
+			iSCSIDataSegment DataSegment;
+	}
+	switch
+	{
+		case Conversation.ISCSIDataDigest == "CRC32" : UINT32 DataDigest;
+	}
+}
+
+struct iSCSIDataSegment
+{
+	UINT16 SenseLength;
+	switch
+	{
+		case SenseLength > 0:
+			Blob(SenseLength) SenseData;
+	};
+	switch
+	{
+		case Property.DataSegmentLength - SenseLength - 2 > 0:
+			Blob(Property.DataSegmentLength - SenseLength - 2) ResponseData;
+	};
+	switch
+	{
+		case Property.DataSegmentLength%4 > 0:
+			Blob(4 - Property.DataSegmentLength%4) DataSegmentPadding;
+	};
+}
+
+struct iSCSITaskManagementFunctionRequest
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) // 0x02
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Function
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Function:7 = FormatString("(%s) %s", this.ToBitString, iSCSITaskManagementFunctionTable(this));
+	};
+	UINT16 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 ReferencedTaskTag;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	UINT32 RefCmdSN;
+	UINT32 ExpDataSN;
+	Blob(8) Reserved2;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32":UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSITaskManagementFunctionResponse
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x22
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved2:7 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 Response = FormatString("%s, %d(0x%X)",iSCSITaskManagementFunctionResponseTable(this),
+								 this,this);
+	UINT8 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 Reserved2;
+	UINT32 InitiatorTaskTag;
+	UINT32 Reserved3;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	Blob(12) Reserved4;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32":UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSIDataOut
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x05
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 F:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Last PDU in sequence":this);
+		UINT24 Reserved:23 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 Reserved1;
+	UINT32 ExpStatSN;
+	UINT32 Reserved2;
+	UINT32 DataSN;
+	UINT32 BufferOffset;
+	UINT32 Reserved3;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32":UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			Blob( ( offset + DataSegmentLength ) < frameLength ? DataSegmentLength
+															   : ( frameLength - offset )) DataSegment;	
+	}
+	switch
+	{
+		case offset < frameLength && DataSegmentLength%4 > 0:
+			Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case offset < frameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+
+struct iSCSIDataIn
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x25
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 F:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Final PDU in sequence"
+											:"Not final PDU in sequence");
+												
+		UINT8 A:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Acknowledge requested"
+											:"Acknowledge not requested");
+												
+		UINT8 Reserved:3 = FormatString("(%s)", this.ToBitString);
+		UINT8 O:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Residual overflow occurred"
+											:"No residual overflow occurred");
+												
+		UINT8 U:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Residual underflow occurred"
+											:"No residual underflow occurred");
+												
+		UINT8 S:1 = FormatString("       (%s) %s", this.ToBitString,
+										this ? "Response contains SCSI status"
+											:"Response does not contain SCSI status");
+	};
+	UINT8 Reserved;
+	UINT8 Status;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT32 DataSN;
+	UINT32 BufferOffset;
+	UINT32 ResidualCount;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			Blob( ( offset + DataSegmentLength ) < frameLength ? DataSegmentLength
+																					  : ( frameLength - offset )) DataSegment;
+	}
+	switch
+	{
+		case offset < frameLength && DataSegmentLength%4 > 0:
+			Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case offset < frameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+
+struct iSCSIReadyToTransfer
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x31
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Reserved2:23 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT32 R2TSN;
+	UINT32 BufferOffset;
+	UINT32 DesiredDataTransferLength;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSIAsynchronousMessage
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x32
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Reserved2:23 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	[DataSegmentLength]
+	UINT24 DataSegmentLength;
+	switch
+	{
+		case UINT8( Framedata, Offset + 28 ) == 0 : INT64 LUN;
+		default:
+			Blob(8) Reserved;
+	}
+	UINT32 InitiatorTaskTag;
+	UINT32 Reserved1;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT8 AsyncEvent = FormatString("%s, %d(0x%X)",iSCSIR2TAsyncEventTable(this),this,this);
+	UINT8 AsyncVCode;
+	UINT16 Parameter1;
+	UINT16 Parameter2;
+	UINT16 Parameter3;
+	UINT32 Reserved2;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+	// this will be enriched in future, page 148
+	switch
+	{
+		case DataSegmentLength > 0:
+			//AsciiString(DataSegmentLength) DataSegment;
+			iSCSIAsynchronousDataSegment DataSegment;
+	}
+	switch
+	{
+		case Conversation.ISCSIDataDigest == "CRC32" : UINT32 DataDigest;
+	}
+}
+
+struct iSCSIAsynchronousDataSegment
+{
+	UINT16 SenseLength;
+	switch
+	{
+		case SenseLength > 0 : Blob(SenseLength) SenseData;
+	}
+	switch
+	{
+		case Property.DataSegmentLength - SenseLength - 2 > 0 : Blob(Property.DataSegmentLength - SenseLength - 2) iSCSIEventData;
+	}
+	switch
+	{
+		case Property.DataSegmentLength%4 > 0 : Blob(4 - Property.DataSegmentLength%4) DataSegmentPadding;
+	}
+}
+
+struct iSCSITextRequest
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) // 0x04
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 F:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Final PDU in sequence":"Not final PDU in sequence");
+		UINT24 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+		UINT24 Reserved:22 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	[DataSegmentEndOffset = offset + 16 + DataSegmentLength]
+	Blob(16) Reserved;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32" : UINT32 HeaderDigest;
+	}
+	
+	switch
+	{
+		case DataSegmentLength > 0:
+			while DataSegment[offset < DataSegmentEndOffset]
+			{
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					default: AsciiStringTerm("\0x00") DefaultName;
+				}	
+			};
+	}
+	switch
+	{
+		case DataSegmentLength%4 > 0: Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+
+	switch
+	{
+		case Conversation.ISCSIDataDigest == "CRC32": UINT32 DataDigest;
+	}
+}
+
+struct iSCSITextResponse
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x24
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 F:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Final PDU in sequence":"Not final PDU in sequence");
+		UINT24 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+		UINT24 Reserved:22 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	[DataSegmentEndOffset = offset + 12 + DataSegmentLength]
+	Blob(12) Reserved;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			while DataSegment[offset < DataSegmentEndOffset]
+			{
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					default: AsciiStringTerm("\0x00") DefaultName;
+				}
+			};
+	}
+	switch
+	{
+		case DataSegmentLength%4 > 0: Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case Conversation.ISCSIDataDigest == "CRC32": UINT32 DataDigest;
+	}
+}
+
+struct iSCSILoginRequest
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x03
+	{
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved2:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("   (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	switch
+	{
+		case !((UINT8( Framedata, Offset ) & 0x80) == 0):
+			_struct Flag1
+			{
+				UINT8 Flag
+				{
+					UINT8 T:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Transit to next login stage":"Stay in current login stage");
+					UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+					UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+					UINT8 CSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+					UINT8 NSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+				};
+			};
+		default:
+			_struct Flag2
+			{
+				UINT8 Flag
+				{
+					UINT8 T:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Transit to next login stage":"Stay in current login stage");
+					UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+					UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+					UINT8 CSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+					UINT8 NSG:2 = FormatString("     (%s) %s", this.ToBitString, "Reserved");
+				};
+			};
+	}
+	UINT8 VersionMax;
+	UINT8 VersionMin;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	switch((UINT8( Framedata, Offset ) & 0xC0) >> 6)
+	{
+		case 0:
+			struct ISIDOUI
+			{
+				UINT24 T:2 = FormatString("  (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT24 OUI:22 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT24 Qualifier;
+			};
+		case 1:
+			struct ISIDEN
+			{
+				UINT8 T:2 = FormatString("       (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				UINT24 EnterpriseNumber;
+				UINT16 Qualifier;
+			};
+		case 2:
+			struct ISIDRandom
+			{
+				UINT8 T:2 = FormatString("       (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				UINT24 Random;
+				UINT16 Qualifier;
+			};
+		default: INT48 ISIDReserved;
+	}
+	UINT16 TSIH;
+	UINT32 InitiatorTaskTag;
+	UINT16 CID;
+	Blob(2) Reserved1;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	[DataSegmentEndOffset = offset + 16 + DataSegmentLength]
+	Blob(16) Reserved2;
+	switch
+	{
+		case DataSegmentLength > 0:
+			while DataSegment[offset < DataSegmentEndOffset]
+			{
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					case "HeaderDigest":
+						[Conversation.ISCSIHeaderDigest = this]
+						AsciiStringTerm("\0x00") HeaderDigest;
+					
+					case "DataDigest":
+						[Conversation.ISCSIDataDigest = this]
+						AsciiStringTerm("\0x00") DataDigest;
+
+					case "AuthMethod":
+						[Conversation.ISCSIAuthMethod = this]
+						AsciiStringTerm("\0x00") AuthMethod;
+					
+					case "MaxConnections":
+						[Conversation.ISCSIMaxConnections = this]
+						AsciiStringTerm("\0x00") MaxConnections;
+					
+					case "MaxRecvDataSegmentLength":
+						AsciiStringTerm("\0x00") MaxRecvDataSegmentLength;
+					
+					case "TargetAlias":
+						[Conversation.ISCSITargetAlias = this]
+						AsciiStringTerm("\0x00") TargetAlias;
+					
+					
+					case "TargetName":
+						[Conversation.ISCSITargetName = this]
+						AsciiStringTerm("\0x00") TargetName;
+					
+					case "TargetAddress":
+						[Conversation.ISCSITargetAddress = this]
+						AsciiStringTerm("\0x00") TargetAddress;
+					
+					case "TargetPortalGroupTag":
+						[Conversation.ISCSITargetPortalGroupTag = this]
+						AsciiStringTerm("\0x00") TargetPortalGroupTag;
+					
+					
+					case "SendTargets":
+						[Conversation.ISCSISendTargets = this]
+						AsciiStringTerm("\0x00") SendTargets;
+					
+	        	
+					case "InitiatorName":
+						[Conversation.ISCSIInitiatorName = this]
+						AsciiStringTerm("\0x00") InitiatorName;
+	        	
+					case "InitiatorAlias":
+						[Conversation.ISCSIInitiatorAlias = this]
+						AsciiStringTerm("\0x00") InitiatorAlias;
+						
+					case "I->InitialR2T":
+						AsciiStringTerm("\0x00") I_InitialR2T;
+					case "T->InitialR2T":
+						AsciiStringTerm("\0x00") T_InitialR2T;
+					case "ImmediateData":
+						AsciiStringTerm("\0x00") ImmediateData;
+					case "MaxBurstLength":
+						AsciiStringTerm("\0x00") MaxBurstLength;
+					case "FirstBurstLength":
+						AsciiStringTerm("\0x00") FirstBurstLength;
+					case "DefaultTime2Wait":
+						AsciiStringTerm("\0x00") DefaultTime2Wait;
+					case "DefaultTime2Retain":
+						AsciiStringTerm("\0x00") DefaultTime2Retain;
+					case "MaxOutstandingR2T":
+						AsciiStringTerm("\0x00") MaxOutstandingR2T;
+					case "DataPDUInOrder":
+						AsciiStringTerm("\0x00") DataPDUInOrder;
+					case "DataSequenceInOrder":
+						AsciiStringTerm("\0x00") DataSequenceInOrder;
+					case "ErrorRecoveryLevel":
+						AsciiStringTerm("\0x00") ErrorRecoveryLevel;
+					case "SessionType":
+						AsciiStringTerm("\0x00") SessionType;
+			
+					default:
+						AsciiStringTerm("\0x00") DefaultName;
+				}
+			};
+	}
+	switch
+	{
+		case DataSegmentLength%4 > 0: Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	};
+}
+
+struct iSCSILoginResponse
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x23
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	switch
+	{
+		case !((UINT8( Framedata, Offset ) & 0x80) == 0):
+			_struct Flag1
+			{
+				UINT8 Flag
+				{
+					UINT8 T:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Transit to next login stage":"Stay in current login stage");
+					UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+					UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+					UINT8 CSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+					UINT8 NSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+				};
+			};
+		default:
+			_struct Flag2
+			{
+				UINT8 Flag
+				{
+					UINT8 T:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Transit to next login stage":"Stay in current login stage");
+					UINT8 C:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Text is incomplete":"Text is complete");
+					UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+					UINT8 CSG:2 = FormatString("     (%s) %s", this.ToBitString, iSCSILoginStageTable(this));
+					UINT8 NSG:2 = FormatString("     (%s) %s", this.ToBitString, "Reserved");
+				};
+			};
+	}
+	UINT8 VersionMax;
+	UINT8 VersionActive;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	//INT48 ISID;
+	switch((UINT8( Framedata, Offset ) & 0xC0) >> 6)
+	{
+		case 0:
+			struct ISIDOUI
+			{
+				UINT24 T:2 = FormatString("  (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT24 OUI:22 = FormatString("(%s) %d", this.ToBitString, this);
+				UINT24 Qualifier;
+			};
+		case 1:
+			struct ISIDEN
+			{
+				UINT8 T:2 = FormatString("       (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				UINT24 EnterpriseNumber;
+				UINT16 Qualifier;
+			};
+		case 2:
+			struct ISIDRandom
+			{
+				UINT8 T:2 = FormatString("       (%s) %s", this.ToBitString, iSCSILoginRequestISIDTable(this));
+				UINT8 Reserved:6 = FormatString("(%s)", this.ToBitString);
+				UINT24 Random;
+				UINT16 Qualifier;
+			};
+		default: INT48 ISIDReserved;
+	}
+	UINT16 TSIH;
+	UINT32 InitiatorTaskTag;
+	Blob(4) Reserved1;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT16 LoginStatus = iSCSILoginStatusTable(this)
+	{
+		UINT8 StatusClass;
+		UINT8 StatusDetail;
+	};
+	[DataSegmentEndOffset = offset + 10 + DataSegmentLength]
+	Blob(10) Reserved2;
+	switch
+	{
+		case DataSegmentLength > 0:
+			while DataSegment[offset < DataSegmentEndOffset]
+			{
+				DynamicSwitch AsciiStringTerm("=")
+				{
+					case "HeaderDigest":
+						[Conversation.ISCSIHeaderDigest = this]
+						AsciiStringTerm("\0x00") HeaderDigest;
+					case "DataDigest":
+						[Conversation.ISCSIDataDigest = this]
+						AsciiStringTerm("\0x00") DataDigest;
+					case "AuthMethod":
+						[Conversation.ISCSIAuthMethod = this]
+						AsciiStringTerm("\0x00") AuthMethod;
+					case "MaxConnections":
+						[Conversation.ISCSIMaxConnections = this]
+						AsciiStringTerm("\0x00") MaxConnections;
+					case "MaxRecvDataSegmentLength":
+						AsciiStringTerm("\0x00") MaxRecvDataSegmentLength;
+					case "TargetAlias":
+						[Conversation.ISCSITargetAlias = this]
+						AsciiStringTerm("\0x00") TargetAlias;
+					case "TargetName":
+						[Conversation.ISCSITargetName = this]
+						AsciiStringTerm("\0x00") TargetName;
+					case "TargetAddress":
+						[Conversation.ISCSITargetAddress = this]
+						AsciiStringTerm("\0x00") TargetAddress;
+					case "TargetPortalGroupTag":
+						[Conversation.ISCSITargetPortalGroupTag = this]
+						AsciiStringTerm("\0x00") TargetPortalGroupTag;
+					case "SendTargets":
+						[Conversation.ISCSISendTargets = this]
+						AsciiStringTerm("\0x00") SendTargets;
+					case "InitiatorName":
+						[Conversation.ISCSIInitiatorName = this]
+						AsciiStringTerm("\0x00") InitiatorName;
+					case "InitiatorAlias":
+						[Conversation.ISCSIInitiatorAlias = this]
+						AsciiStringTerm("\0x00") InitiatorAlias;
+					case "I->InitialR2T":
+						AsciiStringTerm("\0x00") I_InitialR2T;
+					case "T->InitialR2T":
+						AsciiStringTerm("\0x00") T_InitialR2T;
+					case "ImmediateData":
+						AsciiStringTerm("\0x00") ImmediateData;
+					case "MaxBurstLength":
+						AsciiStringTerm("\0x00") MaxBurstLength;
+					case "FirstBurstLength":
+						AsciiStringTerm("\0x00") FirstBurstLength;
+					case "DefaultTime2Wait":
+						AsciiStringTerm("\0x00") DefaultTime2Wait;
+					case "DefaultTime2Retain":
+						AsciiStringTerm("\0x00") DefaultTime2Retain;
+					case "MaxOutstandingR2T":
+						AsciiStringTerm("\0x00") MaxOutstandingR2T;
+					case "DataPDUInOrder":
+						AsciiStringTerm("\0x00") DataPDUInOrder;
+					case "DataSequenceInOrder":
+						AsciiStringTerm("\0x00") DataSequenceInOrder;
+					case "ErrorRecoveryLevel":
+						AsciiStringTerm("\0x00") ErrorRecoveryLevel;
+					case "SessionType":
+						AsciiStringTerm("\0x00") SessionType;
+					
+					default: AsciiStringTerm("\0x00") DefaultName;
+				}
+			};
+	}
+	switch
+	{
+		case DataSegmentLength%4 > 0: Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	};
+}
+
+struct iSCSILogoutRequest
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x06
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 ReasonCode
+	{
+		UINT8 Reserved:1 = FormatString("  (%s)", this.ToBitString);
+		UINT8 ReasonCode:7 = FormatString("(%s) %s", this.ToBitString, iSCSILoginoutReasonCodeTable(this));
+	};
+	UINT16 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	Blob(8) Reserved2;
+	UINT32 InitiatorTaskTag;
+	UINT16 CID;
+	UINT16 Reserved3;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	Blob(16) Reserved4;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSILogoutResponse
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x26
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved2:7 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 Response = FormatString("%s, %d(0x%X)",iSCSILogoutResponseTable(this),this,this);
+	UINT8 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	Blob(8) Reserved2;
+	UINT32 InitiatorTaskTag;
+	UINT32 Reserved3;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT32 Reserved4;
+	UINT16 Time2Wait;
+	UINT16 Time2Retain;
+	UINT32 Reserved5;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSISNACKRequest
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x10
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Type
+	{
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved2:3 = FormatString("(%s)", this.ToBitString);
+		UINT8 Type:4 = FormatString("     (%s) %s", this.ToBitString, iSCSISnackTypeTable(this));
+	};
+	UINT16 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 Reserved2;
+	UINT32 ExpStatSN;
+	Blob(8) Reserved3;
+	UINT32 BegRun;
+	UINT32 RunLength;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+}
+
+struct iSCSIReject
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x3f
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT8 Flag
+	{
+		UINT8 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 Reserved2:7 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 Reason = FormatString("%s, %d(0x%X)",iSCSIRejectReasonTable(this),this,this);
+	UINT8 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	Blob(16) Reserved2;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	UINT32 DataSN;
+	Blob(8) Reserved3;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+	switch  //Complete Header of Bad PDU
+	{       //Vendor specific data
+		case DataSegmentLength > 0: Blob(DataSegmentLength) ErrorPDUData;
+	}
+	switch
+	{
+		case DataSegmentLength % 4 >0: Blob(4 - DataSegmentLength % 4) ErrorPDUPadding;
+	}
+	switch
+	{
+		case Conversation.ISCSIDataDigest == "CRC32": UINT32 DataDigest;
+	}
+}
+
+struct iSCSINOPOUT
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) // 0x00
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Reserved2:23 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 CmdSN;
+	UINT32 ExpStatSN;
+	Blob(16) Reserved;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			Blob( ( offset + DataSegmentLength ) < frameLength ? DataSegmentLength
+															   :( frameLength - offset )) DataSegment;
+	}
+	switch
+	{
+		case offset < frameLength && DataSegmentLength%4 > 0:
+			Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case offset < frameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+
+struct iSCSINOPIN
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) //0x20
+	{
+		UINT8 Reserved:2 = FormatString("(%s)", this.ToBitString);
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Flag
+	{
+		UINT24 Reserved1:1 = FormatString("(%s)", this.ToBitString);
+		UINT24 Reserved2:23 = FormatString("(%s)", this.ToBitString);
+	};
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	INT64 LUN;
+	UINT32 InitiatorTaskTag;
+	UINT32 TargetTransferTag;
+	UINT32 StatSN;
+	UINT32 ExpCmdSN;
+	UINT32 MaxCmdSN;
+	Blob(12) Reserved;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			Blob( ( offset + DataSegmentLength ) < frameLength ? DataSegmentLength
+															   : ( frameLength - offset )) DataSegment;
+	}
+	switch
+	{
+		case offset < frameLength && DataSegmentLength%4 > 0:
+			Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case offset < frameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+
+struct iSCSIVendorSpecific
+{
+	[iSCSISummary = iSCSIBHSOpcodeTable(this & 0x3F)]
+	UINT8 Opcode = iSCSIBHSOpcodeTable(this & 0x3F) // 0x00
+	{
+		UINT8 Reserved:1 = FormatString("(%s)", this.ToBitString);
+		UINT8 I:1 = FormatString("       (%s) %s", this.ToBitString, this ? "Immediate delivery":"Reserved");
+		UINT8 Opcode:6 = FormatString("  (%s) %s", this.ToBitString, iSCSIBHSOpcodeTable(this));
+	};
+	UINT24 Reserved1;
+	UINT8 TotalAHSLength;
+	UINT24 DataSegmentLength;
+	Blob(40) Reserved2;
+	switch
+	{
+		case Conversation.ISCSIHeaderDigest == "CRC32": UINT32 HeaderDigest;
+	}
+	switch
+	{
+		case DataSegmentLength > 0:
+			Blob( ( offset + DataSegmentLength ) < frameLength ? DataSegmentLength
+															   : ( frameLength - offset )) DataSegment;
+	}
+	switch
+	{
+		case offset < frameLength && DataSegmentLength%4 > 0:
+			Blob(4 - DataSegmentLength%4) DataSegmentPadding;
+	}
+	switch
+	{
+		case offset < frameLength && Conversation.ISCSIDataDigest == "CRC32":
+			UINT32 DataDigest;
+	}
+}
+

@@ -1,0 +1,260 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  ExtendedError Remote Data Structure
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-EERR]: ExtendedError Remote Data Structure
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 6/2/2009
+//#                          Minor, 6/4/2010
+//#
+//####
+
+[DataTypeByteOrder = ( UINT8( FrameData, Offset + 1 ) & 0x10) ? LittleEndian : BigEndian]
+struct EERRExtendedErrorInformationBlob
+{
+	RPCECommonTypeHeader CommonTypeHeader;
+	RPCEPrivateTypeHeader PrivateTypeHeader = FormatString( "BufferLength=%d", this.ObjectBufferLength );
+	[EERREEPtr = ExtendedErrorList.ReferentID]
+	NDRPtr ExtendedErrorList;
+	[property.EERREEDataCount = 0, Property.EERRErrorInfoCount = 0]
+	while Error[ EERREEPtr != 0 ]
+	{
+		EERRExtendedErrorInfo ErrorInfo;
+	}
+	[Local.ParamsCount = 0]
+	while ErrorData[ property.EERREEDataCount > Local.ParamsCount ]
+	{
+		[MaxLoopCount = property.EERREEDataCount, Local.PointerCount = 0, Property.MinPointerCount = Local.PointerCount + 1]
+		while MinPointer[property.EERREEDataCount > Local.PointerCount]
+		{
+			[Local.PointerCount = Local.PointerCount + 1,
+			Property.MinPointerCount = Property.EERREEInfoParamsPtr$[ Local.PointerCount + 1 ] < Property.EERREEInfoParamsPtr$[ Property.MinPointerCount ] 
+																? Local.PointerCount + 1: Property.MinPointerCount]
+			struct{}
+		}
+		
+		[Post.Local.ParamsCount = Local.ParamsCount + 1, Post.Property.EERREEInfoParamsPtr$[ Property.MinPointerCount ] = 0xFFFFFFFF]
+		switch( property.EERREEInfoParams$[ Property.MinPointerCount ] )
+		{
+			case 0x01 : EERREEAStringReferent EEAString;
+			case 0x02 : EERREEUStringReferent EEUString;
+			case 0x07 : EERRBinaryEEInfoReferent BinaryEEInfo;
+		}
+	}
+	Switch
+	{
+		case CurrentProtocolOffset % 8 > 0: Align8 Padding;
+	}
+}
+
+struct EERRExtendedErrorInfo = FormatString( "Process=0x%X Time=%s", ProcessID, TimeStamp.ToString )
+{
+	[local.ErrorInfoStartOffset = FrameOffset]
+	NdrConformant Count; // NdrConformant should precede the alignment of the struct
+	switch
+	{
+		case CurrentProtocolOffset % 8 > 0: Align8 padding; // Alignment of the struct according to the max size of it
+	}
+	[post.EERREEPtr = Next.ReferentID]
+	NdrPtr	Next;
+	EERREEComputerName ComputerName;
+	UINT32	ProcessID;
+	Align8	Pad3;
+	Int64	TimeStamp = FILETIME(FrameData, FrameOffset);
+	UINT32	GeneratingComponent = EERRGeneratingComponentTable( this );
+	[Post.Property.EERRErrorInfoCount = Property.EERRErrorInfoCount + 1]
+	UINT32	Status = EERREEStatusTable( GeneratingComponent, this );
+	UINT16	DetectionLocation;
+	UINT16	Flags = FormatString( "0x%04X", this )
+	{
+		Switch( Property.MSRPCEEByteOrder )
+		{
+			Case LittleEndian:
+			Struct {
+				UINT16 bit0:1 = this.ToBitString + " EEInfoPreviousRecordMissing - " + ( this ? "SET, " : "NOT set, " ) + "Set if one or more of the previous error records are missing";
+				UINT16 bit1:1 = this.ToBitString + " EEInfoNextRecordMissing - " + ( this ? "SET, " : "NOT set, " ) + "Set if one or more of the next error records are missing";
+				UINT16 bit2to15:14;
+			}
+			Case BigEndian:
+			Struct {
+				UINT16 bit2to15:14;
+				UINT16 bit1:1 = this.ToBitString + " EEInfoNextRecordMissing - " + ( this ? "SET, " : "NOT set, " ) + "Set if one or more of the next error records are missing";
+				UINT16 bit0:1 = this.ToBitString + " EEInfoPreviousRecordMissing - " + ( this ? "SET, " : "NOT set, " ) + "Set if one or more of the previous error records are missing";
+			}
+		}
+	}
+	INT16	NLen;
+	[Property.EERRErrorCount = 0]
+	EERRExtendedErrorParam Param[NLen];
+}
+
+struct EERREEComputerName = SwitchValue == 1 ? "Present, " + EEUString.String.ToString : "Not present"
+{  
+	EERREEComputerNamePresent Type;
+	INT16 SwitchValue;
+	switch( SwitchValue )
+	{
+		case 0x01: 
+			struct EEUString
+			{
+				INT16	NLength;
+				[property.EERREEDataCount = property.EERREEDataCount + 1, 
+				property.EERREEInfoParams$[ property.EERREEDataCount ] = 0x02,
+				Property.EERREEInfoParamsPtr$[ property.EERREEDataCount ] = String.ReferentID]
+				NdrPtr String;
+			}
+	}
+}
+
+table EERRGeneratingComponentTable( Value )
+{
+	switch( Value )
+	{
+		case 1 : "1, Application - Component owning the manager routine for the particular RPC call.";
+		case 2 : "2, Runtime - RPC runtime.";
+		case 3 : "3, Security Provider - Security provider for this call.";
+		case 4 : "4, NPFS - NPFS file system.";
+		case 5 : "5, RDR - Redirector.";
+		case 6 : "6, NMP - Named pipe system.  It returns either NPFS or RDR as appropriate.  If the server cannot determine which systemgenerated the error, a named pipe error should be returned.";
+		case 7 : "7, IO - Input/output (I/O) system or a driver used by the I/O system.";
+		case 8 : "8, Winsock - Winsock provider.";
+		case 9 : "9, Authz Code - AuthZ family of APIs.";
+		case 10 : "10, LPC - Local procedure call (LPC) facility.";
+		default: "unknown";
+	}
+}
+
+table EERRRpcNTErrTable( value )
+{
+	switch( value )
+	{
+		case 0x00000000 : "RPC_S_OK";                          //ERROR_SUCCESS
+		case 0x00000057 : "RPC_S_INVALID_ARG";                 //ERROR_INVALID_PARAMETER
+		case 0x0000000E : "RPC_S_OUT_OF_MEMORY";               //ERROR_OUTOFMEMORY
+		case 0x000000A4 : "RPC_S_OUT_OF_THREADS";              //ERROR_MAX_THRDS_REACHED
+		case 0x0000007A : "RPC_S_BUFFER_TOO_SMALL";            //ERROR_INSUFFICIENT_BUFFER
+		case 0x0000053A : "RPC_S_INVALID_SECURITY_DESC";       //ERROR_INVALID_SECURITY_DESCR
+		case 0x00000005 : "RPC_S_ACCESS_DENIED";               //ERROR_ACCESS_DENIED
+		case 0x0000046A : "RPC_S_SERVER_OUT_OF_MEMORY";        //ERROR_NOT_ENOUGH_SERVER_MEMORY
+		case 0x000003E5 : "RPC_S_ASYNC_CALL_PENDING";          //ERROR_IO_PENDING
+		case 0x00000649 : "RPC_X_SS_CONTEXT_MISMATCH";         //ERROR_INVALID_HANDLE
+		case 0x000006F8 : "RPC_X_INVALID_BUFFER";              //ERROR_INVALID_USER_BUFFER
+		default: "unknown";
+	}
+}
+
+table EERREEStatusTable( Component, Value )
+{
+	switch( Component )
+	{
+		case 1 : WinErrorCodeTable( Value );
+		case 2 : EERRRpcNTErrTable( Value );
+		default : "unknown";
+	}
+}
+
+struct EERREEComputerNamePresent = Enum.Value == 1 ? "Present" : "Not Present"
+{
+	NdrEnum Enum;
+}
+
+[EERREEParamStr = ""]
+struct EERRExtendedErrorParam = EERREEParamStr
+{
+	ALIGN8 Pad;
+	EERRExtendedErrorParamTypesInternal Type;
+	INT16 SwitchValue;
+	switch( SwitchValue )
+	{
+		case 1 :
+			[EERREEParamStr = "EEAString"]
+			struct EEAString 
+			{  
+				INT16	NLength;  
+				[property.EERREEDataCount = property.EERREEDataCount + 1, 
+				property.EERREEInfoParams$[ property.EERREEDataCount ] = 0x01,
+				Property.EERREEInfoParamsPtr$[ property.EERREEDataCount ] = String.ReferentID]
+				NdrPtr String;
+			} 
+		case 2 :
+			[EERREEParamStr = "EEUString"]
+			struct EEUString
+			{
+				INT16	NLength;
+				[property.EERREEDataCount = property.EERREEDataCount + 1, 
+				property.EERREEInfoParams$[ property.EERREEDataCount ] = 0x02,
+				Property.EERREEInfoParamsPtr$[ property.EERREEDataCount ] = String.ReferentID]
+				NdrPtr String;
+			}
+		case 3 : 
+			[EERREEParamStr = FormatString( "LVal 0x%04X", LVal), Conversation.MSRPCExtErrorCode$[MakeByteArray(Property.EERRErrorCount, MSRPCCallId)], Post.Property.EERRErrorCount = Property.EERRErrorCount + 1]
+			INT32	LVal;
+		case 4 : 
+			[EERREEParamStr = FormatString( "IVal 0x%02X", IVal )]
+			INT16	IVal;
+		case 5 : 
+			struct
+			{
+				Align8 padding;
+				[EERREEParamStr = FormatString( "PVal %I64d", PVal )]
+				INT64	PVal;
+			}
+		case 7 : 
+			[EERREEParamStr = "BinaryEEInfo"]
+			struct BinaryEEInfo 
+			{  
+				INT16	NSize;  
+				[property.EERREEDataCount = property.EERREEDataCount + 1, 
+				property.EERREEInfoParams$[ property.EERREEDataCount ] = 0x07,
+				Property.EERREEInfoParamsPtr$[ property.EERREEDataCount ] = Blob.ReferentID]
+				NdrPtr	Blob;
+			} 
+		default: 
+			switch {
+				Case SwitchValue != 6: ReportParserError(ParserErrorProtocolClassWindows, "MSRPC", FormatString( "Unknown Param Type 0x%02X", SwitchValue ) ) MSRPCPacketError;
+			}
+	}
+}
+
+struct EERRExtendedErrorParamTypesInternal 
+	= EERRExtendedErrorParamTypesInternalTable( Enum.value )
+{
+	NdrEnum Enum;
+}
+
+table EERRExtendedErrorParamTypesInternalTable( Value )
+{
+	switch( Value )
+	{
+		case 0x01: "(eeptiAnsiString) Parameter data is an ANSI string provided in an EEAString structure";
+		case 0x02: "(eeptiUnicodeString) Parameter data is a Unicode string provided in an EEUString structure";
+		case 0x03: "(eeptiLongVal) Parameter data is a LONG";
+		case 0x04: "(eeptiShortVal) Parameter data is a SHORT";
+		case 0x05: "(eeptiPointerVal) Parameter data is a pointer";
+		case 0x06: "(eeptiNone) No data is provided in the parameter";
+		case 0x07: "(eeptiBinary) Parameter data is a BLOB provided in the BinaryEEInfo structure";
+		default : "unknown";
+	}
+}
+
+struct EERREEAStringReferent = String.ToString 
+{
+	NdrConformant NLength;
+	AsciiString(NLength.MaxCount) String;
+}
+
+struct EERREEUStringReferent = String.ToString
+{
+	NdrConformant NLength;
+	UnicodeString(NLength.MaxCount) String;
+}
+
+struct EERRBinaryEEInfoReferent
+{
+	NdrConformant Size;
+	BLOB( Size.MaxCount ) Blob;
+}

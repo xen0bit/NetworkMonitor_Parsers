@@ -1,0 +1,921 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Link Layer Discovery Protocol
+//#
+//#  Details:                
+//#
+//#  Public References:      http://standards.ieee.org/getieee802/download/802.1AB-2005.pdf
+//#  Public References:      http://www.ieee802.org/1/files/public/docs2002/lldp-protocol-00.pdf
+//#                          http://www.ietf.org/proceedings/53/I-D/draft-ietf-ngtrans-tunnel-mime-type-00.txt
+//#                          http://standards.ieee.org/reading/ieee/interp/802.1AB.html
+//#                          http://www.tiaonline.org/standards/technology/voip/documents/ANSI-TIA-1057_final_for_publication.pdf
+//#                          http://www.apps.ietf.org/rfc/rfc3636.html
+//#                          http://www.apps.ietf.org/rfc/rfc3825.html
+//#                          http://www.faqs.org/rfcs/rfc3621.html
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 1/20/2010
+//#
+//####
+
+[ RegisterAfter (Ethernet.Lltd, Lldp, 0x88CC) ]
+Protocol LLDP = FormatString("ChassisIDSubType = %s, PortIDSubType = %s, TimeToLive = %u Sec", LLDPChassisIDSubTypeTable(Property.LLDPChassisIDSubType),LLDPPortIDSubTypeTable(Property.LLDPPortIDSubType),Property.LLDPTimeToLive)
+{
+	while [FrameOffset < FrameLength]
+	{
+		UINT16 TLVHeader = FormatString("TLVType = %s, Length = %d", LLDPTLVTypeTable(TLVHeader.TLVType),TLVHeader.TLVLength)
+		{
+			UINT16 TLVType:7 = FormatString("  (%s) = TLVType: %s (%d)", this.ToBitString, LLDPTLVTypeTable(this),this);
+			UINT16 TLVLength:9 = FormatString("(%s) = TLVLength: %d", this.ToBitString, this);
+		}
+		switch (TLVHeader.TLVType)
+		{
+			case 0x00:
+				Struct EndOfLLDPDUTLV = "End Of LLDPDU"{};
+			case 0x01:
+				Struct ChassisIDTLV = FormatString("ChassisIDSubType = %s", LLDPChassisIDSubTypeTable(Property.LLDPChassisIDSubType))
+				{
+					[Property.LLDPChassisIDSubType]
+					UINT8 ChassisIDSubType = LLDPChassisIDSubTypeTable(this) + " (" + this + ")";
+					Switch(ChassisIDSubType)
+					{
+						case 4: MacAddress MacAddress;
+						case 1:
+						case 5: AsciiString(TLVHeader.TLVLength-1) ChassisIDifName;
+						default:
+							BLOB(TLVHeader.TLVLength-1) ChassisID;
+					}
+				}
+			case 0x02:
+				Struct PortIDTLV = FormatString("PortIDSubType = %s", LLDPPortIDSubTypeTable(Property.LLDPPortIDSubType))
+				{
+					[Property.LLDPPortIDSubType]
+					UINT8 PortIDSubType = LLDPPortIDSubTypeTable(this) + " (" + this + ")";
+					Switch(PortIDSubType)
+					{
+						case 4: MacAddress MacAddress;
+						case 1:
+						case 5:
+						case 7: AsciiString(TLVHeader.TLVLength-1) PortIDifName;
+						default:
+							BLOB(TLVHeader.TLVLength-1) PortID;
+					}
+				}
+			case 0x03:
+				Struct TimeToLiveTLV = FormatString( "%u Sec", TimeToLive)
+				{
+					[Property.LLDPTimeToLive]
+					UINT16 TimeToLive = FormatString( "%u Sec", this );
+				}
+			case 0x04:
+				Struct PortDescriptionTLV = PortDescription
+				{
+					AsciiString(TLVHeader.TLVLength) PortDescription;
+				}
+			case 0x05:
+				Struct SystemNameTLV = SystemName
+				{
+					AsciiString(TLVHeader.TLVLength) SystemName;
+				}
+			case 0x06:
+				Struct SystemDescriptionTLV = SystemDescription
+				{
+					AsciiString(TLVHeader.TLVLength) SystemDescription;
+				}
+			case 0x07:
+				Switch( Property.MSRPCByteOrder )
+				{
+					Case LittleEndian:
+						Struct SystemCapabilitiesTLV
+						{
+							UINT16 SystemCapabilities
+							{
+								UINT16 Other:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Other" : "");
+								UINT16 Repeater:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Repeater" : "");
+								UINT16 Bridge:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Bridge" : "");
+								UINT16 WLANAccessPoint:1 = FormatString("  (%s) %s", this.ToBitString, this ? "WLAN Access Point" : "");
+								UINT16 Router:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Router" : "");
+								UINT16 Telephone:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Telephone" : "");
+								UINT16 DOCSISCableDevice:1 = FormatString("(%s) %s", this.ToBitString, this ? "DOCSIS Cable Device" : "");
+								UINT16 StationOnly:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Station Only" : "");
+								UINT16 Reserved:8 = FormatString("         (%s) Reserved", this.ToBitString);
+							};
+							UINT16 EnabledCapabilities
+							{
+								UINT16 Other:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Other" : "");
+								UINT16 Repeater:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Repeater" : "");
+								UINT16 Bridge:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Bridge" : "");
+								UINT16 WLANAccessPoint:1 = FormatString("  (%s) %s", this.ToBitString, this ? "WLAN Access Point" : "");
+								UINT16 Router:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Router" : "");
+								UINT16 Telephone:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Telephone" : "");
+								UINT16 DOCSISCableDevice:1 = FormatString("(%s) %s", this.ToBitString, this ? "DOCSIS Cable Device" : "");
+								UINT16 StationOnly:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Station Only" : "");
+								UINT16 Reserved:8 = FormatString("         (%s) Reserved", this.ToBitString);
+							};
+						}
+					default:
+						Struct SystemCapabilitiesTLV
+						{
+							UINT16 SystemCapabilities
+							{
+								UINT16 Reserved:8 = FormatString("         (%s) Reserved", this.ToBitString);
+								UINT16 StationOnly:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Station Only" : "");
+								UINT16 DOCSISCableDevice:1 = FormatString("(%s) %s", this.ToBitString, this ? "DOCSIS Cable Device" : "");
+								UINT16 Telephone:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Telephone" : "");
+								UINT16 Router:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Router" : "");
+								UINT16 WLANAccessPoint:1 = FormatString("  (%s) %s", this.ToBitString, this ? "WLAN Access Point" : "");
+								UINT16 Bridge:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Bridge" : "");
+								UINT16 Repeater:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Repeater" : "");
+								UINT16 Other:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Other" : "");
+							};
+							UINT16 EnabledCapabilities
+							{
+								UINT16 Reserved:8 = FormatString("         (%s) Reserved", this.ToBitString);
+								UINT16 StationOnly:1 = FormatString("      (%s) %s", this.ToBitString, this ? "Station Only" : "");
+								UINT16 DOCSISCableDevice:1 = FormatString("(%s) %s", this.ToBitString, this ? "DOCSIS Cable Device" : "");
+								UINT16 Telephone:1 = FormatString("        (%s) %s", this.ToBitString, this ? "Telephone" : "");
+								UINT16 Router:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Router" : "");
+								UINT16 WLANAccessPoint:1 = FormatString("  (%s) %s", this.ToBitString, this ? "WLAN Access Point" : "");
+								UINT16 Bridge:1 = FormatString("           (%s) %s", this.ToBitString, this ? "Bridge" : "");
+								UINT16 Repeater:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Repeater" : "");
+								UINT16 Other:1 = FormatString("            (%s) %s", this.ToBitString, this ? "Other" : "");
+							};
+						}
+				}
+			case 0x08:
+				Struct ManagementAddress = FormatString("AddressSubtype = %s, AddressStringLength = %d",LLDPAddressSubtypeTable(this), AddressStringLength)
+				{
+					UINT8 AddressStringLength = FormatString("%d",this);
+					UINT8 AddressSubtype = LLDPAddressSubtypeTable(this);
+					Switch(AddressSubtype)
+					{
+						case 1: IPv4Address IPv4Address;
+						case 2: IPv6Address IPv6Address;
+						default:
+							BLOB(AddressStringLength - 1) Address;
+					}
+					UINT8 InterfaceNumberingSubtype = LLDPInterfaceNumberingSubtypeTable(this);
+					UINT32 InterfaceNumber = InterfaceNumberingSubtype != 1 ? FormatString("%d",this): 0;
+					UINT8 OIDStringLength;
+					Blob(OIDStringLength) ObjectIdentifier;
+				}
+			case 0x7F:
+				Struct OrganizationallySpecificTLVs = FormatString("Organizationally UniqueIdentifier = %s",LLDPOrganizationallyUniqueIdentifierTable(OrganizationallyUniqueIdentifier))
+				{
+					UINT24 OrganizationallyUniqueIdentifier = LLDPOrganizationallyUniqueIdentifierTable(this);
+					Switch(OrganizationallyUniqueIdentifier)
+					{
+						case 0x00120f:
+							Struct IEEE802Dot3
+							{
+								UINT8 IEEE802Dot3DefinedSubtype = LLDPIEEE802Dot3DefinedSubtypeTable(this);
+								Switch(IEEE802Dot3DefinedSubtype)
+								{
+									case 1: 
+										Struct MACOrPHYConfigurationOrStatusTLV
+										{
+											UINT8 AutoNegotiationSupportOrStatus
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT8 IfMauAutoNegSupported:1 = FormatString("   (%s) %s", this.ToBitString, this ? "supported" : "not supported");
+															UINT8 IfMauAutoNegAdminStatus:1 = FormatString(" (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 Reserved:6 = FormatString("                (%s) Reserved", this.ToBitString);
+														};
+													default:
+														Struct
+														{
+															UINT8 Reserved:6 = FormatString("                (%s) Reserved", this.ToBitString);
+															UINT8 IfMauAutoNegAdminStatus:1 = FormatString(" (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 IfMauAutoNegSupported:1 = FormatString("   (%s) %s", this.ToBitString, this ? "supported" : "not supported");
+														};
+												}
+											}
+											UINT16 PMDAutoNegotiationAdvertisedCapability
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT16 BOther:1 = FormatString("       (%s) other or unknown", this.ToBitString);
+															UINT16 B10BaseT:1 = FormatString("     (%s) %s", this.ToBitString, this ? "10BASE-T half duplex mode":"");
+															UINT16 B10BaseTFD:1 = FormatString("   (%s) %s", this.ToBitString, this ? "100BASE-T full duplex mode":"");
+															UINT16 B100BaseT4:1 = FormatString("   (%s) %s", this.ToBitString, this ? "100BASE-T4":"");
+															UINT16 B100BaseTX:1 = FormatString("   (%s) %s", this.ToBitString, this ? "100BASE-TX half duplex mode":"");
+															UINT16 B100BaseTXFD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "100BASE-TX full duplex mode":"");
+															UINT16 B100BaseT2:1 = FormatString("   (%s) %s", this.ToBitString, this ? "100BASE-T2 half duplex mode":"");
+															UINT16 B100BaseT2FD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "100BASE-T2 full duplex mode":"");
+															UINT16 BFdxPause:1 = FormatString("    (%s) %s", this.ToBitString, this ? "PAUSE for full-duplex links":"");
+															UINT16 BFdxAPause:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Asymmetric PAUSE for full-duplex links":"");
+															UINT16 BFdxSPause:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Symmetric PAUSE for full-duplex links":"");
+															UINT16 BFdxBPause:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Asymmetric and Symmetric PAUSE for full-duplex inks":"");
+															UINT16 B1000BaseX:1 = FormatString("   (%s) %s", this.ToBitString, this ? "1000BASE-X, -LX, -SX, -CX half duplex mode":"");
+															UINT16 B1000BaseXFD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "1000BASE-X, -LX, -SX, -CX full duplex mode":"");
+															UINT16 B1000BaseT:1 = FormatString("   (%s) %s", this.ToBitString, this ? "1000BASE-T half duplex mode":"");
+															UINT16 B1000BaseTFD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "1000BASE-T full duplex mode":"");
+														}
+													default:
+														Struct
+														{
+															UINT16 B1000BaseTFD:1 = FormatString("  (%s) %s", this.ToBitString, this ? "1000BASE-T full duplex mode":"");
+															UINT16 B1000BaseT:1 = FormatString("    (%s) %s", this.ToBitString, this ? "1000BASE-T half duplex mode":"");
+															UINT16 B1000BaseXFD:1 = FormatString("  (%s) %s", this.ToBitString, this ? "1000BASE-X, -LX, -SX, -CX full duplex mode":"");
+															UINT16 B1000BaseX:1 = FormatString("    (%s) %s", this.ToBitString, this ? "1000BASE-X, -LX, -SX, -CX half duplex mode":"");
+															UINT16 BFdxBPause:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Asymmetric and Symmetric PAUSE for full-duplex inks":"");
+															UINT16 BFdxSPause:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Symmetric PAUSE for full-duplex links":"");
+															UINT16 BFdxAPause:1 = FormatString("    (%s) %s", this.ToBitString, this ? "Asymmetric PAUSE for full-duplex links":"");
+															UINT16 BFdxPause:1 = FormatString("     (%s) %s", this.ToBitString, this ? "PAUSE for full-duplex links":"");
+															UINT16 B100BaseT2FD:1 = FormatString("  (%s) %s", this.ToBitString, this ? "100BASE-T2 full duplex mode":"");
+															UINT16 B100BaseT2:1 = FormatString("    (%s) %s", this.ToBitString, this ? "100BASE-T2 half duplex mode":"");
+															UINT16 B100BaseTXFD:1 = FormatString("  (%s) %s", this.ToBitString, this ? "100BASE-TX full duplex mode":"");
+															UINT16 B100BaseTX:1 = FormatString("    (%s) %s", this.ToBitString, this ? "100BASE-TX half duplex mode":"");
+															UINT16 B100BaseT4:1 = FormatString("    (%s) %s", this.ToBitString, this ? "100BASE-T4":"");
+															UINT16 B10BaseTFD:1 = FormatString("    (%s) %s", this.ToBitString, this ? "100BASE-T full duplex mode":"");
+															UINT16 B10BaseT:1 = FormatString("      (%s) %s", this.ToBitString, this ? "10BASE-T half duplex mode":"");
+															UINT16 BOther:1 = FormatString("        (%s) other or unknown", this.ToBitString);
+														}
+												}
+											};
+											UINT16 OperationalMAUType = LLDPOperationalMAUTypeTable(this);
+										}
+									case 2:
+										Struct PowerViaMDITLV
+										{
+											UINT8 MDIPowerSupport
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT8 PortClass:1 = FormatString("              (%s) %s", this.ToBitString, this ? "PSE" : "PD");
+															UINT8 PSEMDIPowerSupport:1 = FormatString("     (%s) %s", this.ToBitString, this ? "supported" : "not supported");
+															UINT8 PSEMDIPowerState:1 = FormatString("       (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 PSEPairsControlAbility:1 = FormatString(" (%s) %s", this.ToBitString, this ? "pair selection can be controlled" : "pair selection can not be controlled");
+															UINT8 Reserved:4 = FormatString("               (%s) Reserved", this.ToBitString);
+														};
+													default:
+														Struct
+														{
+															UINT8 Reserved:4 = FormatString("               (%s) Reserved", this.ToBitString);
+															UINT8 PSEPairsControlAbility:1 = FormatString(" (%s) %s", this.ToBitString, this ? "pair selection can be controlled" : "pair selection can not be controlled");
+															UINT8 PSEMDIPowerState:1 = FormatString("       (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 PSEMDIPowerSupport:1 = FormatString("     (%s) %s", this.ToBitString, this ? "supported" : "not supported");
+															UINT8 PortClass:1 = FormatString("              (%s) %s", this.ToBitString, this ? "PSE" : "PD");
+														};
+												}
+											};
+											UINT8 PSEPowerPair = LLDPPSEPowerPairTable(this);
+											UINT8 PowerClass;
+										}
+									case 3:
+										Struct LinkAggregationTLV
+										{
+											UINT8 AggregationStatus
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT8 AggregationCapability:1 = FormatString("(%s) %s", this.ToBitString, this ? "capable of being aggregated" : "not capable of being aggregated");
+															UINT8 AggregationStatus:1 = FormatString("    (%s) %s", this.ToBitString, this ? "currently in aggregation" : "not currently in aggregation");
+															UINT8 Reserved:6 = FormatString("             (%s) Reserved", this.ToBitString);
+														};
+													default:
+														Struct
+														{
+															UINT8 Reserved:6 = FormatString("             (%s) Reserved", this.ToBitString);
+															UINT8 AggregationStatus:1 = FormatString("    (%s) %s", this.ToBitString, this ? "currently in aggregation" : "not currently in aggregation");
+															UINT8 AggregationCapability:1 = FormatString("(%s) %s", this.ToBitString, this ? "capable of being aggregated" : "not capable of being aggregated");
+														};
+												}
+											};
+											UINT32 AggregatedPortID;
+										}
+									case 4:
+										Struct MaximumFrameSizeTLV
+										{
+											UINT16 Maximum802Dot3FrameSize = FormatString("%d Sizes", this);
+										}
+									default: BLOB(TLVHeader.TLVLength - 4) Unknowndata;
+								}
+							}
+						case 0x0012BB:
+							Struct TIA
+							{
+								UINT8 TIADefinedSubtype = LLDPTIADefinedSubtypeTable(this);
+								Switch(TIADefinedSubtype)
+								{
+									case 1:
+										Struct LLDPMEDCapabilitiesTLV
+										{
+											UINT16 LLDPMEDCapabilities
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT16 LLDPMEDCapabilities:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Capabilities" : "");
+															UINT16 NetworkPolicy:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Network Policy" : "");
+															UINT16 LocationIdentification:1 = FormatString("(%s) %s", this.ToBitString, this ? "location" : "");
+															UINT16 ExtendedPowerViaMDIPSE:1 = FormatString("(%s) %s", this.ToBitString, this ? "extendedPSE" : "");
+															UINT16 ExtendedPowerViaMDIPD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "extendedPD" : "");
+															UINT16 Inventory:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Inventory" : "");
+															UINT16 Reserved2:10 = FormatString("             (%s) Reserved", this.ToBitString);
+														};
+													default:
+														Struct
+														{
+															UINT16 Reserved2:10 = FormatString("             (%s) Reserved", this.ToBitString);
+															UINT16 Inventory:1 = FormatString("             (%s) %s", this.ToBitString, this ? "Inventory" : "");
+															UINT16 ExtendedPowerViaMDIPD:1 = FormatString(" (%s) %s", this.ToBitString, this ? "extendedPD" : "");
+															UINT16 ExtendedPowerViaMDIPSE:1 = FormatString("(%s) %s", this.ToBitString, this ? "extendedPSE" : "");
+															UINT16 LocationIdentification:1 = FormatString("(%s) %s", this.ToBitString, this ? "location" : "");
+															UINT16 NetworkPolicy:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Network Policy" : "");
+															UINT16 LLDPMEDCapabilities:1 = FormatString("   (%s) %s", this.ToBitString, this ? "Capabilities" : "");
+														};
+												}
+											};
+											UINT8 LLDPMEDDeviceType = LLDPMEDDeviceTypeTable(this);
+										}
+									case 2:
+										Struct NetworkPolicyTLV = LLDPApplicationTypeTable(ApplicationType)
+										{
+											UINT8 ApplicationType = LLDPApplicationTypeTable(this);
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+													Struct
+													{
+														UINT24 DSCPValue:6 = FormatString("      (%s) %d", this.ToBitString, this);
+														UINT24 Layer2Priority:3 = FormatString(" (%s) %d", this.ToBitString, this);
+														UINT24 VLANID:12 = FormatString("         (%s) %d, %s", this.ToBitString, this, LLDPVLANIDTable(this));
+														UINT24 Reserved:1 = FormatString("       (%s) Reserved", this.ToBitString);
+														UINT24 Tagged:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Yes" : "No");
+														UINT24 UnknownPolicy:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Unknown" : "Defined");
+													};
+												default:
+													Struct
+													{
+														UINT24 UnknownPolicy:1 = FormatString("  (%s) %s", this.ToBitString, this ? "Unknown" : "Defined");
+														UINT24 Tagged:1 = FormatString("         (%s) %s", this.ToBitString, this ? "Yes" : "No");
+														UINT24 Reserved:1 = FormatString("       (%s) Reserved", this.ToBitString);
+														UINT24 VLANID:12 = FormatString("         (%s) %d, %s", this.ToBitString, this, LLDPVLANIDTable(this));
+														UINT24 Layer2Priority:3 = FormatString(" (%s) %d", this.ToBitString, this);
+														UINT24 DSCPValue:6 = FormatString("      (%s) %d", this.ToBitString, this);
+													};
+											}
+										}
+									case 3:
+										Struct LocationIdentificationTLV = LLDPLocationDataFormatTable(LocationDataFormat)
+										{
+											UINT8 LocationDataFormat = LLDPLocationDataFormatTable(this);
+											Switch(LocationDataFormat)
+											{
+												case 1:
+													Struct CoordinateBasedLCIDataFormat
+													{
+														Switch( Property.MSRPCByteOrder )
+														{
+															Case LittleEndian:
+																Struct
+																{
+																	UINT128 Datum:8 = FormatString("     (%s) The Map Datum used for the coordinates given in this Option.",this.ToBitString);
+																	UINT128 Altitude:30 = FormatString("  (%s) A 30 bit value defined by the AT field.",this.ToBitString);
+																	UINT128 AltRes:6 = FormatString("    (%s) Altitude resolution.",this.ToBitString);
+																	UINT128 AT:4 = FormatString("        (%s) Altitude Type for altitude.",this.ToBitString);
+																	UINT128 Longitude:34 = FormatString(" (%s) SHOULD be normalized to within +/- 180 degrees.",this.ToBitString);
+																	UINT128 LoRes:6 = FormatString("     (%s) Longitude resolution",this.ToBitString);
+																	UINT128 Latitude:34 = FormatString("  (%s) SHOULD be normalized to within +/- 90 degrees.",this.ToBitString);
+																	UINT128 LaRes:6 = FormatString("     (%s) Latitude resolution",this.ToBitString);
+																};
+															default:
+																Struct
+																{
+																	UINT128 LaRes:6 = FormatString("     (%s) Latitude resolution",this.ToBitString);
+																	UINT128 Latitude:34 = FormatString("  (%s) SHOULD be normalized to within +/- 90 degrees.",this.ToBitString);
+																	UINT128 LoRes:6 = FormatString("     (%s) Longitude resolution",this.ToBitString);
+																	UINT128 Longitude:34 = FormatString(" (%s) SHOULD be normalized to within +/- 180 degrees.",this.ToBitString);
+																	UINT128 AT:4 = FormatString("        (%s) Altitude Type for altitude.",this.ToBitString);
+																	UINT128 AltRes:6 = FormatString("    (%s) Altitude resolution.",this.ToBitString);
+																	UINT128 Altitude:30 = FormatString("  (%s) A 30 bit value defined by the AT field.",this.ToBitString);
+																	UINT128 Datum:8 = FormatString("     (%s) The Map Datum used for the coordinates given in this Option.",this.ToBitString);
+																};
+														}
+													}
+												case 2:
+													Struct CivicAddressLCIdataformat
+													{
+														UINT8 LCILength = FormatString("%d",this);
+														UINT8 What = LLDPWhatTable(this);
+														AsciiString(2) CountryCode;
+														[DataFieldFrameLength = FrameOffset + LCILength - 3]
+														While[true]
+														{
+															UINT8 CAtype = LLDPCAtypeTable(this);
+															UINT8 CAlength;
+															AsciiString(CAlength) CAvalue;
+														}
+													}
+												case 3:
+													Struct ECSELINDataFormat
+													{
+														AsciiString(TLVHeader.TLVLength - 5) ELIN;
+													}
+												default:
+													BLOB(TLVHeader.TLVLength - 5) LocationID;
+											}
+										}
+									case 4:
+										Struct ExtendedPowerViaMDITLV
+										{
+											Switch( Property.MSRPCByteOrder )
+											{
+												Case LittleEndian:
+													Struct
+													{
+														UINT8 PowerPriority:4 = FormatString("(%s) %s", this.ToBitString, LLDPPowerPriorityTable(this));
+														UINT8 PowerSource:2 = FormatString("  (%s) %s", this.ToBitString, LLDPPowerSourceTable(this));
+														UINT8 PowerType:2 = FormatString("    (%s) %s", this.ToBitString, LLDPPowerTypeTable(this));
+													}
+												default:
+													Struct
+													{
+														UINT8 PowerType:2 = FormatString("    (%s) %s", this.ToBitString, LLDPPowerTypeTable(this));
+														UINT8 PowerSource:2 = FormatString("  (%s) %s", this.ToBitString, LLDPPowerSourceTable(this));
+														UINT8 PowerPriority:4 = FormatString("(%s) %s", this.ToBitString, LLDPPowerPriorityTable(this));
+													}
+											}
+											UINT16 PowerValue = Formatstring("%d",this);
+										}
+									case 5:
+										Struct HardwareRevisionTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) HardwareRevision;
+										}
+									case 6:
+										Struct FirmwareRevisionTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) FirmwareRevision;
+										}
+									case 7:
+										Struct SoftwareRevisionTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) SoftwareRevision;
+										}
+									case 8:
+										Struct SerialNumberTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) SerialNumber;
+										}
+									case 9:
+										Struct ManufacturerNameTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) ManufacturerName;
+										}
+									case 10:
+										Struct ModelNameTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) ModelName;
+										}
+									case 11:
+										Struct AssetIDTLV
+										{
+											BLOB(TLVHeader.TLVLength - 4) AssetID;
+										}
+								}
+							}
+						case 0x0080C2:
+							Struct IEEE802Dot1
+							{
+								UINT8 IEEE802Dot1DefinedSubtype = LLDPIEEE802Dot1DefinedSubtypeTable(this);
+								Switch(IEEE802Dot1DefinedSubtype)
+								{
+									case 1:
+										Struct PortVLANIDTLV
+										{
+											UINT16 PortVLANIdentifier = FormatString("%d (%u)",this, this);
+										}
+									case 2:
+										Struct PortAndProtocolVLANIDTLV
+										{
+											UINT8 Flags
+											{
+												Switch( Property.MSRPCByteOrder )
+												{
+													Case LittleEndian:
+														Struct
+														{
+															UINT8 Reserved1:1 = FormatString("                   (%s) Reserved", this.ToBitString);
+															UINT8 PortAndProtocolVLANSupported:1 = FormatString("(%s) %s", this.ToBitString, this ? "supported" : "not supported");
+															UINT8 PortAndProtocolVLANEnabled:1 = FormatString("  (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 Reserved2:5 = FormatString("                   (%s) Reserved", this.ToBitString);
+														};
+													default:
+														Struct
+														{
+															UINT8 Reserved2:5 = FormatString("                   (%s) Reserved", this.ToBitString);
+															UINT8 PortAndProtocolVLANEnabled:1 = FormatString("  (%s) %s", this.ToBitString, this ? "enabled" : "not enabled");
+															UINT8 PortAndProtocolVLANSupported:1 = FormatString("(%s) %s", this.ToBitString, this ? "supported" : "not supported");
+															UINT8 Reserved1:1 = FormatString("                   (%s) Reserved", this.ToBitString);
+														};
+												}
+											};
+											UINT16 PortAndProtocolVLANID;
+										}
+									case 3:
+										Struct VLANNameTLV
+										{
+											UINT16 VLANID = FormatString("%d (%u)",this, this);
+											UINT8 VLANNameLength = FormatString("%d",this);
+											AsciiString(VLANNameLength) VLANName;
+										}
+									case 4:
+										Struct ProtocolIdentityTLV
+										{
+											UINT8 ProtocolIdentityLength = FormatString("%d",this);
+											BLOB(ProtocolIdentityLength) ProtocolIdentity;
+										}
+								}
+							}
+						default:
+							BLOB(TLVHeader.TLVLength - 3) TLVInformation;
+					}
+				}
+			default:
+				BLOB(TLVHeader.TLVLength) TLVInformation;
+		}
+	}
+}
+
+Table LLDPPSEPowerPairTable(value)
+{
+	Switch(value)
+	{
+		case 1: "signal - the signal pairs only are in use.";
+		case 2: "spare - the spare pairs only are in use.";
+	}
+}
+
+Table LLDPCAtypeTable(value)
+{
+	Switch(value)
+	{
+		case 0: "language";
+		case 1: "national subdivisions(state, canton,region, province,prefecture)";
+		case 2: "county, parish, gun(JP), district (IN)";
+		case 3: "city, township, shi(JP)";
+		case 4: "city division,borough, city district, ward,chou (JP)";
+		case 5: "neighborhood, block";
+		case 6: "street";
+		case 16: "leading street direction";
+		case 17: "trailing street suffix";
+		case 18: "street suffix";
+		case 19: "house number";
+		case 20: "house number suffix";
+		case 21: "landmark or vanity address";
+		case 22: "additional location information";
+		case 23: "name (residence and office occupant)";
+		case 24: "postal/zip code";
+		case 25: "building (structure)";
+		case 26: "unit (apartment, suite)";
+		case 27: "floor";
+		case 28: "room number";
+		case 29: "placetype";
+		case 30: "postal community name";
+		case 31: "post office box (P.O. Box)";
+		case 32: "additional code";
+		case 128: "script";
+		case 255: "reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPVLANIDTable(value)
+{
+	Switch
+	{
+		case value == 0: "Priority Tagged";
+		case value >= 1 && value <= 4094: "VLAN ID";
+		case value == 4095: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPWhatTable(value)
+{
+	Switch(value)
+	{
+		case 0: "The location of the DHCP server";
+		case 1: "The location of the network element believed to be closest to the client";
+		case 2: "The location of the client";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPPowerTypeTable(value)
+{
+	Switch(value)
+	{
+		case 0: "PSE Device";
+		case 1: "PD Device";
+		case 2:
+		case 3: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPPowerSourceTable(value)
+{
+	Switch(value)
+	{
+		case 0: "Unknown";
+		case 1: "PSE or Primary Power Source";
+		case 2: "Local or Backup Power Source,Power conservation mode";
+		case 3: "PSE and Local or Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPPowerPriorityTable(value)
+{
+	Switch
+	{
+		case value == 0: "Unknown";
+		case value == 1: "Critical";
+		case value == 2: "High";
+		case value == 3: "Low";
+		case value >= 4 && value <= 15: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPLocationDataFormatTable(value)
+{
+	Switch
+	{
+		case value == 0: "Invalid";
+		case value == 1: "Coordinate-based LCI";
+		case value == 2: "Civic Address LCI";
+		case value == 3: "ECS ELIN";
+		case value >= 4 && value <= 255: "Reserved for future expansion";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPApplicationTypeTable(value)
+{
+	Switch
+	{
+		case value == 1: "Voice";
+		case value == 2: "Voice Signaling";
+		case value == 3: "Guest Voice";
+		case value == 4: "Guest Voice Signaling";
+		case value == 5: "Softphone Voice";
+		case value == 6: "Video Conferencing";
+		case value == 7: "Streaming Video";
+		case value == 8: "Video Signaling";
+		case value == 0 || 
+		(value >= 9 && value <= 255): "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPOrganizationallyUniqueIdentifierTable(value)
+{
+	Switch(value)
+	{
+		case 0x00120f: "IEEE 802.3";
+		case 0x0012BB: "TIA";
+		case 0x0080C2: "IEEE 802.1";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPIEEE802Dot3DefinedSubtypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "MAC/PHY Configuration/Status";
+		case 2: "Power Via MDI";
+		case 3: "Link Aggregation";
+		case 4: "Maximum Frame Size";
+		default: "Reserved";
+	}
+}
+
+Table LLDPTIADefinedSubtypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "LLDP-MED Capabilities";
+		case 2: "Network Policy";
+		case 3: "Location Identification";
+		case 4: "Extended Power-via-MDI";
+		case 5: "Hardware Revision";
+		default:
+			"Reserved";
+	}
+}
+
+Table LLDPIEEE802Dot1DefinedSubtypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "Port VLAN ID";
+		case 2: "Port And Protocol VLAN ID";
+		case 3: "VLAN Name";
+		case 4: "Protocol Identity";
+		default: "Reserved";
+	}
+}
+
+Table LLDPMEDDeviceTypeTable(value)
+{
+	Switch
+	{
+		case value == 0: "Type Not Defined";
+		case value == 1: "Endpoint Class I";
+		case value == 2: "Endpoint Class II";
+		case value == 3: "Endpoint Class III";
+		case value == 4: "Network Connectivity";
+		case value >= 5 && value <= 255: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+// Section 9.4.1, Table 9-1
+Table LLDPTLVTypeTable(value)
+{
+	Switch
+	{
+		case value == 0x00: "End Of LLDPDU";
+		case value == 0x01: "Chassis ID";
+		case value == 0x02: "Port ID";
+		case value == 0x03: "Time To Live";
+		case value == 0x04: "Port Description";
+		case value == 0x05: "System Name";
+		case value == 0x06: "System Description";
+		case value == 0x07: "System Capabilities";
+		case value == 0x08: "Management Address";
+		case value >= 0x09 &&
+			 value <= 0x7E: "Reserved";
+		case value == 0x7F: "Organizationally Specific";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPOrganizationallySpecificTLVTypeTable(value)
+{
+	switch
+	{
+		case value == 0x00: "Reserved";
+		case value == 0x01: "Port VLAN ID"; // Section F.2
+		case value == 0x02: "Port And Protocol VLAN ID"; // Section F.3
+		case value == 0x03: "VLAN Name"; // Section F.4
+		case value == 0x04: "Protocol Identity"; // Section F.5
+		case value >= 0x05 &&
+		     value <= 0xFF: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPChassisIDSubTypeTable(value)
+{
+	switch
+	{
+		case value == 0x00: "Reserved";
+		case value == 0x01: "Chassis component";
+		case value == 0x02: "Interface alias";
+		case value == 0x03: "Port component";
+		case value == 0x04: "MAC address";
+		case value == 0x05: "Network address";
+		case value == 0x06: "Interface name";
+		case value == 0x07: "Locally assigned";
+		case value >= 0x08 && value <= 0xFF: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPPortIDSubTypeTable(value)
+{
+	Switch
+	{
+		case value == 0x00: "Reserved";
+		case value == 0x01: "Interface alias";
+		case value == 0x02: "Port component";
+		case value == 0x03: "MAC address";
+		case value == 0x04: "Network address";
+		case value == 0x05: "Interface name";
+		case value == 0x06: "Agent circuit ID";
+		case value == 0x07: "Locally assigned";
+		case value >= 0x08 && value <= 0xFF: "Reserved";
+		default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPAddressSubtypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "IPv4 (IP version 4)";
+		case 2: "IPv6 (IP version 6)";
+		case 3: "NSAP";
+		case 4: "HDLC (8-bit multidrop)";
+		case 5: "BBN 1822";
+		case 6: "802 (includes all 802 media plus Ethernet \"canonical format\")";
+		case 7: "E.163 (POTS)";
+		case 8: "E.164 (SMDS, Frame Relay, ATM)";
+		case 9: "F.69 (Telex)";
+		case 10: "X.121 (X.25, Frame Relay)";
+		case 11: "IPX";
+		case 12: "Appletalk";
+		case 13: "Decnet IV";
+		case 14: "Banyan Vines";
+		case 15: "E.164 with NSAP format subaddress";
+		Default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPInterfaceNumberingSubtypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "Unknown";
+		case 2: "IfIndex";
+		case 3: "SystemPortNumber";
+		Default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}
+
+Table LLDPOperationalMAUTypeTable(value)
+{
+	Switch(value)
+	{
+		case 1: "AUI - no internal MAU, view from AUI";
+		case 2: "10Base5 - thick coax MAU";
+		case 3: "Foirl - FOIRL MAU";
+		case 4: "10Base2 - thin coax MAU";
+		case 5: "10BaseT - UTP MAU.";
+		case 6: "10BaseFP - passive fiber MAU";
+		case 7: "10BaseFB - sync fiber MAU";
+		case 8: "10BaseFL - async fiber MAU.";
+		case 9: "10Broad36 - broadband DTE MAU.";
+		case 10: "10BaseTHD - UTP MAU, half duplex mode";
+		case 11: "10BaseTFD - UTP MAU, full duplex mode";
+		case 12: "10BaseFLHD - async fiber MAU, half duplex mode";
+		case 13: "10BaseFLFD - async fiber MAU, full duplex mode";
+		case 14: "100BaseT4 - 4 pair category 3 UTP";
+		case 15: "100BaseTXHD - 2 pair category 5 UTP, half duplex mode";
+		case 16: "100BaseTXFD - 2 pair category 5 UTP, full duplex mode";
+		case 17: "100BaseFXHD - X fiber over PMT, half duplex mode";
+		case 18: "100BaseFXFD - X fiber over PMT, full duplex mode";
+		case 19: "100BaseT2HD - 2 pair category 3 UTP, half duplex mode";
+		case 20: "100BaseT2FD - 2 pair category 3 UTP, full duplex mode";
+		case 21: "1000BaseXHD - PCS/PMA, unknown PMD, half duplex mode";
+		case 22: "1000BaseXFD - PCS/PMA, unknown PMD, full duplex mode";
+		case 23: "1000BaseLXHD - Fiber over long-wavelength laser, half duplex mode";
+		case 24: "1000BaseLXFD - Fiber over long-wavelength laser, full duplex mode";
+		case 25: "1000BaseSXHD - Fiber over short-wavelength laser, half duplex mode";
+		case 26: "1000BaseSXFD - Fiber over short-wavelength laser, full duplex mode";
+		case 27: "1000BaseCXHD - Copper over 150-Ohm balanced cable, half duplex mode";
+		case 28: "1000BaseCXFD - Copper over 150-Ohm balanced cable, full duplex mode";
+		case 29: "1000BaseTHD - Four-pair Category 5 UTP, half duplex mode";
+		case 30: "1000BaseTFD - Four-pair Category 5 UTP, full duplex mode";
+		case 31: "10GigBaseX - X PCS/PMA, unknown PMD.";
+		case 32: "10GigBaseLX4 - X fiber over WWDM optics";
+		case 33: "10GigBaseR - R PCS/PMA, unknown PMD.";
+		case 34: "10GigBaseER - R fiber over 1550 nm optics";
+		case 35: "10GigBaseLR - R fiber over 1310 nm optics";
+		case 36: "10GigBaseSR - R fiber over 850 nm optics";
+		case 37: "10GigBaseW - W PCS/PMA, unknown PMD.";
+		case 38: "10GigBaseEW - W fiber over 1550 nm optics";
+		case 39: "10GigBaseLW - W fiber over 1310 nm optics";
+		case 40: "10GigBaseSW - W fiber over 850 nm optics";
+		Default:
+			"UnknownData" + FormatString("%d",value);
+	}
+}

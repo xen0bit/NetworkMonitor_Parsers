@@ -1,0 +1,1083 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Shadow Copy Management Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-SCMP]: Shadow Copy Management Protocol Specification (0.01.1)
+//#
+//#  Comments:               Parser Framework: PAC v2.1.1474.0
+//#                          Microsoft implementation is encrypted.
+//#
+//#  Revision Class and Date:Major, 2/12/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+Protocol SCMP = FormatString( "%s %s%s%s%s%s", 
+	Property.SCMPMethodName,
+	Property.MSRPCPType ? "Response" : "Request",
+	Property.MSRPCPfcFlags & 0x03 == 0x01 ? ", RPC first fragment" : "",
+	Property.MSRPCCompleteFrag == 0 ? ", partial" : "",
+	Property.MSRPCEncrypted == ConstEncTypeEncrypted ? ", *Encrypted*" : Property.MSRPCEncrypted == ConstEncTypeUnknown ? "*Un-Interpreted*" : "",
+	Property.SCMPSummary && Property.MSRPCEncrypted == ConstEncTypeClearData ? ", " + Property.SCMPSummary : "" )
+{
+	[Property.SCMPSummary = ""]
+	Switch( Property.MSRPCIfUUID )
+	{
+		Case "{AE1C7110-2F60-11D3-8A39-00C04F72D8E3}":
+			[Property.SCMPMethodName = "IVssEnumObject:" + SCMPIVssEnumObjectMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IVssEnumObject
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Next
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "Celt = %u", Celt )]
+												Struct
+												{
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "CeltFetched = %u ReturnValue = 0x%X", CeltFetched, ReturnValue )]
+												Struct
+												{
+													SCMPVssObjectPropConformantVarying	Rgelt;
+													Align4									Pad;
+													UINT32									CeltFetched;
+													HRESULT									ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct Skip
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "Objects number = %u", Celt )]
+												Struct
+												{
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct Reset
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct Clone
+						{
+							Switch( Property.MSRPCPType )
+							{					
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0:
+					Case 1:
+					Case 2:
+						struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									_Struct Request
+									{
+										ReportParserWarning("SCMP", "Invalid IVssEnumObject method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									_Struct Response
+									{
+										ReportParserWarning("SCMP", "Invalid IVssEnumObject method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					
+					Default:
+						ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown IVssEnumObject method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+		
+		Case "{01954E6B-9254-4E6E-808C-C9E05D007696}":
+			[Property.SCMPMethodName = "IVssEnumMgmtObject:" + SCMPIVssEnumMgmtObjectMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IVssEnumMgmtObject
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct Next
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "Celt = %u", Celt )]
+												Struct
+												{
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "CeltFetched = %u ReturnValue = 0x%X", CeltFetched, ReturnValue )]
+												Struct
+												{
+													SCMPVssMgmtObjectPropConformantVarying	Rgelt;
+													Align4									Pad;
+													UINT32									CeltFetched;
+													HRESULT									ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct Skip
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "Celt = %u", Celt )]
+												Struct
+												{
+													UINT32 Celt;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct Reset
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct Clone
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0:
+					Case 1:
+					Case 2:
+						struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									_Struct Request
+									{
+										ReportParserWarning("SCMP", "Invalid IVssEnumMgmtObject method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									_Struct Response
+									{
+										ReportParserWarning("SCMP", "Invalid IVssEnumMgmtObject method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					
+					Default:
+						ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown IVssEnumMgmtObject method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+		
+		Case "{FA7DF749-66E7-4986-A27F-E2F04AE53772}":
+			[Property.SCMPMethodName = "IVssSnapshotMgmt:" + SCMPIVssSnapshotMgmtMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IVssSnapshotMgmt
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct GetProviderMgmtInterface
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													GUID(TRUE)	ProviderId;
+													GUID(TRUE)	InterfaceId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Itf;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct QueryVolumesSupportedForSnapshots
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "IContext= 0x%X)", IContext )]
+												Struct
+												{
+													GUID(TRUE)							ProviderId;
+													SCMPVssVolumeSnapshotAttributes		IContext;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr		Enum;
+													Align4							Pad;
+													HRESULT							ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct QuerySnapshotsByVolume
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													//Whether the pointer should be dropped
+													NdrWideString	VolumeName;
+													GUID(TRUE)		ProviderId;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0:
+					Case 1:
+					Case 2:
+						struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									_Struct Request
+									{
+										ReportParserWarning("SCMP", "Invalid IVssSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									_Struct Response
+									{
+										ReportParserWarning("SCMP", "Invalid IVssSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					
+					Default:
+						ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown IVssSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+		
+		Case "{214A0F28-B737-4026-B847-4F9E37D79529}":
+			[Property.SCMPMethodName = "IVssDifferentialSoftwareSnapshotMgmt:" + SCMPIVssDifferentialSoftwareSnapshotMgmtMethodNameTable( Property.MSRPCOpnum )]
+			_Struct IVssDifferentialSoftwareSnapshotMgmt
+			{
+				Switch( Property.MSRPCOpnum )
+				{
+					Case 3:
+						_Struct AddDiffArea
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "IlMaximumDiffSpace = %d", IlMaximumDiffSpace )]
+												Struct
+												{
+													NdrWideString		VolumeName;
+													NdrWideString		DiffAreaVolume;
+													Align8				Pad;
+													INT64				IlMaximumDiffSpace;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT			ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 4:
+						_Struct ChangeDiffAreaMaximumSize
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "IlMaximumDiffSpace = %d", IlMaximumDiffSpace )]
+												Struct
+												{
+													NdrWideString		VolumeName;
+													NdrWideString		DiffAreaVolume;
+													Align8				Pad;
+													INT64				IlMaximumDiffSpace;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													HRESULT ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 5:
+						_Struct QueryVolumesSupportedForDiffAreas
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													NdrWideString	OriginalVolumeName;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 6:
+						_Struct QueryDiffAreasForVolume
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													NdrWideString	VolumeName;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 7:
+						_Struct QueryDiffAreasOnVolume
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									_Struct Request
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												Struct
+												{
+													NdrWideString	VolumeName;
+												}
+										}
+									}
+								
+								Case 0x02: //RESPONSE
+									_Struct Response
+									{
+										Switch
+										{
+											Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+											Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+											Default:
+												[SCMPSummary = FormatString( "ReturnValue = 0x%X", ReturnValue )]
+												Struct
+												{
+													DCOMMInterfacePointerPtr	Enum;
+													Align4						Pad;
+													HRESULT						ReturnValue;
+												}
+										}
+									}
+							}
+						}
+					
+					Case 0:
+					Case 1:
+					Case 2:
+					Case 8:
+						struct NotUsedOnWire
+						{
+							Switch( Property.MSRPCPType )
+							{
+								Case 0x00: //REQUEST
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " request is Not used on wire"]
+									_Struct Request
+									{
+										ReportParserWarning("SCMP", "Invalid IVssDifferentialSoftwareSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+								
+								Case 0x02: //RESPONSE
+									[SCMPSummary = "OPNUM:" + Property.MSRPCOpnum + " response is Not used on wire"]
+									_Struct Response
+									{
+										ReportParserWarning("SCMP", "Invalid IVssDifferentialSoftwareSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum) ProtocolWarning;
+										Blob(FrameLength - Offset) PayloadData;
+									}
+							}
+						}
+					
+					Default:
+						ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown IVssDifferentialSoftwareSnapshotMgmt method, Opnum:" + Property.MSRPCOpnum ) UnknownMethod;
+				}
+			}
+		
+	}
+}
+
+Table SCMPIVssEnumObjectMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "IVssEnumObject_Opnum0DummyMethod";
+		Case 1: "IVssEnumObject_Opnum1DummyMethod";
+		Case 2: "IVssEnumObject_Opnum2DummyMethod";
+		Case 3: "Next";
+		Case 4: "Skip";
+		Case 5: "Reset";
+		Case 6: "Clone";
+		Default: "unknown";
+	}
+}
+
+Table SCMPIVssEnumMgmtObjectMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "IVssEnumMgmtObject_Opnum0DummyMethod";
+		Case 1: "IVssEnumMgmtObject_Opnum1DummyMethod";
+		Case 2: "IVssEnumMgmtObject_Opnum2DummyMethod";
+		Case 3: "Next";
+		Case 4: "Skip";
+		Case 5: "Reset";
+		Case 6: "Clone";
+		Default: "unknown";
+	}
+}
+
+Table SCMPIVssSnapshotMgmtMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "IVssSnapshotMgmt_Opnum0DummyMethod";
+		Case 1: "IVssSnapshotMgmt_Opnum1DummyMethod";
+		Case 2: "IVssSnapshotMgmt_Opnum2DummyMethod";
+		Case 3: "GetProviderMgmtInterface";
+		Case 4: "QueryVolumesSupportedForSnapshots";
+		Case 5: "QuerySnapshotsByVolume";
+		Default: "unknown";
+	}
+}
+
+Table SCMPIVssDifferentialSoftwareSnapshotMgmtMethodNameTable( Opnum )
+{
+	Switch( Opnum )
+	{
+		Case 0: "IVssDifferentialSoftwareSnapshotMgmt_Opnum0DummyMethod";
+		Case 1: "IVssDifferentialSoftwareSnapshotMgmt_Opnum1DummyMethod";
+		Case 2: "IVssDifferentialSoftwareSnapshotMgmt_Opnum2DummyMethod";
+		Case 3: "AddDiffArea";
+		Case 4: "ChangeDiffAreaMaximumSize";
+		Case 5: "QueryVolumesSupportedForDiffAreas";
+		Case 6: "QueryDiffAreasForVolume";
+		Case 7: "QueryDiffAreasOnVolume";
+		Case 8: "Opmun08NotUsedOnWire";
+		Default: "unknown";
+	}
+}
+
+//
+//	_VSS_VOLUME_PROP
+//	Alignment: None
+//
+Struct SCMPVssVolumeProp
+{
+	NdrWideString	VolumeName;
+	NdrWideString	VolumeDisplayName;
+}
+
+//
+//	_VSS_DIFF_AREA_PROP
+//	Alignment: None
+//
+Struct SCMPVssDiffAreaProp
+{
+	ALIGN8				Pad1;
+	NdrWideString		VolumeName;
+	NdrWideString		DiffAreaVolumeName;
+	ALIGN8				Pad2;
+	INT64				MaximumDiffSpace;
+	INT64				AllocatedDiffSpace;
+	INT64				UsedDiffSpace;
+}
+
+//
+//	_VSS_DIFF_VOLUME_PROP
+//	Alignment: None
+//
+Struct SCMPVssDiffVolumeProp
+{
+	ALIGN8				Pad1;
+	NdrWideString		VolumeName;
+	NdrWideString		VolumeDisplayName;
+	ALIGN8				Pad2;
+	INT64				VolumeFreeSpace;
+	INT64				VolumeTotalSpace;
+}
+
+//
+//	_VSS_MGMT_OBJECT_PROP
+//
+Struct SCMPVssMgmtObjectProp
+{
+	Align8					Pad1;
+	SCMPVssMgmtObjectType	Type;
+	Align8					Pad2;
+	SCMPVssMgmtObjectUnion	Obj;
+}
+
+Struct SCMPVssMgmtObjectPropConformantVarying
+{
+	NdrConformantVarying	Size;
+	Switch
+	{
+		Case Size.ActualCount > 0:
+			SCMPVssMgmtObjectProp	Element[ Size.ActualCount ];
+	}
+}
+
+//
+//	_VSS_MGMT_OBJECT_TYPE
+//
+Struct SCMPVssMgmtObjectType
+{
+	NdrV1Enum(4) Value = SCMPVssMgmtObjectTypeTable( this );
+}
+
+Table SCMPVssMgmtObjectTypeTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "VSS_MGMT_OBJECT_UNKNOWN - The object is of an unknown type.";
+		Case 0x00000001: "VSS_MGMT_OBJECT_VOLUME - The object is an original volume.";
+		Case 0x00000002: "VSS_MGMT_OBJECT_DIFF_VOLUME - The object is a shadow copy storage volume.";
+		Case 0x00000003: "VSS_MGMT_OBJECT_DIFF_AREA - The object is shadow copy storage.";
+		Default: "unknown";
+	}
+}
+
+//
+//	_VSS_MGMT_OBJECT_UNION
+//
+Struct SCMPVssMgmtObjectUnion
+{
+	SCMPVssMgmtObjectType Type;
+	Switch( Type.Value )
+	{
+		Case 0x00000001: SCMPVssVolumeProp			Vol;
+		Case 0x00000002: SCMPVssDiffVolumeProp		DiffVol;
+		Case 0x00000003: SCMPVssDiffAreaProp		DiffArea;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown Vss Mgmt Object Type" ) Unknown;
+	}
+}
+
+//
+// _VSS_VOLUME_SNAPSHOT_ATTRIBUTES
+//
+Struct SCMPVssVolumeSnapshotAttributes
+{
+	UINT32 P:1 = FormatString("  (%s) %s", this.ToBitString,this?"VSS_VOLSNAP_ATTR_PERSISTENT - The shadow copy persists on the system despite rebooting the machine.":"Not set");
+	UINT32 NA:1 = FormatString(" (%s) %s", this.ToBitString,this?"VSS_VOLSNAP_ATTR_NO_AUTORECOVERY - The shadow copy is made read-only immediately after creation.":"Not set");
+	UINT32 CA:1 = FormatString(" (%s) %s", this.ToBitString,this?"VSS_VOLSNAP_ATTR_CLIENT_ACCESSIBLE - The shadow copy is of a specific type that can be exposed remotely through the SMB Protocol [MS-SMB].":"Not set");
+	UINT32 NAR:1 = FormatString("(%s) %s", this.ToBitString,this?"VSS_VOLSNAP_ATTR_NO_AUTO_RELEASE - The shadow copy is not deleted after the client releases all references to the local interface.":"Not set");
+	UINT32 NW:1 = FormatString(" (%s) %s", this.ToBitString,this?"VSS_VOLSNAP_ATTR_NO_WRITERS - The shadow copy is created without any application-specific participation.":"Not set");
+	UINT32 Res:27 = FormatString("(%s) Reserved", this.ToBitString);
+} 
+
+//
+// _VSS_SNAPSHOT_STATE 
+//
+Struct SCMPVssSnapshotState
+{
+	NdrV1Enum(4) Value = SCMPVssSnapshotStateTable( this );
+} 
+
+Table SCMPVssSnapshotStateTable( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "VSS_SS_UNKNOWN - The shadow copy state is unknown.";
+		Case 0x0000000c: "VSS_SS_CREATED - The shadow copy is created.";
+		Default: "unknown";
+	}
+}
+
+//
+// _VSS_SNAPSHOT_PROP
+// Alignment: None
+//
+Struct SCMPVssSnapShotProp
+{
+	Align8								Pad;
+	GUID(TRUE)							SnapshotId;
+	GUID(TRUE)							SnapshotSetId;
+	INT32								SnapshotCount;
+	NdrWideString						SnapshotDeviceObject;
+	NdrWideString						OriginalVolumeName;
+	NdrWideString						OriginatingMachine;
+	NdrWideString						ServiceMachine;
+	NdrWideString						ExposedName;
+	NdrWideString						ExposedPath;
+	GUID(TRUE)							ProviderId;
+	ALIGN4								Pad1;
+	SCMPVssVolumeSnapshotAttributes		SnapshotAttributes;
+	ALIGN8								Pad2;
+	FILETIME							CreationTimestamp;
+	SCMPVssSnapshotState				State;
+} 
+
+//
+// _VSS_PROVIDER_PROP
+//
+Struct SCMPVssProviderProp
+{
+	NdrAlign				Pad1;
+	GUID(TRUE)				ProviderId;
+	NdrWideString			ProviderName;
+	ALIGN4					Pad2;
+	SCMPVssProviderType		ProviderType;
+	NdrWideString			ProviderVersion;
+	GUID(TRUE)				ProviderVersionId;
+	SID(TRUE)				ClassId;
+}
+
+//
+// _VSS_PROVIDER_TYPE
+//
+Struct SCMPVssProviderType
+{
+	NdrV1Enum(4) Value = SCMPVssProviderTypeTalbe( this );
+}
+
+Table SCMPVssProviderTypeTalbe( Value )
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "VSS_PROV_UNKNOWN - The shadow copy state is unknown.";
+		Default: "unknown";
+	}
+}
+
+//
+// _VSS_OBJECT_TYPE
+//
+Struct SCMPVssObjectType
+{
+	NdrV1Enum(4) Value = SCMPVssObjectTypeTable( this );
+}
+
+Table SCMPVssObjectTypeTable
+{
+	Switch( Value )
+	{
+		Case 0x00000000: "VSS_OBJECT_UNKNOWN - The object is of an unknown type of shadow copy.";
+		Case 0x00000001: "VSS_OBJECT_NONE - This value MUST not be used and MUST be ignored upon receipt.";
+		Case 0x00000002: "VSS_OBJECT_SNAPSHOT_SET - The object is a shadow copy set.";
+		Case 0x00000003: "VSS_OBJECT_SNAPSHOT - The object is a shadow copy.";
+		Case 0x00000004: "VSS_OBJECT_PROVIDER - This value is not used by the Shadow Copy Management Protocol and MUST NOT be referenced.";
+		Case 0x00000005: "VSS_OBJECT_TYPE_COUNT - This value is the number of VSS_OBJECT_TYPE values in the enumeration.";
+		Default: "unknown";
+	}
+}
+
+//
+// _VSS_OBJECT_UNION
+//
+Struct SCMPVssObjectUnion
+{
+	SCMPVssObjectType Type;
+	Switch( Type.Value)
+	{
+		Case 3: SCMPVssSnapShotProp Snap;
+		Case 4: SCMPVssProviderProp Prov;
+		Default:
+			ReportParserError( ParserErrorProtocolClassWindows, "SCMP", "Unknown Vss Object Type" ) Unknown;
+	}
+}
+
+//
+// _VSS_OBJECT_PROP
+//
+Struct SCMPVssObjectProp
+{
+	Align8				Pad1;
+	SCMPVssObjectType	Type;
+	Align8				Pad2;
+	SCMPVssObjectUnion	Obj;
+}
+
+Struct SCMPVssObjectPropConformantVarying
+{
+	NdrConformantVarying	Size;
+	Switch
+	{
+		Case Size.ActualCount > 0:
+			SCMPVssObjectProp	Element[ Size.ActualCount ];
+	}
+}

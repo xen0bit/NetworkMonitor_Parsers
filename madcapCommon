@@ -1,0 +1,295 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Multicast Address Dynamic Client Allocation Protocol (MADCAP)
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2730
+//#                          http://msdn2.microsoft.com/en-us/library/ms691972.aspx
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 2/4/2010
+//#
+//####
+
+
+[RegisterBefore(UDPPayload.Ssrp,Madcap,2535)]
+Protocol MADCAP = FormatString("MsgType=%s, TransID=0x%X, AddressFamily=%s", 
+							MadcapMessageTypes(MsgType), 
+							TransactionID, 
+							AddressFamilyTable(AddressFamily))
+{
+	UINT8 Version;
+	UINT8 MsgType = FormatString("%s (0x%x)",MadcapMessageTypes(this),this);
+	UINT16 AddressFamily = FormatString("%s (0x%x)",AddressFamilyTable(this),this);
+	UINT32 TransactionID;
+	// Go until END option found
+	while Options [!(UINT16(FrameData, FrameOffset) == 0)]
+	{
+		UINT16 Option = FormatString ("%s (0x%x)",MadcapOptions(this),this);
+		switch(Option)
+		{
+			case 1:
+				struct LeaseTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					UINT32 Time = FormatString("%d secs", this);
+				}
+			case 2:
+				struct ServerIdentifier = Address.toString
+				{
+					UINT16 Length;
+					UINT16 AddressFamilyType = FormatString("%s (0x%x)",AddressFamilyTable(this),this);
+					MadcapAddress(AddressFamilyType) Address;
+				}
+			case 3:
+				struct LeaseIdentifier = FormatString("%s",Type == 0 ? RandomNumber.toString:AddressSpecificLease.ClientSpecID.toString)
+				{
+					UINT16 Length;
+					UINT8 Type;	
+					switch(Type)
+					{
+						case 0:
+							BLOB(Length - 1) RandomNumber = FormatString("%s", this);
+						case 1:
+							struct AddressSpecificLease
+							{
+								UINT16 LeaseAddressFamily = FormatString("%s (0x%x)",AddressFamilyTable(this),this);
+								MadcapAddress(LeaseAddressFamily) Address;
+								BLOB(Length - (AddressFamilySize(AddressFamily) + 3)) ClientSpecID = FormatString("%s",this);
+							}			
+					}
+				}
+			case 4:
+				struct MulticastScopes
+				{
+					UINT16 Length;
+					MadcapAddress(AddressFamily) ScopeID[Length/(AddressFamilySize(AddressFamily))];
+				}
+			case 5:
+				struct OptionRequestList
+				{
+					UINT16 Length;
+					MadcapOption Option[Length/2];
+				}
+			case 6:
+				struct StartTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					UNIXTIMESTAMP Time;
+				}
+			case 7:
+				struct NumberOfAddressRequested = Minimum.toString
+				{
+					UINT16 Length;
+					UINT16 Minimum;
+					UINT16 Desired;
+				}
+			case 8:
+				struct RequestedLanguage = Language.toString
+				{
+					UINT16 Length;
+					AsciiString(Length) Language;
+				}
+			case 9:
+				struct MultiScopeList
+				{
+					UINT16 Length;
+					UINT8 Count;
+					ScopeItem(AddressFamily) Scopes[Count];
+				}
+			case 10:
+				struct ListOfAddressRanges
+				{
+					UINT16 Length;
+					AddressRangeList(AddressFamily) AddressList[Length/(AddressFamilySize(AddressFamily)+2)];
+				}
+			case 11:
+				struct CurrentTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					//decode as time format RFC 2730 3.12
+					UNIXTIMESTAMP Time;
+				}
+			case 12:
+				struct FeatureList
+				{
+					UINT16 Length;
+					FeatureLists SupportedFeature;
+					FeatureLists RequestedFeature;
+					FeatureLists RequiredFeature;				
+				}
+			case 13:
+				struct RetryTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					UNIXTIMESTAMP Time;
+				}
+			case 14:
+				struct MinimumLeastTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					UNIXTIMESTAMP Time;
+				}
+			case 15:
+				struct MaximumStartTimeStruct = Time.toString
+				{
+					UINT16 Length;
+					UNIXTIMESTAMP Time;
+				}
+			case 16:
+				struct ErrorStruct = Error.toString
+				{
+					UINT16 Length;
+					UINT16 Error = FormatString("%s (0x%x)",MadcapErrorCodes(this),this);
+					BLOB(Length - 8) ExtraData;
+				}
+		}
+	}
+
+	// Last option should always be end
+	UINT16 Option = FormatString("%s (0x%x)",MadcapOptions(this), this);
+	struct End
+	{
+		UINT16 Length;
+	}
+}
+Table MadcapMessageTypes(value)
+{
+	switch(value)
+	{
+		case 1: "DISCOVER";
+		case 2: "OFFER";
+		case 3: "REQUEST";
+		case 4: "RENEW";
+		case 5: "ACK";
+		case 6: "NAK";
+		case 7: "RELEASE";
+		case 8: "GETINFO";
+		default: FormatString("Unknown Message Type %d", value);
+	}
+}
+
+Table MadcapOptions(value)
+{
+	switch(value)
+	{
+		case 0: "End";
+		case 1: "Lease Time";
+		case 2: "Server Identifier";
+		case 3: "Lease Identifier";
+		case 4: "Multicast Scope";
+		case 5: "Option Request List";
+		case 6: "Start Time";
+		case 7: "Number of Addresses Requested";
+		case 8: "Requested Language";
+		case 9: "Multicast Scope List";
+		case 10: "List of Address Ranges";
+		case 11: "Current Time";
+		case 12: "Feature List";
+		case 13: "Retry Time";
+		case 14: "Minimum Least Time";
+		case 15: "Maximum Start Time";
+		case 16: "Error";
+		default: FormatString("Unknown Lease Option %d", value);
+	}
+}
+
+Table MadcapErrorCodes(value)
+{
+	switch(value)
+	{
+		case 0: "Valid Reqeust Could Not Be Completed";
+		case 1: "Invalid Request";
+		case 2: "Excessive Clock Skew";
+		case 3: "Lease Identifier Not Recognized";
+		case 4: "Required Feature Not Supported";
+		default: FormatString("User defined error %d", value);
+	}
+}
+
+Table LeaseIdentifierType(value)
+{
+	switch(value)
+	{
+		case 0: "Random Lease Identifier";
+		case 1: "Address-Specific Lease Identifier";
+		default: FormatString("Unknown Lease ID Type %d", value);
+	}
+}
+
+//Dev Notes: add other address family
+Table AddressFamilySize(value)
+{
+	switch(value)
+	{
+		case 1: 4;
+		case 2: 16;
+		default: 0;
+	}
+}
+
+struct MadcapAddress(FamilyType) = Property.MadcapAddressSummary
+{
+	switch(FamilyType)
+	{
+		case 1:
+			[MadcapAddressSummary = this.ToString]
+			IPv4Address IPv4Addr;
+		case 2:
+			[MadcapAddressSummary = this.ToString]
+			IPv6Address IPv6Addr;
+	}
+}
+
+struct MadcapOption = FormatString("%s (0x%x)",Option.toString,Option)
+{
+	UINT16 Option = MadcapOptions(this);
+}
+struct FeatureLists
+{
+	UINT16 FeatureCount;
+	FeatureList Feature[FeatureCount];
+}
+Table MadcapFeatureNameTable(value)
+{
+	switch(value)
+	{
+		case 0:  "Server Mobility";
+		case 1:  "Retry after";
+		case 2:  "Shared Lease Identifier";
+		default: "Invalid feature code";
+	}
+}
+
+struct FeatureList = FeatureName.toString
+{
+	UINT16 FeatureName = MadcapFeatureNameTable(this);
+}
+
+struct MadcapNames = FormatString("Name=%s, Language=%s", Name, LanguageTag)
+{
+	UINT8 Flags;
+	UINT8 LangLength;
+	AsciiString(LangLength) LanguageTag;
+	UINT8 NameLength;
+	AsciiString(NameLength) Name;
+}
+
+struct ScopeItem(FamilyType) = FormatString("%s - %s TTL=%d", FirstAddress.ToString, LastAddress.ToString, TTL)
+{
+	MadcapAddress(FamilyType) FirstAddress;
+	MadcapAddress(FamilyType) LastAddress;
+	UINT8 TTL;
+	UINT8 NameCount;
+	MadcapNames NameList[NameCount];	
+}
+
+struct AddressRangeList(Type)
+{
+	MadcapAddress(Type) StartAddress;
+	UINT16 BlockSize;		
+}
+
+

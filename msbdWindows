@@ -1,0 +1,218 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Media Stream Broadcast Distribution Protocol
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-MSBD]: Media Stream Broadcast Distribution (MSBD) Protocol Specification
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Minor, 6/7/2010
+//#
+//####
+
+[DataTypeByteOrder = LittleEndian]
+Protocol MSBD =	Property.MSBDSummary
+{
+	//
+	// Build MSBD conversation
+	// MSBD can be self reassembled, so we need check whether MSBD conversation already exist
+	//
+	switch
+	{
+		case !conversation.MSBD.Id:
+			[BuildConversationWithParent]
+			_struct _BuildMSBDConversation{};
+	}
+	[ Post.Conversation.ConversationDescription = 
+		Conversation.MSBD.ConversationDescription ? Conversation.MSBD.ConversationDescription:
+		(
+			( Property.MSBDMsgReqConnectChannel ? FormatString("(Channel: %s) ", Property.MSBDMsgReqConnectChannel): "" ) +
+			( FormatString("ConvID = %d", ConvID) )
+		)
+	]
+	//
+	// If start with "MSB", this is the first fragment, else this is a continuation fragment
+	//
+	switch
+	{
+		case AsciiString( FrameData, Offset, 3 ) == "MSB":
+			[Property.IfCollectSummary = true]
+			while [AsciiString( FrameData, Offset, 3 ) == "MSB" && FrameOffset < FrameLength]
+			{
+				//resssemble only in the case of Ind Packet
+				switch(UINT16( FrameData, Offset + 6 ))
+				{
+					case 0x000A:
+						[
+							PayloadStart(
+								NetworkDirection,  /*direction */
+								0, /* id */
+								0, /* sequence token */
+								0, /* next sequence token */
+								UINT16( FrameData, Offset + 8 ), /* total payload length */
+								1, /* is first */
+								0, /* is last */
+								RssmblyIndStartBit + RssmblySelfBit + RssmblyIndLengthBit
+							)
+						]
+						_struct _ReassembleIndPacket{};
+				}
+				[Property.MSBDSummary = Property.IfCollectSummary ? Header.ToString : Property.MSBDSummary]
+				MsbMsgBase Header;
+				[
+					DataFieldFrameLength = Property.MSBDMessageBaseOffset + Property.MSBDMessageLength,
+					Post.Property.IfCollectSummary = false
+				]
+				Switch( Property.MSBDMessageID )
+				{
+					//case 0x0001: MsbMsgReqPing
+					//case 0x0002: MsbMsgResPing
+					//case 0x0003: MsbMsgReqStreamInfo
+					//case 0x0009: MsbMsgIndEos
+					case 0x0004:
+						[Property.MSBDSummary = Property.MSBDSummary + (Property.IfCollectSummary ? (", " + this.ToString) : "")]
+						MsbMsgResStreamInfo ResStreamInfo;
+					case 0x0005:
+						[Property.MSBDSummary = Property.MSBDSummary + (Property.IfCollectSummary ? (", " + this.ToString) : "")]
+						MsbMsgIndStreamInfo IndStreamInfo;
+					case 0x0007:
+						[Property.MSBDSummary = Property.MSBDSummary + (Property.IfCollectSummary ? (", " + this.ToString) : "")]
+						MsbMsgReqConnect ReqConnect;
+					case 0x0008:
+						[Property.MSBDSummary = Property.MSBDSummary + (Property.IfCollectSummary ? (", " + this.ToString) : "")]
+						MsbMsgResConnect ResConnect;
+					case 0x000A:
+						[Property.MSBDSummary = Property.MSBDSummary + (Property.IfCollectSummary ? (", " + this.ToString) : "")]
+						MsbMsgIndPacket IndPacket;
+				}
+			}
+		default:
+			[
+				Property.MSBDSummary = "Continued Response",
+				PayloadStart( NetworkDirection, 0, 0, 0, 0, 0, 0, RssmblyIndStartBit + RssmblySelfBit + RssmblyIndLengthBit)
+			]
+			BLOB(FrameLength - FrameOffset) ContinuedPayload;
+	}
+}
+
+Table MsbdMessageTypeTable( Message )
+{
+	Switch( Message )
+	{
+		case 0x0001: "MsbMsgReqPing"; 
+		case 0x0002: "MsbMsgResPing";
+		case 0x0003: "MsbMsgReqStreamInfo";
+		case 0x0004: "MsbMsgResStreamInfo";
+		case 0x0005: "MsbMsgIndStreamInfo";
+		case 0x0007: "MsbMsgReqConnect";
+		case 0x0008: "MsbMsgResConnect";
+		case 0x0009: "MsbMsgIndEOS";
+		case 0x000A: "MsbMsgIndPacket";
+	}
+}
+
+Table MsbdConnectionTypeTable( Value )
+{
+	Switch( Value )
+	{
+		case 0x0001: FormatString( "0x%04X - Single Client", value ); 
+		case 0x0002: FormatString( "0x%04X - Multiple Clients (IP Multicast)", value );
+		//case 0x0003: FormatString( "0x%04X - Multiple Clients (IP Multicast, No TCP Control Connection)", value );
+	}
+}
+
+Table MsbdFlagsTable( Value )
+{
+	Switch( Value )
+	{
+		case 0x00000002: FormatString( "0x%08X( ASF header is read from .nsc file )", value );
+		Default        : FormatString( "0x%08X", value );
+	}
+}
+
+Struct SockAddr = FormatString( "Family = %s, Port = %s, Address = %s", SinFamily.ToString, SinPort.ToString, SinAddr.ToString )
+{
+	UINT16 SinFamily;
+	UINT16 SinPort;
+	[DataTypeByteOrder = BigEndian]
+	IPv4Address SinAddr;
+	UINT64 SinZero;
+}
+
+Struct MsbMsgBase = FormatString( "%s, Size = %d, Version = %s, Status = %s", MSBDMessageTypeTable(MessageId), Message, Version.ToString, Hr.ToString )
+{
+	[Property.MSBDMessageBaseOffset = FrameOffset]
+	AsciiStringTerm (" ") Signature;
+	UINT16 Version = FormatString( "0x%x", this );
+	[Property.MSBDMessageID]
+	UINT16 MessageId = FormatString( "%s (0x%04X)", MSBDMessageTypeTable( this ), this);
+	[Property.MSBDMessageLength]
+	UINT32 Message = FormatString( "Message Length %u", this );
+	HRESULT Hr;
+}
+
+struct MsbMsgResStreamInfo = FormatString("Bit Rate = %u Bits/Sec, Duration = %u ms", BitRate, Duration)
+{
+	UINT16 StreamId;
+	UINT16 PacketSize;
+	UINT32 TotalPackets;
+	UINT32 BitRate = FormatString( "%u (0x%X) Bits/sec", this, this);
+	UINT32 Duration = FormatString( "%u (0x%X) ms", this, this);
+	UINT32 Title;
+	UINT32 Description;
+	UINT32 Link;
+	UINT32 Header;
+	BLOB( Title + Description + Link + Header ) BinaryData;
+}
+
+struct MsbMsgIndStreamInfo = FormatString("Bit Rate = %u Bits/Sec, Duration = %u ms", BitRate, Duration)
+{
+	UINT16 StreamId;
+	UINT16 PacketSize;
+	UINT32 TotalPackets;
+	UINT32 BitRate = FormatString( "%u (0x%X) Bits/sec", this, this);
+	UINT32 Duration = FormatString( "%u (0x%X) ms", this, this);
+	UINT32 Title;
+	UINT32 Description;
+	UINT32 Link;
+	UINT32 Header;
+	struct BinaryData
+	{
+		BLOB( Title ) Title;
+		BLOB( Description ) Description;
+		BLOB( Link ) Link;
+		switch( Blob( FrameData, FrameOffset, 16 ) )
+		{
+			case 0x6CCE6200AA00D9A611CF668E75B22630:
+				ASFHeaderObject ASFHeader;
+			default:
+				BLOB( Header ) Header;
+		}
+	}
+}
+
+struct MsbMsgReqConnect = FormatString("Flags = %s, Channel = %s", Flags.ToString, Channel)
+{
+	UINT32 Flags = MSBDConnectionTypeTable( this );
+	[Property.MSBDMsgReqConnectChannel]
+	UnicodeString Channel;
+}
+
+struct MsbMsgResConnect = FormatString("Flags = %s, Sock Address = %s", Flags.ToString, Channel.ToString)
+{
+	UINT32 Flags = MSBDFlagsTable( this );
+	SockAddr Channel;
+}
+
+struct MsbMsgIndPacket = FormatString("Packet ID = %d, Stream ID = %d", PacketId, StreamId)
+{
+	UINT32 PacketId;
+	UINT16 StreamId;
+	[Local.MSBDPacketSize = PacketSize - 8]
+	UINT16 PacketSize;
+	[DatafieldFramelength = FrameOffset + Local.MSBDPacketSize]
+	ASFDataPackets Payload;
+}
+

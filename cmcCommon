@@ -1,0 +1,287 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Certificate Management Messages over CMS
+//#
+//#  Details:                
+//#
+//#  Public References:      RFC 2797
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:
+//#
+//####
+
+[DataTypeByteOrder=BigEndian]
+struct CmcPKIData {
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo SequenceOfTaggedAttributeHeader;
+	[CmctaggedAttrPKISequenceEnd = Offset+LengthValue]
+	while ControlSequence[Offset<CmctaggedAttrPKISequenceEnd] {
+		CmcTaggedAttribute Attribute;
+	}
+	AsnBerInfo SequenceOfTaggedRequestHeader;
+	[CmctaggedReqSequenceEnd = Offset+LengthValue]
+	while reqSequence[Offset<CmctaggedReqSequenceEnd] {
+		CmcTaggedRequest Request;
+	}
+	AsnBerInfo SequenceOfTaggedContentInfoHeader;
+	[CmctaggedContentInfoSequenceEnd = Offset+LengthValue]
+	while CmsSequence[Offset<CmctaggedContentInfoSequenceEnd] {
+		CmcTaggedContentInfo ContentInfo;
+	}
+	AsnBerInfo SequenceOfOtherMsgHeader;
+	[CmcOtherMsgSequenceEnd = Offset+LengthValue]
+	while OtherMsgSequence[Offset<CmcOtherMsgSequenceEnd] {
+		CmcOtherMsg OtherMsg;
+	}
+}
+
+struct CmcBodyPartId = Id.toString {
+	AsnBerInteger Id;
+}
+
+struct CmcTaggedAttribute {
+	AsnBerInfo SequenceHeader;
+	CmcBodyPartId BodyPartId;
+	AsnBerObjectIdentifier AttrType;
+	AsnBerInfo SetOfHeader;
+	[CmcAttrValSetEnd = Offset+LengthValue]
+	while AttrValues[Offset<CmcAttrValSetEnd] {
+		CmsAttributeValue(property.AsnOid) Attr;
+	}
+}
+
+struct CmcTaggedRequest {
+	switch (UINT8(FrameData,Offset)) {
+		case 0xa0: CmcTaggedCertificationRequest Tcr;
+		case 0xa1: CrmfCertReqMsg Crm;
+	}
+}
+
+struct CmcTaggedCertificationRequest {
+	AsnBerInfo SequenceHeader;
+	CmcBodyPartId BodyPartId;
+	CmcCertificationRequest CertificationRequest;
+}
+
+struct CmcCertificationRequest {
+	AsnBerInfo SequenceHeader;
+	struct CertificationRequestInfo {
+		AsnBerInfo SequenceHeader;
+		AsnBerInteger Version;
+		X509Name Subject;
+		struct SubjectPublicKeyInfo {
+			AsnBerInfo SequenceHeader;
+			X509AlgorithmIdentifier Algorithm;
+			AsnBerBitString SubjectPublicKey;
+		}
+		AsnBerInfo SetOfHeader;
+		[CmcAttrsSetEnd = Offset+LengthValue]
+		while Attributes[Offset<CmcAttrsSetEnd] {
+			CmsAttribute Attribute;
+		}
+	}
+	X509AlgorithmIdentifier SignatureAlgorithm;
+	AsnBerBitString Signature;
+}
+
+struct CmcTaggedContentInfo {
+	AsnBerInfo SequenceInfo;
+	CmcBodyPartId BodyPartId;
+	CmsContentInfo ContentInfo;
+}
+
+struct CmcOtherMsg {
+	CmcBodyPartId BodyPartId;
+	AsnBerObjectIdentifier OtherMsgType;
+	AsnBerAnyByOid(property.AsnOid) OtherMsgValue;
+}
+
+struct CmcResponseBody {
+	AsnBerInfo SequenceHeader;
+	AsnBerInfo ControlSequenceHeader;
+	[CmctaggedAttrRespBodySequenceEnd = Offset+LengthValue]
+	while ControlSequence[Offset<CmctaggedAttrRespBodySequenceEnd] {
+		CmcTaggedAttribute Attribute;
+//		AsnBerOctetString Attribute;
+	}
+	AsnBerInfo CmsSequenceHeader;
+	[CmctaggedContentInfoSequenceEnd = Offset+LengthValue]
+	while CmsSequence[Offset<CmctaggedContentInfoSequenceEnd] {
+		CmcTaggedContentInfo ContentInfo;
+	}
+	AsnBerInfo OtherMsgSequenceHeader;
+	[CmcOtherMsgSequenceEnd = Offset+LengthValue]
+	while OtherMsgSequence[Offset<CmcOtherMsgSequenceEnd] {
+		CmcOtherMsg OtherMsg;
+	}
+}
+
+struct CmcStatusInfo {
+	AsnBerInfo SequenceHeader;
+	[CmcStatusInfoEnd=Offset+LengthValue]
+	CmcStatus CmcStatus;
+	AsnBerInfo SequenceOfHeader;
+	[CmcBodyListSequenceEnd = Offset+LengthValue]
+	while BodyList[Offset<CmcBodyListSequenceEnd] {
+		AsnBerInteger Int;
+	}
+	switch {
+		case (UINT8(FrameData,Offset) == 12):
+//			AsnBerUtf8String StatusString;
+			AsnBerOctetString StatusString;
+	}
+	switch {
+		case Offset<CmcStatusInfoEnd:
+			switch (UINT8(FrameData,Offset)) {
+				case 0x02: CmcFailInfo FailInfo;
+				case 0x30: CmcPendInfo PendInfo;
+			}
+	}
+}
+
+struct CmcPendInfo {
+	AsnBerInfo SequenceHeader;
+	AsnBerInteger PendToken;
+	AsnBerGeneralizedTime PendTime;
+}
+
+Table CmcStatusTable(Status) {
+	switch(Status) {
+		case 0: "Success (0)";
+		case 2: "Failed (2)";
+		case 3: "Pending (3)";
+		case 4: "NoSupport (4)";
+		default: FormatString("Unknown Status (%d)", Status);
+	}
+}
+
+struct CmcStatus = CmcStatusTable(CmcStatus) {
+	[CmcStatus = AsnIntValue]
+	AsnBerInteger Status = CmcStatusTable(AsnIntValue);
+}
+
+Table CmcFailInfoTable(Info) {
+	switch(Info) {
+		case 0: "BadAlg (0)";
+		case 1: "BadMessageCheck (1)";
+		case 2: "BadRequest (2)";
+		case 3: "BadTime (3)";
+		case 4: "BadCertId (4)";
+		case 5: "UnsuportedExt (5)";
+		case 6: "MustArchiveKeys (6)";
+		case 7: "BadIdentity (7)";
+		case 8: "PopRequired (8)";
+		case 9: "PopFailed (9)";
+		case 10: "NoKeyReuse (10)";
+		case 11: "InternalCAError (11)";
+		case 12: "TryLater (12)";
+		default: FormatString("Unknown Info (%d)", Info);
+	}
+}
+
+struct CmcFailInfo {
+	AsnBerInteger Info;
+}
+
+struct CmcAddExtensions {
+	AsnBerInfo SequenceHeader;
+	CmcBodyPartId PkiDataReference;
+	AsnBerInfo SequenceOfBodyPartIdHeader;
+	[CmcCertRefSequenceEnd = Offset+LengthValue]
+	while CertReferences[Offset<CmcCertRefSequenceEnd] {
+		CmcBodyPartId CertReference;
+	}
+	AsnBerInfo SequenceOfExtensionHeader;
+	[CmcExtensionsSequenceEnd = Offset+LengthValue]
+	while Extensions[Offset<CmcExtensionsSequenceEnd] {
+		X509Extension Extension;
+	}
+}
+
+struct CmcEncryptedPop {
+	AsnBerInfo SequenceHeader;
+	CmcTaggedRequest Request;
+	CmsContentInfo Cms;
+	X509AlgorithmIdentifier ThePopAlgId;
+	X509AlgorithmIdentifier WitnessAlgId;
+	AsnBerOctetString Witness;
+}
+
+struct CmcDecryptedPop {
+	AsnBerInfo SequenceHeader;
+	CmcBodyPartId BodyPartId;
+	X509AlgorithmIdentifier ThePopalgId;
+	AsnBerOctetString ThePop;
+}
+
+struct CmcLraPopWitness {
+	AsnBerInfo SequenceHeader;
+	CmcBodyPartId PkiDataBodyId;
+	[CmcBodyIdsSequenceEnd = Offset+LengthValue]
+	while BodyIds[Offset<CmcBodyIdsSequenceEnd] {
+		CmcBodyPartId BodyId;
+	}
+}
+
+struct CmcGetCert {
+	AsnBerInfo SequenceHeader;
+	X509GeneralName IssuerName;
+	AsnBerInteger SerialNumber;
+}
+
+struct CmcGetCrl {
+	AsnBerInfo SequenceHeader;
+	X509Name IssuerName;
+	switch {
+		case (UINT8(FrameData,Offset)==0x30):
+		X509GeneralName CrlName;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)==24):
+		AsnBerGeneralizedTime Time;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)==03):
+		X509ReasonFlags Reasons;
+	}
+}
+
+struct CmcRevRequest {
+	AsnBerInfo SequenceHeader;
+	X509Name IssuerName;
+	AsnBerInteger SerialNumber;
+	X509CrlReason Reason;
+
+	switch {
+		case (UINT8(FrameData,Offset)==24):
+		AsnBerGeneralizedTime InvalidityDate;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)==04):
+		AsnBerOctetString Passphrase;
+	}
+	switch {
+		case (UINT8(FrameData,Offset)==12):
+		AsnBerUtf8String Comment;
+	}
+}
+
+struct CmcCertId {
+	X509IssuerSerial Id;
+}
+
+struct CmcExtensionReq {
+	AsnBerInfo SequenceOfHeader;
+	[CmcExtnReqSequenceEnd = Offset+LengthValue]
+	while [Offset<CmcExtnReqSequenceEnd] {
+		X509Extension Extension;
+	}
+}
+
+struct CmcNoSignatureValue {
+	AsnBerOctetString Value;
+}
+
+

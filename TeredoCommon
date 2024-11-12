@@ -1,0 +1,98 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Teredo - Tunneling IPv6 over UDP through NATs
+//#
+//#  Details:                
+//#
+//#  Public References:      http://www.ietf.org/internet-drafts/draft-huitema-v6ops-teredo-05.txt
+//#  Microsoft References:   [MS-TERE]: Teredo Extensions
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 9/23/2009
+//#                          Minor, 11/26/2009
+//#
+//####
+
+[DefaultTimeOut = TEREDOConversationTimeout]
+Protocol TEREDO = FormatString("Tunneling IPv6 over UDP through NATs%s%s%s%s",
+							   TeredoAuthExist ? Formatstring( ", %s", Property.TeredoAuthId > 0?"Authentication exists":"No Authentication" ): "",
+							   TeredoMalformed ? ", Malformed Packet" : "",
+							   !TeredoMalformed && TeredoOriginExist ? ", OriginAddress = " + Property.TeredoOriginIp : "",
+							   !TeredoMalformed && TeredoOriginExist ? ", OriginPort = " + Property.TeredoOriginPort : ""
+							   )
+{
+	[
+		BuildConversationWithParent,
+		Post.Conversation.ConversationDescription = 
+			( Conversation.AuthenticationIndicator ? FormatString("(AuthIndicator: %u) ",Conversation.AuthenticationIndicator) : "" ) + 
+			( FormatString("ConvID = %d", ConvID) )
+	]
+	switch( UINT16( FrameData, frameOffset ) )
+	{
+		case 0x0001:
+			[TeredoAuthExist = TRUE]
+			TEREDOAuthentication AuthenticationHeader;
+	}
+	
+	while[ UINT16( FrameData, frameOffset ) == 0x0000 ]
+	{
+			[TeredoOriginExist = TRUE]
+			TEREDOOrigin OriginHeader;
+	}
+	
+	switch ( UINT8( Framedata, Offset ) & 0xF0 )
+	{
+		case 0x60:
+			IPv6 TunnelingIpv6;
+		default:
+			[TeredoMalformed = true]
+			Blob(FrameLength - FrameOffset) MalformedPacket;
+	}
+	
+	// TEREDO Trailers
+	while TeredoTrailers[ frameOffset < frameLength]
+	{
+		[Conversation.ConversationDescription =  FormatString("(%s) ConvID = %d",TERETrailerTypeTable( UINT8( Framedata, Offset )), ConvID)]
+		switch(UINT8( Framedata, Offset ))
+		{
+			default  :TEREDOTrailer Trailer;
+		}
+	}
+}
+
+struct TEREDOOrigin
+{
+	UINT16 OriginIndicator;
+	[TeredoOriginPort = PortNameTable(this^0xFFFF)]
+	UINT16 OriginPort = PortNameTable(this^0xFFFF) + FormatString(" (0x%04X)",this^0xFFFF) ;
+	[TeredoOriginIp = this.ToString]
+	IPv4Address OriginIPv4Address = FormatString("%d.%d.%d.%d",this[3]^0xFF,this[2]^0xFF,this[1]^0xFF,this[0]^0xFF);
+}
+
+struct TEREDOAuthentication
+{
+	[Conversation.AuthenticationIndicator]
+	UINT16 AuthenticationIndicator;
+	[TeredoAuthId]
+	UINT8 IDLen;
+	UINT8 AULen;
+	switch
+	{
+		case IDLen > 0: BLOB(IDLen) ClientIdentifier;
+	}
+	switch
+	{
+		case AULen > 0: BLOB(AULen) AuthenticationValue;
+	}
+	BLOB(8) NonceValue = FormatString("0x%X",this);
+	UINT8 Confirmation = FormatString("%s, %d(0x%X)", this > 0 ? "The client should obtain a new key"
+															   : "The client's key is still valid", this, this);
+}
+
+struct TEREDOTrailer = TERETrailerTypeTable(Type)
+{
+	UINT8 Type = FormatString("%s %d(0x%02X)", TERETrailerTypeTable(this), this, this);
+	UINT8 Length;
+	BLOB(Length) Value;
+}

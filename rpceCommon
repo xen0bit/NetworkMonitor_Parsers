@@ -1,0 +1,408 @@
+//#  (c) 2009 CodePlex Foundation
+//#
+//#  Title:                  Remote Procedure Call Protocol Extensions
+//#
+//#  Details:                
+//#
+//#  Microsoft References:   [MS-RPCE]: Remote Procedure Call Protocol Extensions (11.0.1)
+//#
+//#  Comments:               
+//#
+//#  Revision Class and Date:Major, 11/24/2009
+//#                          Minor, 3/2/2010
+//#
+//####
+
+//
+//	2.2.1.1.1   RPC_IF_ID Type
+//
+Struct RPCERpcIfId = FormatString( "%s v%u.%u",Uuid.ToString, VersMajor, VersMinor)
+{
+	MSRPCUuidT Uuid;
+	UINT16 VersMajor;
+	UINT16 VersMinor;
+}
+
+Struct RPCERpcIfIdPtr = Pointer.ReferentID ? RpcIfId.ToString : "NULL"
+{
+	NdrPtr Pointer;
+	Switch
+	{
+		Case Pointer.ReferentID > 0: RPCERpcIfId RpcIfId;
+	}
+}
+
+//
+//	2.2.1.1.5   version_t
+//
+struct RPCEVersionT
+{
+	UINT8 Major;
+	UINT8 Minor;
+}
+
+//
+//	2.2.1.1.6   p_rt_versions_supported_t
+//
+struct RPCEPRtVersionsSupportedT
+{
+	UINT8 NProtocols;
+	struct PRtVersionT
+	{
+		RPCEVersionT PProtocols[ NProtocols ];
+	}
+	Align8 pad;
+}
+
+//
+//	2.2.1.3.1   rpc_if_id_vector_p_t Type
+//
+Struct RPCERpcIfIdVectorPT
+{
+	UINT32 Count;
+	Struct RpcIfIdArray
+	{
+		NdrConformant Size;
+		NdrPtr IfIdPointer[ Size.MaxCount ];
+		RPCERpcIfId IfId[ Size.MaxCount ];
+	}
+}
+
+//
+//	2.2.1.3.3   rpc_mgmt_inq_stats Method
+//
+Struct RPCERpcMgmtInqStats
+{
+	Switch( Property.MSRPCPType )
+	{
+		Case 0x00: //REQUEST
+			_Struct Request
+			{
+				Switch
+				{
+					Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+					Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+					Default:
+						[RPCESummary = FormatString( "Count=%d", Count )]
+						Struct
+						{
+							UINT32 Count;
+						}
+				}
+			}
+		
+		Case 0x02: //RESPONSE
+			_Struct Response
+			{
+				Switch
+				{
+					Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+					Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+					Default:
+						[RPCESummary = FormatString( "Count=%d, Status=%u", Count, Status )]
+						Struct
+						{
+							UINT32 Count;
+							NdrConformant Size;
+							UINT32 Statistics[Size.MaxCount];
+							UINT32 Status;
+						}
+				}
+			}
+	}
+}
+
+//
+//	2.2.1.3.4   rpc_mgmt_inq_princ_name Method
+//
+Struct RPCERpcMgmtInqPrincName
+{
+	Switch( Property.MSRPCPType )
+	{
+		Case 0x00: //REQUEST
+			_Struct Request
+			{
+				Switch
+				{
+					Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+					Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+					Default:
+						[RPCESummary = FormatString( "AuthnProto=%u PrincNameSize=%d", AuthnProto, PrincNameSize )]
+						Struct
+						{
+							UINT32 AuthnProto;
+							UINT32 PrincNameSize;
+						}
+				}
+			}
+		
+		Case 0x02: //RESPONSE
+			_Struct Response
+			{
+				Switch
+				{
+					Case MSRPCAuthLevel == -1: Blob( FrameLength - FrameOffset ) PartialData = "May Need Reassemble";
+					Case Property.MSRPCEncrypted != ConstEncTypeClearData: Blob( FrameLength - FrameOffset ) EncryptedData;
+					Default:
+						[RPCESummary = FormatString( "PrincName=%s Status=%u", PrincName.ToString, Status )]
+						Struct
+						{
+							NdrString PrincName;
+							Align4 Padding;
+							UINT32 Status;
+						}
+				}
+			}
+	}
+}
+
+//
+//	2.2.2.9   bind_nak Packet
+//
+struct RPCEBindNak //Bind Nack
+{
+	/* common fields */
+	UINT8 RpcVers;
+	UINT8 RpcVersMinor;
+	[MSRPCPType]
+	UINT8 PType = FormatString("0x%02X - %s", this, MSRPCPTypeTable(this));
+	[MSRPCPfcFlags, MSRPCByteOrder = (UINT8( Framedata, Offset + 1 ) & 0x10) ? LittleEndian : BigEndian]
+	UINT8 PfcFlags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					[MSRPCFirstFrag]
+					UINT8 Bit0:1 = this.ToBitString + " PFC_FIRST_FRAG - " + ( this ? "SET, Is first fragment" : "NOT set, Is NOT first fragment" );
+					[MSRPCLastFrag]
+					UINT8 Bit1:1 = this.ToBitString + " PFC_LAST_FRAG - " + ( this ? "SET, Is last fragment" : "NOT set,  SET, Is NOT last fragment" );
+					UINT8 Bit2:1 = this.ToBitString + ((PType == 0x0B || PType == 0x0C || PType == 0x0E || PType == 0x0F) ? (" PFC_SUPPORT_HEADER_SIGN - " + ( this ? "SET, Header Sign was supported at sender" : "NOT set, Header Sign was NOT supported at sender" )) : (" PFC_PENDING_CANCEL - " + ( this ? "SET, Cancel was pending at sender" : "NOT set, Cancel was NOT pending at sender" )));
+					UINT8 Bit3:1 = this.ToBitString + " PFC_RESERVED_1 - reserved";
+					UINT8 Bit4:1 = this.ToBitString + " PFC_CONC_MPX - " + ( this ? "SET, Supports concurrent multiplexing of a single connection." : "NOT set, Does NOT support concurrent multiplexing of a single connection." );
+					UINT8 Bit5:1 = this.ToBitString + " PFC_DID_NOT_EXECUTE - " + ( Property.MSRPCPType != 0x03 ? "N/A;" : ( this ? "SET, Guaranteed call was executed." : "NOT set, Guaranteed call was NOT executed." ) ) + " Only meaningful on `fault' packet.";
+					UINT8 Bit6:1 = this.ToBitString + " PFC_MAYBE - " + ( this ? "SET, `maybe' call semantics requested" : "NOT set, `maybe' call semantics NOT requested" );
+					[MSRPCObjUuid]
+					UINT8 Bit7:1 = this.ToBitString + " PFC_OBJECT_UUID - " + ( this ? "SET, A non-nil object UUID was specified in the handle, and is present in the optional object field." : "NOT set, The object field is omitted." );
+				}
+			Default:
+				Struct
+				{
+					[MSRPCObjUuid]
+					UINT8 Bit7:1 = this.ToBitString + " PFC_OBJECT_UUID - " + ( this ? "SET, A non-nil object UUID was specified in the handle, and is present in the optional object field." : "NOT set, The object field is omitted." );
+					UINT8 Bit6:1 = this.ToBitString + " PFC_MAYBE - " + ( this ? "SET, `maybe' call semantics requested" : "NOT set, `maybe' call semantics NOT requested" );
+					UINT8 Bit5:1 = this.ToBitString + " PFC_DID_NOT_EXECUTE - " + ( Property.MSRPCPType != 0x03 ? "N/A;" : ( this ? "SET, Guaranteed call was executed." : "NOT set, Guaranteed call was NOT executed." ) ) + " Only meaningful on `fault' packet.";
+					UINT8 Bit4:1 = this.ToBitString + " PFC_CONC_MPX - " + ( this ? "SET, Supports concurrent multiplexing of a single connection." : "NOT set, Does NOT support concurrent multiplexing of a single connection." );
+					UINT8 Bit3:1 = this.ToBitString + " PFC_RESERVED_1 - reserved";
+					UINT8 Bit2:1 = this.ToBitString + ((PType == 0x0B || PType == 0x0C || PType == 0x0E || PType == 0x0F) ? (" PFC_SUPPORT_HEADER_SIGN - " + ( this ? "SET, Header Sign was supported at sender" : "NOT set, Header Sign was NOT supported at sender" )) : (" PFC_PENDING_CANCEL - " + ( this ? "SET, Cancel was pending at sender" : "NOT set, Cancel was NOT pending at sender" )));
+					[MSRPCLastFrag]
+					UINT8 Bit1:1 = this.ToBitString + " PFC_LAST_FRAG - " + ( this ? "SET, Is last fragment" : "NOT set,  SET, Is NOT last fragment" );
+					[MSRPCFirstFrag]
+					UINT8 Bit0:1 = this.ToBitString + " PFC_FIRST_FRAG - " + ( this ? "SET, Is first fragment" : "NOT set, Is NOT first fragment" );
+				}
+		}
+	}
+	MSRPCPackedDrep PackedDrep;
+	[MSRPCFragLength]
+	UINT16 FragLength;
+	UINT16 AuthLength;
+	[MSRPCCallId]
+	UINT32 CallId;
+
+	/* end common fields */
+	UINT16 ProviderRejectReason = MSRPCPRejectReasonTable( this );
+	[MSRPCSummary = FormatString( "c/o Bind Nack:  Call=0x%X  Reject Reason: %s", CallId, MSRPCPRejectReasonTable( ProviderRejectReason ) )]
+	RPCEPRtVersionsSupportedT versions;
+	switch
+	{
+		case FragLength >= ProtocolOffset + 16:
+			struct
+			{
+				MSRPCUuidT signature;
+				EERRExtendedErrorInformationBlob ExtendedErrorInformationBlob;
+				Align8 pad;
+			}
+	}
+}
+
+//
+//	2.2.2.10   rpc_auth_3 PDU
+//
+struct RPCERpcAuth3
+{
+	/* common fields */
+	UINT8 RpcVers;
+	UINT8 RpcVersMinor;
+	[MSRPCPType]
+	UINT8 PType = FormatString("0x%02X - %s", this, MSRPCPTypeTable(this));
+	[MSRPCPfcFlags, MSRPCByteOrder = (UINT8( Framedata, Offset + 1 ) & 0x10) ? LittleEndian : BigEndian]
+	UINT8 PfcFlags
+	{
+		Switch( Property.MSRPCByteOrder )
+		{
+			Case LittleEndian:
+				Struct
+				{
+					[MSRPCFirstFrag]
+					UINT8 Bit0:1 = this.ToBitString + " PFC_FIRST_FRAG - " + ( this ? "SET, Is first fragment" : "NOT set, Is NOT first fragment" );
+					[MSRPCLastFrag]
+					UINT8 Bit1:1 = this.ToBitString + " PFC_LAST_FRAG - " + ( this ? "SET, Is last fragment" : "NOT set,  SET, Is NOT last fragment" );
+					UINT8 Bit2:1 = this.ToBitString + ((PType == 0x0B || PType == 0x0C || PType == 0x0E || PType == 0x0F) ? (" PFC_SUPPORT_HEADER_SIGN - " + ( this ? "SET, Header Sign was supported at sender" : "NOT set, Header Sign was NOT supported at sender" )) : (" PFC_PENDING_CANCEL - " + ( this ? "SET, Cancel was pending at sender" : "NOT set, Cancel was NOT pending at sender" )));
+					UINT8 Bit3:1 = this.ToBitString + " PFC_RESERVED_1 - reserved";
+					UINT8 Bit4:1 = this.ToBitString + " PFC_CONC_MPX - " + ( this ? "SET, Supports concurrent multiplexing of a single connection." : "NOT set, Does NOT support concurrent multiplexing of a single connection." );
+					UINT8 Bit5:1 = this.ToBitString + " PFC_DID_NOT_EXECUTE - " + ( Property.MSRPCPType != 0x03 ? "N/A;" : ( this ? "SET, Guaranteed call was executed." : "NOT set, Guaranteed call was NOT executed." ) ) + " Only meaningful on `fault' packet.";
+					UINT8 Bit6:1 = this.ToBitString + " PFC_MAYBE - " + ( this ? "SET, `maybe' call semantics requested" : "NOT set, `maybe' call semantics NOT requested" );
+					[MSRPCObjUuid]
+					UINT8 Bit7:1 = this.ToBitString + " PFC_OBJECT_UUID - " + ( this ? "SET, A non-nil object UUID was specified in the handle, and is present in the optional object field." : "NOT set, The object field is omitted." );
+				}
+			Default:
+				Struct
+				{
+					[MSRPCObjUuid]
+					UINT8 Bit7:1 = this.ToBitString + " PFC_OBJECT_UUID - " + ( this ? "SET, A non-nil object UUID was specified in the handle, and is present in the optional object field." : "NOT set, The object field is omitted." );
+					UINT8 Bit6:1 = this.ToBitString + " PFC_MAYBE - " + ( this ? "SET, `maybe' call semantics requested" : "NOT set, `maybe' call semantics NOT requested" );
+					UINT8 Bit5:1 = this.ToBitString + " PFC_DID_NOT_EXECUTE - " + ( Property.MSRPCPType != 0x03 ? "N/A;" : ( this ? "SET, Guaranteed call was executed." : "NOT set, Guaranteed call was NOT executed." ) ) + " Only meaningful on `fault' packet.";
+					UINT8 Bit4:1 = this.ToBitString + " PFC_CONC_MPX - " + ( this ? "SET, Supports concurrent multiplexing of a single connection." : "NOT set, Does NOT support concurrent multiplexing of a single connection." );
+					UINT8 Bit3:1 = this.ToBitString + " PFC_RESERVED_1 - reserved";
+					UINT8 Bit2:1 = this.ToBitString + ((PType == 0x0B || PType == 0x0C || PType == 0x0E || PType == 0x0F) ? (" PFC_SUPPORT_HEADER_SIGN - " + ( this ? "SET, Header Sign was supported at sender" : "NOT set, Header Sign was NOT supported at sender" )) : (" PFC_PENDING_CANCEL - " + ( this ? "SET, Cancel was pending at sender" : "NOT set, Cancel was NOT pending at sender" )));
+					[MSRPCLastFrag]
+					UINT8 Bit1:1 = this.ToBitString + " PFC_LAST_FRAG - " + ( this ? "SET, Is last fragment" : "NOT set,  SET, Is NOT last fragment" );
+					[MSRPCFirstFrag]
+					UINT8 Bit0:1 = this.ToBitString + " PFC_FIRST_FRAG - " + ( this ? "SET, Is first fragment" : "NOT set, Is NOT first fragment" );
+				}
+		}
+	}
+	MSRPCPackedDrep PackedDrep;
+	[MSRPCFragLength]
+	UINT16 FragLength;
+	[MSRPCAuthLength]
+	UINT16 AuthLength;
+	[MSRPCCallId, MSRPCSummary = FormatString( "c/o Auth3:  Call=0x%X", CallId )]
+	UINT32 CallId;
+
+	/* end common fields */
+	UINT32 Pad;
+	switch
+	{
+		case AuthLength != 0 : MSRPCAuthVerifierCoT( PType, AuthLength ) AuthVerifier;
+	}
+}
+
+//
+//	2.2.2.13.1   rpc_sec_verification_trailer
+//
+struct RPCEVerificationTrailer
+{
+	struct RpcSecVerificationTrailer
+	{
+		UINT8 Signature[8] = FormatString( "%02X %02X %02X %02X %02X %02X %02X %02X", this[0], this[1], this[2], this[3], this[4], this[5], this[6], this[7] );
+	}
+	while Command[ Offset < FrameLength - MSRPCAuthVerifierLen ]
+	{
+		switch( UINT16( FrameData, Offset ) & 0x03FFF ) //command
+		{
+			case 0x01 :
+				struct RpcSecVtBitmask
+				{
+					RPCERpcSecVerificationTrailerCommand CommandCommon;
+					UINT32 Bits;
+				}
+			case 0x02 :
+				struct RpcSecVtPContext
+				{
+					RPCERpcSecVerificationTrailerCommand CommandCommon;
+					MSRPCRpcSyntaxIdentifier InterfaceId;
+					MSRPCRpcSyntaxIdentifier TransferSyntax;
+				}
+			case 0x03 :
+				struct RpcSecVtHeader2
+				{
+					RPCERpcSecVerificationTrailerCommand CommandCommon;
+					UINT8 PType;
+					UINT8 Reserved1;
+					INT16 Reserved2;
+					INT8 Drep[4];
+					INT32 CallId;
+					UINT16 PContId;
+					UINT16 Opnum;
+				}
+			default: 
+				UINT8 Unknown[ FrameLength - Offset - MSRPCAuthVerifierLen ];
+		}
+	}
+}
+
+table RPCERpcSecVerificationTrailerCommandTable( value )
+{
+	switch( value )
+	{
+		case 0x0001 : "SEC_VT_COMMAND_BITMASK_1";
+		case 0x0002 : "SEC_VT_COMMAND_PCONTEXT";
+		case 0x0003 : "SEC_VT_COMMAND_HEADER2";
+		default: "unknown";
+	}
+}
+
+struct RPCERpcSecVerificationTrailerCommand = RPCERpcSecVerificationTrailerCommandTable( command & 0x3FFF )
+{
+	UINT16 Command;
+	UINT16 Length;
+}
+
+//
+//	2.2.2.14   BindTimeFeatureNegotiationBitmask
+//
+struct RPCEBindTimeFeatureNegotiationBitmask = FormatString( "%02X%02X%02X%02X%02X%02X%02X%02X", 
+	Bitmask[0], Bitmask[1], Bitmask[2], Bitmask[3], Bitmask[4], Bitmask[5], Bitmask[6], Bitmask[7] )
+{
+	UINT8 Bitmask[8];
+}
+
+//
+//	2.2.2.15   BindTimeFeatureNegotiationResponseBitmask
+//
+struct RPCEBindTimeFeatureNegotiationResponseBitmask = "Security Context Multiplexing " + ( Bitmask ? "Supported" : "NOT Supported" )
+{
+	UINT8 BitMask;
+	UINT8 Unused;
+}
+
+//
+//	2.2.6.1   Common Type Header for the Serialization Stream
+//
+struct RPCECommonTypeHeader = FormatString( "Version=%d Endianess=%s", Version, Endianess.ToString )
+{
+	[MSRPCNdr64 == 1 && Version == 1 ? MSRPCNdr64 = 0 : " "]
+	UINT8 Version = MustBeSetToTable(this,"0x1");
+	[MSRPCEEByteOrder = (this & 0x10) ? LittleEndian : BigEndian]
+	UINT8 Endianess = FormatString( "0x%02X %s", this, (this & 0x10) ? "Little-endian" : "Big-endian" );
+	UINT16 CommonHeaderLength = MustBeSetToTable(this,"0x8");
+	UINT8	Filler[4];
+}
+
+//
+//	2.2.6.2   Private Header for Constructed Type
+//
+struct RPCEPrivateTypeHeader
+{
+	[Property.RPCEObjectBufferLength]
+	INT32 ObjectBufferLength;
+	UINT8	Filler[4];
+}
+
+//
+// Bind Time Feature Negotiation
+//
+[Post.Property.MSRPCPSyntaxIdTSummary = RPCEBTFNUuid.ToString]
+struct RPCEBTFNUuid = FormatString( "{6CB71C2C-9812-4540-%s} BTFN - Security Context Multiplexing%s Supported", bitmask.ToString, bitmask.BitMask[0] ? "" : " NOT" )
+{
+	struct Prefix = "6CB71C2C-9812-4540"
+	{
+		UINT32 TimeLow = FormatString("0x%08X", this);
+		UINT16 TimeMid = FormatString("0x%04X", this);
+		UINT16 TimeHiAndVersion = FormatString("0x%04X", this);
+	}
+	RPCEBindTimeFeatureNegotiationBitmask bitmask;
+}
+
